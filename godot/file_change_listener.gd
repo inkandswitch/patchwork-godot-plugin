@@ -10,7 +10,6 @@ signal file_changed(path: String, file_name: String)
 func _init(editor_plugin: EditorPlugin):
   self.editor_plugin = editor_plugin
 
-
   # listen to file system
   var file_system = editor_plugin.get_editor_interface().get_resource_filesystem()
   # file_system.connect("filesystem_changed", _on_filesystem_changed)
@@ -112,6 +111,6 @@ func _on_history_changed():
       trigger_file_changed(root.scene_file_path, content)
       file.close()
 
-      
+
     # Delete the temp file
-    #dir.remove(temp_path)
+    DirAccess.remove_absolute(temp_path)
