@@ -1,0 +1,4 @@
+[workspace]
+members = ["patchwork/rust/server", "patchwork/rust/plugin"]
+
+resolver = "2"

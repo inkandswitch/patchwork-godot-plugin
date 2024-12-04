@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://bn368pidqsqgs"]
-
-[ext_resource type="Script" path="res://scripts/rules_goals/game_logic.gd" id="1_ldui0"]
-
-[node name="GameLogic" type="Node"]
-script = ExtResource("1_ldui0")

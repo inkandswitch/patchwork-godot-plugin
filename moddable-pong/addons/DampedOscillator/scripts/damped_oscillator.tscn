@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://bkqabubjo4g5a"]
-
-[ext_resource type="Script" path="res://addons/DampedOscillator/scripts/DampedOscillator.gd" id="1_u4od5"]
-
-[node name="DampedOscillator" type="Node"]
-script = ExtResource("1_u4od5")
