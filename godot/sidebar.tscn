@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://dxim8oyk4rpsb"]
 
-[ext_resource type="Script" path="res://addons/patchwork/sidebar.gd" id="1_53kyk"]
+[ext_resource type="Script" path="res://addons/patchwork/godot/sidebar.gd" id="1_53kyk"]
 
 [node name="Patchwork" type="MarginContainer"]
 anchors_preset = 15
