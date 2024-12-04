@@ -53,7 +53,7 @@ impl AutomergeFS {
             // Start a client.
             let stream = loop {
                 // Try to connect to a peer
-                let res = TcpStream::connect("209.38.67.155:8080").await;
+                let res = TcpStream::connect("godot-rust.onrender.com:8080").await;
                 if let Err(e) = res {
                     println!("error connecting: {:?}", e);
                     continue;

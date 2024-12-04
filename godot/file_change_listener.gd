@@ -97,12 +97,7 @@ func _on_history_changed():
     var packed_scene = PackedScene.new()
     packed_scene.pack(root)
     
-    # Create temp directory if it doesn't exist
-    var dir = DirAccess.open("res://")
-    if !dir.dir_exists("addons/patchwork/tmp"):
-      dir.make_dir_recursive("addons/patrok/tmp")
-    
-    var temp_path = "res://addons/patchwork/tmp/scene.tscn"
+    var temp_path = "user://scene.tscn"
     
     # Save to temp file
     var error = ResourceSaver.save(packed_scene, temp_path)

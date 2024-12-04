@@ -21,7 +21,7 @@ func _enter_tree() -> void:
   file_change_listener.connect("file_changed", _on_local_file_changed)
 
   # setup sidebar
-  sidebar = preload("res://addons/patchwork/sidebar.tscn").instantiate()
+  sidebar = preload("res://addons/patchwork/godot/sidebar.tscn").instantiate()
   sidebar.init(self)
   add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
 
