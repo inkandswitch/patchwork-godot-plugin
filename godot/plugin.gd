@@ -7,7 +7,6 @@ var sidebar
 
 
 func _enter_tree() -> void:
-
   print("start patchwork");
 
   automerge_fs = AutomergeFS.create("08d79d8e432046c0b8df0e320d5edf0b")
@@ -36,7 +35,6 @@ func _on_local_file_changed(path: String, content: String) -> void:
 func _on_remote_file_changed(patch) -> void:
   print("patch", patch);
 
-
   var node_path = patch.node_path
   var file_path = patch.file_path
 
@@ -56,7 +54,10 @@ func _on_remote_file_changed(patch) -> void:
     return
 
   if patch.type == "property_changed":
-    node.set(patch.key, str_to_var(patch.value))
+    var value = str_to_var(patch.value)
+
+    if value != null:
+      node.set(patch.key, value);
 
 
   # # for now ignore all files that are not main.tscn
