@@ -25,6 +25,8 @@ pub struct AutomergeFS {
     receiver: Receiver<Patch>,
 }
 
+const SERVER_URL: &str = "localhost:8080"; //"godot-rust.onrender.com:80";
+
 #[godot_api]
 impl AutomergeFS {
     #[signal]
@@ -53,7 +55,7 @@ impl AutomergeFS {
             // Start a client.
             let stream = loop {
                 // Try to connect to a peer
-                let res = TcpStream::connect("godot-rust.onrender.com:8080").await;
+                let res = TcpStream::connect(SERVER_URL).await;
                 if let Err(e) = res {
                     println!("error connecting: {:?}", e);
                     continue;
@@ -64,7 +66,7 @@ impl AutomergeFS {
             println!("connect repo");
 
             repo_handle_clone
-                .connect_tokio_io("127.0.0.1:8080", stream, ConnDirection::Outgoing)
+                .connect_tokio_io(SERVER_URL, stream, ConnDirection::Outgoing)
                 .await
                 .unwrap();
         });
