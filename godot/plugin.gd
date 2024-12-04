@@ -29,12 +29,10 @@ func _on_local_file_changed(path: String, content: String) -> void:
   if not path.ends_with("main.tscn"):
     return
 
-  print("file changed ", path);
+  print("filechanged", path);
   automerge_fs.save(path, content);
 
 func _on_remote_file_changed(patch) -> void:
-  print("patch", patch);
-
   var node_path = patch.node_path
   var file_path = patch.file_path
 
@@ -91,7 +89,6 @@ func _on_remote_file_changed(patch) -> void:
 
 
 func _process(delta: float) -> void:
-  # print(get_editor_interface().get_playing_scene());
 
   if automerge_fs:
     automerge_fs.refresh();

@@ -7,7 +7,8 @@ use tree_sitter::{Parser, Query, QueryCursor};
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
 pub struct PackedGodotScene {
     // todo: parse  resources and connections
-    nodes: std::collections::HashMap<String, GodotSceneNode>,
+    nodes: HashMap<String, GodotSceneNode>,
+    external_resources: HashMap<String, GodotSceneNode>,
 }
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
@@ -95,7 +96,8 @@ pub fn parse(source: &String) -> Result<PackedGodotScene, String> {
             let mut query_cursor = QueryCursor::new();
             let matches = query_cursor.matches(&query, tree.root_node(), content_bytes);
             let mut scene = PackedGodotScene {
-                nodes: std::collections::HashMap::new(),
+                nodes: HashMap::new(),
+                externalResources: HashMap::new(),
             };
 
             for m in matches {
@@ -131,20 +133,25 @@ pub fn parse(source: &String) -> Result<PackedGodotScene, String> {
                     }
                 }
 
-                // todo: handle other sections
+                let attributes_clone = attributes.clone();
+                let node = GodotSceneNode {
+                    attributes,
+                    properties,
+                };
 
                 if section_id == "node" {
-                    let node = GodotSceneNode {
-                        attributes,
-                        properties,
-                    };
-
                     let node_clone = node.clone();
                     let scene_clone = scene.clone();
                     if let Some(node_path) = get_node_path(scene_clone, node) {
                         scene.nodes.insert(node_path, node_clone);
                     }
-                    continue;
+                } else if section_id == "ext_resource" {
+                    let node_clone = node.clone();
+                    if let Some(raw_id) = attributes_clone.get("id") {
+                        let id = raw_id.to_string()[1..raw_id.len() - 1].to_string();
+
+                        scene.external_resources.insert(id, node_clone);
+                    }
                 }
             }
 

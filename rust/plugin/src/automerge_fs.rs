@@ -231,7 +231,7 @@ impl AutomergeFS {
 
         let scene = godot_scene::parse(&content).unwrap();
 
-        //println!("Scene contents: {:#?}", scene);
+        // println!("Scene contents: {:#?}", scene);
 
         self.runtime.spawn(async move {
             let doc_handle = repo_handle.request_document(fs_doc_id);
