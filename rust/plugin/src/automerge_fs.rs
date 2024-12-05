@@ -4,14 +4,19 @@ use std::{
 };
 
 use automerge::{ChangeHash, Patch, ScalarValue};
-use autosurgeon::reconcile;
+use autosurgeon::{hydrate, reconcile};
 use godot::{obj::WithBaseField, prelude::*};
 
 use automerge::patches::TextRepresentation;
 use automerge_repo::{tokio::FsStorage, ConnDirection, DocumentId, Repo, RepoHandle};
 use tokio::{net::TcpStream, runtime::Runtime};
 
-use crate::godot_scene::{self};
+use crate::godot_scene::{self, PackedGodotScene};
+
+struct PatchWithScene {
+    patch: Patch,
+    scene: PackedGodotScene,
+}
 
 #[derive(GodotClass)]
 #[class(no_init, base=Node)]
@@ -20,8 +25,8 @@ pub struct AutomergeFS {
     runtime: Runtime,
     fs_doc_id: DocumentId,
     base: Base<Node>,
-    sender: Sender<Patch>,
-    receiver: Receiver<Patch>,
+    sender: Sender<PatchWithScene>,
+    receiver: Receiver<PatchWithScene>,
 }
 
 const SERVER_URL: &str = "localhost:8080"; //"godot-rust.onrender.com:80";
@@ -70,7 +75,7 @@ impl AutomergeFS {
                 .unwrap();
         });
 
-        let (sender, receiver) = channel::<Patch>();
+        let (sender, receiver) = channel::<PatchWithScene>();
 
         return Gd::from_init_fn(|base| Self {
             repo_handle,
@@ -96,7 +101,8 @@ impl AutomergeFS {
         let update = self.receiver.try_recv();
 
         match update {
-            Ok(patch) => {
+            Ok(patch_with_scene) => {
+                let PatchWithScene { patch, scene } = patch_with_scene;
                 match patch.action {
                     // handle update node
                     automerge::PatchAction::PutMap {
@@ -114,21 +120,31 @@ impl AutomergeFS {
                                     if let ScalarValue::Str(smol_str) = v.as_ref() {
                                         let string_value = smol_str.to_string();
 
-                                        self.base_mut().emit_signal(
-                                            "file_changed",
-                                            &[dict! {
-                                              "file_path": "res://main.tscn",
-                                              "node_path": node_path.to_variant(),
-                                              "type": if prop_or_attr == "properties" {
-                                                  "property_changed"
-                                              } else {
-                                                  "attribute_changed"
-                                              },
-                                              "key": key,
-                                              "value": string_value,
+                                        let mut dict = dict! {
+                                            "file_path": "res://main.tscn",
+                                            "node_path": node_path.to_variant(),
+                                            "type": if prop_or_attr == "properties" {
+                                                "property_changed"
+                                            } else {
+                                                "attribute_changed"
+                                            },
+                                            "key": key,
+                                            "value": string_value,
+                                        };
+
+                                        // Look up node in scene and get instance attribute if it exists
+                                        if let Some(node) =
+                                            godot_scene::get_node_by_path(&scene, node_path)
+                                        {
+                                            let attributes =
+                                                godot_scene::get_node_attributes(&node);
+                                            if let Some(instance) = attributes.get("instance") {
+                                                let _ = dict.insert("instance", instance.clone());
                                             }
-                                            .to_variant()],
-                                        );
+                                        }
+
+                                        self.base_mut()
+                                            .emit_signal("file_changed", &[dict.to_variant()]);
                                     }
                                 }
                             }
@@ -157,28 +173,6 @@ impl AutomergeFS {
                     }
                     _ => {}
                 }
-
-                /*let patch_dict: Dictionary = match file_change.patch {
-                    SceneChangePatch::Change {
-                        node_path,
-                        properties,
-                        attributes,
-                    } => dict! {
-                      "type": "update",
-                      "node_path": node_path,
-                      "properties": properties,
-                      "attributes": attributes
-                    },
-                    SceneChangePatch::Delete { node_path } => dict! {
-                      "type" : "delete",
-                      "node_path": node_path
-                    },
-                };
-
-                self.base_mut().emit_signal(
-                    "file_changed",
-                    &[file_change.file_path.to_variant(), patch_dict.to_variant()],
-                );*/
             }
             Err(_) => (),
         }
@@ -198,8 +192,6 @@ impl AutomergeFS {
 
             let mut heads: Vec<ChangeHash> = vec![];
 
-            // No need to clone sender since we already have a clone from outside the spawn
-
             loop {
                 doc_handle.changed().await.unwrap();
 
@@ -208,8 +200,15 @@ impl AutomergeFS {
                     let patches = d.diff(&heads, &new_heads, TextRepresentation::String);
                     heads = new_heads;
 
+                    // Hydrate the current document state into a PackedGodotScene
+                    let scene: PackedGodotScene = hydrate(d).unwrap();
+
                     for patch in patches {
-                        let _ = sender.send(patch);
+                        let patch_with_scene = PatchWithScene {
+                            patch,
+                            scene: scene.clone(),
+                        };
+                        let _ = sender.send(patch_with_scene);
                     }
                 });
             }
@@ -227,8 +226,6 @@ impl AutomergeFS {
         }
 
         let scene = godot_scene::parse(&content).unwrap();
-
-        // println!("Scene contents: {:#?}", scene);
 
         self.runtime.spawn(async move {
             let doc_handle = repo_handle.request_document(fs_doc_id);
