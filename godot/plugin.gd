@@ -55,7 +55,9 @@ func _on_remote_file_changed(patch) -> void:
   if scene.scene_file_path != file_path:
     return
 
+  # lookup node
   var node = scene.get_node(node_path)
+  # ... create if it doesn't exist
   if not node:
     if patch.has("instance"):
       var parent_path = node_path.get_base_dir()
@@ -67,8 +69,8 @@ func _on_remote_file_changed(patch) -> void:
         instance.owner = scene
         node = instance
 
+  # PROPERTY CHANGED
   if patch.type == "property_changed":
-
     print("prop changed ", node_path, " ", patch.key, " ", patch.value)
     var value = null
 
@@ -84,12 +86,18 @@ func _on_remote_file_changed(patch) -> void:
       value = str_to_var(patch.value)
 
     if value != null:
-      node.set(patch.key, value);
+      if not is_same(node.get(patch.key), value):
+        var undo_redo = get_undo_redo()
+        undo_redo.create_action("Set " + patch.key)
+        undo_redo.add_do_property(node, patch.key, value)
+        undo_redo.add_undo_property(node, patch.key, node.get(patch.key))
+        undo_redo.commit_action()
 
+  # DELETE NODE
   elif patch.type == "node_deleted":
     node.get_parent().remove_child(node)
     node.queue_free()
-    
+
 
   # # for now ignore all files that are not main.tscn
   # if not path.ends_with("main.tscn"):
