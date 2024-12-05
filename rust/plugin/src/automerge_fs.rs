@@ -1,18 +1,17 @@
 use std::{
-    fs::File,
     str::FromStr,
     sync::mpsc::{channel, Receiver, Sender},
 };
 
 use automerge::{ChangeHash, Patch, ScalarValue};
-use autosurgeon::{hydrate, reconcile};
-use godot::{classes::node, obj::WithBaseField, prelude::*};
+use autosurgeon::reconcile;
+use godot::{obj::WithBaseField, prelude::*};
 
 use automerge::patches::TextRepresentation;
 use automerge_repo::{tokio::FsStorage, ConnDirection, DocumentId, Repo, RepoHandle};
 use tokio::{net::TcpStream, runtime::Runtime};
 
-use crate::godot_scene::{self, PackedGodotScene};
+use crate::godot_scene::{self};
 
 #[derive(GodotClass)]
 #[class(no_init, base=Node)]
@@ -210,7 +209,7 @@ impl AutomergeFS {
                     heads = new_heads;
 
                     for patch in patches {
-                        sender.send(patch);
+                        let _ = sender.send(patch);
                     }
                 });
             }
@@ -222,10 +221,8 @@ impl AutomergeFS {
         let repo_handle = self.repo_handle.clone();
         let fs_doc_id = self.fs_doc_id.clone();
 
-        println!("save {:?}", path);
-
         // todo: handle files that are not main.tscn
-        if (!path.ends_with("main.tscn")) {
+        if !path.ends_with("main.tscn") {
             return;
         }
 

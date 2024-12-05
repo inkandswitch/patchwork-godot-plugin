@@ -39,20 +39,29 @@ func _on_remote_file_changed(patch) -> void:
   var scene = get_editor_interface().get_edited_scene_root()
 
   if not scene:
-    print("skip: no scene loaded")
     return
     
   if scene.scene_file_path != file_path:
-    print("skip: wrong scene file path - expected ", file_path, " but got ", scene.scene_file_path)
     return
     
   var node = scene.get_node(node_path)
   if not node:
-    print("skip: could not find node at path ", node_path)
     return
 
   if patch.type == "property_changed":
-    var value = str_to_var(patch.value)
+    # print("changed ", node_path, " ", patch.key, " ", patch.value)
+
+    var value = null
+
+    if patch.value.begins_with("res://"):
+      value = load(patch.value)
+
+      if "instantiate" in value:
+        value = value.instantiate()
+
+    else:
+      value = str_to_var(patch.value)
+  
 
     if value != null:
       node.set(patch.key, value);

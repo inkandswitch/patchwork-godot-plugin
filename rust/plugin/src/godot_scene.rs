@@ -1,6 +1,4 @@
-use automerge::Patch;
-use autosurgeon::{reconcile::MapReconciler, Hydrate, Reconcile, Reconciler};
-use godot::builtin::Dictionary;
+use autosurgeon::{Hydrate, Reconcile};
 use std::collections::HashMap;
 use tree_sitter::{Parser, Query, QueryCursor};
 
@@ -71,12 +69,10 @@ pub fn parse(source: &String) -> Result<PackedGodotScene, String> {
 
     let result = parser.parse(source, None);
 
-    /*
-    println!(
+    /*println!(
         "Tree s-expression:\n{}",
         result.clone().unwrap().root_node().to_sexp()
-    );
-    */
+    );*/
 
     return match result {
         Some(tree) => {
@@ -124,7 +120,32 @@ pub fn parse(source: &String) -> Result<PackedGodotScene, String> {
                                 // prop_key
                                 if let Some(value_capture) = m.captures.get(i + 1) {
                                     if let Ok(value) = value_capture.node.utf8_text(content_bytes) {
-                                        properties.insert(text.to_string(), value.to_string());
+                                        if value.starts_with("ExtResource(\"")
+                                            && value.ends_with("\")")
+                                        {
+                                            let id = &value[13..value.len() - 2];
+                                            if let Some(ext_resource) =
+                                                scene.external_resources.get(id)
+                                            {
+                                                let path = ext_resource
+                                                    .attributes
+                                                    .get("path")
+                                                    .unwrap()
+                                                    .to_string();
+
+                                                properties.insert(
+                                                    text.to_string(),
+                                                    path[1..path.len() - 1].to_string(),
+                                                );
+                                            } else {
+                                                println!(
+                                                    "not found {:#?}",
+                                                    scene.external_resources
+                                                );
+                                            }
+                                        } else {
+                                            properties.insert(text.to_string(), value.to_string());
+                                        }
                                     }
                                 }
                             }
@@ -212,4 +233,8 @@ pub fn get_node_attributes(node: &GodotSceneNode) -> HashMap<String, String> {
 
 pub fn get_node_properties(node: &GodotSceneNode) -> HashMap<String, String> {
     node.properties.clone()
+}
+
+pub fn get_external_resource_by_id(scene: &PackedGodotScene, id: &str) -> Option<GodotSceneNode> {
+    scene.external_resources.get(id).cloned()
 }
