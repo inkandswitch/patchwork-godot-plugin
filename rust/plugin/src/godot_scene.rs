@@ -168,7 +168,7 @@ pub fn parse(source: &String) -> Result<PackedGodotScene, String> {
                 }
             }
 
-            // println!("scene {:#?}", scene);
+            //  println!("scene {:#?}", scene);
 
             Ok(scene)
         }

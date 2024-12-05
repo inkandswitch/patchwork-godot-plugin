@@ -56,21 +56,30 @@ func _on_remote_file_changed(patch) -> void:
   if scene.has_node(patch.node_path):
     node = scene.get_node(patch.node_path)
 
-  print("patch: ", patch)
+  print("patch ", patch.get("type"), " ", patch.get("node_path"), " ", patch.get("key"), " ", patch.get("value"), " ", patch.get("instance_path"))
   
   # ... create node if it doesn't exist
   if not node:
-    if patch.has("instance"):
+    if patch.get("instance_path") || patch.get("instance_type"):
       var parent_path = patch.node_path.get_base_dir()
-      var parent = scene.get_node(parent_path)
+      var parent = scene if parent_path == "" else scene.get_node(parent_path)
+      print("create based on instance_path")
       if parent:
-        var instance = load(patch.instance).instantiate()
+        var instance = null
+        if patch.instance_path:
+          instance = load(patch.instance_path).instantiate()
+        else:
+          instance = ClassDB.instantiate(patch.get("instance_type"))
+        
         instance.name = patch.node_path.get_file()
         parent.add_child(instance)
         instance.owner = scene
-        print("create node ", patch.node_path)
         node = instance
-        
+
+  if not node:
+    assert(false, "invalid state - couldn't create node")
+    return
+  
   # PROPERTY CHANGED
   if patch.type == "property_changed":
     # print("prop changed ", patch.node_path, " ", patch.key, " ", patch.value)

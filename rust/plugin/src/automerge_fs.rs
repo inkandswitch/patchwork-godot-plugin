@@ -3,7 +3,7 @@ use std::{
     sync::mpsc::{channel, Receiver, Sender},
 };
 
-use automerge::{AutoCommit, Automerge, ChangeHash, Patch, ScalarValue};
+use automerge::{ChangeHash, Patch, ScalarValue};
 use autosurgeon::{hydrate, reconcile};
 use godot::{obj::WithBaseField, prelude::*};
 
@@ -148,13 +148,15 @@ impl AutomergeFS {
                                         "value": string_value,
                                     };
 
-                                    // Look up node in scene and get instance attribute if it exists
+                                    // Look up node in scene and get instance / type attribute if it exists
                                     if let Some(node) =
                                         godot_scene::get_node_by_path(&scene, node_path)
                                     {
                                         let attributes = godot_scene::get_node_attributes(&node);
                                         if let Some(instance) = attributes.get("instance") {
-                                            let _ = dict.insert("instance", instance.clone());
+                                            let _ = dict.insert("instance_path", instance.clone());
+                                        } else if let Some(type_val) = attributes.get("type") {
+                                            let _ = dict.insert("instance_type", type_val.clone());
                                         }
                                     }
 
@@ -169,6 +171,9 @@ impl AutomergeFS {
 
                 // handle delete node
                 automerge::PatchAction::DeleteMap { key: node_path } => {
+                    if patch.path.len() != 1 {
+                        continue;
+                    }
                     match patch.path.get(0) {
                         Some((_, automerge::Prop::Map(key))) => {
                             if key == "nodes" {
