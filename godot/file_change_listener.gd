@@ -16,6 +16,7 @@ func _init(editor_plugin: EditorPlugin):
   # file_system.connect("resources_reload", _on_resources_reloaded)
 
   # listen to changes of scene file
+  editor_plugin.get_undo_redo().connect("version_changed", _on_history_changed)
   editor_plugin.get_undo_redo().connect("history_changed", _on_history_changed)
 
   
