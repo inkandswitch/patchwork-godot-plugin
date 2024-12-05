@@ -98,83 +98,84 @@ impl AutomergeFS {
     // needs to be called in godot on each frame
     #[func]
     fn refresh(&mut self) {
-        let update = self.receiver.try_recv();
+        // Collect all available updates
+        let mut updates = Vec::new();
+        while let Ok(update) = self.receiver.try_recv() {
+            updates.push(update);
+        }
 
-        match update {
-            Ok(patch_with_scene) => {
-                let PatchWithScene { patch, scene } = patch_with_scene;
-                match patch.action {
-                    // handle update node
-                    automerge::PatchAction::PutMap {
-                        key,
-                        value,
-                        conflict: _,
-                    } => match (patch.path.get(0), patch.path.get(1), patch.path.get(2)) {
-                        (
-                            Some((_, automerge::Prop::Map(maybe_nodes))),
-                            Some((_, automerge::Prop::Map(node_path))),
-                            Some((_, automerge::Prop::Map(prop_or_attr))),
-                        ) => {
-                            if maybe_nodes == "nodes" {
-                                if let automerge::Value::Scalar(v) = value.0 {
-                                    if let ScalarValue::Str(smol_str) = v.as_ref() {
-                                        let string_value = smol_str.to_string();
+        // Process all updates
+        for patch_with_scene in updates {
+            let PatchWithScene { patch, scene } = patch_with_scene;
+            match patch.action {
+                // handle update node
+                automerge::PatchAction::PutMap {
+                    key,
+                    value,
+                    conflict: _,
+                } => match (patch.path.get(0), patch.path.get(1), patch.path.get(2)) {
+                    (
+                        Some((_, automerge::Prop::Map(maybe_nodes))),
+                        Some((_, automerge::Prop::Map(node_path))),
+                        Some((_, automerge::Prop::Map(prop_or_attr))),
+                    ) => {
+                        if maybe_nodes == "nodes" {
+                            if let automerge::Value::Scalar(v) = value.0 {
+                                if let ScalarValue::Str(smol_str) = v.as_ref() {
+                                    let string_value = smol_str.to_string();
 
-                                        let mut dict = dict! {
-                                            "file_path": "res://main.tscn",
-                                            "node_path": node_path.to_variant(),
-                                            "type": if prop_or_attr == "properties" {
-                                                "property_changed"
-                                            } else {
-                                                "attribute_changed"
-                                            },
-                                            "key": key,
-                                            "value": string_value,
-                                        };
+                                    let mut dict = dict! {
+                                        "file_path": "res://main.tscn",
+                                        "node_path": node_path.to_variant(),
+                                        "type": if prop_or_attr == "properties" {
+                                            "property_changed"
+                                        } else {
+                                            "attribute_changed"
+                                        },
+                                        "key": key,
+                                        "value": string_value,
+                                    };
 
-                                        // Look up node in scene and get instance attribute if it exists
-                                        if let Some(node) =
-                                            godot_scene::get_node_by_path(&scene, node_path)
-                                        {
-                                            let attributes =
-                                                godot_scene::get_node_attributes(&node);
-                                            if let Some(instance) = attributes.get("instance") {
-                                                let _ = dict.insert("instance", instance.clone());
-                                            }
+                                    // Look up node in scene and get instance attribute if it exists
+                                    if let Some(node) =
+                                        godot_scene::get_node_by_path(&scene, node_path)
+                                    {
+                                        let attributes = godot_scene::get_node_attributes(&node);
+                                        if let Some(instance) = attributes.get("instance") {
+                                            let _ = dict.insert("instance", instance.clone());
                                         }
-
-                                        self.base_mut()
-                                            .emit_signal("file_changed", &[dict.to_variant()]);
                                     }
+
+                                    self.base_mut()
+                                        .emit_signal("file_changed", &[dict.to_variant()]);
                                 }
                             }
                         }
-                        _ => {}
-                    },
-
-                    // handle delete node
-                    automerge::PatchAction::DeleteMap { key: node_path } => {
-                        match patch.path.get(0) {
-                            Some((_, automerge::Prop::Map(key))) => {
-                                if key == "nodes" {
-                                    self.base_mut().emit_signal(
-                                        "file_changed",
-                                        &[dict! {
-                                          "file_path": "res://main.tscn",
-                                          "node_path": node_path.to_variant(),
-                                          "type": "node_deleted",
-                                        }
-                                        .to_variant()],
-                                    );
-                                }
-                            }
-                            _ => {}
-                        };
                     }
                     _ => {}
+                },
+
+                // handle delete node
+                automerge::PatchAction::DeleteMap { key: node_path } => {
+                    match patch.path.get(0) {
+                        Some((_, automerge::Prop::Map(key))) => {
+                            if key == "nodes" {
+                                self.base_mut().emit_signal(
+                                    "file_changed",
+                                    &[dict! {
+                                      "file_path": "res://main.tscn",
+                                      "node_path": node_path.to_variant(),
+                                      "type": "node_deleted",
+                                    }
+                                    .to_variant()],
+                                );
+                            }
+                        }
+                        _ => {}
+                    };
                 }
+                _ => {}
             }
-            Err(_) => (),
         }
     }
 
