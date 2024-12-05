@@ -97,7 +97,7 @@ pub fn parse(source: &String) -> Result<PackedGodotScene, String> {
             let matches = query_cursor.matches(&query, tree.root_node(), content_bytes);
             let mut scene = PackedGodotScene {
                 nodes: HashMap::new(),
-                externalResources: HashMap::new(),
+                external_resources: HashMap::new(),
             };
 
             for m in matches {
