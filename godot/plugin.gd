@@ -43,10 +43,18 @@ func _on_remote_file_changed(patch) -> void:
     
   if scene.scene_file_path != file_path:
     return
-    
+
   var node = scene.get_node(node_path)
   if not node:
-    return
+    if patch.has("instance"):
+      var parent_path = node_path.get_base_dir()
+      var parent = scene.get_node(parent_path)
+      if parent:
+        var instance = load(patch.instance).instantiate()
+        instance.name = node_path.get_file()
+        parent.add_child(instance)
+        instance.owner = scene
+        node = instance
 
   if patch.type == "property_changed":
     var value = null
