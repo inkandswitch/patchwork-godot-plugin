@@ -90,7 +90,6 @@ func _check_file_changes(file_path: String):
 # todo: figure out how to do this without creating a temp file
 # todo: figure out how to make ids stable
 func _on_history_changed():
-  print("changed history")
   var root = editor_plugin.get_editor_interface().get_edited_scene_root()
   if root:
     var packed_scene = PackedScene.new()

@@ -12,10 +12,14 @@ func _enter_tree() -> void:
 
   # setup config
   config = PatchworkConfig.new()
-  config.set_value("project_url", "08d79d8e432046c0b8df0e320d5edf0b")
+  
 
   # setup automerge fs
-  automerge_fs = AutomergeFS.create(config.get_value("project_url"))
+  var project_url = config.get_value("project_url", "")
+  automerge_fs = AutomergeFS.create(project_url)
+  if !project_url:
+    config.set_value("project_url", automerge_fs.get_fs_doc_id());
+
   automerge_fs.start();
 
   # listen to remote changes
@@ -51,7 +55,7 @@ func _on_remote_file_changed(patch) -> void:
   if scene.scene_file_path != file_path:
     return
 
-  var node = scene.has_node(node_path) if scene.get_node(node_path) else null
+  var node = scene.get_node(node_path)
   if not node:
     if patch.has("instance"):
       var parent_path = node_path.get_base_dir()
@@ -64,17 +68,20 @@ func _on_remote_file_changed(patch) -> void:
         node = instance
 
   if patch.type == "property_changed":
+
+    print("prop changed ", node_path, " ", patch.key, " ", patch.value)
     var value = null
 
     if patch.value.begins_with("res://"):
       value = load(patch.value)
-
       if "instantiate" in value:
         value = value.instantiate()
 
+    elif patch.value.begins_with("SubResource"):
+      # Ignore sub-resources for now
+      pass
     else:
       value = str_to_var(patch.value)
-  
 
     if value != null:
       node.set(patch.key, value);

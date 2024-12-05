@@ -3,7 +3,7 @@ use std::{
     sync::mpsc::{channel, Receiver, Sender},
 };
 
-use automerge::{ChangeHash, Patch, ScalarValue};
+use automerge::{AutoCommit, Automerge, ChangeHash, Patch, ScalarValue};
 use autosurgeon::{hydrate, reconcile};
 use godot::{obj::WithBaseField, prelude::*};
 
@@ -37,7 +37,14 @@ impl AutomergeFS {
     fn file_changed(path: String, content: String);
 
     #[func]
-    fn create(fs_doc_id: String) -> Gd<Self> {
+    fn get_fs_doc_id(&self) -> String {
+        self.fs_doc_id.to_string()
+    }
+
+    #[func]
+    // hack: pass in empty string to create a new doc
+    // godot rust doens't seem to support Option args
+    fn create(maybe_fs_doc_id: String) -> Gd<Self> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -49,7 +56,12 @@ impl AutomergeFS {
         let storage = FsStorage::open("/tmp/automerge-godot-data").unwrap();
         let repo = Repo::new(None, Box::new(storage));
         let repo_handle = repo.run();
-        let doc_id = DocumentId::from_str(&fs_doc_id).unwrap();
+        let fs_doc_id = if maybe_fs_doc_id.is_empty() {
+            let handle = repo_handle.new_document();
+            handle.document_id()
+        } else {
+            DocumentId::from_str(&maybe_fs_doc_id).unwrap()
+        };
 
         // connect repo
         let repo_handle_clone = repo_handle.clone();
@@ -79,7 +91,7 @@ impl AutomergeFS {
 
         return Gd::from_init_fn(|base| Self {
             repo_handle,
-            fs_doc_id: doc_id,
+            fs_doc_id,
             runtime,
             base,
             sender,
