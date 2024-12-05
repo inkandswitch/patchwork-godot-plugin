@@ -49,8 +49,6 @@ func _on_remote_file_changed(patch) -> void:
     return
 
   if patch.type == "property_changed":
-    # print("changed ", node_path, " ", patch.key, " ", patch.value)
-
     var value = null
 
     if patch.value.begins_with("res://"):
@@ -66,6 +64,10 @@ func _on_remote_file_changed(patch) -> void:
     if value != null:
       node.set(patch.key, value);
 
+  elif patch.type == "node_deleted":
+    node.get_parent().remove_child(node)
+    node.queue_free()
+    
 
   # # for now ignore all files that are not main.tscn
   # if not path.ends_with("main.tscn"):
