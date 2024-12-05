@@ -120,29 +120,9 @@ pub fn parse(source: &String) -> Result<PackedGodotScene, String> {
                                 // prop_key
                                 if let Some(value_capture) = m.captures.get(i + 1) {
                                     if let Ok(value) = value_capture.node.utf8_text(content_bytes) {
-                                        if value.starts_with("ExtResource(\"")
-                                            && value.ends_with("\")")
+                                        if let Some(path) = external_resource_to_path(value, &scene)
                                         {
-                                            let id = &value[13..value.len() - 2];
-                                            if let Some(ext_resource) =
-                                                scene.external_resources.get(id)
-                                            {
-                                                let path = ext_resource
-                                                    .attributes
-                                                    .get("path")
-                                                    .unwrap()
-                                                    .to_string();
-
-                                                properties.insert(
-                                                    text.to_string(),
-                                                    path[1..path.len() - 1].to_string(),
-                                                );
-                                            } else {
-                                                println!(
-                                                    "not found {:#?}",
-                                                    scene.external_resources
-                                                );
-                                            }
+                                            properties.insert(text.to_string(), path);
                                         } else {
                                             properties.insert(text.to_string(), value.to_string());
                                         }
@@ -161,8 +141,20 @@ pub fn parse(source: &String) -> Result<PackedGodotScene, String> {
                 };
 
                 if section_id == "node" {
-                    let node_clone = node.clone();
+                    let mut node_clone = node.clone();
                     let scene_clone = scene.clone();
+
+                    // parse instance property to path instead of local id
+                    if let Some(instance) = node_clone.attributes.get("instance") {
+                        println!("has instance {}", instance);
+                        if let Some(path) = external_resource_to_path(instance, &scene) {
+                            println!("parse {}", path);
+                            node_clone.attributes.insert("instance".to_string(), path);
+                        } else {
+                            println!("can't parse");
+                        }
+                    }
+
                     if let Some(node_path) = get_node_path(scene_clone, node) {
                         scene.nodes.insert(node_path, node_clone);
                     }
@@ -176,10 +168,24 @@ pub fn parse(source: &String) -> Result<PackedGodotScene, String> {
                 }
             }
 
+            // println!("scene {:#?}", scene);
+
             Ok(scene)
         }
         None => Err("Failed to parse scene file".to_string()),
     };
+}
+
+fn external_resource_to_path(value: &str, scene: &PackedGodotScene) -> Option<String> {
+    if value.starts_with("ExtResource(\"") && value.ends_with("\")") {
+        let id = &value[13..value.len() - 2];
+        if let Some(ext_resource) = scene.external_resources.get(id) {
+            if let Some(path) = ext_resource.attributes.get("path") {
+                return Some(path[1..path.len() - 1].to_string());
+            }
+        }
+    }
+    None
 }
 
 fn get_node_path(scene: PackedGodotScene, node: GodotSceneNode) -> Option<String> {
