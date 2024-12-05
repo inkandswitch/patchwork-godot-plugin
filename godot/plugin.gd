@@ -8,7 +8,7 @@ var sidebar
 
 
 func _enter_tree() -> void:
-  print("start patchwork");
+  print("start patchwork!!");
 
   # setup config
   config = PatchworkConfig.new()
@@ -40,38 +40,40 @@ func _on_local_file_changed(path: String, content: String) -> void:
   if not path.ends_with("main.tscn"):
     return
 
-  print("filechanged", path);
   automerge_fs.save(path, content);
 
 func _on_remote_file_changed(patch) -> void:
-  var node_path = patch.node_path
-  var file_path = patch.file_path
-
   var scene = get_editor_interface().get_edited_scene_root()
 
   if not scene:
     return
     
-  if scene.scene_file_path != file_path:
+  if scene.scene_file_path != patch.file_path:
     return
 
   # lookup node
-  var node = scene.get_node(node_path)
-  # ... create if it doesn't exist
+  var node = null
+  if scene.has_node(patch.node_path):
+    node = scene.get_node(patch.node_path)
+
+  print("patch: ", patch)
+  
+  # ... create node if it doesn't exist
   if not node:
     if patch.has("instance"):
-      var parent_path = node_path.get_base_dir()
+      var parent_path = patch.node_path.get_base_dir()
       var parent = scene.get_node(parent_path)
       if parent:
         var instance = load(patch.instance).instantiate()
-        instance.name = node_path.get_file()
+        instance.name = patch.node_path.get_file()
         parent.add_child(instance)
         instance.owner = scene
+        print("create node ", patch.node_path)
         node = instance
-
+        
   # PROPERTY CHANGED
   if patch.type == "property_changed":
-    print("prop changed ", node_path, " ", patch.key, " ", patch.value)
+    # print("prop changed ", patch.node_path, " ", patch.key, " ", patch.value)
     var value = null
 
     if patch.value.begins_with("res://"):
@@ -88,15 +90,17 @@ func _on_remote_file_changed(patch) -> void:
     if value != null:
       if not is_same(node.get(patch.key), value):
         var undo_redo = get_undo_redo()
-        undo_redo.create_action("Set " + patch.key)
+        undo_redo.create_action("Change " + patch.node_path.get_file() + "." + patch.key)
         undo_redo.add_do_property(node, patch.key, value)
         undo_redo.add_undo_property(node, patch.key, node.get(patch.key))
         undo_redo.commit_action()
 
   # DELETE NODE
   elif patch.type == "node_deleted":
-    node.get_parent().remove_child(node)
-    node.queue_free()
+    if node:
+      print("delete node ", patch.node_path)
+      node.get_parent().remove_child(node)
+      node.queue_free()
 
 
   # # for now ignore all files that are not main.tscn
