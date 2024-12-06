@@ -29,7 +29,8 @@ pub struct AutomergeFS {
     receiver: Receiver<PatchWithScene>,
 }
 
-const SERVER_URL: &str = "localhost:8080"; //"godot-rust.onrender.com:80";
+//const SERVER_URL: &str = "localhost:8080";
+const SERVER_URL: &str = "161.35.233.157:8080";
 
 #[godot_api]
 impl AutomergeFS {
