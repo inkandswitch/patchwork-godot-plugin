@@ -146,9 +146,7 @@ pub fn parse(source: &String) -> Result<PackedGodotScene, String> {
 
                     // parse instance property to path instead of local id
                     if let Some(instance) = node_clone.attributes.get("instance") {
-                        println!("has instance {}", instance);
                         if let Some(path) = external_resource_to_path(instance, &scene) {
-                            println!("parse {}", path);
                             node_clone.attributes.insert("instance".to_string(), path);
                         } else {
                             println!("can't parse");

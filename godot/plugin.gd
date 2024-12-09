@@ -56,7 +56,7 @@ func _on_remote_file_changed(patch) -> void:
   if scene.has_node(patch.node_path):
     node = scene.get_node(patch.node_path)
 
-  print("patch ", patch.get("type"), " ", patch.get("node_path"), " ", patch.get("key"), " ", patch.get("value"), " ", patch.get("instance_path"))
+  # print("patch ", patch.get("type"), " ", patch.get("node_path"), " ", patch.get("key"), " ", patch.get("value"), " ", patch.get("instance_path"))
   
   # ... create node if it doesn't exist
   if not node:
@@ -99,17 +99,21 @@ func _on_remote_file_changed(patch) -> void:
     if value != null:
       if not is_same(node.get(patch.key), value):
         var undo_redo = get_undo_redo()
-        undo_redo.create_action("Change " + patch.node_path.get_file() + "." + patch.key)
-        undo_redo.add_do_property(node, patch.key, value)
-        undo_redo.add_undo_property(node, patch.key, node.get(patch.key))
-        undo_redo.commit_action()
+        file_change_listener.ignore_changes(func():
+            undo_redo.create_action("Change " + patch.node_path.get_file() + "." + patch.key)
+            undo_redo.add_do_property(node, patch.key, value)
+            undo_redo.add_undo_property(node, patch.key, node.get(patch.key))
+            undo_redo.commit_action()
+        )
 
   # DELETE NODE
   elif patch.type == "node_deleted":
     if node:
-      print("delete node ", patch.node_path)
-      node.get_parent().remove_child(node)
-      node.queue_free()
+      file_change_listener.ignore_changes(func():
+        print("delete node ", patch.node_path)
+        node.get_parent().remove_child(node)
+        node.queue_free()
+      )
 
 
   # # for now ignore all files that are not main.tscn

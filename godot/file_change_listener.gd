@@ -3,7 +3,7 @@ class_name FileChangeListener
 
 var file_contents: Dictionary = {}
 var editor_plugin: EditorPlugin
-
+var _ignore_changes = false
 
 signal file_changed(path: String, file_name: String)
 
@@ -16,9 +16,14 @@ func _init(editor_plugin: EditorPlugin):
   # file_system.connect("resources_reload", _on_resources_reloaded)
 
   # listen to changes of scene file
-  editor_plugin.get_undo_redo().connect("version_changed", _on_history_changed)
-  editor_plugin.get_undo_redo().connect("history_changed", _on_history_changed)
+  editor_plugin.get_undo_redo().connect("version_changed", _on_changed)
+  editor_plugin.get_undo_redo().connect("history_changed", _on_changed)
 
+
+func ignore_changes(callback: Callable) -> void:
+  _ignore_changes = true
+  callback.call()
+  _ignore_changes = false
   
 func stop():
   var file_system = editor_plugin.get_editor_interface().get_resource_filesystem()
@@ -90,7 +95,10 @@ func _check_file_changes(file_path: String):
 
 # todo: figure out how to do this without creating a temp file
 # todo: figure out how to make ids stable
-func _on_history_changed():
+func _on_changed():
+  if _ignore_changes:
+    return
+
   var root = editor_plugin.get_editor_interface().get_edited_scene_root()
   if root:
     var packed_scene = PackedScene.new()
