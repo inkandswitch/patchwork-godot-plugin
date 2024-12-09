@@ -82,10 +82,15 @@ impl AutomergeFS {
 
             println!("connect repo");
 
-            repo_handle_clone
+            if let Err(e) = repo_handle_clone
                 .connect_tokio_io(SERVER_URL, stream, ConnDirection::Outgoing)
                 .await
-                .unwrap();
+            {
+                println!("Failed to connect: {:?}", e);
+                return;
+            }
+
+            println!("connected successfully!");
         });
 
         let (sender, receiver) = channel::<PatchWithScene>();
