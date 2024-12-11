@@ -201,28 +201,90 @@ pub fn serialize(scene: PackedGodotScene) -> String {
     }
     output.push_str("\n");
 
-    // Write nodes
-    for (path, mut node) in scene.nodes {
-        output.push_str("[node");
+    // Write nodes in parent-child order
+    let mut written_nodes = std::collections::HashSet::new();
+    let mut pending_nodes = scene.nodes.clone();
 
-        // Handle instance path translation
-        let mut attributes = node.attributes.clone();
-        if let Some(instance) = attributes.get("instance") {
-            let translated = path_to_external_resource(instance, &scene.external_resources);
-            attributes.insert("instance".to_string(), translated);
+    // First find and write the root node (node without parent attribute)
+    let mut root_path = None;
+    for (path, node) in pending_nodes.iter() {
+        if !node.attributes.contains_key("parent") {
+            root_path = Some(path.clone());
+            break;
         }
+    }
 
-        for (key, value) in attributes {
+    if let Some(root_path) = root_path {
+        let root_node = pending_nodes.remove(&root_path).unwrap();
+
+        output.push_str("[node");
+        for (key, value) in &root_node.attributes {
             output.push_str(&format!(" {}={}", key, value));
         }
         output.push_str("]\n");
 
-        // Write node properties
-        for (key, value) in node.properties {
+        for (key, value) in root_node.properties {
             let translated_value = path_to_external_resource(&value, &scene.external_resources);
             output.push_str(&format!("{}={}\n", key, translated_value));
         }
         output.push_str("\n");
+
+        written_nodes.insert(root_path);
+    }
+
+    while !pending_nodes.is_empty() {
+        let mut nodes_to_write = Vec::new();
+
+        // Find nodes that can be written (parent exists)
+        for (path, node) in pending_nodes.iter() {
+            let parent_exists = match node.attributes.get("parent") {
+                Some(parent) if parent == "\".\"" => {
+                    // Only write direct children of root if root is written
+                    written_nodes.iter().any(|p| !p.contains('/'))
+                }
+                Some(_) => {
+                    // Check if parent path exists
+                    let parent_path = path.rsplit_once('/').map(|(p, _)| p.to_string());
+                    match parent_path {
+                        Some(p) => written_nodes.contains(&p),
+                        None => false,
+                    }
+                }
+                None => false, // Root node was already written
+            };
+
+            if parent_exists {
+                nodes_to_write.push(path.clone());
+            }
+        }
+
+        // Write the nodes we found
+        for path in nodes_to_write {
+            let node = pending_nodes.remove(&path).unwrap();
+
+            output.push_str("[node");
+
+            // Handle instance path translation
+            let mut attributes = node.attributes.clone();
+            if let Some(instance) = attributes.get("instance") {
+                let translated = path_to_external_resource(instance, &scene.external_resources);
+                attributes.insert("instance".to_string(), translated);
+            }
+
+            for (key, value) in attributes {
+                output.push_str(&format!(" {}={}", key, value));
+            }
+            output.push_str("]\n");
+
+            // Write node properties
+            for (key, value) in node.properties {
+                let translated_value = path_to_external_resource(&value, &scene.external_resources);
+                output.push_str(&format!("{}={}\n", key, translated_value));
+            }
+            output.push_str("\n");
+
+            written_nodes.insert(path);
+        }
     }
 
     output
