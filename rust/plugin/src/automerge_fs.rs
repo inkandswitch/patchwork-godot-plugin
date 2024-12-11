@@ -157,18 +157,54 @@ impl AutomergeFS {
     }
 
     #[func]
-    fn create_branch(&self, name: String, source: String) {
-        let repo_handle = self.repo_handle.clone();
-
-        self.runtime.spawn(async move {
-            let doc_handle = repo_handle.new_document();
-        });
-    }
-
-    #[func]
     fn checkout(&mut self, branch_doc_id: String) {
         let mut checked_out_doc_id = self.checked_out_doc_id_mutex.lock().unwrap();
         *checked_out_doc_id = Some(DocumentId::from_str(&branch_doc_id.to_string()).unwrap());
+    }
+
+    #[func]
+    fn create_branch(&self, name: String) {
+        let repo_handle = self.repo_handle.clone();
+        let branches_metadata_doc_id = self.branches_metadata_doc_id.clone();
+
+        self.runtime.spawn(async move {
+            let branches_metadata_doc_handle = repo_handle
+                .request_document(branches_metadata_doc_id)
+                .await
+                .unwrap();
+
+            let branches_metadata_doc: BranchesMetadataDoc =
+                branches_metadata_doc_handle.with_doc(|d| hydrate(d).unwrap());
+
+            let main_doc_id =
+                DocumentId::from_str(&branches_metadata_doc.main_doc_id.to_string()).unwrap();
+
+            let new_doc_handle = repo_handle.new_document();
+
+            // merge main into new doc
+            let _ = repo_handle
+                .request_document(main_doc_id)
+                .await
+                .unwrap()
+                .with_doc_mut(|mut main_d| new_doc_handle.with_doc_mut(|d| d.merge(&mut main_d)));
+
+            // add new doc to branches metadata doc
+            branches_metadata_doc_handle.with_doc_mut(|d| {
+                let mut branches_metadata_doc: BranchesMetadataDoc = hydrate(d).unwrap();
+
+                branches_metadata_doc.branches.insert(
+                    new_doc_handle.document_id().to_string(),
+                    Branch {
+                        name: name,
+                        id: new_doc_handle.document_id().to_string(),
+                    },
+                );
+
+                let mut tx = d.transaction();
+                let _ = reconcile(&mut tx, branches_metadata_doc);
+                tx.commit();
+            })
+        });
     }
 
     // needs to be called in godot on each frame

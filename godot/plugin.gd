@@ -33,7 +33,19 @@ func _enter_tree() -> void:
   # setup sidebar
   sidebar = preload("res://addons/patchwork/godot/sidebar.tscn").instantiate()
   sidebar.init(self)
+
+  sidebar.connect("create_new_branch", _on_create_new_branch);
+  sidebar.connect("checkout_branch", _on_checkout_branch);
   add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
+
+
+func _on_create_new_branch(branch_name: String) -> void:
+  automerge_fs.create_branch(branch_name)
+
+func _on_checkout_branch(branch_doc_id: String) -> void:
+  print("checkout");
+  checked_out_branch_doc_id = branch_doc_id
+  automerge_fs.checkout(branch_doc_id)
 
 func _on_branch_list_changed(branches) -> void:
   if !checked_out_branch_doc_id:

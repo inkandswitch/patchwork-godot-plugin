@@ -11,6 +11,10 @@ var DEBUG_MODE = false
 @onready var simulated_edits_checkbox: CheckButton = %SimulatedEditsToggle
 @onready var simulated_edits_frequency: Slider = %SimulatedEditsFrequency
 @onready var branch_picker: OptionButton = %BranchPicker
+@onready var new_branch_button: Button = %NewBranchButton
+
+signal create_new_branch(branch_name: String)
+signal checkout_branch(branch_doc_id: String)
 
 var branches = []
 
@@ -20,9 +24,44 @@ func init(editor_plugin: EditorPlugin) -> void:
 
 func _ready() -> void:
   if !DEBUG_MODE:
-
     simulated_edits_label.hide()
     simulated_edits_panel.hide()
+
+  new_branch_button.pressed.connect(_on_new_branch_button_pressed)
+  branch_picker.item_selected.connect(_on_branch_picker_item_selected)
+
+func _on_branch_picker_item_selected(index: int) -> void:
+  var selected_branch = branches[index]
+  checkout_branch.emit(selected_branch.id)
+
+
+func _on_new_branch_button_pressed() -> void:
+  var dialog = ConfirmationDialog.new()
+  dialog.title = "Create New Branch"
+  
+  var line_edit = LineEdit.new()
+  line_edit.placeholder_text = "Branch name"
+  dialog.add_child(line_edit)
+  
+  # Position line edit in dialog
+  line_edit.position = Vector2(8, 8)
+  line_edit.size = Vector2(200, 30)
+  
+  # Make dialog big enough for line edit
+  dialog.size = Vector2(220, 100)
+  
+  dialog.get_ok_button().text = "Create"
+  dialog.canceled.connect(func(): dialog.queue_free())
+  
+  dialog.confirmed.connect(func():
+    if line_edit.text.strip_edges() != "":
+      var branch_name = line_edit.text.strip_edges()
+      create_new_branch.emit(branch_name)
+    dialog.queue_free()
+  )
+  
+  add_child(dialog)
+  dialog.popup_centered()
 
 
 func update_branches(branches) -> void:
