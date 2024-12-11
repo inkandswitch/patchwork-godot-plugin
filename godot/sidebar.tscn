@@ -1,6 +1,6 @@
-[gd_scene load_steps=2 format=3 uid="uid://dxim8oyk4rpsb"]
+[gd_scene load_steps=2 format=3 uid="uid://cxyjgsyba1v85"]
 
-[ext_resource type="Script" path="res://addons/patchwork/godot/sidebar.gd" id="1_53kyk"]
+[ext_resource type="Script" path="res://addons/patchwork/godot/sidebar.gd" id="1_sem6s"]
 
 [node name="Patchwork" type="MarginContainer"]
 anchors_preset = 15
@@ -13,54 +13,64 @@ theme_override_constants/margin_left = 8
 theme_override_constants/margin_top = 8
 theme_override_constants/margin_right = 8
 theme_override_constants/margin_bottom = 8
-script = ExtResource("1_53kyk")
+script = ExtResource("1_sem6s")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="."]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer"]
+[node name="BranchLabel" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+text = "Branch"
+
+[node name="BranchPicker" type="OptionButton" parent="VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="SimulatedEditsLabel" type="Label" parent="VBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 text = "Simulated edits
 "
 
-[node name="PanelContainer" type="PanelContainer" parent="VBoxContainer"]
+[node name="SimulatedEditsPanel" type="PanelContainer" parent="VBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 
-[node name="Panel" type="Panel" parent="VBoxContainer/PanelContainer"]
+[node name="Panel" type="Panel" parent="VBoxContainer/SimulatedEditsPanel"]
 layout_mode = 2
 
-[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer/PanelContainer"]
+[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer/SimulatedEditsPanel"]
 layout_mode = 2
 theme_override_constants/margin_left = 8
 theme_override_constants/margin_top = 8
 theme_override_constants/margin_right = 8
 theme_override_constants/margin_bottom = 8
 
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/SimulatedEditsPanel/MarginContainer"]
 layout_mode = 2
 
-[node name="HBoxContainer2" type="HBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
+[node name="HBoxContainer2" type="HBoxContainer" parent="VBoxContainer/SimulatedEditsPanel/MarginContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer2"]
+[node name="Label" type="Label" parent="VBoxContainer/SimulatedEditsPanel/MarginContainer/VBoxContainer/HBoxContainer2"]
 layout_mode = 2
 text = "Enabled
 "
 
-[node name="SimulatedEditsToggle" type="CheckButton" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer2"]
+[node name="SimulatedEditsToggle" type="CheckButton" parent="VBoxContainer/SimulatedEditsPanel/MarginContainer/VBoxContainer/HBoxContainer2"]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/SimulatedEditsPanel/MarginContainer/VBoxContainer"]
 layout_mode = 2
 alignment = 1
 
-[node name="Label" type="Label" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="Label" type="Label" parent="VBoxContainer/SimulatedEditsPanel/MarginContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 text = "Frequency
 "
 
-[node name="SimulatedEditsFrequency" type="HSlider" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="SimulatedEditsFrequency" type="HSlider" parent="VBoxContainer/SimulatedEditsPanel/MarginContainer/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3

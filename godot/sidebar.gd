@@ -4,12 +4,35 @@ extends MarginContainer
 var editor_interface: EditorInterface
 var undo_redo_manager: EditorUndoRedoManager
 
+var DEBUG_MODE = false
+
+@onready var simulated_edits_label = %SimulatedEditsLabel
+@onready var simulated_edits_panel = %SimulatedEditsPanel
 @onready var simulated_edits_checkbox: CheckButton = %SimulatedEditsToggle
 @onready var simulated_edits_frequency: Slider = %SimulatedEditsFrequency
+@onready var branch_picker: OptionButton = %BranchPicker
+
+var branches = []
 
 func init(editor_plugin: EditorPlugin) -> void:
   self.editor_interface = editor_plugin.get_editor_interface()
   self.undo_redo_manager = editor_plugin.get_undo_redo()
+
+func _ready() -> void:
+  if !DEBUG_MODE:
+
+    simulated_edits_label.hide()
+    simulated_edits_panel.hide()
+
+
+func update_branches(branches) -> void:
+  self.branches = branches
+  
+  branch_picker.clear()
+  for i in range(branches.size()):
+    var branch = branches[i]
+    print("add", branch.name, branch.id)
+    branch_picker.add_item(branch.name, i)
 
 var last_update_time: int = 0
 func _process(_delta: float) -> void:

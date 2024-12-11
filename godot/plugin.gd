@@ -5,27 +5,26 @@ var file_change_listener: FileChangeListener
 var automerge_fs: AutomergeFS
 var config: PatchworkConfig
 var sidebar
-
+var checked_out_branch_doc_id = null
 
 func _enter_tree() -> void:
-  print("start patchwork!!");
+  print("start patchwork!!!!");
 
   # setup config
   config = PatchworkConfig.new()
   
-
   # setup automerge fs
-  var project_url = config.get_value("project_url", "")
-  automerge_fs = AutomergeFS.create("")
-  if !project_url:
-    config.set_value("project_url", automerge_fs.get_fs_doc_id());
+  var project_doc_id = config.get_value("project_doc_id", "")
+  automerge_fs = AutomergeFS.create(project_doc_id)
+  automerge_fs.connect("branch_list_changed", _on_branch_list_changed);
+  automerge_fs.connect("file_changed", _on_remote_file_changed)
 
-  automerge_fs.checkout("2zfxnna9nLJ5S1qqBzthdYjbachW");
+  if !project_doc_id:
+    config.set_value("project_doc_id", automerge_fs.get_branches_metadata_doc_id());
 
   automerge_fs.start();
 
   # listen to remote changes
-  automerge_fs.file_changed.connect(_on_remote_file_changed)
 
   # listen to local changes
   file_change_listener = FileChangeListener.new(self)
@@ -36,6 +35,12 @@ func _enter_tree() -> void:
   sidebar.init(self)
   add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
 
+func _on_branch_list_changed(branches) -> void:
+  if !checked_out_branch_doc_id:
+    automerge_fs.checkout(branches[0].id)
+
+  print("update branches", branches)
+  sidebar.update_branches(branches)
 
 func _on_local_file_changed(path: String, content: String) -> void:
   # for now ignore all files that are not main.tscn

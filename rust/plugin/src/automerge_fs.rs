@@ -1,8 +1,12 @@
 use std::{
+    borrow::Borrow,
     collections::HashMap,
     hash::Hash,
     str::FromStr,
-    sync::mpsc::{channel, Receiver, Sender},
+    sync::{
+        mpsc::{channel, Receiver, Sender},
+        Arc, Mutex,
+    },
 };
 
 use automerge::{ChangeHash, Patch, ScalarValue};
@@ -20,8 +24,16 @@ struct PatchWithScene {
     scene: PackedGodotScene,
 }
 
-struct BranchUpdate {
-    branches: HashMap<String, String>,
+#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
+struct BranchesMetadataDoc {
+    main_doc_id: String,
+    branches: HashMap<String, Branch>,
+}
+
+#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
+struct Branch {
+    name: String,
+    id: String,
 }
 
 #[derive(GodotClass)]
@@ -29,13 +41,13 @@ struct BranchUpdate {
 pub struct AutomergeFS {
     repo_handle: RepoHandle,
     runtime: Runtime,
-    branches_doc_id: DocumentId,
-    fs_doc_id: Option<DocumentId>,
+    branches_metadata_doc_id: DocumentId,
+    checked_out_doc_id_mutex: Arc<Mutex<Option<DocumentId>>>,
     base: Base<Node>,
     patch_sender: Sender<PatchWithScene>,
     patch_receiver: Receiver<PatchWithScene>,
-    branch_sender: Sender<BranchUpdate>,
-    branch_receiver: Receiver<BranchUpdate>,
+    branches_metadata_sender: Sender<BranchesMetadataDoc>,
+    branches_metadata_receiver: Receiver<BranchesMetadataDoc>,
 }
 
 //const SERVER_URL: &str = "localhost:8080";
@@ -46,18 +58,18 @@ impl AutomergeFS {
     #[signal]
     fn file_changed(path: String, content: String);
 
+    #[signal]
+    fn branch_list_changed(branches: Dictionary);
+
     #[func]
-    fn get_branches_doc_id(&self) -> String {
-        match &self.fs_doc_id {
-            Some(doc_id) => doc_id.to_string(),
-            None => String::new(),
-        }
+    fn get_branches_metadata_doc_id(&self) -> String {
+        return self.branches_metadata_doc_id.to_string();
     }
 
     #[func]
     // hack: pass in empty string to create a new doc
     // godot rust doens't seem to support Option args
-    fn create(maybe_branches_doc_id: String) -> Gd<Self> {
+    fn create(maybe_branches_metadata_doc_id: String) -> Gd<Self> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -69,11 +81,25 @@ impl AutomergeFS {
         let storage = FsStorage::open("/tmp/automerge-godot-data").unwrap();
         let repo = Repo::new(None, Box::new(storage));
         let repo_handle = repo.run();
-        let branches_doc_id = if maybe_branches_doc_id.is_empty() {
-            let handle = repo_handle.new_document();
-            handle.document_id()
+        let branches_metadata_doc_id = if maybe_branches_metadata_doc_id.is_empty() {
+            let branches_doc_handle = repo_handle.new_document();
+            let main_doc_handle = repo_handle.new_document();
+
+            branches_doc_handle.with_doc_mut(|d| {
+                let mut tx = d.transaction();
+                let _ = reconcile(
+                    &mut tx,
+                    BranchesMetadataDoc {
+                        main_doc_id: main_doc_handle.document_id().to_string(),
+                        branches: HashMap::new(),
+                    },
+                );
+                tx.commit();
+            });
+
+            branches_doc_handle.document_id()
         } else {
-            DocumentId::from_str(&maybe_branches_doc_id).unwrap()
+            DocumentId::from_str(&maybe_branches_metadata_doc_id).unwrap()
         };
 
         // connect repo
@@ -106,18 +132,19 @@ impl AutomergeFS {
         });
 
         let (patch_sender, patch_receiver) = channel::<PatchWithScene>();
-        let (branch_sender, branch_receiver) = channel::<BranchUpdate>();
+        let (branches_metadata_sender, branches_metadata_receiver) =
+            channel::<BranchesMetadataDoc>();
 
         return Gd::from_init_fn(|base| Self {
             repo_handle,
-            branches_doc_id,
-            fs_doc_id: None,
+            branches_metadata_doc_id,
+            checked_out_doc_id_mutex: Arc::new(Mutex::new(None)),
             runtime,
             base,
             patch_sender,
             patch_receiver,
-            branch_sender,
-            branch_receiver,
+            branches_metadata_sender,
+            branches_metadata_receiver,
         });
     }
 
@@ -130,13 +157,46 @@ impl AutomergeFS {
     }
 
     #[func]
-    fn checkout(&mut self, fs_doc_id: String) {
-        self.fs_doc_id = Some(DocumentId::from_str(&fs_doc_id).unwrap());
+    fn create_branch(&self, name: String, source: String) {
+        let repo_handle = self.repo_handle.clone();
+
+        self.runtime.spawn(async move {
+            let doc_handle = repo_handle.new_document();
+        });
+    }
+
+    #[func]
+    fn checkout(&mut self, branch_doc_id: String) {
+        let mut checked_out_doc_id = self.checked_out_doc_id_mutex.lock().unwrap();
+        *checked_out_doc_id = Some(DocumentId::from_str(&branch_doc_id.to_string()).unwrap());
     }
 
     // needs to be called in godot on each frame
     #[func]
     fn refresh(&mut self) {
+        // Get latest branches metadata update if any
+        if let Ok(branches_metadata) = self.branches_metadata_receiver.try_recv() {
+            let mut branches = Array::<Dictionary>::new();
+
+            branches.push(
+                &(dict! {
+                    "name": "main".to_string(),
+                    "id": branches_metadata.main_doc_id,
+                }),
+            );
+
+            for (_, branch) in branches_metadata.branches {
+                branches.push(
+                    &(dict! {
+                        "name": branch.name,
+                        "id": branch.id,
+                    }),
+                );
+            }
+            self.base_mut()
+                .emit_signal("branch_list_changed", &[branches.to_variant()]);
+        }
+
         // Collect all available updates
         let mut updates = Vec::new();
         while let Ok(update) = self.patch_receiver.try_recv() {
@@ -225,16 +285,19 @@ impl AutomergeFS {
 
     #[func]
     fn start(&self) {
-        // listen for changes to fs doc
-        let repo_handle_change_listener = self.repo_handle.clone();
-        let fs_doc_id = self.fs_doc_id.clone();
-        let sender = self.patch_sender.clone();
+        let repo_handle_change_listener_checked_out_doc = self.repo_handle.clone();
+        let patch_sender = self.patch_sender.clone();
+        let checked_out_doc_id_mutex = self.checked_out_doc_id_mutex.clone();
+
+        // listen for changes on checked out doc
         self.runtime.spawn(async move {
             let mut heads: Vec<ChangeHash> = vec![];
 
             loop {
-                if let Some(doc_id) = fs_doc_id.clone() {
-                    let doc_handle = repo_handle_change_listener
+                let checked_out_doc_id = checked_out_doc_id_mutex.lock().unwrap().clone();
+
+                if let Some(doc_id) = checked_out_doc_id {
+                    let doc_handle = repo_handle_change_listener_checked_out_doc
                         .request_document(doc_id)
                         .await
                         .unwrap();
@@ -254,18 +317,48 @@ impl AutomergeFS {
                                 patch,
                                 scene: scene.clone(),
                             };
-                            let _ = sender.send(patch_with_scene);
+                            let _ = patch_sender.send(patch_with_scene);
                         }
                     });
                 }
+            }
+        });
+
+        // listen for changes on branches metadata doc
+        let metadata_sender = self.branches_metadata_sender.clone();
+        let repo_handle_change_listener_branches_metadata_doc = self.repo_handle.clone();
+        let metadata_doc_id = self.branches_metadata_doc_id.clone();
+
+        self.runtime.spawn(async move {
+            let doc_handle = repo_handle_change_listener_branches_metadata_doc
+                .request_document(metadata_doc_id)
+                .await
+                .unwrap();
+
+            loop {
+                doc_handle.with_doc(|d| {
+                    let branches_metadata_doc: BranchesMetadataDoc = hydrate(d).unwrap();
+                    metadata_sender.send(branches_metadata_doc);
+                });
+
+                doc_handle.changed().await.unwrap();
             }
         });
     }
 
     #[func]
     fn save(&self, path: String, content: String) {
+        let checked_out_doc_id = self.checked_out_doc_id_mutex.lock().unwrap().clone();
+
+        if checked_out_doc_id.is_none() {
+            println!("skip save");
+            return;
+        }
+
+        println!("save");
+
         let repo_handle = self.repo_handle.clone();
-        let fs_doc_id = self.fs_doc_id.clone();
+        let fs_doc_id = checked_out_doc_id.as_ref().unwrap().clone();
 
         // todo: handle files that are not main.tscn
         if !path.ends_with("main.tscn") {
@@ -273,18 +366,17 @@ impl AutomergeFS {
         }
 
         let scene = godot_scene::parse(&content).unwrap();
-        if let Some(fs_doc_id) = fs_doc_id {
-            self.runtime.spawn(async move {
-                let doc_handle = repo_handle.request_document(fs_doc_id);
-                let result = doc_handle.await.unwrap();
 
-                result.with_doc_mut(|d| {
-                    let mut tx = d.transaction();
-                    let _ = reconcile(&mut tx, scene);
-                    tx.commit();
-                    return;
-                });
+        self.runtime.spawn(async move {
+            let doc_handle = repo_handle.request_document(fs_doc_id);
+            let result = doc_handle.await.unwrap();
+
+            result.with_doc_mut(|d| {
+                let mut tx = d.transaction();
+                let _ = reconcile(&mut tx, scene);
+                tx.commit();
+                return;
             });
-        }
+        });
     }
 }
