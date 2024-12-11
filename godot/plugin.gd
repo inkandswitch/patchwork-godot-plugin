@@ -17,7 +17,8 @@ func _enter_tree() -> void:
   var project_doc_id = config.get_value("project_doc_id", "")
   automerge_fs = AutomergeFS.create(project_doc_id)
   automerge_fs.connect("branch_list_changed", _on_branch_list_changed);
-  automerge_fs.connect("file_changed", _on_remote_file_changed)
+  automerge_fs.connect("patch_file", _on_remote_patch_file);
+  automerge_fs.connect("reload_file", _on_remote_reload_file);
 
   if !project_doc_id:
     config.set_value("project_doc_id", automerge_fs.get_branches_metadata_doc_id());
@@ -61,7 +62,20 @@ func _on_local_file_changed(path: String, content: String) -> void:
 
   automerge_fs.save(path, content);
 
-func _on_remote_file_changed(patch) -> void:
+func _on_remote_reload_file(path, _content) -> void:
+
+  print("reload file ", path)
+
+  # Save the new content to disk
+  var file = FileAccess.open(path, FileAccess.WRITE)
+  file.store_string(_content)
+  file.close()
+
+  # Reload the scene in the editor
+  get_editor_interface().reload_scene_from_path(path)
+
+
+func _on_remote_patch_file(patch) -> void:
   var scene = get_editor_interface().get_edited_scene_root()
 
   if not scene:
@@ -135,38 +149,7 @@ func _on_remote_file_changed(patch) -> void:
       )
 
 
-  # # for now ignore all files that are not main.tscn
-  # if not path.ends_with("main.tscn"):
-  #   return
-
-  # # Check if file exists and get current content
-  # var current_file = FileAccess.open(path, FileAccess.READ)
-  # if not current_file:
-  #   return
-  # var current_content = current_file.get_as_text()
-  # current_file.close()
-
-  # # Skip if content hasn't changed
-  # if current_content == content:
-  #   return
-
-  # var file = FileAccess.open(path, FileAccess.WRITE)
-  # if not file:
-  #   return
-    
-  # # Write the content to the file
-  # file.store_string(content)
-  # file.close()
-  
-  # print("reload path", path)
-
-  # # Reload file
-  # get_editor_interface().reload_scene_from_path(path)
-  # print("remote file changed ", path)
-
-
-func _process(delta: float) -> void:
-
+func _process(_delta: float) -> void:
   if automerge_fs:
     automerge_fs.refresh();
 
