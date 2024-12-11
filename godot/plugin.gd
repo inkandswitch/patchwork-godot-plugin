@@ -16,9 +16,11 @@ func _enter_tree() -> void:
 
   # setup automerge fs
   var project_url = config.get_value("project_url", "")
-  automerge_fs = AutomergeFS.create(project_url)
+  automerge_fs = AutomergeFS.create("")
   if !project_url:
     config.set_value("project_url", automerge_fs.get_fs_doc_id());
+
+  automerge_fs.checkout("2zfxnna9nLJ5S1qqBzthdYjbachW");
 
   automerge_fs.start();
 

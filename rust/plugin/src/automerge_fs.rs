@@ -29,7 +29,8 @@ struct BranchUpdate {
 pub struct AutomergeFS {
     repo_handle: RepoHandle,
     runtime: Runtime,
-    fs_doc_id: DocumentId,
+    branches_doc_id: DocumentId,
+    fs_doc_id: Option<DocumentId>,
     base: Base<Node>,
     patch_sender: Sender<PatchWithScene>,
     patch_receiver: Receiver<PatchWithScene>,
@@ -47,7 +48,10 @@ impl AutomergeFS {
 
     #[func]
     fn get_branches_doc_id(&self) -> String {
-        self.fs_doc_id.to_string()
+        match &self.fs_doc_id {
+            Some(doc_id) => doc_id.to_string(),
+            None => String::new(),
+        }
     }
 
     #[func]
@@ -65,7 +69,7 @@ impl AutomergeFS {
         let storage = FsStorage::open("/tmp/automerge-godot-data").unwrap();
         let repo = Repo::new(None, Box::new(storage));
         let repo_handle = repo.run();
-        let fs_doc_id = if maybe_branches_doc_id.is_empty() {
+        let branches_doc_id = if maybe_branches_doc_id.is_empty() {
             let handle = repo_handle.new_document();
             handle.document_id()
         } else {
@@ -106,7 +110,8 @@ impl AutomergeFS {
 
         return Gd::from_init_fn(|base| Self {
             repo_handle,
-            fs_doc_id,
+            branches_doc_id,
+            fs_doc_id: None,
             runtime,
             base,
             patch_sender,
@@ -122,6 +127,11 @@ impl AutomergeFS {
 
         // todo: shut down runtime
         //self.runtime.shutdown_background();
+    }
+
+    #[func]
+    fn checkout(&mut self, fs_doc_id: String) {
+        self.fs_doc_id = Some(DocumentId::from_str(&fs_doc_id).unwrap());
     }
 
     // needs to be called in godot on each frame
@@ -223,29 +233,31 @@ impl AutomergeFS {
             let mut heads: Vec<ChangeHash> = vec![];
 
             loop {
-                let doc_handle = repo_handle_change_listener
-                    .request_document(fs_doc_id.clone())
-                    .await
-                    .unwrap();
+                if let Some(doc_id) = fs_doc_id.clone() {
+                    let doc_handle = repo_handle_change_listener
+                        .request_document(doc_id)
+                        .await
+                        .unwrap();
 
-                doc_handle.changed().await.unwrap();
+                    doc_handle.changed().await.unwrap();
 
-                doc_handle.with_doc(|d| -> () {
-                    let new_heads = d.get_heads();
-                    let patches = d.diff(&heads, &new_heads, TextRepresentation::String);
-                    heads = new_heads;
+                    doc_handle.with_doc(|d| -> () {
+                        let new_heads = d.get_heads();
+                        let patches = d.diff(&heads, &new_heads, TextRepresentation::String);
+                        heads = new_heads;
 
-                    // Hydrate the current document state into a PackedGodotScene
-                    let scene: PackedGodotScene = hydrate(d).unwrap();
+                        // Hydrate the current document state into a PackedGodotScene
+                        let scene: PackedGodotScene = hydrate(d).unwrap();
 
-                    for patch in patches {
-                        let patch_with_scene = PatchWithScene {
-                            patch,
-                            scene: scene.clone(),
-                        };
-                        let _ = sender.send(patch_with_scene);
-                    }
-                });
+                        for patch in patches {
+                            let patch_with_scene = PatchWithScene {
+                                patch,
+                                scene: scene.clone(),
+                            };
+                            let _ = sender.send(patch_with_scene);
+                        }
+                    });
+                }
             }
         });
     }
@@ -261,17 +273,18 @@ impl AutomergeFS {
         }
 
         let scene = godot_scene::parse(&content).unwrap();
+        if let Some(fs_doc_id) = fs_doc_id {
+            self.runtime.spawn(async move {
+                let doc_handle = repo_handle.request_document(fs_doc_id);
+                let result = doc_handle.await.unwrap();
 
-        self.runtime.spawn(async move {
-            let doc_handle = repo_handle.request_document(fs_doc_id);
-            let result = doc_handle.await.unwrap();
-
-            result.with_doc_mut(|d| {
-                let mut tx = d.transaction();
-                let _ = reconcile(&mut tx, scene);
-                tx.commit();
-                return;
+                result.with_doc_mut(|d| {
+                    let mut tx = d.transaction();
+                    let _ = reconcile(&mut tx, scene);
+                    tx.commit();
+                    return;
+                });
             });
-        });
+        }
     }
 }
