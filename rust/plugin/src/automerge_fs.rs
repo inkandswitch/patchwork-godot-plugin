@@ -1,21 +1,27 @@
 use std::{
+    collections::HashMap,
+    hash::Hash,
     str::FromStr,
     sync::mpsc::{channel, Receiver, Sender},
 };
 
 use automerge::{ChangeHash, Patch, ScalarValue};
-use autosurgeon::{hydrate, reconcile};
-use godot::{obj::WithBaseField, prelude::*};
+use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
+use godot::{global::print, obj::WithBaseField, prelude::*};
 
 use automerge::patches::TextRepresentation;
 use automerge_repo::{tokio::FsStorage, ConnDirection, DocumentId, Repo, RepoHandle};
 use tokio::{net::TcpStream, runtime::Runtime};
 
-use crate::godot_scene::{self, PackedGodotScene};
+use crate::godot_scene::{self, get_node_by_path, serialize, PackedGodotScene};
 
 struct PatchWithScene {
     patch: Patch,
     scene: PackedGodotScene,
+}
+
+struct BranchUpdate {
+    branches: HashMap<String, String>,
 }
 
 #[derive(GodotClass)]
@@ -25,8 +31,10 @@ pub struct AutomergeFS {
     runtime: Runtime,
     fs_doc_id: DocumentId,
     base: Base<Node>,
-    sender: Sender<PatchWithScene>,
-    receiver: Receiver<PatchWithScene>,
+    patch_sender: Sender<PatchWithScene>,
+    patch_receiver: Receiver<PatchWithScene>,
+    branch_sender: Sender<BranchUpdate>,
+    branch_receiver: Receiver<BranchUpdate>,
 }
 
 //const SERVER_URL: &str = "localhost:8080";
@@ -38,14 +46,14 @@ impl AutomergeFS {
     fn file_changed(path: String, content: String);
 
     #[func]
-    fn get_fs_doc_id(&self) -> String {
+    fn get_branches_doc_id(&self) -> String {
         self.fs_doc_id.to_string()
     }
 
     #[func]
     // hack: pass in empty string to create a new doc
     // godot rust doens't seem to support Option args
-    fn create(maybe_fs_doc_id: String) -> Gd<Self> {
+    fn create(maybe_branches_doc_id: String) -> Gd<Self> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -57,11 +65,11 @@ impl AutomergeFS {
         let storage = FsStorage::open("/tmp/automerge-godot-data").unwrap();
         let repo = Repo::new(None, Box::new(storage));
         let repo_handle = repo.run();
-        let fs_doc_id = if maybe_fs_doc_id.is_empty() {
+        let fs_doc_id = if maybe_branches_doc_id.is_empty() {
             let handle = repo_handle.new_document();
             handle.document_id()
         } else {
-            DocumentId::from_str(&maybe_fs_doc_id).unwrap()
+            DocumentId::from_str(&maybe_branches_doc_id).unwrap()
         };
 
         // connect repo
@@ -93,15 +101,18 @@ impl AutomergeFS {
             println!("connected successfully!");
         });
 
-        let (sender, receiver) = channel::<PatchWithScene>();
+        let (patch_sender, patch_receiver) = channel::<PatchWithScene>();
+        let (branch_sender, branch_receiver) = channel::<BranchUpdate>();
 
         return Gd::from_init_fn(|base| Self {
             repo_handle,
             fs_doc_id,
             runtime,
             base,
-            sender,
-            receiver,
+            patch_sender,
+            patch_receiver,
+            branch_sender,
+            branch_receiver,
         });
     }
 
@@ -118,7 +129,7 @@ impl AutomergeFS {
     fn refresh(&mut self) {
         // Collect all available updates
         let mut updates = Vec::new();
-        while let Ok(update) = self.receiver.try_recv() {
+        while let Ok(update) = self.patch_receiver.try_recv() {
             updates.push(update);
         }
 
@@ -207,16 +218,16 @@ impl AutomergeFS {
         // listen for changes to fs doc
         let repo_handle_change_listener = self.repo_handle.clone();
         let fs_doc_id = self.fs_doc_id.clone();
-        let sender = self.sender.clone();
+        let sender = self.patch_sender.clone();
         self.runtime.spawn(async move {
-            let doc_handle = repo_handle_change_listener
-                .request_document(fs_doc_id)
-                .await
-                .unwrap();
-
             let mut heads: Vec<ChangeHash> = vec![];
 
             loop {
+                let doc_handle = repo_handle_change_listener
+                    .request_document(fs_doc_id.clone())
+                    .await
+                    .unwrap();
+
                 doc_handle.changed().await.unwrap();
 
                 doc_handle.with_doc(|d| -> () {
