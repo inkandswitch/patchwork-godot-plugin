@@ -4,9 +4,10 @@ use tree_sitter::{Parser, Query, QueryCursor};
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
 pub struct PackedGodotScene {
-    // todo: parse  resources and connections
+    gd_scene: GodotSceneNode,
     nodes: HashMap<String, GodotSceneNode>,
     external_resources: HashMap<String, GodotSceneNode>,
+    // todo: parse sub resources and connections
 }
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
@@ -92,6 +93,10 @@ pub fn parse(source: &String) -> Result<PackedGodotScene, String> {
             let mut query_cursor = QueryCursor::new();
             let matches = query_cursor.matches(&query, tree.root_node(), content_bytes);
             let mut scene = PackedGodotScene {
+                gd_scene: GodotSceneNode {
+                    attributes: HashMap::new(),
+                    properties: HashMap::new(),
+                },
                 nodes: HashMap::new(),
                 external_resources: HashMap::new(),
             };
@@ -163,6 +168,8 @@ pub fn parse(source: &String) -> Result<PackedGodotScene, String> {
 
                         scene.external_resources.insert(id, node_clone);
                     }
+                } else if section_id == "gd_scene" {
+                    scene.gd_scene = node
                 }
             }
 
@@ -172,6 +179,71 @@ pub fn parse(source: &String) -> Result<PackedGodotScene, String> {
         }
         None => Err("Failed to parse scene file".to_string()),
     };
+}
+
+pub fn serialize(scene: PackedGodotScene) -> String {
+    let mut output = String::new();
+
+    // Write gd_scene header
+    output.push_str("[gd_scene");
+    for (key, value) in scene.gd_scene.attributes {
+        output.push_str(&format!(" {}={}", key, value));
+    }
+    output.push_str("]\n\n");
+
+    // Write external resources
+    for (id, resource) in scene.external_resources.clone() {
+        output.push_str("[ext_resource");
+        for (key, value) in resource.attributes {
+            output.push_str(&format!(" {}={}", key, value));
+        }
+        output.push_str("]\n");
+    }
+    output.push_str("\n");
+
+    // Write nodes
+    for (path, mut node) in scene.nodes {
+        output.push_str("[node");
+
+        // Handle instance path translation
+        let mut attributes = node.attributes.clone();
+        if let Some(instance) = attributes.get("instance") {
+            let translated = path_to_external_resource(instance, &scene.external_resources);
+            attributes.insert("instance".to_string(), translated);
+        }
+
+        for (key, value) in attributes {
+            output.push_str(&format!(" {}={}", key, value));
+        }
+        output.push_str("]\n");
+
+        // Write node properties
+        for (key, value) in node.properties {
+            let translated_value = path_to_external_resource(&value, &scene.external_resources);
+            output.push_str(&format!("{}={}\n", key, translated_value));
+        }
+        output.push_str("\n");
+    }
+
+    output
+}
+
+fn path_to_external_resource(
+    instance: &str,
+    external_resources: &HashMap<String, GodotSceneNode>,
+) -> String {
+    if instance.starts_with("res://") {
+        // Find matching external resource
+        for (id, resource) in external_resources {
+            if let Some(res_path) = resource.attributes.get("path") {
+                let quoted_instance = format!("\"{}\"", instance);
+                if quoted_instance == *res_path {
+                    return format!("ExtResource(\"{}\")", id);
+                }
+            }
+        }
+    }
+    instance.to_string()
 }
 
 fn external_resource_to_path(value: &str, scene: &PackedGodotScene) -> Option<String> {
@@ -195,7 +267,7 @@ fn get_node_path(scene: PackedGodotScene, node: GodotSceneNode) -> Option<String
     if let Some(name) = get_node_name(node_clone) {
         // Base case - if parent is "." or no parent, just return name
         match get_node_parent(node) {
-            None => None,
+            None => Some(name),
             Some(parent_name) => {
                 // Look up parent node in scene
                 if let Some(parent_node) = scene.nodes.get(&parent_name) {
