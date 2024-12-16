@@ -379,22 +379,21 @@ impl AutomergeFS {
                         let patches = d.diff(&heads, &new_heads, TextRepresentation::String);
                         heads = new_heads;
 
-                        // Hydrate the current document state into a PackedGodotScene
-                        let scene: PackedGodotScene = hydrate(d).unwrap();
+                        if let Ok(scene) = hydrate(d) {
+                            if checked_out_doc_has_changed {
+                                let _ = file_update_sender.send(FileUpdate::Reload {
+                                    content: serialize(scene),
+                                });
 
-                        if checked_out_doc_has_changed {
-                            let _ = file_update_sender.send(FileUpdate::Reload {
-                                content: serialize(scene),
-                            });
-
-                            print!("send reload")
-                        } else {
-                            for patch in patches {
-                                let patch_with_scene = FileUpdate::Patch {
-                                    patch,
-                                    scene: scene.clone(),
-                                };
-                                let _ = file_update_sender.send(patch_with_scene);
+                                print!("send reload")
+                            } else {
+                                for patch in patches {
+                                    let patch_with_scene = FileUpdate::Patch {
+                                        patch,
+                                        scene: scene.clone(),
+                                    };
+                                    let _ = file_update_sender.send(patch_with_scene);
+                                }
                             }
                         }
                     });
