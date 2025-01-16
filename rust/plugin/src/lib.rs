@@ -5,5 +5,5 @@ struct MyExtension;
 #[gdextension]
 unsafe impl ExtensionLibrary for MyExtension {}
 
-mod automerge_fs;
+mod godot_project;
 mod godot_scene;
