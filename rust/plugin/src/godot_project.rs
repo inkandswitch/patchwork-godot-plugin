@@ -1,23 +1,13 @@
 use std::{
-    borrow::Borrow,
     collections::HashMap,
-    fs::File,
-    hash::Hash,
     str::FromStr,
-    sync::{
-        mpsc::{channel, Receiver, Sender},
-        Arc, Mutex, RwLock, RwLockReadGuard,
-    },
+    sync::{Arc, RwLock},
 };
 
-use automerge::{
-    transaction::Transactable, Automerge, ChangeHash, ObjType, Patch, ReadDoc, ScalarValue, ROOT,
-};
-use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
-use godot::{global::print, obj::WithBaseField, prelude::*};
-
-use automerge::patches::TextRepresentation;
+use automerge::{transaction::Transactable, Automerge, ObjType, ReadDoc, ROOT};
 use automerge_repo::{tokio::FsStorage, ConnDirection, DocumentId, Repo, RepoHandle};
+use autosurgeon::{reconcile, Hydrate, Reconcile};
+use godot::prelude::*;
 use tokio::{net::TcpStream, runtime::Runtime};
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
@@ -44,7 +34,7 @@ pub struct GodotProject {
     runtime: Runtime,
     project_doc_id: DocumentId,
     base: Base<Node>,
-    project_heads: Arc<RwLock<Vec<ChangeHash>>>,
+    project_doc_state: Arc<RwLock<Automerge>>,
 }
 
 //const SERVER_URL: &str = "localhost:8080";
@@ -116,8 +106,8 @@ impl GodotProject {
         });
 
         let repo_handle_clone_2 = repo_handle.clone();
-        let state: Arc<RwLock<Vec<ChangeHash>>> = Arc::new(RwLock::new(Vec::new()));
-        let state_clone = state.clone();
+        let project_doc_state: Arc<RwLock<Automerge>> = Arc::new(RwLock::new(Automerge::new()));
+        let project_doc_state_clone = project_doc_state.clone();
         let project_doc_id_clone = project_doc_id.clone();
 
         // sync project doc heads
@@ -130,11 +120,11 @@ impl GodotProject {
             let doc_handle_clone = doc_handle.clone();
 
             loop {
-                let heads = doc_handle_clone.with_doc(|d| d.get_heads());
+                let doc = doc_handle_clone.with_doc(|d| d.clone());
 
                 {
-                    let mut write_state = state_clone.write().unwrap();
-                    *write_state = heads
+                    let mut write_state = project_doc_state_clone.write().unwrap();
+                    *write_state = doc
                 }
 
                 doc_handle.changed().await.unwrap();
@@ -146,7 +136,7 @@ impl GodotProject {
             project_doc_id,
             runtime,
             base,
-            project_heads: state,
+            project_doc_state,
         });
     }
 
@@ -155,11 +145,15 @@ impl GodotProject {
         return self.project_doc_id.to_string();
     }
 
+    fn get_doc(&self) -> Automerge {
+        return self.project_doc_state.read().unwrap().clone();
+    }
+
     #[func]
     fn get_heads(&self) -> Array<Variant> {
-        let result = self.project_heads.read().unwrap().clone();
+        let heads = self.get_doc().get_heads();
 
-        return result
+        return heads
             .to_vec()
             .iter()
             .map(|h| h.to_string().to_variant())
