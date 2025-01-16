@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use automerge::{transaction::Transactable, Automerge, ObjType, ReadDoc, ROOT};
+use automerge::{transaction::Transactable, Automerge, ChangeHash, ObjType, ReadDoc, ROOT};
 use automerge_repo::{tokio::FsStorage, ConnDirection, DocumentId, Repo, RepoHandle};
 use autosurgeon::{reconcile, Hydrate, Reconcile};
 use godot::prelude::*;
@@ -173,7 +173,23 @@ impl GodotProject {
     }
 
     #[func]
+    fn get_file_at(&self, path: String, heads: Array<Variant> /* String[] */) -> Variant /* String? */
+    {
+        let doc = self.get_doc();
+        let heads: Vec<ChangeHash> = heads
+            .iter_shared()
+            .map(|h| ChangeHash::from_str(h.to_string().as_str()).unwrap())
+            .collect();
 
+        let files = doc.get(ROOT, "files").unwrap().unwrap().1;
+
+        return match doc.get_at(files, path, &heads) {
+            Ok(Some((value, _))) => value.into_string().unwrap_or_default().to_variant(),
+            _ => Variant::nil(),
+        };
+    }
+
+    #[func]
     fn get_changes(&self) -> Array<Variant> /* String[]  */ {
         self.get_doc()
             .get_changes(&[])

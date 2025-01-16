@@ -7,7 +7,7 @@ var sidebar
 var checked_out_branch_doc_id = null
 
 func _enter_tree() -> void:
-  print("start patchwork!!!!");
+  print("start patchwork!!");
 
   # setup config
   config = PatchworkConfig.new()
@@ -16,19 +16,23 @@ func _enter_tree() -> void:
   var project_doc_id = config.get_value("project_doc_id", "")
   godot_project = GodotProject.create(project_doc_id)
 
-  if !project_doc_id:
-    config.set_value("project_doc_id", godot_project.get_doc_id());
+  # if !project_doc_id:
+  #  config.set_value("project_doc_id", godot_project.get_doc_id());
 
 
-  print("heads", godot_project.get_heads())
-
-  # godot_project.save_file("foo.txt", "bla")
-
+  godot_project.save_file("test.txt", "test")
+  godot_project.save_file("test.txt", "another")
 
   await get_tree().create_timer(1.0).timeout
-  print("heads", godot_project.get_heads())
 
-  print("file: ", godot_project.get_file("foo.txt"))
+  var heads = godot_project.get_heads()
+  print("heads", heads)
+
+  var changes = godot_project.get_changes()
+  print("changes", changes)
+  for change in changes:
+    print("Change: ", godot_project.get_file_at("test.txt", [change]))
+
 
   # 
 
