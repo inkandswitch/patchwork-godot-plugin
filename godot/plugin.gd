@@ -17,8 +17,15 @@ func _enter_tree() -> void:
   godot_project = GodotProject.create(project_doc_id)
 
 
+  print("heads", godot_project.get_heads())
+
   godot_project.save_file("foo.txt", "bla")
   godot_project.get_file("foo.txt")
+
+
+  await get_tree().create_timer(1.0).timeout
+  print("heads", godot_project.get_heads())
+
 
   # if !project_doc_id:
   #   config.set_value("project_doc_id", automerge_fs.get_branches_metadata_doc_id());

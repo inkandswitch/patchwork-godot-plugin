@@ -6,12 +6,12 @@ use std::{
     str::FromStr,
     sync::{
         mpsc::{channel, Receiver, Sender},
-        Arc, Mutex,
+        Arc, Mutex, RwLock, RwLockReadGuard,
     },
 };
 
 use automerge::{
-    transaction::Transactable, ChangeHash, ObjType, Patch, ReadDoc, ScalarValue, ROOT,
+    transaction::Transactable, Automerge, ChangeHash, ObjType, Patch, ReadDoc, ScalarValue, ROOT,
 };
 use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
 use godot::{global::print, obj::WithBaseField, prelude::*};
@@ -44,6 +44,7 @@ pub struct GodotProject {
     runtime: Runtime,
     project_doc_id: DocumentId,
     base: Base<Node>,
+    project_heads: Arc<RwLock<Vec<ChangeHash>>>,
 }
 
 //const SERVER_URL: &str = "localhost:8080";
@@ -114,17 +115,55 @@ impl GodotProject {
             println!("connected successfully!");
         });
 
+        let repo_handle_clone_2 = repo_handle.clone();
+        let state: Arc<RwLock<Vec<ChangeHash>>> = Arc::new(RwLock::new(Vec::new()));
+        let state_clone = state.clone();
+        let project_doc_id_clone = project_doc_id.clone();
+
+        // sync project doc heads
+        runtime.spawn(async move {
+            let doc_handle = repo_handle_clone_2
+                .request_document(project_doc_id_clone)
+                .await
+                .unwrap();
+
+            let doc_handle_clone = doc_handle.clone();
+
+            loop {
+                let heads = doc_handle_clone.with_doc(|d| d.get_heads());
+
+                {
+                    let mut write_state = state_clone.write().unwrap();
+                    *write_state = heads
+                }
+
+                doc_handle.changed().await.unwrap();
+            }
+        });
+
         return Gd::from_init_fn(|base| Self {
             repo_handle,
             project_doc_id,
             runtime,
             base,
+            project_heads: state,
         });
     }
 
     #[func]
     fn doc_id(&self) -> String {
         return self.project_doc_id.to_string();
+    }
+
+    #[func]
+    fn get_heads(&self) -> Array<Variant> {
+        let result = self.project_heads.read().unwrap().clone();
+
+        return result
+            .to_vec()
+            .iter()
+            .map(|h| h.to_string().to_variant())
+            .collect::<Array<Variant>>();
     }
 
     #[func]
