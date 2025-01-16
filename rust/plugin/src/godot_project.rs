@@ -141,7 +141,7 @@ impl GodotProject {
     }
 
     #[func]
-    fn doc_id(&self) -> String {
+    fn get_doc_id(&self) -> String {
         return self.project_doc_id.to_string();
     }
 
@@ -161,7 +161,16 @@ impl GodotProject {
     }
 
     #[func]
-    fn get_file(path: String) {}
+    fn get_file(&self, path: String) -> Variant /* string or null */ {
+        let doc = self.get_doc();
+
+        let files = doc.get(ROOT, "files").unwrap().unwrap().1;
+
+        return match doc.get(files, path) {
+            Ok(Some((value, _))) => value.into_string().unwrap_or_default().to_variant(),
+            _ => Variant::nil(),
+        };
+    }
 
     #[func]
     fn save_file(&self, path: String, content: String) {

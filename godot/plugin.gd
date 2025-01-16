@@ -16,20 +16,21 @@ func _enter_tree() -> void:
   var project_doc_id = config.get_value("project_doc_id", "")
   godot_project = GodotProject.create(project_doc_id)
 
+  if !project_doc_id:
+    config.set_value("project_doc_id", godot_project.get_doc_id());
+
 
   print("heads", godot_project.get_heads())
 
-  godot_project.save_file("foo.txt", "bla")
-  godot_project.get_file("foo.txt")
+  # godot_project.save_file("foo.txt", "bla")
 
 
   await get_tree().create_timer(1.0).timeout
   print("heads", godot_project.get_heads())
 
+  print("file: ", godot_project.get_file("foo.txt"))
 
-  # if !project_doc_id:
-  #   config.set_value("project_doc_id", automerge_fs.get_branches_metadata_doc_id());
-
+  # 
 
   # # listen to remote changes
 
