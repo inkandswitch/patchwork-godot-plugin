@@ -150,7 +150,7 @@ impl GodotProject {
     }
 
     #[func]
-    fn get_heads(&self) -> Array<Variant> {
+    fn get_heads(&self) -> Array<Variant> /* String[] */ {
         let heads = self.get_doc().get_heads();
 
         return heads
@@ -161,7 +161,7 @@ impl GodotProject {
     }
 
     #[func]
-    fn get_file(&self, path: String) -> Variant /* string or null */ {
+    fn get_file(&self, path: String) -> Variant /* String? */ {
         let doc = self.get_doc();
 
         let files = doc.get(ROOT, "files").unwrap().unwrap().1;
@@ -170,6 +170,17 @@ impl GodotProject {
             Ok(Some((value, _))) => value.into_string().unwrap_or_default().to_variant(),
             _ => Variant::nil(),
         };
+    }
+
+    #[func]
+
+    fn get_changes(&self) -> Array<Variant> /* String[]  */ {
+        self.get_doc()
+            .get_changes(&[])
+            .to_vec()
+            .iter()
+            .map(|c| c.hash().to_string().to_variant())
+            .collect::<Array<Variant>>()
     }
 
     #[func]
