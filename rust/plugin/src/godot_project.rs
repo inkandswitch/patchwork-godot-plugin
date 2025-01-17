@@ -32,9 +32,10 @@ struct Branch {
 pub struct GodotProject {
     base: Base<Node>,
     runtime: Runtime,
+    repo_handle: RepoHandle,
     project_doc_id: DocumentId,
-    project_doc_state: Arc<Mutex<Automerge>>,
-    project_doc_handle_state: Arc<Mutex<Option<DocHandle>>>,
+    docs_state: Arc<Mutex<HashMap<DocumentId, Automerge>>>,
+    doc_handles_state: Arc<Mutex<HashMap<DocumentId, DocHandle>>>,
 }
 
 //const SERVER_URL: &str = "localhost:8080";
@@ -76,8 +77,10 @@ impl GodotProject {
             DocumentId::from_str(&maybe_project_doc_id).unwrap()
         };
 
-        let project_doc_state: Arc<Mutex<Automerge>> = Arc::new(Mutex::new(Automerge::new()));
-        let project_doc_handle_state: Arc<Mutex<Option<DocHandle>>> = Arc::new(Mutex::new(None));
+        let docs_state: Arc<Mutex<HashMap<DocumentId, Automerge>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let doc_handles_state: Arc<Mutex<HashMap<DocumentId, DocHandle>>> =
+            Arc::new(Mutex::new(HashMap::new()));
 
         // Spawn connection task
         Self::spawn_connection_task(&runtime, repo_handle.clone());
@@ -87,16 +90,17 @@ impl GodotProject {
             &runtime,
             repo_handle.clone(),
             project_doc_id.clone(),
-            project_doc_state.clone(),
-            project_doc_handle_state.clone(),
+            docs_state.clone(),
+            doc_handles_state.clone(),
         );
 
         return Gd::from_init_fn(|base| Self {
             base,
             runtime,
+            repo_handle,
             project_doc_id,
-            project_doc_state,
-            project_doc_handle_state,
+            docs_state,
+            doc_handles_state,
         });
     }
 
@@ -134,13 +138,13 @@ impl GodotProject {
         runtime: &Runtime,
         repo_handle: RepoHandle,
         project_doc_id: DocumentId,
-        project_doc_state: Arc<Mutex<Automerge>>,
-        project_doc_handle_state: Arc<Mutex<Option<DocHandle>>>,
+        docs_state: Arc<Mutex<HashMap<DocumentId, Automerge>>>,
+        doc_handles_state: Arc<Mutex<HashMap<DocumentId, DocHandle>>>,
     ) {
         let repo_handle_clone = repo_handle.clone();
-        let project_doc_state_clone = project_doc_state.clone();
+        let docs_state_clone = docs_state.clone();
         let project_doc_id_clone = project_doc_id.clone();
-        let project_doc_handle_state_clone = project_doc_handle_state.clone();
+        let doc_handles_state_clone = doc_handles_state.clone();
 
         runtime.spawn(async move {
             let doc_handle = repo_handle_clone
@@ -149,18 +153,17 @@ impl GodotProject {
                 .unwrap();
 
             {
-                let mut write_handle = project_doc_handle_state_clone.lock().unwrap();
-                *write_handle = Some(doc_handle.clone());
+                let mut write_handle = doc_handles_state_clone.lock().unwrap();
+                write_handle.insert(project_doc_id.clone(), doc_handle.clone());
             }
 
-            let doc_handle_clone = doc_handle.clone();
-
             loop {
-                let doc = doc_handle_clone.with_doc(|d| d.clone());
+                let doc = doc_handle.with_doc(|d| d.clone());
 
                 {
-                    let mut write_state = project_doc_state_clone.lock().unwrap();
-                    *write_state = doc
+                    let mut write_state: std::sync::MutexGuard<'_, HashMap<DocumentId, Automerge>> =
+                        docs_state_clone.lock().unwrap();
+                    write_state.insert(project_doc_id.clone(), doc);
                 }
 
                 doc_handle.changed().await.unwrap();
@@ -174,7 +177,13 @@ impl GodotProject {
     }
 
     fn get_doc(&self) -> Automerge {
-        return self.project_doc_state.lock().unwrap().clone();
+        return self
+            .docs_state
+            .lock()
+            .unwrap()
+            .get(&self.project_doc_id)
+            .unwrap()
+            .clone();
     }
 
     #[func]
@@ -230,8 +239,14 @@ impl GodotProject {
     #[func]
     fn save_file(&self, path: String, content: String) {
         let path_clone = path.clone();
+        let project_doc_id = self.project_doc_id.clone();
 
-        if let Some(project_doc_handle) = self.project_doc_handle_state.lock().unwrap().clone() {
+        if let Some(project_doc_handle) = self
+            .doc_handles_state
+            .lock()
+            .unwrap()
+            .get(&self.project_doc_id)
+        {
             project_doc_handle.with_doc_mut(|d| {
                 let mut tx = d.transaction();
 
@@ -251,8 +266,8 @@ impl GodotProject {
 
             let new_doc = project_doc_handle.with_doc(|d| d.clone());
 
-            let mut write_state = self.project_doc_state.lock().unwrap();
-            *write_state = new_doc;
+            let mut write_state = self.docs_state.lock().unwrap();
+            write_state.insert(project_doc_id.clone(), new_doc);
         } else {
             println!("too early {:?}", path)
         }
