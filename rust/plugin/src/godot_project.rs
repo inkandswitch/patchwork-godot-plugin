@@ -76,7 +76,31 @@ impl GodotProject {
             DocumentId::from_str(&maybe_project_doc_id).unwrap()
         };
 
-        // connect repo
+        let project_doc_state: Arc<Mutex<Automerge>> = Arc::new(Mutex::new(Automerge::new()));
+        let project_doc_handle_state: Arc<Mutex<Option<DocHandle>>> = Arc::new(Mutex::new(None));
+
+        // Spawn connection task
+        Self::spawn_connection_task(&runtime, repo_handle.clone());
+
+        // Spawn sync task
+        Self::spawn_sync_task(
+            &runtime,
+            repo_handle.clone(),
+            project_doc_id.clone(),
+            project_doc_state.clone(),
+            project_doc_handle_state.clone(),
+        );
+
+        return Gd::from_init_fn(|base| Self {
+            base,
+            runtime,
+            project_doc_id,
+            project_doc_state,
+            project_doc_handle_state,
+        });
+    }
+
+    fn spawn_connection_task(runtime: &Runtime, repo_handle: RepoHandle) {
         let repo_handle_clone = repo_handle.clone();
         runtime.spawn(async move {
             println!("start a client");
@@ -104,17 +128,22 @@ impl GodotProject {
 
             println!("connected successfully!");
         });
+    }
 
-        let repo_handle_clone_2 = repo_handle.clone();
-        let project_doc_state: Arc<Mutex<Automerge>> = Arc::new(Mutex::new(Automerge::new()));
+    fn spawn_sync_task(
+        runtime: &Runtime,
+        repo_handle: RepoHandle,
+        project_doc_id: DocumentId,
+        project_doc_state: Arc<Mutex<Automerge>>,
+        project_doc_handle_state: Arc<Mutex<Option<DocHandle>>>,
+    ) {
+        let repo_handle_clone = repo_handle.clone();
         let project_doc_state_clone = project_doc_state.clone();
         let project_doc_id_clone = project_doc_id.clone();
-        let project_doc_handle_state: Arc<Mutex<Option<DocHandle>>> = Arc::new(Mutex::new(None));
         let project_doc_handle_state_clone = project_doc_handle_state.clone();
 
-        // sync project doc heads and initialize doc handle
         runtime.spawn(async move {
-            let doc_handle = repo_handle_clone_2
+            let doc_handle = repo_handle_clone
                 .request_document(project_doc_id_clone)
                 .await
                 .unwrap();
@@ -136,16 +165,6 @@ impl GodotProject {
 
                 doc_handle.changed().await.unwrap();
             }
-        });
-
-        // load project doc handle
-
-        return Gd::from_init_fn(|base| Self {
-            base,
-            runtime,
-            project_doc_id,
-            project_doc_state,
-            project_doc_handle_state,
         });
     }
 
