@@ -13,8 +13,9 @@ func _enter_tree() -> void:
   config = PatchworkConfig.new()
   
   # setup automerge fs
-  var project_doc_id = config.get_value("project_doc_id", "")
-  godot_project = GodotProject.create(project_doc_id)
+  # var project_doc_id = config.get_value("project_doc_id", "")
+  godot_project = GodotProject.create("")
+
 
   # if !project_doc_id:
   #  config.set_value("project_doc_id", godot_project.get_doc_id());

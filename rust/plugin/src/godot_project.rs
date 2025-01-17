@@ -33,7 +33,8 @@ pub struct GodotProject {
     base: Base<Node>,
     runtime: Runtime,
     repo_handle: RepoHandle,
-    project_doc_id: DocumentId,
+    branches_metadata_doc_id: DocumentId,
+    checked_out_doc_id: Arc<Mutex<Option<DocumentId>>>,
     docs_state: Arc<Mutex<HashMap<DocumentId, Automerge>>>,
     doc_handles_state: Arc<Mutex<HashMap<DocumentId, DocHandle>>>,
 }
@@ -46,8 +47,8 @@ impl GodotProject {
     #[func]
     // hack: pass in empty string to create a new doc
     // godot rust doens't seem to support Option args
-    fn create(maybe_project_doc_id: String) -> Gd<Self> {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
+    fn create(maybe_branches_metadata_doc_id: String) -> Gd<Self> {
+        let runtime: Runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .unwrap();
@@ -58,47 +59,97 @@ impl GodotProject {
         let storage = FsStorage::open("/tmp/automerge-godot-data").unwrap();
         let repo = Repo::new(None, Box::new(storage));
         let repo_handle = repo.run();
-        let project_doc_id = if maybe_project_doc_id.is_empty() {
-            let project_doc_handle = repo_handle.new_document();
-
-            project_doc_handle.with_doc_mut(|d| {
-                let mut tx = d.transaction();
-                let _ = reconcile(
-                    &mut tx,
-                    GodotProjectDoc {
-                        files: HashMap::new(),
-                    },
-                );
-                tx.commit();
-            });
-
-            project_doc_handle.document_id()
-        } else {
-            DocumentId::from_str(&maybe_project_doc_id).unwrap()
-        };
 
         let docs_state: Arc<Mutex<HashMap<DocumentId, Automerge>>> =
             Arc::new(Mutex::new(HashMap::new()));
         let doc_handles_state: Arc<Mutex<HashMap<DocumentId, DocHandle>>> =
             Arc::new(Mutex::new(HashMap::new()));
 
+        let (branches_metadata_doc_id, checked_out_doc_id) =
+            if maybe_branches_metadata_doc_id.is_empty() {
+                // Create new project doc
+                let project_doc_handle = repo_handle.new_document();
+                project_doc_handle.with_doc_mut(|d| {
+                    let mut tx = d.transaction();
+                    let _ = reconcile(
+                        &mut tx,
+                        GodotProjectDoc {
+                            files: HashMap::new(),
+                        },
+                    );
+                    tx.commit();
+                });
+                let project_doc_id = project_doc_handle.document_id();
+
+                // Create new branches metadata doc
+                let branches_metadata_doc_handle = repo_handle.new_document();
+                branches_metadata_doc_handle.with_doc_mut(|d| {
+                    let mut tx = d.transaction();
+                    let _ = reconcile(
+                        &mut tx,
+                        BranchesMetadataDoc {
+                            main_doc_id: project_doc_id.to_string(),
+                            branches: HashMap::new(),
+                        },
+                    );
+                    tx.commit();
+                });
+
+                let project_doc_id_clone = project_doc_id.clone();
+                let project_doc_id_clone_2 = project_doc_id.clone();
+                let branches_metadata_doc_handle_clone = branches_metadata_doc_handle.clone();
+
+                // Add both docs to the states
+                {
+                    let mut docs = docs_state.lock().unwrap();
+                    let mut doc_handles = doc_handles_state.lock().unwrap();
+
+                    // Add project doc
+                    docs.insert(project_doc_id, project_doc_handle.with_doc(|d| d.clone()));
+                    doc_handles.insert(project_doc_id_clone, project_doc_handle);
+
+                    // Add branches metadata doc
+                    docs.insert(
+                        branches_metadata_doc_handle.document_id(),
+                        branches_metadata_doc_handle.with_doc(|d| d.clone()),
+                    );
+                    doc_handles.insert(
+                        branches_metadata_doc_handle.document_id(),
+                        branches_metadata_doc_handle,
+                    );
+                }
+
+                (
+                    branches_metadata_doc_handle_clone.document_id(),
+                    Some(project_doc_id_clone_2.clone()),
+                )
+            } else {
+                let branches_metadata_doc_id =
+                    DocumentId::from_str(&maybe_branches_metadata_doc_id).unwrap();
+                (branches_metadata_doc_id, None) // Will be populated when doc syncs
+            };
+
         // Spawn connection task
         Self::spawn_connection_task(&runtime, repo_handle.clone());
 
-        // Spawn sync task
-        Self::spawn_sync_task(
+        // todo: handle sync for multiple docs
+        // Spawn sync task for branches metadata doc
+        /*Self::spawn_sync_task(
             &runtime,
             repo_handle.clone(),
-            project_doc_id.clone(),
+            branches_metadata_doc_id.clone(),
             docs_state.clone(),
             doc_handles_state.clone(),
-        );
+        );*/
+
+        println!("checked out? {:?}", checked_out_doc_id);
 
         return Gd::from_init_fn(|base| Self {
             base,
             runtime,
             repo_handle,
-            project_doc_id,
+            branches_metadata_doc_id,
+            checked_out_doc_id: Arc::new(Mutex::new(checked_out_doc_id)),
             docs_state,
             doc_handles_state,
         });
@@ -172,8 +223,11 @@ impl GodotProject {
     }
 
     #[func]
-    fn get_doc_id(&self) -> String {
-        return self.project_doc_id.to_string();
+    fn get_doc_id(&self) -> Variant /* String? */ {
+        match &*self.checked_out_doc_id.lock().unwrap() {
+            Some(doc_id) => doc_id.to_string().to_variant(),
+            None => Variant::nil(),
+        }
     }
 
     fn get_doc(&self) -> Automerge {
@@ -181,7 +235,7 @@ impl GodotProject {
             .docs_state
             .lock()
             .unwrap()
-            .get(&self.project_doc_id)
+            .get(self.checked_out_doc_id.lock().unwrap().as_ref().unwrap())
             .unwrap()
             .clone();
     }
@@ -239,13 +293,14 @@ impl GodotProject {
     #[func]
     fn save_file(&self, path: String, content: String) {
         let path_clone = path.clone();
-        let project_doc_id = self.project_doc_id.clone();
+        let project_doc_id = self.checked_out_doc_id.lock().unwrap().clone();
+        let project_doc_id_clone = project_doc_id.clone();
 
         if let Some(project_doc_handle) = self
             .doc_handles_state
             .lock()
             .unwrap()
-            .get(&self.project_doc_id)
+            .get(&project_doc_id.unwrap())
         {
             project_doc_handle.with_doc_mut(|d| {
                 let mut tx = d.transaction();
@@ -267,7 +322,7 @@ impl GodotProject {
             let new_doc = project_doc_handle.with_doc(|d| d.clone());
 
             let mut write_state = self.docs_state.lock().unwrap();
-            write_state.insert(project_doc_id.clone(), new_doc);
+            write_state.insert(project_doc_id_clone.unwrap(), new_doc);
         } else {
             println!("too early {:?}", path)
         }
