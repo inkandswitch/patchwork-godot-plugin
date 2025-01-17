@@ -309,6 +309,36 @@ impl GodotProject {
         *checked_out = Some(doc_id);
     }
 
+    #[func]
+    fn get_branches(&self) -> Array<Variant> /* { name: String, id: String }[] */ {
+        let branches_metadata_doc = self.get_doc(self.branches_metadata_doc_id.clone());
+        let branches_metadata: BranchesMetadataDoc = hydrate(&branches_metadata_doc).unwrap();
+
+        let mut branches = array![];
+
+        // Add main branch
+        branches.push(
+            &dict! {
+                "name": "main",
+                "id": "main"
+            }
+            .to_variant(),
+        );
+
+        // Add other branches
+        for (id, branch) in branches_metadata.branches {
+            branches.push(
+                &dict! {
+                    "name": branch.name,
+                    "id": id
+                }
+                .to_variant(),
+            );
+        }
+
+        branches
+    }
+
     // these functions below should be extracted into a separate SyncRepo class
 
     // SYNC
