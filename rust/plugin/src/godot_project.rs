@@ -65,69 +65,108 @@ impl GodotProject {
         let doc_handles_state: Arc<Mutex<HashMap<DocumentId, DocHandle>>> =
             Arc::new(Mutex::new(HashMap::new()));
 
-        let (branches_metadata_doc_id, checked_out_doc_id) =
-            if maybe_branches_metadata_doc_id.is_empty() {
-                // Create new project doc
-                let project_doc_handle = repo_handle.new_document();
-                project_doc_handle.with_doc_mut(|d| {
-                    let mut tx = d.transaction();
-                    let _ = reconcile(
-                        &mut tx,
-                        GodotProjectDoc {
-                            files: HashMap::new(),
-                        },
-                    );
-                    tx.commit();
-                });
-                let project_doc_id = project_doc_handle.document_id();
+        let checked_out_doc_id = Arc::new(Mutex::new(None));
 
-                // Create new branches metadata doc
-                let branches_metadata_doc_handle = repo_handle.new_document();
-                branches_metadata_doc_handle.with_doc_mut(|d| {
-                    let mut tx = d.transaction();
-                    let _ = reconcile(
-                        &mut tx,
-                        BranchesMetadataDoc {
-                            main_doc_id: project_doc_id.to_string(),
-                            branches: HashMap::new(),
-                        },
-                    );
-                    tx.commit();
-                });
+        let branches_metadata_doc_id = if maybe_branches_metadata_doc_id.is_empty() {
+            // Create new project doc
+            let project_doc_handle = repo_handle.new_document();
+            project_doc_handle.with_doc_mut(|d| {
+                let mut tx = d.transaction();
+                let _ = reconcile(
+                    &mut tx,
+                    GodotProjectDoc {
+                        files: HashMap::new(),
+                    },
+                );
+                tx.commit();
+            });
+            let project_doc_id = project_doc_handle.document_id();
 
-                let project_doc_id_clone = project_doc_id.clone();
-                let project_doc_id_clone_2 = project_doc_id.clone();
-                let branches_metadata_doc_handle_clone = branches_metadata_doc_handle.clone();
+            // Create new branches metadata doc
+            let branches_metadata_doc_handle = repo_handle.new_document();
+            branches_metadata_doc_handle.with_doc_mut(|d| {
+                let mut tx = d.transaction();
+                let _ = reconcile(
+                    &mut tx,
+                    BranchesMetadataDoc {
+                        main_doc_id: project_doc_id.to_string(),
+                        branches: HashMap::new(),
+                    },
+                );
+                tx.commit();
+            });
+
+            let project_doc_id_clone = project_doc_id.clone();
+            let project_doc_id_clone_2 = project_doc_id.clone();
+            let branches_metadata_doc_handle_clone = branches_metadata_doc_handle.clone();
+
+            // Add both docs to the states
+            {
+                let mut docs = docs_state.lock().unwrap();
+                let mut doc_handles = doc_handles_state.lock().unwrap();
+
+                // Add project doc
+                docs.insert(project_doc_id, project_doc_handle.with_doc(|d| d.clone()));
+                doc_handles.insert(project_doc_id_clone, project_doc_handle);
+
+                // Add branches metadata doc
+                docs.insert(
+                    branches_metadata_doc_handle.document_id(),
+                    branches_metadata_doc_handle.with_doc(|d| d.clone()),
+                );
+                doc_handles.insert(
+                    branches_metadata_doc_handle.document_id(),
+                    branches_metadata_doc_handle,
+                );
+            }
+
+            {
+                let mut checked_out = checked_out_doc_id.lock().unwrap();
+                *checked_out = Some(project_doc_id_clone_2.clone());
+            }
+
+            branches_metadata_doc_handle_clone.document_id()
+        } else {
+            let branches_metadata_doc_id =
+                DocumentId::from_str(&maybe_branches_metadata_doc_id).unwrap();
+            let branches_metadata_doc_id_clone = branches_metadata_doc_id.clone();
+            let branches_metadata_doc_id_clone_2 = branches_metadata_doc_id.clone();
+
+            let repo_handle_clone = repo_handle.clone();
+            let docs_state = docs_state.clone();
+            let doc_handles_state = doc_handles_state.clone();
+            let checked_out_doc_id = checked_out_doc_id.clone();
+
+            runtime.spawn(async move {
+                let result = repo_handle_clone
+                    .request_document(branches_metadata_doc_id)
+                    .await
+                    .unwrap();
+
+                let branches_metadata: BranchesMetadataDoc =
+                    result.with_doc(|d| hydrate(d).unwrap());
+
+                let main_doc_id = DocumentId::from_str(&branches_metadata.main_doc_id).unwrap();
 
                 // Add both docs to the states
                 {
                     let mut docs = docs_state.lock().unwrap();
                     let mut doc_handles = doc_handles_state.lock().unwrap();
 
-                    // Add project doc
-                    docs.insert(project_doc_id, project_doc_handle.with_doc(|d| d.clone()));
-                    doc_handles.insert(project_doc_id_clone, project_doc_handle);
-
                     // Add branches metadata doc
                     docs.insert(
-                        branches_metadata_doc_handle.document_id(),
-                        branches_metadata_doc_handle.with_doc(|d| d.clone()),
+                        branches_metadata_doc_id_clone.clone(),
+                        result.with_doc(|d| d.clone()),
                     );
-                    doc_handles.insert(
-                        branches_metadata_doc_handle.document_id(),
-                        branches_metadata_doc_handle,
-                    );
+                    doc_handles.insert(branches_metadata_doc_id_clone.clone(), result);
                 }
 
-                (
-                    branches_metadata_doc_handle_clone.document_id(),
-                    Some(project_doc_id_clone_2.clone()),
-                )
-            } else {
-                let branches_metadata_doc_id =
-                    DocumentId::from_str(&maybe_branches_metadata_doc_id).unwrap();
-                (branches_metadata_doc_id, None) // Will be populated when doc syncs
-            };
+                let mut checked_out = checked_out_doc_id.lock().unwrap();
+                *checked_out = Some(main_doc_id);
+            });
+
+            branches_metadata_doc_id_clone_2
+        };
 
         // Spawn connection task
         Self::spawn_connection_task(&runtime, repo_handle.clone());
@@ -147,7 +186,7 @@ impl GodotProject {
             runtime,
             repo_handle,
             branches_metadata_doc_id,
-            checked_out_doc_id: Arc::new(Mutex::new(checked_out_doc_id)),
+            checked_out_doc_id,
             docs_state,
             doc_handles_state,
         });
@@ -178,6 +217,11 @@ impl GodotProject {
     }
 
     // PUBLIC API
+
+    #[func]
+    fn get_doc_id(&self) -> String {
+        return self.branches_metadata_doc_id.to_string();
+    }
 
     #[func]
     fn get_heads(&self) -> Array<Variant> /* String[] */ {
