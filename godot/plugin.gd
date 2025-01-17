@@ -19,11 +19,13 @@ func _enter_tree() -> void:
   # if !project_doc_id:
   #  config.set_value("project_doc_id", godot_project.get_doc_id());
 
+  # todo: signal when godot project is ready
+  await get_tree().create_timer(1.0).timeout
+
 
   godot_project.save_file("test.txt", "test")
   godot_project.save_file("test.txt", "another")
 
-  await get_tree().create_timer(1.0).timeout
 
   var heads = godot_project.get_heads()
   print("heads", heads)

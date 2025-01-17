@@ -1,11 +1,11 @@
 use std::{
     collections::HashMap,
     str::FromStr,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex},
 };
 
 use automerge::{transaction::Transactable, Automerge, ChangeHash, ObjType, ReadDoc, ROOT};
-use automerge_repo::{tokio::FsStorage, ConnDirection, DocumentId, Repo, RepoHandle};
+use automerge_repo::{tokio::FsStorage, ConnDirection, DocHandle, DocumentId, Repo, RepoHandle};
 use autosurgeon::{reconcile, Hydrate, Reconcile};
 use godot::prelude::*;
 use tokio::{net::TcpStream, runtime::Runtime};
@@ -30,11 +30,11 @@ struct Branch {
 #[derive(GodotClass)]
 #[class(no_init, base=Node)]
 pub struct GodotProject {
-    repo_handle: RepoHandle,
+    base: Base<Node>,
     runtime: Runtime,
     project_doc_id: DocumentId,
-    base: Base<Node>,
-    project_doc_state: Arc<RwLock<Automerge>>,
+    project_doc_state: Arc<Mutex<Automerge>>,
+    project_doc_handle_state: Arc<Mutex<Option<DocHandle>>>,
 }
 
 //const SERVER_URL: &str = "localhost:8080";
@@ -106,16 +106,23 @@ impl GodotProject {
         });
 
         let repo_handle_clone_2 = repo_handle.clone();
-        let project_doc_state: Arc<RwLock<Automerge>> = Arc::new(RwLock::new(Automerge::new()));
+        let project_doc_state: Arc<Mutex<Automerge>> = Arc::new(Mutex::new(Automerge::new()));
         let project_doc_state_clone = project_doc_state.clone();
         let project_doc_id_clone = project_doc_id.clone();
+        let project_doc_handle_state: Arc<Mutex<Option<DocHandle>>> = Arc::new(Mutex::new(None));
+        let project_doc_handle_state_clone = project_doc_handle_state.clone();
 
-        // sync project doc heads
+        // sync project doc heads and initialize doc handle
         runtime.spawn(async move {
             let doc_handle = repo_handle_clone_2
                 .request_document(project_doc_id_clone)
                 .await
                 .unwrap();
+
+            {
+                let mut write_handle = project_doc_handle_state_clone.lock().unwrap();
+                *write_handle = Some(doc_handle.clone());
+            }
 
             let doc_handle_clone = doc_handle.clone();
 
@@ -123,7 +130,7 @@ impl GodotProject {
                 let doc = doc_handle_clone.with_doc(|d| d.clone());
 
                 {
-                    let mut write_state = project_doc_state_clone.write().unwrap();
+                    let mut write_state = project_doc_state_clone.lock().unwrap();
                     *write_state = doc
                 }
 
@@ -131,12 +138,14 @@ impl GodotProject {
             }
         });
 
+        // load project doc handle
+
         return Gd::from_init_fn(|base| Self {
-            repo_handle,
-            project_doc_id,
-            runtime,
             base,
+            runtime,
+            project_doc_id,
             project_doc_state,
+            project_doc_handle_state,
         });
     }
 
@@ -146,7 +155,7 @@ impl GodotProject {
     }
 
     fn get_doc(&self) -> Automerge {
-        return self.project_doc_state.read().unwrap().clone();
+        return self.project_doc_state.lock().unwrap().clone();
     }
 
     #[func]
@@ -201,15 +210,10 @@ impl GodotProject {
 
     #[func]
     fn save_file(&self, path: String, content: String) {
-        let project_doc_id = self.project_doc_id.clone();
-        let repo_handle = self.repo_handle.clone();
         let path_clone = path.clone();
 
-        self.runtime.spawn(async move {
-            let doc_handle = repo_handle.request_document(project_doc_id);
-            let result = doc_handle.await.unwrap();
-
-            result.with_doc_mut(|d| {
+        if let Some(project_doc_handle) = self.project_doc_handle_state.lock().unwrap().clone() {
+            project_doc_handle.with_doc_mut(|d| {
                 let mut tx = d.transaction();
 
                 let files = match tx.get(ROOT, "files") {
@@ -221,11 +225,17 @@ impl GodotProject {
                     panic!("Failed to save file: {:?}", e);
                 }
 
+                println!("save {:?}", path_clone);
+
                 tx.commit();
-                return;
             });
 
-            println!("saved {:?}", path_clone);
-        });
+            let new_doc = project_doc_handle.with_doc(|d| d.clone());
+
+            let mut write_state = self.project_doc_state.lock().unwrap();
+            *write_state = new_doc;
+        } else {
+            println!("too early {:?}", path)
+        }
     }
 }
