@@ -153,6 +153,166 @@ impl GodotProject {
         });
     }
 
+    fn get_doc(&self, id: DocumentId) -> Automerge {
+        return self
+            .docs_state
+            .lock()
+            .unwrap()
+            .get(&id.into())
+            .unwrap()
+            .clone();
+    }
+
+    fn get_doc_handle(&self, id: DocumentId) -> DocHandle {
+        return self
+            .doc_handles_state
+            .lock()
+            .unwrap()
+            .get(&id.into())
+            .unwrap()
+            .clone();
+    }
+
+    fn get_checked_out_doc_id(&self) -> DocumentId {
+        return self.checked_out_doc_id.lock().unwrap().clone().unwrap();
+    }
+
+    // PUBLIC API
+
+    #[func]
+    fn get_heads(&self) -> Array<Variant> /* String[] */ {
+        let checked_out_doc_id = self.get_checked_out_doc_id();
+        let doc = self.get_doc(checked_out_doc_id);
+        let heads = doc.get_heads();
+
+        return heads
+            .to_vec()
+            .iter()
+            .map(|h| h.to_string().to_variant())
+            .collect::<Array<Variant>>();
+    }
+    #[func]
+    fn get_file(&self, path: String) -> Variant /* String? */ {
+        let doc = self.get_doc(self.get_checked_out_doc_id());
+
+        let files = doc.get(ROOT, "files").unwrap().unwrap().1;
+
+        return match doc.get(files, path) {
+            Ok(Some((value, _))) => value.into_string().unwrap_or_default().to_variant(),
+            _ => Variant::nil(),
+        };
+    }
+
+    #[func]
+    fn get_file_at(&self, path: String, heads: Array<Variant> /* String[] */) -> Variant /* String? */
+    {
+        let doc = self.get_doc(self.get_checked_out_doc_id());
+        let heads: Vec<ChangeHash> = heads
+            .iter_shared()
+            .map(|h| ChangeHash::from_str(h.to_string().as_str()).unwrap())
+            .collect();
+
+        let files = doc.get(ROOT, "files").unwrap().unwrap().1;
+
+        return match doc.get_at(files, path, &heads) {
+            Ok(Some((value, _))) => value.into_string().unwrap_or_default().to_variant(),
+            _ => Variant::nil(),
+        };
+    }
+
+    #[func]
+    fn get_changes(&self) -> Array<Variant> /* String[]  */ {
+        self.get_doc(self.get_checked_out_doc_id())
+            .get_changes(&[])
+            .to_vec()
+            .iter()
+            .map(|c| c.hash().to_string().to_variant())
+            .collect::<Array<Variant>>()
+    }
+
+    #[func]
+    fn save_file(&self, path: String, content: String) {
+        let path_clone = path.clone();
+        let project_doc_id = self.checked_out_doc_id.lock().unwrap().clone();
+        let project_doc_id_clone = project_doc_id.clone();
+
+        if let Some(project_doc_handle) = self
+            .doc_handles_state
+            .lock()
+            .unwrap()
+            .get(&project_doc_id.unwrap())
+        {
+            project_doc_handle.with_doc_mut(|d| {
+                let mut tx = d.transaction();
+
+                let files = match tx.get(ROOT, "files") {
+                    Ok(Some((automerge::Value::Object(ObjType::Map), files))) => files,
+                    _ => panic!("Invalid project doc, doesn't have files map"),
+                };
+
+                if let Err(e) = tx.put(files, path, content) {
+                    panic!("Failed to save file: {:?}", e);
+                }
+
+                println!("save {:?}", path_clone);
+
+                tx.commit();
+            });
+
+            let new_doc = project_doc_handle.with_doc(|d| d.clone());
+
+            let mut write_state = self.docs_state.lock().unwrap();
+            write_state.insert(project_doc_id_clone.unwrap(), new_doc);
+        } else {
+            println!("too early {:?}", path)
+        }
+    }
+
+    #[func]
+    fn create_branch(&self, name: String) -> String {
+        let branches_metadata_doc = self.get_doc(self.branches_metadata_doc_id.clone());
+
+        // todo: do hydration in sync
+        let mut branches_metadata: BranchesMetadataDoc = hydrate(&branches_metadata_doc).unwrap();
+
+        let main_doc_id = DocumentId::from_str(&branches_metadata.main_doc_id).unwrap();
+        let new_doc_id = self.clone_doc(main_doc_id);
+
+        branches_metadata.branches.insert(
+            new_doc_id.to_string(),
+            Branch {
+                name,
+                id: new_doc_id.to_string(),
+            },
+        );
+
+        self.update_doc(self.branches_metadata_doc_id.clone(), |d| {
+            let mut tx = d.transaction();
+            reconcile(&mut tx, branches_metadata).unwrap();
+            tx.commit();
+        });
+
+        new_doc_id.to_string()
+    }
+
+    #[func]
+    fn checkout_branch(&self, branch_id: String) {
+        let doc_id = if branch_id == "main" {
+            let branches_metadata_doc = self.get_doc(self.branches_metadata_doc_id.clone());
+            let branches_metadata: BranchesMetadataDoc = hydrate(&branches_metadata_doc).unwrap();
+            DocumentId::from_str(&branches_metadata.main_doc_id).unwrap()
+        } else {
+            DocumentId::from_str(&branch_id).unwrap()
+        };
+
+        let mut checked_out = self.checked_out_doc_id.lock().unwrap();
+        *checked_out = Some(doc_id);
+    }
+
+    // these functions below should be extracted into a separate SyncRepo class
+
+    // SYNC
+
     fn spawn_connection_task(runtime: &Runtime, repo_handle: RepoHandle) {
         let repo_handle_clone = repo_handle.clone();
         runtime.spawn(async move {
@@ -220,123 +380,7 @@ impl GodotProject {
         });
     }
 
-    fn get_doc(&self, id: DocumentId) -> Automerge {
-        return self
-            .docs_state
-            .lock()
-            .unwrap()
-            .get(&id.into())
-            .unwrap()
-            .clone();
-    }
-
-    fn get_doc_handle(&self, id: DocumentId) -> DocHandle {
-        return self
-            .doc_handles_state
-            .lock()
-            .unwrap()
-            .get(&id.into())
-            .unwrap()
-            .clone();
-    }
-
-    fn get_project_doc(&self) -> Automerge {
-        return self
-            .docs_state
-            .lock()
-            .unwrap()
-            .get(self.checked_out_doc_id.lock().unwrap().as_ref().unwrap())
-            .unwrap()
-            .clone();
-    }
-
-    #[func]
-    fn get_heads(&self) -> Array<Variant> /* String[] */ {
-        let heads = self.get_project_doc().get_heads();
-
-        return heads
-            .to_vec()
-            .iter()
-            .map(|h| h.to_string().to_variant())
-            .collect::<Array<Variant>>();
-    }
-
-    #[func]
-    fn get_file(&self, path: String) -> Variant /* String? */ {
-        let doc = self.get_project_doc();
-
-        let files = doc.get(ROOT, "files").unwrap().unwrap().1;
-
-        return match doc.get(files, path) {
-            Ok(Some((value, _))) => value.into_string().unwrap_or_default().to_variant(),
-            _ => Variant::nil(),
-        };
-    }
-
-    #[func]
-    fn get_file_at(&self, path: String, heads: Array<Variant> /* String[] */) -> Variant /* String? */
-    {
-        let doc = self.get_project_doc();
-        let heads: Vec<ChangeHash> = heads
-            .iter_shared()
-            .map(|h| ChangeHash::from_str(h.to_string().as_str()).unwrap())
-            .collect();
-
-        let files = doc.get(ROOT, "files").unwrap().unwrap().1;
-
-        return match doc.get_at(files, path, &heads) {
-            Ok(Some((value, _))) => value.into_string().unwrap_or_default().to_variant(),
-            _ => Variant::nil(),
-        };
-    }
-
-    #[func]
-    fn get_changes(&self) -> Array<Variant> /* String[]  */ {
-        self.get_project_doc()
-            .get_changes(&[])
-            .to_vec()
-            .iter()
-            .map(|c| c.hash().to_string().to_variant())
-            .collect::<Array<Variant>>()
-    }
-
-    #[func]
-    fn save_file(&self, path: String, content: String) {
-        let path_clone = path.clone();
-        let project_doc_id = self.checked_out_doc_id.lock().unwrap().clone();
-        let project_doc_id_clone = project_doc_id.clone();
-
-        if let Some(project_doc_handle) = self
-            .doc_handles_state
-            .lock()
-            .unwrap()
-            .get(&project_doc_id.unwrap())
-        {
-            project_doc_handle.with_doc_mut(|d| {
-                let mut tx = d.transaction();
-
-                let files = match tx.get(ROOT, "files") {
-                    Ok(Some((automerge::Value::Object(ObjType::Map), files))) => files,
-                    _ => panic!("Invalid project doc, doesn't have files map"),
-                };
-
-                if let Err(e) = tx.put(files, path, content) {
-                    panic!("Failed to save file: {:?}", e);
-                }
-
-                println!("save {:?}", path_clone);
-
-                tx.commit();
-            });
-
-            let new_doc = project_doc_handle.with_doc(|d| d.clone());
-
-            let mut write_state = self.docs_state.lock().unwrap();
-            write_state.insert(project_doc_id_clone.unwrap(), new_doc);
-        } else {
-            println!("too early {:?}", path)
-        }
-    }
+    // DOC ACCESS + MANIPULATION
 
     fn update_doc<F>(&self, doc_id: DocumentId, f: F)
     where
@@ -378,46 +422,5 @@ impl GodotProject {
         write_handles.insert(new_doc_id.clone(), new_doc_handle);
 
         new_doc_id
-    }
-
-    #[func]
-    fn create_branch(&self, name: String) -> String {
-        let branches_metadata_doc = self.get_doc(self.branches_metadata_doc_id.clone());
-
-        // todo: do hydration in sync
-        let mut branches_metadata: BranchesMetadataDoc = hydrate(&branches_metadata_doc).unwrap();
-
-        let main_doc_id = DocumentId::from_str(&branches_metadata.main_doc_id).unwrap();
-        let new_doc_id = self.clone_doc(main_doc_id);
-
-        branches_metadata.branches.insert(
-            new_doc_id.to_string(),
-            Branch {
-                name,
-                id: new_doc_id.to_string(),
-            },
-        );
-
-        self.update_doc(self.branches_metadata_doc_id.clone(), |d| {
-            let mut tx = d.transaction();
-            reconcile(&mut tx, branches_metadata).unwrap();
-            tx.commit();
-        });
-
-        new_doc_id.to_string()
-    }
-
-    #[func]
-    fn checkout_branch(&self, branch_id: String) {
-        let doc_id = if branch_id == "main" {
-            let branches_metadata_doc = self.get_doc(self.branches_metadata_doc_id.clone());
-            let branches_metadata: BranchesMetadataDoc = hydrate(&branches_metadata_doc).unwrap();
-            DocumentId::from_str(&branches_metadata.main_doc_id).unwrap()
-        } else {
-            DocumentId::from_str(&branch_id).unwrap()
-        };
-
-        let mut checked_out = self.checked_out_doc_id.lock().unwrap();
-        *checked_out = Some(doc_id);
     }
 }

@@ -7,7 +7,7 @@ var sidebar
 var checked_out_branch_doc_id = null
 
 func _enter_tree() -> void:
-  print("start patchwork!!");
+  print("start patchwork");
 
   # setup config
   config = PatchworkConfig.new()
@@ -20,21 +20,47 @@ func _enter_tree() -> void:
   # if !project_doc_id:
   #  config.set_value("project_doc_id", godot_project.get_doc_id());
 
-  # todo: signal when godot project is ready
-  await get_tree().create_timer(1.0).timeout
+  print("file", godot_project.get_file("foo"))
+
+  var branch_1 = godot_project.create_branch("branch 1")
 
 
-  godot_project.save_file("test.txt", "test")
-  godot_project.save_file("test.txt", "another")
+  godot_project.checkout_branch(branch_1)
+
+  
+  var branch_2 = godot_project.create_branch("branch 2")
 
 
-  var heads = godot_project.get_heads()
-  print("heads", heads)
+  godot_project.checkout_branch(branch_1)
+  godot_project.save_file("foo.txt", "hello")
+  godot_project.save_file("foo.txt", "hello?")
 
-  var changes = godot_project.get_changes()
-  print("changes", changes)
-  for change in changes:
-    print("Change: ", godot_project.get_file_at("test.txt", [change]))
+  print("foo.txt on branch 1 ", godot_project.get_file("foo.txt"))
+  print("changes on branch 1 ", godot_project.get_changes())
+
+
+  godot_project.checkout_branch(branch_2)
+  godot_project.save_file("foo.txt", "another")
+
+  print("foo.txt on branch 2 ", godot_project.get_file("foo.txt"))
+  print("changes on branch 2 ", godot_project.get_changes())
+
+  godot_project.checkout_branch(branch_1)
+  print("foo.txt on branch 1 ", godot_project.get_file("foo.txt"))
+
+
+  #print("foo.txt on branch 2 ", godot_project.get_file("foo.txt"))
+
+
+  # godot_project.create_branch("test");
+
+  # var heads = godot_project.get_heads()
+  # print("heads", heads)
+
+  # var changes = godot_project.get_changes()
+  # print("changes", changes)
+  # for change in changes:
+  #   print("Change: ", godot_project.get_file_at("test.txt", [change]))
 
 
   # 
