@@ -6,7 +6,7 @@ use std::{
 
 use automerge::{transaction::Transactable, Automerge, ChangeHash, ObjType, ReadDoc, ROOT};
 use automerge_repo::{tokio::FsStorage, ConnDirection, DocHandle, DocumentId, Repo, RepoHandle};
-use autosurgeon::{reconcile, Hydrate, Reconcile};
+use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
 use godot::prelude::*;
 use tokio::{net::TcpStream, runtime::Runtime};
 
@@ -142,8 +142,6 @@ impl GodotProject {
             doc_handles_state.clone(),
         );*/
 
-        println!("checked out? {:?}", checked_out_doc_id);
-
         return Gd::from_init_fn(|base| Self {
             base,
             runtime,
@@ -222,15 +220,27 @@ impl GodotProject {
         });
     }
 
-    #[func]
-    fn get_doc_id(&self) -> Variant /* String? */ {
-        match &*self.checked_out_doc_id.lock().unwrap() {
-            Some(doc_id) => doc_id.to_string().to_variant(),
-            None => Variant::nil(),
-        }
+    fn get_doc(&self, id: DocumentId) -> Automerge {
+        return self
+            .docs_state
+            .lock()
+            .unwrap()
+            .get(&id.into())
+            .unwrap()
+            .clone();
     }
 
-    fn get_doc(&self) -> Automerge {
+    fn get_doc_handle(&self, id: DocumentId) -> DocHandle {
+        return self
+            .doc_handles_state
+            .lock()
+            .unwrap()
+            .get(&id.into())
+            .unwrap()
+            .clone();
+    }
+
+    fn get_project_doc(&self) -> Automerge {
         return self
             .docs_state
             .lock()
@@ -242,7 +252,7 @@ impl GodotProject {
 
     #[func]
     fn get_heads(&self) -> Array<Variant> /* String[] */ {
-        let heads = self.get_doc().get_heads();
+        let heads = self.get_project_doc().get_heads();
 
         return heads
             .to_vec()
@@ -253,7 +263,7 @@ impl GodotProject {
 
     #[func]
     fn get_file(&self, path: String) -> Variant /* String? */ {
-        let doc = self.get_doc();
+        let doc = self.get_project_doc();
 
         let files = doc.get(ROOT, "files").unwrap().unwrap().1;
 
@@ -266,7 +276,7 @@ impl GodotProject {
     #[func]
     fn get_file_at(&self, path: String, heads: Array<Variant> /* String[] */) -> Variant /* String? */
     {
-        let doc = self.get_doc();
+        let doc = self.get_project_doc();
         let heads: Vec<ChangeHash> = heads
             .iter_shared()
             .map(|h| ChangeHash::from_str(h.to_string().as_str()).unwrap())
@@ -282,7 +292,7 @@ impl GodotProject {
 
     #[func]
     fn get_changes(&self) -> Array<Variant> /* String[]  */ {
-        self.get_doc()
+        self.get_project_doc()
             .get_changes(&[])
             .to_vec()
             .iter()
@@ -326,5 +336,88 @@ impl GodotProject {
         } else {
             println!("too early {:?}", path)
         }
+    }
+
+    fn update_doc<F>(&self, doc_id: DocumentId, f: F)
+    where
+        F: FnOnce(&mut Automerge),
+    {
+        if let Some(doc_handle) = self.doc_handles_state.lock().unwrap().get(&doc_id) {
+            doc_handle.with_doc_mut(f);
+
+            let new_doc = doc_handle.with_doc(|d| d.clone());
+            let mut write_state = self.docs_state.lock().unwrap();
+            write_state.insert(doc_id, new_doc);
+        }
+    }
+
+    fn create_doc<F>(&self, f: F) -> DocumentId
+    where
+        F: FnOnce(&mut Automerge),
+    {
+        let doc_handle = self.repo_handle.new_document();
+        let doc_id = doc_handle.document_id();
+
+        let mut write_handles = self.doc_handles_state.lock().unwrap();
+        write_handles.insert(doc_id.clone(), doc_handle);
+
+        self.update_doc(doc_id.clone(), f);
+
+        doc_id
+    }
+
+    fn clone_doc(&self, doc_id: DocumentId) -> DocumentId {
+        let new_doc_handle = self.repo_handle.new_document();
+        let new_doc_id = new_doc_handle.document_id();
+        let doc_handle = self.get_doc_handle(doc_id);
+
+        let _ = doc_handle
+            .with_doc_mut(|mut main_d| new_doc_handle.with_doc_mut(|d| d.merge(&mut main_d)));
+
+        let mut write_handles = self.doc_handles_state.lock().unwrap();
+        write_handles.insert(new_doc_id.clone(), new_doc_handle);
+
+        new_doc_id
+    }
+
+    #[func]
+    fn create_branch(&self, name: String) -> String {
+        let branches_metadata_doc = self.get_doc(self.branches_metadata_doc_id.clone());
+
+        // todo: do hydration in sync
+        let mut branches_metadata: BranchesMetadataDoc = hydrate(&branches_metadata_doc).unwrap();
+
+        let main_doc_id = DocumentId::from_str(&branches_metadata.main_doc_id).unwrap();
+        let new_doc_id = self.clone_doc(main_doc_id);
+
+        branches_metadata.branches.insert(
+            new_doc_id.to_string(),
+            Branch {
+                name,
+                id: new_doc_id.to_string(),
+            },
+        );
+
+        self.update_doc(self.branches_metadata_doc_id.clone(), |d| {
+            let mut tx = d.transaction();
+            reconcile(&mut tx, branches_metadata).unwrap();
+            tx.commit();
+        });
+
+        new_doc_id.to_string()
+    }
+
+    #[func]
+    fn checkout_branch(&self, branch_id: String) {
+        let doc_id = if branch_id == "main" {
+            let branches_metadata_doc = self.get_doc(self.branches_metadata_doc_id.clone());
+            let branches_metadata: BranchesMetadataDoc = hydrate(&branches_metadata_doc).unwrap();
+            DocumentId::from_str(&branches_metadata.main_doc_id).unwrap()
+        } else {
+            DocumentId::from_str(&branch_id).unwrap()
+        };
+
+        let mut checked_out = self.checked_out_doc_id.lock().unwrap();
+        *checked_out = Some(doc_id);
     }
 }
