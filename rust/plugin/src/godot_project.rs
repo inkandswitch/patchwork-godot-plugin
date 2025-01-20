@@ -40,7 +40,7 @@ pub struct GodotProject {
 }
 
 //const SERVER_URL: &str = "localhost:8080";
-const SERVER_URL: &str = "161.35.233.157:8080";
+const SERVER_URL: &str = "143.198.131.146:8081";
 
 #[godot_api]
 impl GodotProject {
@@ -202,7 +202,14 @@ impl GodotProject {
     #[func]
     fn get_heads(&self) -> Array<Variant> /* String[] */ {
         let checked_out_doc_id = self.get_checked_out_doc_id();
-        let doc = self.get_doc(checked_out_doc_id);
+
+        let doc = self.get_doc(checked_out_doc_id.clone()).unwrap_or_else(|| {
+            panic!(
+                "Failed to get doc for checked out doc id: {}",
+                &checked_out_doc_id
+            )
+        });
+
         let heads = doc.get_heads();
 
         return heads
@@ -214,7 +221,9 @@ impl GodotProject {
 
     #[func]
     fn get_file(&self, path: String) -> Variant /* String? */ {
-        let doc = self.get_doc(self.get_checked_out_doc_id());
+        let doc = self
+            .get_doc(self.get_checked_out_doc_id())
+            .unwrap_or_else(|| panic!("Failed to get checked out doc"));
 
         let files = doc.get(ROOT, "files").unwrap().unwrap().1;
 
@@ -227,7 +236,10 @@ impl GodotProject {
     #[func]
     fn get_file_at(&self, path: String, heads: Array<Variant> /* String[] */) -> Variant /* String? */
     {
-        let doc = self.get_doc(self.get_checked_out_doc_id());
+        let doc = self
+            .get_doc(self.get_checked_out_doc_id())
+            .unwrap_or_else(|| panic!("Failed to get checked out doc"));
+
         let heads: Vec<ChangeHash> = heads
             .iter_shared()
             .map(|h| ChangeHash::from_str(h.to_string().as_str()).unwrap())
@@ -243,8 +255,11 @@ impl GodotProject {
 
     #[func]
     fn get_changes(&self) -> Array<Variant> /* String[]  */ {
-        self.get_doc(self.get_checked_out_doc_id())
-            .get_changes(&[])
+        let doc = self
+            .get_doc(self.get_checked_out_doc_id())
+            .unwrap_or_else(|| panic!("Failed to get checked out doc"));
+
+        doc.get_changes(&[])
             .to_vec()
             .iter()
             .map(|c| c.hash().to_string().to_variant())
@@ -291,10 +306,12 @@ impl GodotProject {
 
     #[func]
     fn create_branch(&self, name: String) -> String {
-        let branches_metadata_doc = self.get_doc(self.branches_metadata_doc_id.clone());
+        let branches_metadata_doc = self
+            .get_doc(self.branches_metadata_doc_id.clone())
+            .unwrap_or_else(|| panic!("Failed to load branches metadata doc"));
 
-        // todo: do hydration in sync
-        let mut branches_metadata: BranchesMetadataDoc = hydrate(&branches_metadata_doc).unwrap();
+        let mut branches_metadata: BranchesMetadataDoc = hydrate(&branches_metadata_doc)
+            .unwrap_or_else(|e| panic!("Failed to hydrate branches metadata doc: {}", e));
 
         let main_doc_id = DocumentId::from_str(&branches_metadata.main_doc_id).unwrap();
         let new_doc_id = self.clone_doc(main_doc_id);
@@ -319,8 +336,13 @@ impl GodotProject {
     #[func]
     fn checkout_branch(&self, branch_id: String) {
         let doc_id = if branch_id == "main" {
-            let branches_metadata_doc = self.get_doc(self.branches_metadata_doc_id.clone());
-            let branches_metadata: BranchesMetadataDoc = hydrate(&branches_metadata_doc).unwrap();
+            let branches_metadata_doc = self
+                .get_doc(self.branches_metadata_doc_id.clone())
+                .unwrap_or_else(|| panic!("couldn't load branches metadata doc {}", branch_id));
+
+            let branches_metadata: BranchesMetadataDoc =
+                hydrate(&branches_metadata_doc).expect("failed to hydrate branches metadata doc");
+
             DocumentId::from_str(&branches_metadata.main_doc_id).unwrap()
         } else {
             DocumentId::from_str(&branch_id).unwrap()
@@ -332,7 +354,15 @@ impl GodotProject {
 
     #[func]
     fn get_branches(&self) -> Array<Variant> /* { name: String, id: String }[] */ {
-        let branches_metadata_doc = self.get_doc(self.branches_metadata_doc_id.clone());
+        let maybe_branches_metadata_doc = self.get_doc(self.branches_metadata_doc_id.clone());
+
+        let branches_metadata_doc = match maybe_branches_metadata_doc {
+            Some(doc) => doc,
+            None => {
+                panic!("couldn't load branches_metadata_doc");
+            }
+        };
+
         let branches_metadata: BranchesMetadataDoc = hydrate(&branches_metadata_doc).unwrap();
 
         let mut branches = array![];
@@ -464,8 +494,9 @@ impl GodotProject {
     fn clone_doc(&self, doc_id: DocumentId) -> DocumentId {
         let new_doc_handle = self.repo_handle.new_document();
         let new_doc_id = new_doc_handle.document_id();
-        let doc_handle = self.get_doc_handle(doc_id);
+        let doc_handle = self.get_doc_handle(doc_id.clone());
 
+        let doc_handle = doc_handle.unwrap_or_else(|| panic!("Couldn't clone doc_id: {}", &doc_id));
         let _ = doc_handle
             .with_doc_mut(|mut main_d| new_doc_handle.with_doc_mut(|d| d.merge(&mut main_d)));
 
@@ -475,24 +506,17 @@ impl GodotProject {
         new_doc_id
     }
 
-    fn get_doc(&self, id: DocumentId) -> Automerge {
-        return self
-            .docs_state
-            .lock()
-            .unwrap()
-            .get(&id.into())
-            .unwrap()
-            .clone();
+    fn get_doc(&self, id: DocumentId) -> Option<Automerge> {
+        return self.docs_state.lock().unwrap().get(&id.into()).cloned();
     }
 
-    fn get_doc_handle(&self, id: DocumentId) -> DocHandle {
+    fn get_doc_handle(&self, id: DocumentId) -> Option<DocHandle> {
         return self
             .doc_handles_state
             .lock()
             .unwrap()
             .get(&id.into())
-            .unwrap()
-            .clone();
+            .cloned();
     }
 
     fn get_checked_out_doc_id(&self) -> DocumentId {
