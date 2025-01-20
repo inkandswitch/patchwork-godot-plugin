@@ -4,6 +4,7 @@ extends EditorPlugin
 var godot_project: GodotProject
 var config: PatchworkConfig
 var file_system: FileSystem
+var sidebar
 
 var is_initialized = false
 
@@ -16,7 +17,11 @@ func _enter_tree() -> void:
 	file_system = FileSystem.new(self)
 	# file_system.connect("file_changed", _on_local_file_changed)
 
-	init_godot_project()
+	await init_godot_project()
+
+	sidebar = preload("res://addons/patchwork/godot/sidebar.tscn").instantiate()
+	sidebar.init(godot_project)
+	add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
 
 	# run_test()
 
@@ -61,16 +66,9 @@ func init_godot_project():
 			godot_project.save_file(path, file_system.get_file(path))
 
 	else:
-
-		
 		print("sync patchwork -> godot")
 
 		var files_in_patchwork = godot_project.list_all_files()
-
-		for path in files_in_patchwork:
-			print("  ", path)
-
-		print("sync patchwork -> godot")
 
 		# load checked out patchwork files into godot
 		for path in files_in_patchwork:
@@ -96,8 +94,8 @@ func _on_local_file_changed(path: String, content: String):
 
 
 func _exit_tree() -> void:
-	# if sidebar:
-	# 	remove_control_from_docks(sidebar)
+	if sidebar:
+		remove_control_from_docks(sidebar)
 
 	if godot_project:
 		godot_project.stop();

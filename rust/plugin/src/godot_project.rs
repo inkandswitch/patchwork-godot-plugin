@@ -425,6 +425,17 @@ impl GodotProject {
         branches
     }
 
+    #[func]
+    fn get_checked_out_branch_id(&self) -> String {
+        return self
+            .checked_out_doc_id
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap()
+            .to_string();
+    }
+
     // these functions below should be extracted into a separate SyncRepo class
 
     // SYNC
