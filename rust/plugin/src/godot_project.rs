@@ -56,6 +56,7 @@ impl GodotProject {
 
         let _ = tracing_subscriber::fmt::try_init();
 
+        // todo: store in project folder
         let storage = FsStorage::open("/tmp/automerge-godot-data").unwrap();
         let repo = Repo::new(None, Box::new(storage));
         let repo_handle = repo.run();
@@ -206,6 +207,15 @@ impl GodotProject {
     }
 
     // PUBLIC API
+
+    #[func]
+    fn stop(&self) {
+        // todo: is this right?
+        unsafe {
+            let runtime = std::ptr::read(&self.runtime);
+            runtime.shutdown_background();
+        }
+    }
 
     #[func]
     fn get_doc_id(&self) -> String {
