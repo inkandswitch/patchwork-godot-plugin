@@ -40,7 +40,7 @@ pub struct GodotProject {
 }
 
 //const SERVER_URL: &str = "localhost:8080";
-const SERVER_URL: &str = "143.198.131.146:8081";
+const SERVER_URL: &str = "143.198.131.146:8080";
 
 #[godot_api]
 impl GodotProject {
@@ -138,31 +138,44 @@ impl GodotProject {
             let checked_out_doc_id = checked_out_doc_id.clone();
 
             runtime.spawn(async move {
-                let result = repo_handle_clone
+                let repo_handle_result = repo_handle_clone
                     .request_document(branches_metadata_doc_id)
                     .await
                     .unwrap();
 
                 let branches_metadata: BranchesMetadataDoc =
-                    result.with_doc(|d| hydrate(d).unwrap());
+                    repo_handle_result.with_doc(|d| hydrate(d).unwrap());
 
                 let main_doc_id = DocumentId::from_str(&branches_metadata.main_doc_id).unwrap();
+                let main_doc_id_clone = main_doc_id.clone();
+
+                let main_doc_handle_result = repo_handle_clone
+                    .request_document(main_doc_id)
+                    .await
+                    .unwrap();
 
                 // Add both docs to the states
                 {
                     let mut docs = docs_state.lock().unwrap();
                     let mut doc_handles = doc_handles_state.lock().unwrap();
 
+                    // Add main doc
+                    docs.insert(
+                        main_doc_id_clone.clone(),
+                        main_doc_handle_result.with_doc(|d| d.clone()),
+                    );
+                    doc_handles.insert(main_doc_id_clone.clone(), main_doc_handle_result);
+
                     // Add branches metadata doc
                     docs.insert(
                         branches_metadata_doc_id_clone.clone(),
-                        result.with_doc(|d| d.clone()),
+                        repo_handle_result.with_doc(|d| d.clone()),
                     );
-                    doc_handles.insert(branches_metadata_doc_id_clone.clone(), result);
+                    doc_handles.insert(branches_metadata_doc_id_clone.clone(), repo_handle_result);
                 }
 
                 let mut checked_out = checked_out_doc_id.lock().unwrap();
-                *checked_out = Some(main_doc_id);
+                *checked_out = Some(main_doc_id_clone);
             });
 
             branches_metadata_doc_id_clone_2
@@ -269,15 +282,12 @@ impl GodotProject {
     #[func]
     fn save_file(&self, path: String, content: String) {
         let path_clone = path.clone();
-        let project_doc_id = self.checked_out_doc_id.lock().unwrap().clone();
-        let project_doc_id_clone = project_doc_id.clone();
+        let checked_out_doc_id = self.get_checked_out_doc_id();
+        let checked_out_doc_id_clone = checked_out_doc_id.clone();
 
-        if let Some(project_doc_handle) = self
-            .doc_handles_state
-            .lock()
-            .unwrap()
-            .get(&project_doc_id.unwrap())
-        {
+        let checked_out_doc_handle = self.get_doc_handle(checked_out_doc_id.clone());
+
+        if let Some(project_doc_handle) = checked_out_doc_handle {
             project_doc_handle.with_doc_mut(|d| {
                 let mut tx = d.transaction();
 
@@ -298,7 +308,7 @@ impl GodotProject {
             let new_doc = project_doc_handle.with_doc(|d| d.clone());
 
             let mut write_state = self.docs_state.lock().unwrap();
-            write_state.insert(project_doc_id_clone.unwrap(), new_doc);
+            write_state.insert(checked_out_doc_id_clone, new_doc);
         } else {
             println!("too early {:?}", path)
         }
