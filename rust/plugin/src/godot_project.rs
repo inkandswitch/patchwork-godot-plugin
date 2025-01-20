@@ -192,30 +192,6 @@ impl GodotProject {
         });
     }
 
-    fn get_doc(&self, id: DocumentId) -> Automerge {
-        return self
-            .docs_state
-            .lock()
-            .unwrap()
-            .get(&id.into())
-            .unwrap()
-            .clone();
-    }
-
-    fn get_doc_handle(&self, id: DocumentId) -> DocHandle {
-        return self
-            .doc_handles_state
-            .lock()
-            .unwrap()
-            .get(&id.into())
-            .unwrap()
-            .clone();
-    }
-
-    fn get_checked_out_doc_id(&self) -> DocumentId {
-        return self.checked_out_doc_id.lock().unwrap().clone().unwrap();
-    }
-
     // PUBLIC API
 
     #[func]
@@ -235,6 +211,7 @@ impl GodotProject {
             .map(|h| h.to_string().to_variant())
             .collect::<Array<Variant>>();
     }
+
     #[func]
     fn get_file(&self, path: String) -> Variant /* String? */ {
         let doc = self.get_doc(self.get_checked_out_doc_id());
@@ -496,5 +473,29 @@ impl GodotProject {
         write_handles.insert(new_doc_id.clone(), new_doc_handle);
 
         new_doc_id
+    }
+
+    fn get_doc(&self, id: DocumentId) -> Automerge {
+        return self
+            .docs_state
+            .lock()
+            .unwrap()
+            .get(&id.into())
+            .unwrap()
+            .clone();
+    }
+
+    fn get_doc_handle(&self, id: DocumentId) -> DocHandle {
+        return self
+            .doc_handles_state
+            .lock()
+            .unwrap()
+            .get(&id.into())
+            .unwrap()
+            .clone();
+    }
+
+    fn get_checked_out_doc_id(&self) -> DocumentId {
+        return self.checked_out_doc_id.lock().unwrap().clone().unwrap();
     }
 }
