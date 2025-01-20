@@ -19,6 +19,8 @@ func _ready() -> void:
 
 func _on_branch_picker_item_selected(index: int) -> void:
   var selected_branch = branches[index]
+  godot_project.checkout_branch(selected_branch.id)
+
 
 func _on_new_branch_button_pressed() -> void:
   var dialog = ConfirmationDialog.new()

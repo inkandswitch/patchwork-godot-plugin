@@ -44,6 +44,9 @@ const SERVER_URL: &str = "143.198.131.146:8080";
 
 #[godot_api]
 impl GodotProject {
+    #[signal]
+    fn checked_out_branch(branch_id: String);
+
     #[func]
     // hack: pass in empty string to create a new doc
     // godot rust doens't seem to support Option args
@@ -150,10 +153,22 @@ impl GodotProject {
                 let main_doc_id = DocumentId::from_str(&branches_metadata.main_doc_id).unwrap();
                 let main_doc_id_clone = main_doc_id.clone();
 
+                // Request main branch doc
                 let main_doc_handle_result = repo_handle_clone
                     .request_document(main_doc_id)
                     .await
                     .unwrap();
+
+                // Request all other branch docs
+                let mut other_branches = Vec::new();
+                for (branch_id, _) in &branches_metadata.branches {
+                    let branch_doc_id = DocumentId::from_str(branch_id).unwrap();
+                    let branch_doc_handle = repo_handle_clone
+                        .request_document(branch_doc_id.clone())
+                        .await
+                        .unwrap();
+                    other_branches.push((branch_doc_id, branch_doc_handle));
+                }
 
                 // Add both docs to the states
                 {
@@ -166,6 +181,15 @@ impl GodotProject {
                         main_doc_handle_result.with_doc(|d| d.clone()),
                     );
                     doc_handles.insert(main_doc_id_clone.clone(), main_doc_handle_result);
+
+                    // Add other branches
+                    for (branch_doc_id, branch_doc_handle) in other_branches {
+                        docs.insert(
+                            branch_doc_id.clone(),
+                            branch_doc_handle.with_doc(|d| d.clone()),
+                        );
+                        doc_handles.insert(branch_doc_id, branch_doc_handle);
+                    }
 
                     // Add branches metadata doc
                     docs.insert(
@@ -369,7 +393,7 @@ impl GodotProject {
     }
 
     #[func]
-    fn checkout_branch(&self, branch_id: String) {
+    fn checkout_branch(&mut self, branch_id: String) {
         let doc_id = if branch_id == "main" {
             let branches_metadata_doc = self
                 .get_doc(self.branches_metadata_doc_id.clone())
@@ -383,8 +407,13 @@ impl GodotProject {
             DocumentId::from_str(&branch_id).unwrap()
         };
 
-        let mut checked_out = self.checked_out_doc_id.lock().unwrap();
-        *checked_out = Some(doc_id);
+        {
+            let mut checked_out = self.checked_out_doc_id.lock().unwrap();
+            *checked_out = Some(doc_id);
+        } // Release the lock before emitting signal
+
+        self.base_mut()
+            .emit_signal("checked_out_branch", &[branch_id.to_variant()]);
     }
 
     #[func]
