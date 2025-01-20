@@ -243,6 +243,21 @@ impl GodotProject {
     }
 
     #[func]
+    fn list_all_files(&self) -> Array<Variant> /* String[] */ {
+        let doc = self
+            .get_doc(self.get_checked_out_doc_id())
+            .unwrap_or_else(|| panic!("Failed to get checked out doc"));
+
+        let project_doc: GodotProjectDoc = hydrate(&doc).unwrap();
+
+        project_doc
+            .files
+            .keys()
+            .map(|k| k.to_variant())
+            .collect::<Array<Variant>>()
+    }
+
+    #[func]
     fn get_file(&self, path: String) -> Variant /* String? */ {
         let doc = self
             .get_doc(self.get_checked_out_doc_id())

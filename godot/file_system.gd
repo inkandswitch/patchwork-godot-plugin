@@ -78,6 +78,12 @@ func get_file(path: String):
 	return null
 
 
+func delete_file(path: String) -> void:
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(path)
+		file_contents.erase(path)
+
+
 func save_file(path: String, content: String) -> void:
 	# Create directory structure if it doesn't exist
 	var dir_path = path.get_base_dir()

@@ -45,8 +45,8 @@ func init_godot_project():
 	# right now we just wait a bit
 	await get_tree().create_timer(1.0).timeout
 
-	# right now we only filter script and scene files, also we ignore the addons folder
-	var files = file_system.list_all_files().filter(func(path: String) -> bool:
+	# right now we only sync script and scene files, also we ignore the addons folder
+	var files_in_godot = file_system.list_all_files().filter(func(path: String) -> bool:
 		if path.begins_with("res://addons/"): return false
 		return path.ends_with(".gd") or path.ends_with(".tscn")
 	)
@@ -54,18 +54,38 @@ func init_godot_project():
 	if !project_doc_id:
 		config.set_value("project_doc_id", godot_project.get_doc_id());
 
-		print("initialize project with local files", files)
+		print("sync godot -> patchwork")
 
-		for path in files:
-			print("save file: ", path)
+		for path in files_in_godot:
+			print("  save file: ", path)
 			godot_project.save_file(path, file_system.get_file(path))
 
 	else:
-		print("load local files from project")
 
-		for path in files:
-			print("get file ", path)
-			file_system.save_file(path, godot_project.get_file(path))
+		
+		print("sync patchwork -> godot")
+
+		var files_in_patchwork = godot_project.list_all_files()
+
+		for path in files_in_patchwork:
+			print("  ", path)
+
+		print("sync patchwork -> godot")
+
+		# load checked out patchwork files into godot
+		for path in files_in_patchwork:
+			var content = godot_project.get_file(path)
+			var current_content = file_system.get_file(path)
+			if content != current_content:
+				print("  reload file: ", path)
+				file_system.save_file(path, content)
+
+		# delete gd and tscn files that are not in checked out patchwork files
+		for path in files_in_godot:
+			if !files_in_patchwork.has(path) and (path.ends_with(".gd") or path.ends_with(".tscn")):
+				print("  delete file: ", path)
+				file_system.delete_file(path)
+
 
 	is_initialized = true
 
