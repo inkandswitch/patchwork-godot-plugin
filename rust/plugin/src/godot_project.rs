@@ -1,5 +1,7 @@
 use std::{
     collections::HashMap,
+    future::Future,
+    pin::Pin,
     str::FromStr,
     sync::{
         mpsc::{Receiver, Sender},
@@ -10,6 +12,8 @@ use std::{
 use automerge::{transaction::Transactable, Automerge, ChangeHash, ObjType, ReadDoc, ROOT};
 use automerge_repo::{tokio::FsStorage, ConnDirection, DocHandle, DocumentId, Repo, RepoHandle};
 use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use godot::prelude::*;
 use tokio::{net::TcpStream, runtime::Runtime};
 
@@ -226,7 +230,6 @@ impl GodotProject {
         // Spawn sync task for all doc handles
         Self::spawn_sync_task(
             &runtime,
-            repo_handle.clone(),
             docs_state.clone(),
             doc_handles_state.clone(),
             sync_event_sender.clone(),
@@ -543,45 +546,58 @@ impl GodotProject {
 
     fn spawn_sync_task(
         runtime: &Runtime,
-        repo_handle: RepoHandle,
         docs_state: Arc<Mutex<HashMap<DocumentId, Automerge>>>,
         doc_handles_state: Arc<Mutex<HashMap<DocumentId, DocHandle>>>,
         sync_event_sender: Sender<SyncEvent>,
     ) {
-        let repo_handle_clone = repo_handle.clone();
         let docs_state_clone = docs_state.clone();
-        let checked_out_doc_id = DocumentId::from_str("4Vs3kDquQZFziYGyV4BFvDf2vofv").unwrap();
         let doc_handles_state_clone = doc_handles_state.clone();
 
         runtime.spawn(async move {
-            let doc_handle = repo_handle_clone
-                .request_document(checked_out_doc_id.clone())
-                .await
-                .unwrap();
-
-            {
-                let mut write_handle = doc_handles_state_clone.lock().unwrap();
-                write_handle.insert(checked_out_doc_id.clone(), doc_handle.clone());
-            }
-
             loop {
-                let doc = doc_handle.with_doc(|d| d.clone());
+                let mut futures = FuturesUnordered::new();
 
-                println!("doc changed!");
+                // Get all doc handles from state and clone what we need
+                let doc_handles: Vec<(DocumentId, DocHandle)> = {
+                    let handles = doc_handles_state_clone.lock().unwrap();
+                    handles
+                        .iter()
+                        .map(|(id, handle)| (id.clone(), handle.clone()))
+                        .collect()
+                };
 
-                {
-                    let mut write_state: std::sync::MutexGuard<'_, HashMap<DocumentId, Automerge>> =
-                        docs_state_clone.lock().unwrap();
-                    write_state.insert(checked_out_doc_id.clone(), doc);
+                // Create initial futures for all doc handles
+                for (doc_id, doc_handle) in doc_handles.iter() {
+                    let doc_id = doc_id.clone();
+                    let doc_handle = doc_handle.clone();
+                    let future: Pin<Box<dyn Future<Output = (DocumentId, DocHandle)> + Send>> =
+                        Box::pin(async move {
+                            doc_handle.changed().await.unwrap();
+                            (doc_id, doc_handle)
+                        });
+                    futures.push(future);
                 }
 
-                // Emit sync event
-                let _ = sync_event_sender.send(SyncEvent::DocChanged {
-                    doc_id: checked_out_doc_id.clone(),
-                });
+                // Process futures
+                while let Some((doc_id, doc_handle)) = futures.next().await {
+                    let doc = doc_handle.with_doc(|d| d.clone());
 
-                doc_handle.changed().await.unwrap();
-                println!("wait for changes");
+                    {
+                        let mut write_state = docs_state_clone.lock().unwrap();
+                        write_state.insert(doc_id.clone(), doc);
+                    }
+
+                    let _ = sync_event_sender.send(SyncEvent::DocChanged {
+                        doc_id: doc_id.clone(),
+                    });
+
+                    let future: Pin<Box<dyn Future<Output = (DocumentId, DocHandle)> + Send>> =
+                        Box::pin(async move {
+                            doc_handle.changed().await.unwrap();
+                            (doc_id, doc_handle)
+                        });
+                    futures.push(future);
+                }
             }
         });
     }

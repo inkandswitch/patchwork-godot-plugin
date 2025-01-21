@@ -6,8 +6,7 @@ var config: PatchworkConfig
 var file_system: FileSystem
 var sidebar
 
-
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	if godot_project:
 		godot_project.process()
 
