@@ -5,8 +5,8 @@ var godot_project: GodotProject
 
 @onready var branch_picker: OptionButton = %BranchPicker
 @onready var new_branch_button: Button = %NewBranchButton
-@onready var change_count_label: Label = %ChangeCountLabel
 @onready var reload_button: Button = %ReloadButton
+@onready var history_list: ItemList = %HistoryList
 
 var branches = []
 var plugin: EditorPlugin
@@ -18,17 +18,17 @@ func init(plugin: EditorPlugin, godot_project: GodotProject) -> void:
 func _ready() -> void:
   new_branch_button.pressed.connect(_on_new_branch_button_pressed)
   branch_picker.item_selected.connect(_on_branch_picker_item_selected)
-  reload_button.pressed.connect(update_branches)
-  update_branches()
+  reload_button.pressed.connect(update_ui)
+  update_ui()
 
 func _on_branch_picker_item_selected(index: int) -> void:
   var selected_branch = branches[index]
   godot_project.checkout_branch(selected_branch.id)
-  update_branches()
+  update_ui()
 
 func checkout_branch(branch_id: String) -> void:
   godot_project.checkout_branch(branch_id)
-  update_branches()
+  update_ui()
   plugin.get_editor_interface().save_all_scenes()
   
 func _on_new_branch_button_pressed() -> void:
@@ -62,13 +62,10 @@ func _on_new_branch_button_pressed() -> void:
   dialog.popup_centered()
 
 
-func update_branches() -> void:
+func update_ui() -> void:
   self.branches = godot_project.get_branches()
 
   branch_picker.clear()
-  
-  var changes_count = godot_project.get_changes().size()
-  change_count_label.text = str(changes_count) + " " + ("change" if changes_count == 1 else "changes")
 
   var checked_out_branch_id = godot_project.get_checked_out_branch_id()
   for i in range(branches.size()):
@@ -77,3 +74,12 @@ func update_branches() -> void:
 
     if branch.id == checked_out_branch_id:
       branch_picker.select(i)
+
+
+  var history = godot_project.get_changes()
+  history_list.clear()
+  
+  print("history", history)
+
+  for change in history:
+    history_list.add_item(change)
