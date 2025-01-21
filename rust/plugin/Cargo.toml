@@ -10,6 +10,7 @@ crate-type = ["cdylib"] # Compile this crate to a dynamic C library.
 automerge = "0.5.12"
 automerge_repo = { version = "0.2.0", features = ["tokio"] }
 autosurgeon = "0.8.5"
+futures = "0.3.31"
 godot = "0.2.0"
 tokio = { version = "1.41.1", features = ["full"] }
 tracing-subscriber = "0.3.18"

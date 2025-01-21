@@ -1,5 +1,7 @@
 use std::{
     collections::HashMap,
+    future::Future,
+    pin::Pin,
     str::FromStr,
     sync::{Arc, Mutex},
 };
@@ -7,6 +9,7 @@ use std::{
 use automerge::{transaction::Transactable, Automerge, ChangeHash, ObjType, ReadDoc, ROOT};
 use automerge_repo::{tokio::FsStorage, ConnDirection, DocHandle, DocumentId, Repo, RepoHandle};
 use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
+use futures::{stream::FuturesUnordered, StreamExt};
 use godot::prelude::*;
 use tokio::{net::TcpStream, runtime::Runtime};
 
@@ -208,15 +211,8 @@ impl GodotProject {
         // Spawn connection task
         Self::spawn_connection_task(&runtime, repo_handle.clone());
 
-        // todo: handle sync for multiple docs
-        // Spawn sync task for branches metadata doc
-        /*Self::spawn_sync_task(
-            &runtime,
-            repo_handle.clone(),
-            branches_metadata_doc_id.clone(),
-            docs_state.clone(),
-            doc_handles_state.clone(),
-        );*/
+        // Spawn sync task for all doc handles
+        // Self::spawn_sync_task(&runtime, docs_state.clone(), doc_handles_state.clone());
 
         return Gd::from_init_fn(|base| Self {
             base,
@@ -500,37 +496,48 @@ impl GodotProject {
 
     fn spawn_sync_task(
         runtime: &Runtime,
-        repo_handle: RepoHandle,
-        project_doc_id: DocumentId,
         docs_state: Arc<Mutex<HashMap<DocumentId, Automerge>>>,
         doc_handles_state: Arc<Mutex<HashMap<DocumentId, DocHandle>>>,
     ) {
-        let repo_handle_clone = repo_handle.clone();
         let docs_state_clone = docs_state.clone();
-        let project_doc_id_clone = project_doc_id.clone();
         let doc_handles_state_clone = doc_handles_state.clone();
 
         runtime.spawn(async move {
-            let doc_handle = repo_handle_clone
-                .request_document(project_doc_id_clone)
-                .await
-                .unwrap();
+            let mut doc_changes = FuturesUnordered::new();
 
+            // Get all doc handles and add their change futures to the unordered set
             {
-                let mut write_handle = doc_handles_state_clone.lock().unwrap();
-                write_handle.insert(project_doc_id.clone(), doc_handle.clone());
-            }
+                let doc_handles = doc_handles_state_clone.lock().unwrap();
+                for (doc_id, doc_handle) in doc_handles.iter() {
+                    let doc_id = doc_id.clone();
+                    let doc_handle = doc_handle.clone();
+                    let future = Box::pin(async move {
+                        doc_handle.changed().await.unwrap();
+                        (doc_id, doc_handle)
+                    })
+                        as Pin<Box<dyn Future<Output = (DocumentId, DocHandle)> + Send>>;
+                    doc_changes.push(future);
+                }
+            } // Release lock before await
 
-            loop {
+            // Process changes as they come in
+            while let Some((doc_id, doc_handle)) = doc_changes.next().await {
+                println!("UPDATE DOC {:?}", doc_id);
+
+                // Update docs state with latest doc
                 let doc = doc_handle.with_doc(|d| d.clone());
-
                 {
-                    let mut write_state: std::sync::MutexGuard<'_, HashMap<DocumentId, Automerge>> =
-                        docs_state_clone.lock().unwrap();
-                    write_state.insert(project_doc_id.clone(), doc);
+                    let mut write_state = docs_state_clone.lock().unwrap();
+                    write_state.insert(doc_id.clone(), doc);
                 }
 
-                doc_handle.changed().await.unwrap();
+                // Add the doc handle back to be monitored for future changes
+                let future = Box::pin(async move {
+                    doc_handle.changed().await.unwrap();
+                    (doc_id, doc_handle)
+                })
+                    as Pin<Box<dyn Future<Output = (DocumentId, DocHandle)> + Send>>;
+                doc_changes.push(future);
             }
         });
     }
