@@ -21,7 +21,7 @@ func _enter_tree() -> void:
 
 	# setup patchwork sidebarp
 	sidebar = preload("res://addons/patchwork/godot/sidebar.tscn").instantiate()
-	sidebar.init(godot_project)
+	sidebar.init(self, godot_project)
 	add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
 
 func init_godot_project():
@@ -43,20 +43,21 @@ func init_godot_project():
 
 
 func sync_godot_to_patchwork():
-	print("sync godot -> patchwork")
-	
 	var files_in_godot = get_relevant_godot_files()
-	
+
+	print("sync godot -> patchwork (", files_in_godot.size(), ")")
+
 	for path in files_in_godot:
 		print("  save file: ", path)
 		godot_project.save_file(path, file_system.get_file(path))
 
 
 func sync_patchwork_to_godot():
-	print("sync patchwork -> godot")
 	
 	var files_in_godot = get_relevant_godot_files()
 	var files_in_patchwork = godot_project.list_all_files()
+
+	print("sync patchwork -> godot (", files_in_patchwork.size(), ")")
 
 	# load checked out patchwork files into godot
 	for path in files_in_patchwork:
@@ -66,11 +67,16 @@ func sync_patchwork_to_godot():
 			print("  reload file: ", path)
 			file_system.save_file(path, content)
 
+			# Trigger reload of scene files to update references
+			if path.ends_with(".tscn"):
+				get_editor_interface().reload_scene_from_path(path)
+
+	# todo: this is still buggy
 	# delete gd and tscn files that are not in checked out patchwork files
-	for path in files_in_godot:
-		if !files_in_patchwork.has(path) and (path.ends_with(".gd") or path.ends_with(".tscn")):
-			print("  delete file: ", path)
-			file_system.delete_file(path)
+	# for path in files_in_godot:
+	# 	if !files_in_patchwork.has(path) and (path.ends_with(".gd") or path.ends_with(".tscn")):
+	# 		print("  delete file: ", path)
+	# 		file_system.delete_file(path)
 
 
 func _is_relevant_file(path: String) -> bool:
@@ -83,6 +89,7 @@ func get_relevant_godot_files() -> Array[String]:
 
 func _on_checked_out_branch(branch_id: String):
 	print("checked out branch ", branch_id, " (", godot_project.list_all_files().size(), " files)")
+
 
 	sync_patchwork_to_godot()
 	

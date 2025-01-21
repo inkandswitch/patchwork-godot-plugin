@@ -9,9 +9,11 @@ var godot_project: GodotProject
 @onready var reload_button: Button = %ReloadButton
 
 var branches = []
+var plugin: EditorPlugin
 
-func init(godot_project) -> void:
+func init(plugin: EditorPlugin, godot_project: GodotProject) -> void:
   self.godot_project = godot_project
+  self.plugin = plugin
 
 func _ready() -> void:
   new_branch_button.pressed.connect(_on_new_branch_button_pressed)
@@ -24,7 +26,11 @@ func _on_branch_picker_item_selected(index: int) -> void:
   godot_project.checkout_branch(selected_branch.id)
   update_branches()
 
-
+func checkout_branch(branch_id: String) -> void:
+  godot_project.checkout_branch(branch_id)
+  update_branches()
+  plugin.get_editor_interface().save_all_scenes()
+  
 func _on_new_branch_button_pressed() -> void:
   var dialog = ConfirmationDialog.new()
   dialog.title = "Create New Branch"
@@ -46,9 +52,8 @@ func _on_new_branch_button_pressed() -> void:
   dialog.confirmed.connect(func():
     if line_edit.text.strip_edges() != "":
       var new_branch_name = line_edit.text.strip_edges()
-      var new_branch_id = godot_project.create_branch(new_branch_name);
-      godot_project.checkout_branch(new_branch_id)
-      update_branches()
+      var new_branch_id = godot_project.create_branch(new_branch_name)
+      checkout_branch(new_branch_id)
 
     dialog.queue_free()
   )
