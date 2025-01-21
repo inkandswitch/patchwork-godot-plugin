@@ -7,6 +7,7 @@ var godot_project: GodotProject
 @onready var new_branch_button: Button = %NewBranchButton
 @onready var reload_button: Button = %ReloadButton
 @onready var history_list: ItemList = %HistoryList
+@onready var change_count_label: Label = %ChangeCountLabel
 
 var branches = []
 var plugin: EditorPlugin
@@ -65,6 +66,8 @@ func _on_new_branch_button_pressed() -> void:
 func update_ui() -> void:
   self.branches = godot_project.get_branches()
 
+  # update branch picker
+
   branch_picker.clear()
 
   var checked_out_branch_id = godot_project.get_checked_out_branch_id()
@@ -75,10 +78,13 @@ func update_ui() -> void:
     if branch.id == checked_out_branch_id:
       branch_picker.select(i)
 
-
+  # update history
+  
   var history = godot_project.get_changes()
   history_list.clear()
-  
+
+  change_count_label.text = str(history.size()) + " change" if history.size() == 1 else str(history.size()) + " changes"
+
   print("history", history)
 
   for change in history:
