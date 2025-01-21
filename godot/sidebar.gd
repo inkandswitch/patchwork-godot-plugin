@@ -22,6 +22,8 @@ func _ready() -> void:
   reload_button.pressed.connect(update_ui)
   update_ui()
 
+  godot_project.connect("branches_changed", update_ui);
+
 func _on_branch_picker_item_selected(index: int) -> void:
   var selected_branch = branches[index]
   godot_project.checkout_branch(selected_branch.id)
@@ -84,8 +86,6 @@ func update_ui() -> void:
   history_list.clear()
 
   change_count_label.text = str(history.size()) + " change" if history.size() == 1 else str(history.size()) + " changes"
-
-  print("history", history)
 
   for change in history:
     history_list.add_item(change)

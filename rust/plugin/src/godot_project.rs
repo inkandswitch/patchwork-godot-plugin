@@ -1,15 +1,15 @@
 use std::{
     collections::HashMap,
-    future::Future,
-    pin::Pin,
     str::FromStr,
-    sync::{Arc, Mutex},
+    sync::{
+        mpsc::{Receiver, Sender},
+        Arc, Mutex,
+    },
 };
 
 use automerge::{transaction::Transactable, Automerge, ChangeHash, ObjType, ReadDoc, ROOT};
 use automerge_repo::{tokio::FsStorage, ConnDirection, DocHandle, DocumentId, Repo, RepoHandle};
 use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
-use futures::{stream::FuturesUnordered, StreamExt};
 use godot::prelude::*;
 use tokio::{net::TcpStream, runtime::Runtime};
 
@@ -29,6 +29,9 @@ struct Branch {
     name: String,
     id: String,
 }
+enum SyncEvent {
+    DocChanged { doc_id: DocumentId },
+}
 
 #[derive(GodotClass)]
 #[class(no_init, base=Node)]
@@ -40,6 +43,8 @@ pub struct GodotProject {
     checked_out_doc_id: Arc<Mutex<Option<DocumentId>>>,
     docs_state: Arc<Mutex<HashMap<DocumentId, Automerge>>>,
     doc_handles_state: Arc<Mutex<HashMap<DocumentId, DocHandle>>>,
+    sync_event_receiver: Receiver<SyncEvent>,
+    sync_event_sender: Sender<SyncEvent>,
 }
 
 const SERVER_URL: &str = "104.131.179.247:8080";
@@ -48,6 +53,12 @@ const SERVER_URL: &str = "104.131.179.247:8080";
 impl GodotProject {
     #[signal]
     fn checked_out_branch(branch_id: String);
+
+    #[signal]
+    fn files_changed();
+
+    #[signal]
+    fn branches_changed(branches: Array<Variant> /* { name: String, id: String }[] */);
 
     #[func]
     // hack: pass in empty string to create a new doc
@@ -177,11 +188,10 @@ impl GodotProject {
                     let mut docs = docs_state.lock().unwrap();
                     let mut doc_handles = doc_handles_state.lock().unwrap();
 
+                    let main_doc = main_doc_handle_result.with_doc(|d| d.clone());
+
                     // Add main doc
-                    docs.insert(
-                        main_doc_id_clone.clone(),
-                        main_doc_handle_result.with_doc(|d| d.clone()),
-                    );
+                    docs.insert(main_doc_id_clone.clone(), main_doc);
                     doc_handles.insert(main_doc_id_clone.clone(), main_doc_handle_result);
 
                     // Add other branches
@@ -208,11 +218,19 @@ impl GodotProject {
             branches_metadata_doc_id_clone_2
         };
 
+        let (sync_event_sender, sync_event_receiver) = std::sync::mpsc::channel();
+
         // Spawn connection task
         Self::spawn_connection_task(&runtime, repo_handle.clone());
 
         // Spawn sync task for all doc handles
-        // Self::spawn_sync_task(&runtime, docs_state.clone(), doc_handles_state.clone());
+        Self::spawn_sync_task(
+            &runtime,
+            repo_handle.clone(),
+            docs_state.clone(),
+            doc_handles_state.clone(),
+            sync_event_sender.clone(),
+        );
 
         return Gd::from_init_fn(|base| Self {
             base,
@@ -222,6 +240,8 @@ impl GodotProject {
             checked_out_doc_id,
             docs_state,
             doc_handles_state,
+            sync_event_sender,
+            sync_event_receiver,
         });
     }
 
@@ -267,7 +287,8 @@ impl GodotProject {
             .get_doc(self.get_checked_out_doc_id())
             .unwrap_or_else(|| panic!("Failed to get checked out doc"));
 
-        let project_doc: GodotProjectDoc = hydrate(&doc).unwrap();
+        let project_doc: GodotProjectDoc =
+            hydrate(&doc).unwrap_or_else(|e| panic!("Failed to hydrate project doc: {:?}", e));
 
         project_doc
             .files
@@ -464,6 +485,32 @@ impl GodotProject {
 
     // SYNC
 
+    // needs to be called every frame to process the internal events
+    #[func]
+    fn process(&mut self) {
+        let branches = self.get_branches().to_variant();
+        let checked_out_doc_id = self.checked_out_doc_id.lock().unwrap().clone().unwrap();
+
+        // Process all pending sync events
+        while let Ok(event) = self.sync_event_receiver.try_recv() {
+            match event {
+                SyncEvent::DocChanged { doc_id } => {
+                    println!("doc changed event {:?} {:?}", doc_id, checked_out_doc_id);
+
+                    // Check if branches metadata doc changed
+                    if doc_id == self.branches_metadata_doc_id {
+                        self.base_mut()
+                            .emit_signal("branches_changed", &[branches.clone()]);
+                    }
+                    // Check if checked out doc changed
+                    else if doc_id == checked_out_doc_id {
+                        self.base_mut().emit_signal("files_changed", &[]);
+                    }
+                }
+            }
+        }
+    }
+
     fn spawn_connection_task(runtime: &Runtime, repo_handle: RepoHandle) {
         let repo_handle_clone = repo_handle.clone();
         runtime.spawn(async move {
@@ -496,48 +543,45 @@ impl GodotProject {
 
     fn spawn_sync_task(
         runtime: &Runtime,
+        repo_handle: RepoHandle,
         docs_state: Arc<Mutex<HashMap<DocumentId, Automerge>>>,
         doc_handles_state: Arc<Mutex<HashMap<DocumentId, DocHandle>>>,
+        sync_event_sender: Sender<SyncEvent>,
     ) {
+        let repo_handle_clone = repo_handle.clone();
         let docs_state_clone = docs_state.clone();
+        let checked_out_doc_id = DocumentId::from_str("4Vs3kDquQZFziYGyV4BFvDf2vofv").unwrap();
         let doc_handles_state_clone = doc_handles_state.clone();
 
         runtime.spawn(async move {
-            let mut doc_changes = FuturesUnordered::new();
+            let doc_handle = repo_handle_clone
+                .request_document(checked_out_doc_id.clone())
+                .await
+                .unwrap();
 
-            // Get all doc handles and add their change futures to the unordered set
             {
-                let doc_handles = doc_handles_state_clone.lock().unwrap();
-                for (doc_id, doc_handle) in doc_handles.iter() {
-                    let doc_id = doc_id.clone();
-                    let doc_handle = doc_handle.clone();
-                    let future = Box::pin(async move {
-                        doc_handle.changed().await.unwrap();
-                        (doc_id, doc_handle)
-                    })
-                        as Pin<Box<dyn Future<Output = (DocumentId, DocHandle)> + Send>>;
-                    doc_changes.push(future);
-                }
-            } // Release lock before await
+                let mut write_handle = doc_handles_state_clone.lock().unwrap();
+                write_handle.insert(checked_out_doc_id.clone(), doc_handle.clone());
+            }
 
-            // Process changes as they come in
-            while let Some((doc_id, doc_handle)) = doc_changes.next().await {
-                println!("UPDATE DOC {:?}", doc_id);
-
-                // Update docs state with latest doc
+            loop {
                 let doc = doc_handle.with_doc(|d| d.clone());
+
+                println!("doc changed!");
+
                 {
-                    let mut write_state = docs_state_clone.lock().unwrap();
-                    write_state.insert(doc_id.clone(), doc);
+                    let mut write_state: std::sync::MutexGuard<'_, HashMap<DocumentId, Automerge>> =
+                        docs_state_clone.lock().unwrap();
+                    write_state.insert(checked_out_doc_id.clone(), doc);
                 }
 
-                // Add the doc handle back to be monitored for future changes
-                let future = Box::pin(async move {
-                    doc_handle.changed().await.unwrap();
-                    (doc_id, doc_handle)
-                })
-                    as Pin<Box<dyn Future<Output = (DocumentId, DocHandle)> + Send>>;
-                doc_changes.push(future);
+                // Emit sync event
+                let _ = sync_event_sender.send(SyncEvent::DocChanged {
+                    doc_id: checked_out_doc_id.clone(),
+                });
+
+                doc_handle.changed().await.unwrap();
+                println!("wait for changes");
             }
         });
     }
@@ -576,6 +620,13 @@ impl GodotProject {
         let new_doc_handle = self.repo_handle.new_document();
         let new_doc_id = new_doc_handle.document_id();
         let doc_handle = self.get_doc_handle(doc_id.clone());
+
+        let changes_count = doc_handle
+            .clone()
+            .unwrap()
+            .with_doc(|d| d.get_changes(&[]).len());
+
+        println!("changes {:?}", changes_count);
 
         let doc_handle = doc_handle.unwrap_or_else(|| panic!("Couldn't clone doc_id: {}", &doc_id));
         let _ = doc_handle
