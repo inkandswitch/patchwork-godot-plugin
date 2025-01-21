@@ -557,29 +557,25 @@ impl GodotProject {
             loop {
                 let mut futures = FuturesUnordered::new();
 
-                // Get all doc handles from state and clone what we need
-                let doc_handles: Vec<(DocumentId, DocHandle)> = {
+                // Create initial futures for all doc handles
+                let doc_handles: Vec<DocHandle> = {
                     let handles = doc_handles_state_clone.lock().unwrap();
-                    handles
-                        .iter()
-                        .map(|(id, handle)| (id.clone(), handle.clone()))
-                        .collect()
+                    handles.values().cloned().collect()
                 };
 
-                // Create initial futures for all doc handles
-                for (doc_id, doc_handle) in doc_handles.iter() {
-                    let doc_id = doc_id.clone();
+                for doc_handle in doc_handles.iter() {
                     let doc_handle = doc_handle.clone();
-                    let future: Pin<Box<dyn Future<Output = (DocumentId, DocHandle)> + Send>> =
+                    let future: Pin<Box<dyn Future<Output = DocHandle> + Send>> =
                         Box::pin(async move {
                             doc_handle.changed().await.unwrap();
-                            (doc_id, doc_handle)
+                            doc_handle
                         });
                     futures.push(future);
                 }
 
-                // Process futures
-                while let Some((doc_id, doc_handle)) = futures.next().await {
+                // Wait until some doc handle changes
+                while let Some(doc_handle) = futures.next().await {
+                    let doc_id = doc_handle.document_id();
                     let doc = doc_handle.with_doc(|d| d.clone());
 
                     {
@@ -587,14 +583,17 @@ impl GodotProject {
                         write_state.insert(doc_id.clone(), doc);
                     }
 
+                    print!("doc_changed {:?}", doc_id);
+
                     let _ = sync_event_sender.send(SyncEvent::DocChanged {
                         doc_id: doc_id.clone(),
                     });
 
-                    let future: Pin<Box<dyn Future<Output = (DocumentId, DocHandle)> + Send>> =
+                    // Add processed doc handle back to listen for further changes
+                    let future: Pin<Box<dyn Future<Output = DocHandle> + Send>> =
                         Box::pin(async move {
                             doc_handle.changed().await.unwrap();
-                            (doc_id, doc_handle)
+                            doc_handle
                         });
                     futures.push(future);
                 }
