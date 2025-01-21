@@ -575,7 +575,10 @@ impl GodotProject {
             .with_doc_mut(|mut main_d| new_doc_handle.with_doc_mut(|d| d.merge(&mut main_d)));
 
         let mut write_handles = self.doc_handles_state.lock().unwrap();
-        write_handles.insert(new_doc_id.clone(), new_doc_handle);
+        write_handles.insert(new_doc_id.clone(), new_doc_handle.clone());
+
+        let mut write_docs = self.docs_state.lock().unwrap();
+        write_docs.insert(new_doc_id.clone(), new_doc_handle.with_doc(|d| d.clone()));
 
         new_doc_id
     }
