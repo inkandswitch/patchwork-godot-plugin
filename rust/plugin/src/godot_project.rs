@@ -39,8 +39,7 @@ pub struct GodotProject {
     doc_handles_state: Arc<Mutex<HashMap<DocumentId, DocHandle>>>,
 }
 
-//const SERVER_URL: &str = "localhost:8080";
-const SERVER_URL: &str = "143.198.131.146:8080";
+const SERVER_URL: &str = "104.131.179.247:8080";
 
 #[godot_api]
 impl GodotProject {
