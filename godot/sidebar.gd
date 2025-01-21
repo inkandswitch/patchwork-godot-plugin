@@ -5,6 +5,8 @@ var godot_project: GodotProject
 
 @onready var branch_picker: OptionButton = %BranchPicker
 @onready var new_branch_button: Button = %NewBranchButton
+@onready var change_count_label: Label = %ChangeCountLabel
+@onready var reload_button: Button = %ReloadButton
 
 var branches = []
 
@@ -14,12 +16,13 @@ func init(godot_project) -> void:
 func _ready() -> void:
   new_branch_button.pressed.connect(_on_new_branch_button_pressed)
   branch_picker.item_selected.connect(_on_branch_picker_item_selected)
-
+  reload_button.pressed.connect(update_branches)
   update_branches()
 
 func _on_branch_picker_item_selected(index: int) -> void:
   var selected_branch = branches[index]
   godot_project.checkout_branch(selected_branch.id)
+  update_branches()
 
 
 func _on_new_branch_button_pressed() -> void:
@@ -58,6 +61,9 @@ func update_branches() -> void:
   self.branches = godot_project.get_branches()
 
   branch_picker.clear()
+  
+  var changes_count = godot_project.get_changes().size()
+  change_count_label.text = str(changes_count) + " " + ("change" if changes_count == 1 else "changes")
 
   var checked_out_branch_id = godot_project.get_checked_out_branch_id()
   for i in range(branches.size()):

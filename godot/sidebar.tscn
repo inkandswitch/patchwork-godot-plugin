@@ -33,59 +33,16 @@ size_flags_horizontal = 3
 [node name="NewBranchButton" type="Button" parent="VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-text = " + "
+text = "New Branch"
 
-[node name="SimulatedEditsLabel" type="Label" parent="VBoxContainer"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-text = "Simulated edits
-"
-
-[node name="SimulatedEditsPanel" type="PanelContainer" parent="VBoxContainer"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-
-[node name="Panel" type="Panel" parent="VBoxContainer/SimulatedEditsPanel"]
-layout_mode = 2
-
-[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer/SimulatedEditsPanel"]
-layout_mode = 2
-theme_override_constants/margin_left = 8
-theme_override_constants/margin_top = 8
-theme_override_constants/margin_right = 8
-theme_override_constants/margin_bottom = 8
-
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/SimulatedEditsPanel/MarginContainer"]
-layout_mode = 2
-
-[node name="HBoxContainer2" type="HBoxContainer" parent="VBoxContainer/SimulatedEditsPanel/MarginContainer/VBoxContainer"]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="VBoxContainer/SimulatedEditsPanel/MarginContainer/VBoxContainer/HBoxContainer2"]
-layout_mode = 2
-text = "Enabled
-"
-
-[node name="SimulatedEditsToggle" type="CheckButton" parent="VBoxContainer/SimulatedEditsPanel/MarginContainer/VBoxContainer/HBoxContainer2"]
+[node name="ReloadButton" type="Button" parent="VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
+text = "Reload"
 
-[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/SimulatedEditsPanel/MarginContainer/VBoxContainer"]
+[node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
 layout_mode = 2
-alignment = 1
 
-[node name="Label" type="Label" parent="VBoxContainer/SimulatedEditsPanel/MarginContainer/VBoxContainer/HBoxContainer"]
-layout_mode = 2
-text = "Frequency
-"
-
-[node name="SimulatedEditsFrequency" type="HSlider" parent="VBoxContainer/SimulatedEditsPanel/MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="ChangeCountLabel" type="Label" parent="VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 4
-min_value = 500.0
-max_value = 2000.0
-value = 2000.0
