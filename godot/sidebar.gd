@@ -23,6 +23,7 @@ func _ready() -> void:
   update_ui()
 
   godot_project.connect("branches_changed", update_ui);
+  godot_project.connect("files_changed", update_ui);
 
 func _on_branch_picker_item_selected(index: int) -> void:
   var selected_branch = branches[index]
@@ -30,9 +31,9 @@ func _on_branch_picker_item_selected(index: int) -> void:
   update_ui()
 
 func checkout_branch(branch_id: String) -> void:
+  EditorInterface.save_all_scenes();
   godot_project.checkout_branch(branch_id)
   update_ui()
-  plugin.get_editor_interface().save_all_scenes()
   
 func _on_new_branch_button_pressed() -> void:
   var dialog = ConfirmationDialog.new()

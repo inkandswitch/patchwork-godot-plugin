@@ -48,7 +48,6 @@ pub struct GodotProject {
     docs_state: Arc<Mutex<HashMap<DocumentId, Automerge>>>,
     doc_handles_state: Arc<Mutex<HashMap<DocumentId, DocHandle>>>,
     sync_event_receiver: Receiver<SyncEvent>,
-    sync_event_sender: Sender<SyncEvent>,
 }
 
 const SERVER_URL: &str = "104.131.179.247:8080";
@@ -62,7 +61,7 @@ impl GodotProject {
     fn files_changed();
 
     #[signal]
-    fn branches_changed(branches: Array<Variant> /* { name: String, id: String }[] */);
+    fn branches_changed();
 
     #[func]
     // hack: pass in empty string to create a new doc
@@ -243,7 +242,6 @@ impl GodotProject {
             checked_out_doc_id,
             docs_state,
             doc_handles_state,
-            sync_event_sender,
             sync_event_receiver,
         });
     }
@@ -491,7 +489,6 @@ impl GodotProject {
     // needs to be called every frame to process the internal events
     #[func]
     fn process(&mut self) {
-        let branches = self.get_branches().to_variant();
         let checked_out_doc_id = self.checked_out_doc_id.lock().unwrap().clone().unwrap();
 
         // Process all pending sync events
@@ -502,8 +499,7 @@ impl GodotProject {
 
                     // Check if branches metadata doc changed
                     if doc_id == self.branches_metadata_doc_id {
-                        self.base_mut()
-                            .emit_signal("branches_changed", &[branches.clone()]);
+                        self.base_mut().emit_signal("branches_changed", &[]);
                     }
                     // Check if checked out doc changed
                     else if doc_id == checked_out_doc_id {
