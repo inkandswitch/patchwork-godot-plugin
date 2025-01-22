@@ -15,4 +15,4 @@ godot = "0.2.0"
 tokio = { version = "1.41.1", features = ["full"] }
 tracing-subscriber = "0.3.18"
 tree-sitter = "0.20.10"
-tree-sitter-godot-resource = { git = "https://github.com/PrestonKnopp/tree-sitter-godot-resource.git", version = "0.0.1" }
+tree-sitter-godot-resource = { git = "https://github.com/PrestonKnopp/tree-sitter-godot-resource.git" }
