@@ -3,10 +3,7 @@ use std::{
     future::Future,
     pin::Pin,
     str::FromStr,
-    sync::{
-        mpsc::{Receiver, Sender},
-        Arc, Mutex,
-    },
+    sync::{Arc, Mutex},
 };
 
 use automerge::{transaction::Transactable, Automerge, ChangeHash, ObjType, ReadDoc, ROOT};
@@ -33,8 +30,15 @@ struct Branch {
     name: String,
     id: String,
 }
-enum SyncEvent {
+
+// these are the events send out from the sync thread
+enum OutputEvent {
     DocChanged { doc_id: DocumentId },
+}
+
+// these are the events reveiced by the sync thread
+enum InputEvent {
+    DocAdded { doc_id: DocumentId },
 }
 
 #[derive(GodotClass)]
@@ -47,7 +51,8 @@ pub struct GodotProject {
     checked_out_doc_id: Arc<Mutex<Option<DocumentId>>>,
     docs_state: Arc<Mutex<HashMap<DocumentId, Automerge>>>,
     doc_handles_state: Arc<Mutex<HashMap<DocumentId, DocHandle>>>,
-    sync_event_receiver: Receiver<SyncEvent>,
+    output_event_receiver: std::sync::mpsc::Receiver<OutputEvent>,
+    input_event_sender: tokio::sync::mpsc::Sender<InputEvent>,
 }
 
 const SERVER_URL: &str = "104.131.179.247:8080";
@@ -221,7 +226,9 @@ impl GodotProject {
             branches_metadata_doc_id_clone_2
         };
 
-        let (sync_event_sender, sync_event_receiver) = std::sync::mpsc::channel();
+        let (output_event_sender, output_event_receiver) = std::sync::mpsc::channel();
+        let (input_event_sender, input_event_receiver) =
+            tokio::sync::mpsc::channel::<InputEvent>(32);
 
         // Spawn connection task
         Self::spawn_connection_task(&runtime, repo_handle.clone());
@@ -231,7 +238,8 @@ impl GodotProject {
             &runtime,
             docs_state.clone(),
             doc_handles_state.clone(),
-            sync_event_sender.clone(),
+            output_event_sender,
+            input_event_receiver,
         );
 
         return Gd::from_init_fn(|base| Self {
@@ -242,7 +250,8 @@ impl GodotProject {
             checked_out_doc_id,
             docs_state,
             doc_handles_state,
-            sync_event_receiver,
+            output_event_receiver,
+            input_event_sender,
         });
     }
 
@@ -492,9 +501,9 @@ impl GodotProject {
         let checked_out_doc_id = self.checked_out_doc_id.lock().unwrap().clone().unwrap();
 
         // Process all pending sync events
-        while let Ok(event) = self.sync_event_receiver.try_recv() {
+        while let Ok(event) = self.output_event_receiver.try_recv() {
             match event {
-                SyncEvent::DocChanged { doc_id } => {
+                OutputEvent::DocChanged { doc_id } => {
                     println!("doc changed event {:?} {:?}", doc_id, checked_out_doc_id);
 
                     // Check if branches metadata doc changed
@@ -506,6 +515,8 @@ impl GodotProject {
                         self.base_mut().emit_signal("files_changed", &[]);
                     }
                 }
+
+                _ => (),
             }
         }
     }
@@ -544,7 +555,8 @@ impl GodotProject {
         runtime: &Runtime,
         docs_state: Arc<Mutex<HashMap<DocumentId, Automerge>>>,
         doc_handles_state: Arc<Mutex<HashMap<DocumentId, DocHandle>>>,
-        sync_event_sender: Sender<SyncEvent>,
+        output_event_sender: std::sync::mpsc::Sender<OutputEvent>,
+        mut input_event_receiver: tokio::sync::mpsc::Receiver<InputEvent>,
     ) {
         let docs_state_clone = docs_state.clone();
         let doc_handles_state_clone = doc_handles_state.clone();
@@ -569,6 +581,33 @@ impl GodotProject {
                     futures.push(future);
                 }
 
+                // Create future
+                let future: Pin<Box<dyn Future<Output = DocHandle> + Send + Sync>> =
+                    Box::pin(async {
+                        loop {
+                            if let Some(event) = input_event_receiver.recv().await {
+                                match event {
+                                    InputEvent::DocAdded { doc_id } => {
+                                        let doc_handles = doc_handles_state.lock().unwrap();
+                                        let doc_handle = doc_handles.get(&doc_id).unwrap();
+
+                                        let doc_handle_clone = doc_handle.clone();
+
+                                        // Add processed doc handle back to listen for further changes
+                                        let future: Pin<
+                                            Box<dyn Future<Output = DocHandle> + Send + Sync>,
+                                        > = Box::pin(async move {
+                                            doc_handle_clone.changed().await.unwrap();
+                                            doc_handle_clone
+                                        });
+                                        //futures.push(future); doens't work right now
+                                    }
+                                }
+                            }
+                        }
+                    });
+                futures.push(future);
+
                 // Wait until some doc handle changes
                 while let Some(doc_handle) = futures.next().await {
                     let doc_id = doc_handle.document_id();
@@ -581,7 +620,7 @@ impl GodotProject {
 
                     print!("doc_changed {:?}", doc_id);
 
-                    let _ = sync_event_sender.send(SyncEvent::DocChanged {
+                    let _ = output_event_sender.send(OutputEvent::DocChanged {
                         doc_id: doc_id.clone(),
                     });
 
