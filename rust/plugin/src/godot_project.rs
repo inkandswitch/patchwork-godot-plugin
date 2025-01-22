@@ -14,7 +14,7 @@ use futures::StreamExt;
 use godot::prelude::*;
 use tokio::{net::TcpStream, runtime::Runtime};
 
-use crate::DocHandleMap;
+use crate::{doc_state_map::DocStateMap, DocHandleMap};
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
 struct GodotProjectDoc {
@@ -32,6 +32,8 @@ struct Branch {
     name: String,
     id: String,
 }
+
+#[derive(Clone)]
 enum SyncEvent {
     DocChanged { doc_id: DocumentId },
 }
@@ -44,8 +46,8 @@ pub struct GodotProject {
     repo_handle: RepoHandle,
     branches_metadata_doc_id: DocumentId,
     checked_out_doc_id: Arc<Mutex<Option<DocumentId>>>,
-    docs_state: Arc<Mutex<HashMap<DocumentId, Automerge>>>,
-    doc_handles_state: DocHandleMap,
+    doc_state_map: DocStateMap,
+    doc_handle_map: DocHandleMap,
     sync_event_receiver: Receiver<SyncEvent>,
 }
 
@@ -79,11 +81,12 @@ impl GodotProject {
         let repo = Repo::new(None, Box::new(storage));
         let repo_handle = repo.run();
 
-        let docs_state: Arc<Mutex<HashMap<DocumentId, Automerge>>> =
-            Arc::new(Mutex::new(HashMap::new()));
+
 
         let (new_doc_tx, new_doc_rx) = futures::channel::mpsc::unbounded();
-        let doc_handles_state = DocHandleMap::new(new_doc_tx.clone());
+
+        let doc_state_map = DocStateMap::new();
+        let doc_handle_map = DocHandleMap::new(new_doc_tx.clone());
 
         let checked_out_doc_id = Arc::new(Mutex::new(None));
 
@@ -121,18 +124,15 @@ impl GodotProject {
 
             // Add both docs to the states
             {
-                let mut docs = docs_state.lock().unwrap();
-                doc_handles_state.add_handle(project_doc_handle.clone());
-
-                // Add project doc
-                docs.insert(project_doc_id, project_doc_handle.with_doc(|d| d.clone()));
+                doc_state_map.add_doc(project_doc_id, project_doc_handle.with_doc(|d| d.clone()));
+                doc_handle_map.add_handle(project_doc_handle.clone());
 
                 // Add branches metadata doc
-                docs.insert(
+                doc_state_map.add_doc(
                     branches_metadata_doc_handle.document_id(),
                     branches_metadata_doc_handle.with_doc(|d| d.clone()),
                 );
-                doc_handles_state.add_handle(branches_metadata_doc_handle.clone());
+                doc_handle_map.add_handle(branches_metadata_doc_handle.clone());
             }
 
             {
@@ -148,8 +148,8 @@ impl GodotProject {
             let branches_metadata_doc_id_clone_2 = branches_metadata_doc_id.clone();
 
             let repo_handle_clone = repo_handle.clone();
-            let docs_state = docs_state.clone();
-            let doc_handles_state = doc_handles_state.clone();
+            let doc_state_map = doc_state_map.clone();
+            let doc_handle_map = doc_handle_map.clone();
             let checked_out_doc_id = checked_out_doc_id.clone();
 
             runtime.spawn(async move {
@@ -183,29 +183,27 @@ impl GodotProject {
 
                 // Add both docs to the states
                 {
-                    let mut docs = docs_state.lock().unwrap();
-
                     let main_doc = main_doc_handle_result.with_doc(|d| d.clone());
 
                     // Add main doc
-                    docs.insert(main_doc_id_clone.clone(), main_doc);
-                    doc_handles_state.add_handle(main_doc_handle_result.clone());
+                    doc_state_map.add_doc(main_doc_id_clone.clone(), main_doc);
+                    doc_handle_map.add_handle(main_doc_handle_result.clone());
 
                     // Add other branches
                     for (branch_doc_id, branch_doc_handle) in other_branches {
-                        docs.insert(
+                        doc_state_map.add_doc(
                             branch_doc_id.clone(),
                             branch_doc_handle.with_doc(|d| d.clone()),
                         );
-                        doc_handles_state.add_handle(branch_doc_handle);
+                        doc_handle_map.add_handle(branch_doc_handle);
                     }
 
                     // Add branches metadata doc
-                    docs.insert(
+                    doc_state_map.add_doc(
                         branches_metadata_doc_id_clone.clone(),
                         repo_handle_result.with_doc(|d| d.clone()),
                     );
-                    doc_handles_state.add_handle(repo_handle_result);
+                    doc_handle_map.add_handle(repo_handle_result);
                 }
 
                 let mut checked_out = checked_out_doc_id.lock().unwrap();
@@ -224,7 +222,8 @@ impl GodotProject {
         Self::spawn_sync_task(
             &runtime,
             new_doc_rx,
-            doc_handles_state.clone(),
+            doc_handle_map.clone(),
+            doc_state_map.clone(),
             sync_event_sender.clone(),
         );
 
@@ -234,8 +233,8 @@ impl GodotProject {
             repo_handle,
             branches_metadata_doc_id,
             checked_out_doc_id,
-            docs_state,
-            doc_handles_state,
+            doc_handle_map,
+            doc_state_map,
             sync_event_receiver,
         });
     }
@@ -260,7 +259,7 @@ impl GodotProject {
     fn get_heads(&self) -> Array<Variant> /* String[] */ {
         let checked_out_doc_id = self.get_checked_out_doc_id();
 
-        let doc = self.get_doc(checked_out_doc_id.clone()).unwrap_or_else(|| {
+        let doc = self.doc_state_map.get_doc(&checked_out_doc_id).unwrap_or_else(|| {
             panic!(
                 "Failed to get doc for checked out doc id: {}",
                 &checked_out_doc_id
@@ -279,7 +278,8 @@ impl GodotProject {
     #[func]
     fn list_all_files(&self) -> Array<Variant> /* String[] */ {
         let doc = self
-            .get_doc(self.get_checked_out_doc_id())
+            .doc_state_map
+            .get_doc(&self.get_checked_out_doc_id())
             .unwrap_or_else(|| panic!("Failed to get checked out doc"));
 
         let project_doc: GodotProjectDoc =
@@ -295,7 +295,8 @@ impl GodotProject {
     #[func]
     fn get_file(&self, path: String) -> Variant /* String? */ {
         let doc = self
-            .get_doc(self.get_checked_out_doc_id())
+            .doc_state_map
+            .get_doc(&self.get_checked_out_doc_id())
             .unwrap_or_else(|| panic!("Failed to get checked out doc"));
 
         let files = doc.get(ROOT, "files").unwrap().unwrap().1;
@@ -310,7 +311,8 @@ impl GodotProject {
     fn get_file_at(&self, path: String, heads: Array<Variant> /* String[] */) -> Variant /* String? */
     {
         let doc = self
-            .get_doc(self.get_checked_out_doc_id())
+            .doc_state_map
+            .get_doc(&self.get_checked_out_doc_id())
             .unwrap_or_else(|| panic!("Failed to get checked out doc"));
 
         let heads: Vec<ChangeHash> = heads
@@ -329,7 +331,8 @@ impl GodotProject {
     #[func]
     fn get_changes(&self) -> Array<Variant> /* String[]  */ {
         let doc = self
-            .get_doc(self.get_checked_out_doc_id())
+            .doc_state_map
+            .get_doc(&self.get_checked_out_doc_id())
             .unwrap_or_else(|| panic!("Failed to get checked out doc"));
 
         doc.get_changes(&[])
@@ -366,9 +369,7 @@ impl GodotProject {
             });
 
             let new_doc = project_doc_handle.with_doc(|d| d.clone());
-
-            let mut write_state = self.docs_state.lock().unwrap();
-            write_state.insert(checked_out_doc_id_clone, new_doc);
+            self.doc_state_map.add_doc(checked_out_doc_id_clone, new_doc);
         } else {
             println!("too early {:?}", path)
         }
@@ -377,7 +378,8 @@ impl GodotProject {
     #[func]
     fn create_branch(&self, name: String) -> String {
         let branches_metadata_doc = self
-            .get_doc(self.branches_metadata_doc_id.clone())
+            .doc_state_map
+            .get_doc(&self.branches_metadata_doc_id)
             .unwrap_or_else(|| panic!("Failed to load branches metadata doc"));
 
         let mut branches_metadata: BranchesMetadataDoc = hydrate(&branches_metadata_doc)
@@ -407,7 +409,8 @@ impl GodotProject {
     fn checkout_branch(&mut self, branch_id: String) {
         let doc_id = if branch_id == "main" {
             let branches_metadata_doc = self
-                .get_doc(self.branches_metadata_doc_id.clone())
+                .doc_state_map
+                .get_doc(&self.branches_metadata_doc_id)
                 .unwrap_or_else(|| panic!("couldn't load branches metadata doc {}", branch_id));
 
             let branches_metadata: BranchesMetadataDoc =
@@ -537,10 +540,11 @@ impl GodotProject {
     fn spawn_sync_task(
         runtime: &Runtime,
         mut new_docs: futures::channel::mpsc::UnboundedReceiver<DocHandle>,
-        doc_handles_state: DocHandleMap,
+        doc_handle_map: DocHandleMap,    
+        doc_state_map: DocStateMap,
         sync_event_sender: Sender<SyncEvent>,
     ) {
-        let initial_handles = doc_handles_state
+        let initial_handles = doc_handle_map
             .current_handles();
 
         runtime.spawn(async move {
@@ -571,7 +575,15 @@ impl GodotProject {
             loop {
                 futures::select! {
                     sync_event = all_doc_changes.select_next_some() => {
-                        sync_event_sender.send(sync_event).unwrap();
+
+                        // update stored state of doc
+                        let SyncEvent::DocChanged { doc_id } = sync_event.clone();
+                        let doc_handle = doc_handle_map.get_doc(&doc_id.clone()).unwrap();
+                        let doc = doc_handle.with_doc(|d| d.clone());
+                        doc_state_map.add_doc(doc_id.clone(), doc);
+
+                        // emit change event
+                        sync_event_sender.send(sync_event).unwrap();                    
                     }
                     new_doc = new_docs.select_next_some() => {
                         let doc_id = new_doc.document_id();
@@ -601,12 +613,10 @@ impl GodotProject {
     where
         F: FnOnce(&mut Automerge),
     {
-        if let Some(doc_handle) = self.doc_handles_state.get_doc(&doc_id) {
+        if let Some(doc_handle) = self.doc_handle_map.get_doc(&doc_id) {
             doc_handle.with_doc_mut(f);
-
             let new_doc = doc_handle.with_doc(|d| d.clone());
-            let mut write_state = self.docs_state.lock().unwrap();
-            write_state.insert(doc_id, new_doc);
+            self.doc_state_map.add_doc(doc_id, new_doc);
         }
     }
 
@@ -617,7 +627,7 @@ impl GodotProject {
         let doc_handle = self.repo_handle.new_document();
         let doc_id = doc_handle.document_id();
 
-        self.doc_handles_state.add_handle(doc_handle.clone());
+        self.doc_handle_map.add_handle(doc_handle.clone());
 
         self.update_doc(doc_id.clone(), f);
 
@@ -640,20 +650,18 @@ impl GodotProject {
         let _ = doc_handle
             .with_doc_mut(|mut main_d| new_doc_handle.with_doc_mut(|d| d.merge(&mut main_d)));
 
-        self.doc_handles_state.add_handle(new_doc_handle.clone());
-
-        let mut write_docs = self.docs_state.lock().unwrap();
-        write_docs.insert(new_doc_id.clone(), new_doc_handle.with_doc(|d| d.clone()));
+        self.doc_handle_map.add_handle(new_doc_handle.clone());
+        self.doc_state_map.add_doc(new_doc_id.clone(), new_doc_handle.with_doc(|d| d.clone()));
 
         new_doc_id
     }
 
     fn get_doc(&self, id: DocumentId) -> Option<Automerge> {
-        return self.docs_state.lock().unwrap().get(&id.into()).cloned();
+        self.doc_state_map.get_doc(&id.into())
     }
 
     fn get_doc_handle(&self, id: DocumentId) -> Option<DocHandle> {
-        self.doc_handles_state.get_doc(&id.into())
+        self.doc_handle_map.get_doc(&id.into())
     }
 
     fn get_checked_out_doc_id(&self) -> DocumentId {
