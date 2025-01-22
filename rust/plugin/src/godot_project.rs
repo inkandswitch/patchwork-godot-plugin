@@ -81,8 +81,6 @@ impl GodotProject {
         let repo = Repo::new(None, Box::new(storage));
         let repo_handle = repo.run();
 
-
-
         let (new_doc_tx, new_doc_rx) = futures::channel::mpsc::unbounded();
 
         let doc_state_map = DocStateMap::new();
@@ -496,6 +494,24 @@ impl GodotProject {
 
                     // Check if branches metadata doc changed
                     if doc_id == self.branches_metadata_doc_id {
+
+                        // load branches metadata doc
+                        let doc = self
+                            .doc_state_map
+                            .get_doc(&self.branches_metadata_doc_id)
+                            .unwrap_or_else(|| panic!("Failed to get branches metadata doc"));
+                        
+                        let branches_metadata: BranchesMetadataDoc = hydrate(&doc)
+                            .unwrap_or_else(|e| panic!("Failed to hydrate branches metadata doc: {:?}", e));
+
+                        // check if it has new branches so we can load them
+                        for (branch_doc_id, _) in branches_metadata.branches {
+                            let branch_doc_id = DocumentId::from_str(&branch_doc_id).unwrap();
+                            if self.doc_handle_map.get_doc(&branch_doc_id).is_none() {
+                                self.request_doc(branch_doc_id);                            
+                            }
+                        }
+
                         self.base_mut().emit_signal("branches_changed", &[]);
                     }
                     // Check if checked out doc changed
@@ -589,6 +605,8 @@ impl GodotProject {
                         let doc_id = new_doc.document_id();
                         let doc_handle = new_doc.clone();
 
+                        println!("new doc!!!");
+
                         let change_stream = handle_changes(doc_handle.clone()).filter_map(move |diff| {
                             let doc_id = doc_id.clone();
                             async move {
@@ -620,18 +638,22 @@ impl GodotProject {
         }
     }
 
-    fn create_doc<F>(&self, f: F) -> DocumentId
-    where
-        F: FnOnce(&mut Automerge),
-    {
-        let doc_handle = self.repo_handle.new_document();
-        let doc_id = doc_handle.document_id();
+    fn request_doc(&self, doc_id: DocumentId) {
+        let repo_handle = self.repo_handle.clone();
+        let doc_state_map = self.doc_state_map.clone();
+        let doc_handle_map = self.doc_handle_map.clone();
+        let doc_id_clone = doc_id.clone();
 
-        self.doc_handle_map.add_handle(doc_handle.clone());
-
-        self.update_doc(doc_id.clone(), f);
-
-        doc_id
+        self.runtime.spawn(async move {
+            let repo_handle_result = repo_handle
+                .request_document(doc_id);
+            
+            let doc_handle = repo_handle_result.await.unwrap();
+            let doc = doc_handle.with_doc(|d| d.clone());
+            
+            doc_state_map.add_doc(doc_id_clone, doc);
+            doc_handle_map.add_handle(doc_handle);
+        });
     }
 
     fn clone_doc(&self, doc_id: DocumentId) -> DocumentId {
