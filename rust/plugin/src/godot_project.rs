@@ -1,7 +1,5 @@
 use std::{
     collections::HashMap,
-    future::Future,
-    pin::Pin,
     str::FromStr,
     sync::{
         mpsc::{Receiver, Sender},
@@ -12,10 +10,11 @@ use std::{
 use automerge::{transaction::Transactable, Automerge, ChangeHash, ObjType, ReadDoc, ROOT};
 use automerge_repo::{tokio::FsStorage, ConnDirection, DocHandle, DocumentId, Repo, RepoHandle};
 use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use godot::prelude::*;
 use tokio::{net::TcpStream, runtime::Runtime};
+
+use crate::DocHandleMap;
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
 struct GodotProjectDoc {
@@ -46,7 +45,7 @@ pub struct GodotProject {
     branches_metadata_doc_id: DocumentId,
     checked_out_doc_id: Arc<Mutex<Option<DocumentId>>>,
     docs_state: Arc<Mutex<HashMap<DocumentId, Automerge>>>,
-    doc_handles_state: Arc<Mutex<HashMap<DocumentId, DocHandle>>>,
+    doc_handles_state: DocHandleMap,
     sync_event_receiver: Receiver<SyncEvent>,
 }
 
@@ -82,8 +81,9 @@ impl GodotProject {
 
         let docs_state: Arc<Mutex<HashMap<DocumentId, Automerge>>> =
             Arc::new(Mutex::new(HashMap::new()));
-        let doc_handles_state: Arc<Mutex<HashMap<DocumentId, DocHandle>>> =
-            Arc::new(Mutex::new(HashMap::new()));
+
+        let (new_doc_tx, new_doc_rx) = futures::channel::mpsc::unbounded();
+        let doc_handles_state = DocHandleMap::new(new_doc_tx.clone());
 
         let checked_out_doc_id = Arc::new(Mutex::new(None));
 
@@ -117,32 +117,27 @@ impl GodotProject {
             });
 
             let project_doc_id_clone = project_doc_id.clone();
-            let project_doc_id_clone_2 = project_doc_id.clone();
             let branches_metadata_doc_handle_clone = branches_metadata_doc_handle.clone();
 
             // Add both docs to the states
             {
                 let mut docs = docs_state.lock().unwrap();
-                let mut doc_handles = doc_handles_state.lock().unwrap();
+                doc_handles_state.add_handle(project_doc_handle.clone());
 
                 // Add project doc
                 docs.insert(project_doc_id, project_doc_handle.with_doc(|d| d.clone()));
-                doc_handles.insert(project_doc_id_clone, project_doc_handle);
 
                 // Add branches metadata doc
                 docs.insert(
                     branches_metadata_doc_handle.document_id(),
                     branches_metadata_doc_handle.with_doc(|d| d.clone()),
                 );
-                doc_handles.insert(
-                    branches_metadata_doc_handle.document_id(),
-                    branches_metadata_doc_handle,
-                );
+                doc_handles_state.add_handle(branches_metadata_doc_handle.clone());
             }
 
             {
                 let mut checked_out = checked_out_doc_id.lock().unwrap();
-                *checked_out = Some(project_doc_id_clone_2.clone());
+                *checked_out = Some(project_doc_id_clone.clone());
             }
 
             branches_metadata_doc_handle_clone.document_id()
@@ -189,13 +184,12 @@ impl GodotProject {
                 // Add both docs to the states
                 {
                     let mut docs = docs_state.lock().unwrap();
-                    let mut doc_handles = doc_handles_state.lock().unwrap();
 
                     let main_doc = main_doc_handle_result.with_doc(|d| d.clone());
 
                     // Add main doc
                     docs.insert(main_doc_id_clone.clone(), main_doc);
-                    doc_handles.insert(main_doc_id_clone.clone(), main_doc_handle_result);
+                    doc_handles_state.add_handle(main_doc_handle_result.clone());
 
                     // Add other branches
                     for (branch_doc_id, branch_doc_handle) in other_branches {
@@ -203,7 +197,7 @@ impl GodotProject {
                             branch_doc_id.clone(),
                             branch_doc_handle.with_doc(|d| d.clone()),
                         );
-                        doc_handles.insert(branch_doc_id, branch_doc_handle);
+                        doc_handles_state.add_handle(branch_doc_handle);
                     }
 
                     // Add branches metadata doc
@@ -211,7 +205,7 @@ impl GodotProject {
                         branches_metadata_doc_id_clone.clone(),
                         repo_handle_result.with_doc(|d| d.clone()),
                     );
-                    doc_handles.insert(branches_metadata_doc_id_clone.clone(), repo_handle_result);
+                    doc_handles_state.add_handle(repo_handle_result);
                 }
 
                 let mut checked_out = checked_out_doc_id.lock().unwrap();
@@ -229,7 +223,7 @@ impl GodotProject {
         // Spawn sync task for all doc handles
         Self::spawn_sync_task(
             &runtime,
-            docs_state.clone(),
+            new_doc_rx,
             doc_handles_state.clone(),
             sync_event_sender.clone(),
         );
@@ -542,56 +536,60 @@ impl GodotProject {
 
     fn spawn_sync_task(
         runtime: &Runtime,
-        docs_state: Arc<Mutex<HashMap<DocumentId, Automerge>>>,
-        doc_handles_state: Arc<Mutex<HashMap<DocumentId, DocHandle>>>,
+        mut new_docs: futures::channel::mpsc::UnboundedReceiver<DocHandle>,
+        doc_handles_state: DocHandleMap,
         sync_event_sender: Sender<SyncEvent>,
     ) {
-        let docs_state_clone = docs_state.clone();
-        let doc_handles_state_clone = doc_handles_state.clone();
+        let initial_handles = doc_handles_state
+            .current_handles();
 
         runtime.spawn(async move {
-            loop {
-                let mut futures = FuturesUnordered::new();
+            // This is a stream of SyncEvent
+            let mut all_doc_changes = futures::stream::SelectAll::new();
 
-                // Create initial futures for all doc handles
-                let doc_handles: Vec<DocHandle> = {
-                    let handles = doc_handles_state_clone.lock().unwrap();
-                    handles.values().cloned().collect()
-                };
+            // First add a stream for all the initial documents to the SelectAll
+            for doc_handle in initial_handles {
+                let doc_id = doc_handle.document_id();
+                let doc_handle = doc_handle.clone();
 
-                for doc_handle in doc_handles.iter() {
-                    let doc_handle = doc_handle.clone();
-                    let future: Pin<Box<dyn Future<Output = DocHandle> + Send>> =
-                        Box::pin(async move {
-                            doc_handle.changed().await.unwrap();
-                            doc_handle
-                        });
-                    futures.push(future);
-                }
-
-                // Wait until some doc handle changes
-                while let Some(doc_handle) = futures.next().await {
-                    let doc_id = doc_handle.document_id();
-                    let doc = doc_handle.with_doc(|d| d.clone());
-
-                    {
-                        let mut write_state = docs_state_clone.lock().unwrap();
-                        write_state.insert(doc_id.clone(), doc);
+                let change_stream = handle_changes(doc_handle.clone()).filter_map(move |diff| {
+                    let doc_id = doc_id.clone();
+                    async move {
+                        if diff.is_empty() {
+                            None
+                        } else {
+                            Some(SyncEvent::DocChanged { doc_id: doc_id.clone() } )
+                        }
                     }
+                });
 
-                    print!("doc_changed {:?}", doc_id);
+                all_doc_changes.push(change_stream.boxed());
+            }
 
-                    let _ = sync_event_sender.send(SyncEvent::DocChanged {
-                        doc_id: doc_id.clone(),
-                    });
+            // Now, drive the SelectAll and also wait for any new documents to  arrive and add
+            // them to the selectall
+            loop {
+                futures::select! {
+                    sync_event = all_doc_changes.select_next_some() => {
+                        sync_event_sender.send(sync_event).unwrap();
+                    }
+                    new_doc = new_docs.select_next_some() => {
+                        let doc_id = new_doc.document_id();
+                        let doc_handle = new_doc.clone();
 
-                    // Add processed doc handle back to listen for further changes
-                    let future: Pin<Box<dyn Future<Output = DocHandle> + Send>> =
-                        Box::pin(async move {
-                            doc_handle.changed().await.unwrap();
-                            doc_handle
+                        let change_stream = handle_changes(doc_handle.clone()).filter_map(move |diff| {
+                            let doc_id = doc_id.clone();
+                            async move {
+                                if diff.is_empty() {
+                                    None
+                                } else {
+                                    Some(SyncEvent::DocChanged { doc_id: doc_id.clone() } )
+                                }
+                            }
                         });
-                    futures.push(future);
+
+                        all_doc_changes.push(change_stream.boxed());
+                    }
                 }
             }
         });
@@ -603,7 +601,7 @@ impl GodotProject {
     where
         F: FnOnce(&mut Automerge),
     {
-        if let Some(doc_handle) = self.doc_handles_state.lock().unwrap().get(&doc_id) {
+        if let Some(doc_handle) = self.doc_handles_state.get_doc(&doc_id) {
             doc_handle.with_doc_mut(f);
 
             let new_doc = doc_handle.with_doc(|d| d.clone());
@@ -619,8 +617,7 @@ impl GodotProject {
         let doc_handle = self.repo_handle.new_document();
         let doc_id = doc_handle.document_id();
 
-        let mut write_handles = self.doc_handles_state.lock().unwrap();
-        write_handles.insert(doc_id.clone(), doc_handle);
+        self.doc_handles_state.add_handle(doc_handle.clone());
 
         self.update_doc(doc_id.clone(), f);
 
@@ -643,8 +640,7 @@ impl GodotProject {
         let _ = doc_handle
             .with_doc_mut(|mut main_d| new_doc_handle.with_doc_mut(|d| d.merge(&mut main_d)));
 
-        let mut write_handles = self.doc_handles_state.lock().unwrap();
-        write_handles.insert(new_doc_id.clone(), new_doc_handle.clone());
+        self.doc_handles_state.add_handle(new_doc_handle.clone());
 
         let mut write_docs = self.docs_state.lock().unwrap();
         write_docs.insert(new_doc_id.clone(), new_doc_handle.with_doc(|d| d.clone()));
@@ -657,15 +653,27 @@ impl GodotProject {
     }
 
     fn get_doc_handle(&self, id: DocumentId) -> Option<DocHandle> {
-        return self
-            .doc_handles_state
-            .lock()
-            .unwrap()
-            .get(&id.into())
-            .cloned();
+        self.doc_handles_state.get_doc(&id.into())
     }
 
     fn get_checked_out_doc_id(&self) -> DocumentId {
         return self.checked_out_doc_id.lock().unwrap().clone().unwrap();
     }
+}
+
+fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = Vec<automerge::Patch>> + Send {
+    futures::stream::unfold(handle, |doc_handle| async {
+        let heads_before = doc_handle.with_doc(|d| d.get_heads().to_vec());
+        let _ = doc_handle.changed().await;
+        let heads_after = doc_handle.with_doc(|d| d.get_heads().to_vec());
+        let diff = doc_handle.with_doc(|d| {
+            d.diff(
+                &heads_before,
+                &heads_after,
+                automerge::patches::TextRepresentation::String,
+            )
+        });
+
+        Some((diff, doc_handle))
+    })
 }
