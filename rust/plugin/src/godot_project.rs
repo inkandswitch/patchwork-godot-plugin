@@ -11,14 +11,21 @@ use automerge::{transaction::Transactable, Automerge, ChangeHash, ObjType, ReadD
 use automerge_repo::{tokio::FsStorage, ConnDirection, DocHandle, DocumentId, Repo, RepoHandle};
 use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
 use futures::StreamExt;
-use godot::prelude::*;
+use godot::{obj, prelude::*};
 use tokio::{net::TcpStream, runtime::Runtime};
 
 use crate::{doc_state_map::DocStateMap, DocHandleMap};
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
+
+struct File {
+    content: Option<String>,
+    url: Option<String>
+}
+
+#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
 struct GodotProjectDoc {
-    files: HashMap<String, String>,
+    files: HashMap<String, File>,
 }
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
@@ -36,6 +43,12 @@ struct Branch {
 #[derive(Clone)]
 enum SyncEvent {
     DocChanged { doc_id: DocumentId },
+}
+
+#[derive(Clone)]
+enum StringOrPackedByteArray {
+    String(String),
+    PackedByteArray(PackedByteArray)
 }
 
 #[derive(GodotClass)]
@@ -68,6 +81,8 @@ impl GodotProject {
     // hack: pass in empty string to create a new doc
     // godot rust doens't seem to support Option args
     fn create(maybe_branches_metadata_doc_id: String) -> Gd<Self> {
+
+
         let runtime: Runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -298,11 +313,37 @@ impl GodotProject {
             .unwrap_or_else(|| panic!("Failed to get checked out doc"));
 
         let files = doc.get(ROOT, "files").unwrap().unwrap().1;
-
-        return match doc.get(files, path) {
-            Ok(Some((value, _))) => value.into_string().unwrap_or_default().to_variant(),
-            _ => Variant::nil(),
+        
+        let file_entry = match doc.get(files, path) {
+            Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
+            _ => return Variant::nil(),
         };
+
+        match doc.get(&file_entry, "content") {
+            Ok(Some((automerge::Value::Object(ObjType::Text), content))) => {
+                match doc.text(content) {
+                    Ok(text) => return text.to_variant(),
+                    Err(_) => {}
+                }
+            },
+            _ => {}
+        }
+
+        match doc.get(&file_entry, "url") {
+            Ok(Some((a, _))) => match a {
+                automerge::Value::Scalar(cow) => {
+                    match cow.into_owned() {
+                        automerge::ScalarValue::Str(smol_str) => return smol_str.to_string().to_variant(),
+                        _ => {}
+                    }
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+       
+        return Variant::nil()
+
     }
 
     #[func]
@@ -341,14 +382,24 @@ impl GodotProject {
     }
 
     #[func]
-    fn save_file(&self, path: String, content: String) {
-        let path_clone = path.clone();
+    fn save_file(&self, path: String, content: Variant) {
+    
+        let content: StringOrPackedByteArray = if content.try_to::<String>().is_ok() {
+            StringOrPackedByteArray::String(content.to::<String>())
+        } else if content.try_to::<PackedByteArray>().is_ok() {
+            StringOrPackedByteArray::PackedByteArray(content.to::<PackedByteArray>())
+        } else {
+            println!("invalid {:?}", path);
+            return
+        };
+
+
         let checked_out_doc_id = self.get_checked_out_doc_id();
         let checked_out_doc_id_clone = checked_out_doc_id.clone();
-
         let checked_out_doc_handle = self.get_doc_handle(checked_out_doc_id.clone());
 
         if let Some(project_doc_handle) = checked_out_doc_handle {
+
             project_doc_handle.with_doc_mut(|d| {
                 let mut tx = d.transaction();
 
@@ -357,11 +408,45 @@ impl GodotProject {
                     _ => panic!("Invalid project doc, doesn't have files map"),
                 };
 
-                if let Err(e) = tx.put(files, path, content) {
-                    panic!("Failed to save file: {:?}", e);
-                }
+                match content {
+                    StringOrPackedByteArray::String(content) => {
+                        println!("write string {:}", path);
 
-                println!("save {:?}", path_clone);
+                        // get existing file url or create new one                        
+                        let file_entry = match tx.get(&files, &path) {
+                            Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
+                            _ => tx.put_object(files, &path, ObjType::Map).unwrap()
+                        };
+                
+                        // delete url in file entry if it previously had one
+                        if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
+                            let _ = tx.delete(&file_entry, "url");
+                        }
+                    
+                        // either get existing text or create new text
+                        let content_key = match tx.get(&file_entry, "content") {
+                            Ok(Some((automerge::Value::Object(ObjType::Text), content))) => content,
+                            _ => tx.put_object(&file_entry, "content", ObjType::Text).unwrap(),
+                        };
+                        let _ = tx.update_text(&content_key, &content);
+                
+                    },
+                    StringOrPackedByteArray::PackedByteArray(content) => {
+                        println!("write binary {:}", path);
+
+                        // create content doc
+                        let content_doc_id = self.create_doc(|d| {
+                            let mut tx = d.transaction();
+                            let _ = tx.put(ROOT, "content", content.to_vec());
+                            tx.commit();
+                        });
+
+                        // write url to content doc into project doc
+                        let file_entry = tx.put_object(files, path, ObjType::Map);
+                        let _ = tx.put(file_entry.unwrap(), "url", format!("automerge:{}", content_doc_id));            
+                    },
+                }
+    
 
                 tx.commit();
             });
@@ -638,6 +723,22 @@ impl GodotProject {
         }
     }
 
+
+    fn create_doc<F>(&self, f: F) -> DocumentId
+    where
+        F: FnOnce(&mut Automerge),
+    {
+        let doc_handle = self.repo_handle.new_document();
+        let doc_id = doc_handle.document_id();
+
+        self.doc_handle_map.add_handle(doc_handle.clone());
+
+        self.update_doc(doc_id.clone(), f);
+
+        doc_id
+    }
+
+    
     fn request_doc(&self, doc_id: DocumentId) {
         let repo_handle = self.repo_handle.clone();
         let doc_state_map = self.doc_state_map.clone();

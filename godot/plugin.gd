@@ -20,15 +20,25 @@ func _enter_tree() -> void:
 	await init_godot_project()
 
 	# listen for file changes once we have initialized the godot project
-	file_system.connect("file_changed", _on_local_file_changed)
+	# file_system.connect("file_changed", _on_local_file_changed)
 
+	print("save file")
+	var flag_content = FileAccess.get_file_as_bytes("res://assets/flag.png")
+	godot_project.save_file("res://assets/flag.png", flag_content)
+	var main_content = FileAccess.get_file_as_string("res://main.tscn")
+	godot_project.save_file("res://main.tscn", main_content)
+
+
+	print("main ", godot_project.get_file("res://main.tscn").substr(0, 50))
+	print("flag ", godot_project.get_file("res://assets/flag.png"))
+	
 	# setup patchwork sidebarp
-	sidebar = preload("res://addons/patchwork/godot/sidebar.tscn").instantiate()
-	sidebar.init(self, godot_project)
-	add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
+	# sidebar = preload("res://addons/patchwork/godot/sidebar.tscn").instantiate()
+	# sidebar.init(self, godot_project)
+	# add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
 
 func init_godot_project():
-	var project_doc_id = config.get_value("project_doc_id", "")
+	var project_doc_id = "" # config.get_value("project_doc_id", "")
 
 	godot_project = GodotProject.create(project_doc_id)
 
@@ -36,14 +46,14 @@ func init_godot_project():
 	# right now we just wait a bit
 	await get_tree().create_timer(1.0).timeout
 
-	if !project_doc_id:
-		config.set_value("project_doc_id", godot_project.get_doc_id())
-		sync_godot_to_patchwork()
-	else:
-		sync_patchwork_to_godot()
+	# if !project_doc_id:
+	# 	config.set_value("project_doc_id", godot_project.get_doc_id())
+	# 	sync_godot_to_patchwork()
+	# else:
+	# 	sync_patchwork_to_godot()
 
-	godot_project.connect("files_changed", sync_patchwork_to_godot)
-	godot_project.checked_out_branch.connect(_on_checked_out_branch)
+	# godot_project.connect("files_changed", sync_patchwork_to_godot)
+	# godot_project.checked_out_branch.connect(_on_checked_out_branch)
 
 
 func sync_godot_to_patchwork():
