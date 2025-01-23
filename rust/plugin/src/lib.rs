@@ -7,6 +7,7 @@ unsafe impl ExtensionLibrary for MyExtension {}
 
 mod doc_handle_map;
 mod doc_state_map;
+mod doc_utils;
 mod godot_project;
 mod godot_scene;
 

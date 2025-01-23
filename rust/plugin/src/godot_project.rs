@@ -9,23 +9,27 @@ use std::{
 
 use automerge::{transaction::Transactable, Automerge, ChangeHash, ObjType, ReadDoc, ROOT};
 use automerge_repo::{tokio::FsStorage, ConnDirection, DocHandle, DocumentId, Repo, RepoHandle};
-use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
+use autosurgeon::{bytes, hydrate, reconcile, Hydrate, Reconcile};
 use futures::StreamExt;
 use godot::{obj, prelude::*};
 use tokio::{net::TcpStream, runtime::Runtime};
-
-use crate::{doc_state_map::DocStateMap, DocHandleMap};
+use crate::{doc_state_map::DocStateMap, doc_utils::SimpleDocReader, DocHandleMap};
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
+struct BinaryFile {
+    content: Vec<u8>
+}
 
-struct File {
+
+#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
+struct FileEntry {
     content: Option<String>,
     url: Option<String>
 }
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
 struct GodotProjectDoc {
-    files: HashMap<String, File>,
+    files: HashMap<String, FileEntry>,
 }
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
@@ -314,11 +318,14 @@ impl GodotProject {
 
         let files = doc.get(ROOT, "files").unwrap().unwrap().1;
         
+        // does the file exist?
         let file_entry = match doc.get(files, path) {
             Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
             _ => return Variant::nil(),
         };
 
+
+        // try to read file as text
         match doc.get(&file_entry, "content") {
             Ok(Some((automerge::Value::Object(ObjType::Text), content))) => {
                 match doc.text(content) {
@@ -329,19 +336,30 @@ impl GodotProject {
             _ => {}
         }
 
-        match doc.get(&file_entry, "url") {
-            Ok(Some((a, _))) => match a {
-                automerge::Value::Scalar(cow) => {
-                    match cow.into_owned() {
-                        automerge::ScalarValue::Str(smol_str) => return smol_str.to_string().to_variant(),
-                        _ => {}
-                    }
-                }
-                _ => {}
-            },
-            _ => {}
-        }
+        // ... otherwise try to read as linked binary doc
+
+    
+        if let Some(url) = doc.get_string(&file_entry, "url") {                                                                            
+
+            // parse doc url
+            let doc_id = match parse_automerge_url(&url) {
+                Some(url) => url,
+                _ => return Variant::nil()                    
+            };
+
+            // read content doc
+            let content_doc = match self.doc_state_map.get_doc(&doc_id) {
+                Some(doc) => doc,
+                _ => return Variant::nil()
+            };
+
+            // get content of binary file
+            if let Some(bytes) = content_doc.get_bytes(ROOT, "content") {
+                return bytes.to_variant()
+            };
+        };
        
+        // finally give up
         return Variant::nil()
 
     }
@@ -364,7 +382,7 @@ impl GodotProject {
         return match doc.get_at(files, path, &heads) {
             Ok(Some((value, _))) => value.into_string().unwrap_or_default().to_variant(),
             _ => Variant::nil(),
-        };
+        };        
     }
 
     #[func]
@@ -808,3 +826,19 @@ fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = Vec<automerg
         Some((diff, doc_handle))
     })
 }
+
+
+
+
+fn parse_automerge_url(url: &str) -> Option<DocumentId> {
+    const PREFIX: &str = "automerge:";
+    if !url.starts_with(PREFIX) {
+        return None;
+    }
+    
+    let hash = &url[PREFIX.len()..];
+    DocumentId::from_str(hash).ok()
+}
+
+
+
