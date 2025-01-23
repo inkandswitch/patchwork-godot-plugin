@@ -299,14 +299,16 @@ impl GodotProject {
             .get_doc(&self.get_checked_out_doc_id())
             .unwrap_or_else(|| panic!("Failed to get checked out doc"));
 
-        let project_doc: GodotProjectDoc =
-            hydrate(&doc).unwrap_or_else(|e| panic!("Failed to hydrate project doc: {:?}", e));
+        let files = match doc.get_obj_id(ROOT, "files") {
+            Some(files) => files,
+            _ => {
+                return array![];
+            }
+        };
 
-        project_doc
-            .files
-            .keys()
-            .map(|k| k.to_variant())
-            .collect::<Array<Variant>>()
+
+        let keys = doc.keys(files).collect::<Vec<String>>();
+        return keys.into_iter().map(|k| k.to_variant()).collect::<Array<Variant>>();            
     }
 
     #[func]

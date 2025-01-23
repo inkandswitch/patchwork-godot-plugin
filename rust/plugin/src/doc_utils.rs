@@ -4,6 +4,8 @@ pub trait SimpleDocReader {
     fn get_string<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<String>;
 
     fn get_bytes<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<Vec<u8>>;
+
+    fn get_obj_id<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<ObjId>;
 }
 
 impl SimpleDocReader for Automerge {
@@ -23,6 +25,13 @@ impl SimpleDocReader for Automerge {
                 automerge::ScalarValue::Str(smol_str) => Some(smol_str.to_string()),
                 _ => None,
             },
+            _ => None,
+        }
+    }
+
+    fn get_obj_id<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<ObjId> {
+        match self.get(obj, prop) {
+            Ok(Some((Value::Object(_), obj_id))) => Some(obj_id),
             _ => None,
         }
     }

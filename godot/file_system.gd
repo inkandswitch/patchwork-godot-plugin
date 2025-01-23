@@ -10,6 +10,10 @@ signal file_changed(path: String, file_name: String)
 func _init(editor_plugin: EditorPlugin):
 	self.editor_plugin = editor_plugin
 
+	# load initial state of files
+	for path in list_all_files():
+		file_contents[path] = get_file(path)
+
 	# listen to file system
 	var file_system = editor_plugin.get_editor_interface().get_resource_filesystem()
 	file_system.connect("filesystem_changed", _on_filesystem_changed)
@@ -69,14 +73,33 @@ func _scan_directory_for_files(dir: DirAccess, current_path: String, files: Arra
 			
 		file_name = dir.get_next()
 
+func is_binary(file) -> bool:
+	# Read first chunk to detect if binary
+	var test_bytes = file.get_buffer(min(1024, file.get_length()))
+	
+	# Reset file position
+	file.seek(0)
+
+	# Check for null bytes and high ratio of non-printable chars
+	var non_printable = 0
+	
+	for i in range(test_bytes.size()):
+		if test_bytes[i] == 0 or (test_bytes[i] < 32 and test_bytes[i] != 10 and test_bytes[i] != 13 and test_bytes[i] != 9):
+			non_printable += 1
+	return (non_printable / float(test_bytes.size())) > 0.3
+
 func get_file(path: String):
 	var file = FileAccess.open(path, FileAccess.READ)
+	var content
 	if file:
-		var content = file.get_as_text()
-		file_contents[path] = content
-		return content
-	return null
+		if is_binary(file):
+			# Handle binary files by reading raw bytes
+			return file.get_buffer(file.get_length())
 
+		# Handle text files
+		return file.get_as_text()
+
+	return null
 
 func delete_file(path: String) -> void:
 	if FileAccess.file_exists(path):
