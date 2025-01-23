@@ -1,7 +1,7 @@
 @tool
 extends EditorPlugin
 
-var godot_project: GodotProject
+var godot_project: GodotProjectWrapper
 var config: PatchworkConfig
 var file_system: FileSystem
 var sidebar
@@ -30,11 +30,11 @@ func _enter_tree() -> void:
 func init_godot_project():
 	var project_doc_id = config.get_value("project_doc_id", "")
 
-	godot_project = GodotProject.create(project_doc_id)
+	godot_project = GodotProjectWrapper.create(project_doc_id)
 
 	# todo: godo project should signal when it's ready
 	# right now we just wait a bit
-	await get_tree().create_timer(1.0).timeout
+	await get_tree().create_timer(10.0).timeout
 
 	if !project_doc_id:
 		config.set_value("project_doc_id", godot_project.get_doc_id())
