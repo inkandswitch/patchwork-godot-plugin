@@ -589,7 +589,10 @@ impl GodotProject {
     // needs to be called every frame to process the internal events
     #[func]
     fn process(&mut self) {
-        let checked_out_doc_id = self.checked_out_doc_id.lock().unwrap().clone().unwrap();
+        let checked_out_doc_id = match self.checked_out_doc_id.lock().unwrap().clone() {
+            Some(id) => id,
+            None => return,
+        };
 
         // Process all pending sync events
         while let Ok(event) = self.sync_event_receiver.try_recv() {
