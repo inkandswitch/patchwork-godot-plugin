@@ -45,7 +45,7 @@ func init_godot_project():
 	else:
 		sync_patchwork_to_godot()
 
-	#godot_project.connect("files_changed", sync_patchwork_to_godot)
+	godot_project.connect("files_changed", sync_patchwork_to_godot)
 	godot_project.checked_out_branch.connect(_on_checked_out_branch)
 
 
