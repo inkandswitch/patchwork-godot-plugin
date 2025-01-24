@@ -4,38 +4,53 @@ extends MarginContainer
 var godot_project: GodotProject
 
 @onready var branch_picker: OptionButton = %BranchPicker
-@onready var new_branch_button: Button = %NewBranchButton
-@onready var reload_button: Button = %ReloadButton
+@onready var menu_button: MenuButton = %MenuButton
 @onready var history_list: ItemList = %HistoryList
 @onready var change_count_label: Label = %ChangeCountLabel
 
 var branches = []
 var plugin: EditorPlugin
 
+const CREATE_BRANCH_IDX = 1
+const MERGE_BRANCH_IDX = 2
+
 func init(plugin: EditorPlugin, godot_project: GodotProject) -> void:
 	self.godot_project = godot_project
 	self.plugin = plugin
 
 func _ready() -> void:
-	new_branch_button.pressed.connect(_on_new_branch_button_pressed)
 	branch_picker.item_selected.connect(_on_branch_picker_item_selected)
-	reload_button.pressed.connect(update_ui)
 	update_ui()
 
 	godot_project.connect("branches_changed", update_ui);
 	godot_project.connect("files_changed", update_ui);
+
+	var popup = menu_button.get_popup()
+	popup.id_pressed.connect(_on_menu_button_id_pressed)
 
 func _on_branch_picker_item_selected(index: int) -> void:
 	var selected_branch = branches[index]
 	godot_project.checkout_branch(selected_branch.id)
 	update_ui()
 
+
+func _on_menu_button_id_pressed(id: int) -> void:
+	match id:
+		CREATE_BRANCH_IDX:
+			_on_create_new_branch()
+
+		MERGE_BRANCH_IDX:
+			godot_project.merge_branch(godot_project.get_checked_out_branch_id())
+			godot_project.checkout_branch("main");
+			pass
+
+
 func checkout_branch(branch_id: String) -> void:
 	EditorInterface.save_all_scenes();
 	godot_project.checkout_branch(branch_id)
 	update_ui()
 	
-func _on_new_branch_button_pressed() -> void:
+func _on_create_new_branch() -> void:
 	var dialog = ConfirmationDialog.new()
 	dialog.title = "Create New Branch"
 	
@@ -71,7 +86,6 @@ func update_ui() -> void:
 	self.branches = godot_project.get_branches()
 
 	# update branch picker
-
 	branch_picker.clear()
 
 	var checked_out_branch_id = godot_project.get_checked_out_branch_id()
@@ -91,3 +105,14 @@ func update_ui() -> void:
 
 	for change in history:
 		history_list.add_item(change)
+
+	# update context menu
+	var menu_popup = menu_button.get_popup()
+	
+	for i in range(menu_popup.item_count):
+		menu_popup.remove_item(0)
+
+	menu_popup.remove_item(CREATE_BRANCH_IDX)
+
+	menu_popup.add_item("Create new branch", CREATE_BRANCH_IDX) # Create new branch menu item
+	menu_popup.add_item("Merge branch", MERGE_BRANCH_IDX)
