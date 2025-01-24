@@ -58,8 +58,10 @@ func _on_new_branch_button_pressed() -> void:
 			var new_branch_name = line_edit.text.strip_edges()
 			var new_branch_id = godot_project.create_branch(new_branch_name)
 			checkout_branch(new_branch_id)
+		
+		dialog.queue_free()
 	)
-	dialog.queue_free()
+	
 	
 	add_child(dialog)
 	dialog.popup_centered()

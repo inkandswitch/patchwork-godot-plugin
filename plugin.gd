@@ -23,9 +23,9 @@ func _enter_tree() -> void:
 	file_system.connect("file_changed", _on_local_file_changed)
 	
 	# setup patchwork sidebar
-	# sidebar = preload("res://addons/patchwork/sidebar.tscn").instantiate()
-	# sidebar.init(self, godot_project)
-	# add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
+	sidebar = preload("res://addons/patchwork/sidebar.tscn").instantiate()
+	sidebar.init(self, godot_project)
+	add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
 
 func init_godot_project():
 	var project_doc_id = config.get_value("project_doc_id", "")
@@ -108,9 +108,8 @@ func get_relevant_godot_files() -> Array[String]:
 	# right now we only sync script and scene files, also we ignore the addons folder
 	return file_system.list_all_files().filter(_is_relevant_file)
 
-func _on_checked_out_branch(branch_id: String):
-	print("checked out branch ", branch_id, " (", godot_project.list_all_files().size(), " files)")
-
+func _on_checked_out_branch():
+	print("checked out branch ", godot_project.get_branch_doc_id(), " (", godot_project.list_all_files().size(), " files)")
 
 	sync_patchwork_to_godot()
 	
