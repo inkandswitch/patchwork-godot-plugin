@@ -1,7 +1,7 @@
 @tool
 extends EditorPlugin
 
-var godot_project: GodotProjectWrapper
+var godot_project: GodotProject
 var config: PatchworkConfig
 var file_system: FileSystem
 var sidebar
@@ -11,7 +11,7 @@ func _process(_delta: float) -> void:
 		godot_project.process()
 
 func _enter_tree() -> void:
-	print("start patchwork");
+	print("start patchwork!!!");
 
 	config = PatchworkConfig.new();
 
@@ -23,18 +23,21 @@ func _enter_tree() -> void:
 	file_system.connect("file_changed", _on_local_file_changed)
 	
 	# setup patchwork sidebar
-	sidebar = preload("res://addons/patchwork/godot/sidebar.tscn").instantiate()
-	sidebar.init(self, godot_project)
-	add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
+	# sidebar = preload("res://addons/patchwork/sidebar.tscn").instantiate()
+	# sidebar.init(self, godot_project)
+	# add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
 
 func init_godot_project():
 	var project_doc_id = config.get_value("project_doc_id", "")
 
-	godot_project = GodotProjectWrapper.create(project_doc_id)
+
+	godot_project = GodotProject.create(project_doc_id)
+
 
 	# todo: godo project should signal when it's ready
 	# right now we just wait a bit
-	await get_tree().create_timer(10.0).timeout
+	await get_tree().create_timer(1.0).timeout
+
 
 	if !project_doc_id:
 		config.set_value("project_doc_id", godot_project.get_doc_id())
@@ -42,7 +45,7 @@ func init_godot_project():
 	else:
 		sync_patchwork_to_godot()
 
-	godot_project.connect("files_changed", sync_patchwork_to_godot)
+	#godot_project.connect("files_changed", sync_patchwork_to_godot)
 	godot_project.checked_out_branch.connect(_on_checked_out_branch)
 
 
