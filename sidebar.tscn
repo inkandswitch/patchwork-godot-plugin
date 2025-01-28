@@ -74,3 +74,5 @@ metadata/_tab_index = 1
 unique_name_in_owner = true
 layout_mode = 2
 text = "0 changes"
+
+[node name="ConfirmationDialog" type="ConfirmationDialog" parent="."]
