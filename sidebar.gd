@@ -30,27 +30,64 @@ func _ready() -> void:
 
 func _on_branch_picker_item_selected(index: int) -> void:
 	var selected_branch = branches[index]
-	godot_project.checkout_branch(selected_branch.id)
-	update_ui()
+	checkout_branch(selected_branch.id)
 
+static var void_func = func(): return
+static func popup_box(parent_window: Node, dialog: AcceptDialog, message: String, box_title: String, confirm_func: Callable = void_func, cancel_func: Callable = void_func):
+	if (dialog == null):
+		dialog = AcceptDialog.new()
+	if (dialog.get_parent() != parent_window):
+		if (dialog.get_parent() == null):
+			parent_window.add_child(dialog)
+		else:
+			dialog.reparent(parent_window)
+	dialog.reset_size()
+	dialog.set_text(message)
+	dialog.set_title(box_title)
+	var _confirm_func: Callable
+	var _cancel_func: Callable
+	var arr = dialog.get_signal_connection_list("confirmed")
+	for dict in arr:
+		dialog.disconnect("confirmed", dict.callable)
+	arr = dialog.get_signal_connection_list("canceled")
+	for dict in arr:
+		dialog.disconnect("canceled", dict.callable)
+	dialog.connect("confirmed", confirm_func)
+	dialog.connect("canceled", cancel_func)
+	dialog.popup_centered()
+
+func merge_branch():
+	EditorInterface.save_all_scenes()
+	godot_project.merge_branch(godot_project.get_checked_out_branch_id())
+	godot_project.checkout_branch("main");
 
 func _on_menu_button_id_pressed(id: int) -> void:
 	match id:
 		CREATE_BRANCH_IDX:
-			_on_create_new_branch()
+			if godot_project.unsaved_files_open():
+				popup_box(self, $ConfirmationDialog, "You have unsaved files open. Do you want to save them before creating a new branch?", "Unsaved Files", self._on_create_new_branch)
+			else:
+				_on_create_new_branch()
 
 		MERGE_BRANCH_IDX:
-			godot_project.merge_branch(godot_project.get_checked_out_branch_id())
-			godot_project.checkout_branch("main");
+			if godot_project.unsaved_files_open():
+				popup_box(self, $ConfirmationDialog, "You have unsaved files open. Do you want to save them before merging?", "Unsaved Files", self.merge_branch)
+			else:
+				merge_branch()
 			pass
-
-
-func checkout_branch(branch_id: String) -> void:
+func _checkout_branch(branch_id: String) -> void:
 	EditorInterface.save_all_scenes();
 	godot_project.checkout_branch(branch_id)
 	update_ui()
-	
+
+func checkout_branch(branch_id: String) -> void:
+	if godot_project.unsaved_files_open():
+		popup_box(self, $ConfirmationDialog, "You have unsaved files open. Do you want to save them before checking out?", "Unsaved Files", self._checkout_branch.bind(branch_id))
+		return
+	_checkout_branch(branch_id)
+
 func _on_create_new_branch() -> void:
+	EditorInterface.save_all_scenes()
 	var dialog = ConfirmationDialog.new()
 	dialog.title = "Create New Branch"
 	
