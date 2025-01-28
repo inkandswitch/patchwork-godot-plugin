@@ -109,10 +109,7 @@ func update_ui() -> void:
 	# update context menu
 	var menu_popup = menu_button.get_popup()
 	
-	for i in range(menu_popup.item_count):
-		menu_popup.remove_item(0)
-
-	menu_popup.remove_item(CREATE_BRANCH_IDX)
+	menu_popup.clear()
 
 	menu_popup.add_item("Create new branch", CREATE_BRANCH_IDX) # Create new branch menu item
 	menu_popup.add_item("Merge branch", MERGE_BRANCH_IDX)
