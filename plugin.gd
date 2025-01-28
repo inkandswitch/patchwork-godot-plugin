@@ -61,9 +61,12 @@ func sync_godot_to_patchwork():
 
 func sync_patchwork_to_godot():
 	
+	# only sync once the user has saved all files
+	if godot_project.unsaved_files_open():
+		return
+
 	var files_in_godot = get_relevant_godot_files()
 	var files_in_patchwork = godot_project.list_all_files()
-
 
 	print("files in patchwork")
 
