@@ -41,10 +41,14 @@ func stop():
 		#file_system.disconnect("resources_reload", _on_resources_reloaded)
 
 func trigger_file_changed(file_path: String, content: String) -> void:
-	var stored_content = file_contents.get(file_path, "")
-	if content != stored_content:
-		file_contents[file_path] = content
-		file_changed.emit(file_path, content)
+	#print("trigger file changed?", file_path)
+
+	#var stored_content = file_contents.get(file_path, "")
+	#if content != stored_content:
+	print("trigger file changed!")
+
+	file_contents[file_path] = content
+	file_changed.emit(file_path, content)
 
 func list_all_files() -> Array[String]:
 	var files: Array[String] = []
@@ -155,17 +159,13 @@ func _scan_directory(dir: DirAccess, current_path: String):
 			file_name = dir.get_next()
 
 func _check_file_changes(file_path: String):
-	# Skip files that aren't GDScript or scene file
-	# todo: support binary files
-	if not file_path.ends_with(".gd") and not file_path.ends_with(".tscn"):
-		return
 
-	var file = FileAccess.open(file_path, FileAccess.READ)
-	if not file:
+	print("check file ", file_path);
+
+	var content = get_file(file_path)
+	if not content:
+			print("error no file found", file_path);
 			return
-	
-	var content = file.get_as_text(true)
-
 
 	trigger_file_changed(file_path, content)
 
