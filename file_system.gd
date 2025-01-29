@@ -139,7 +139,7 @@ func is_binary(file) -> bool:
 	# print_debug("%s is binary: %s" % [file.get_path(), str(ret)])
 	return ret
 
-func get_file(path: String):
+func get_file(path: String) -> Variant:
 	var file = FileAccess.open(path, FileAccess.READ)
 	var content
 	if file:
@@ -158,16 +158,22 @@ func delete_file(path: String) -> void:
 		file_contents.erase(path)
 
 
-func save_file(path: String, content: String) -> void:
+func save_file(path: String, content: Variant) -> void:
 	# Create directory structure if it doesn't exist
 	var dir_path = path.get_base_dir()
 	if !DirAccess.dir_exists_absolute(dir_path):
 		DirAccess.make_dir_recursive_absolute(dir_path)
-		
+	if content is String:
+		print("IS STRING!")
 	var file = FileAccess.open(path, FileAccess.WRITE)
 	if file:
-		file.store_string(content)
+		if content is String:
+			file.store_string(content)
+		else:
+			file.store_buffer(content)
 		file_contents[path] = content
+	else:
+		print("ERROR: save_file(): Failed to open file for writing: ", path)
 
 
 ## FILE SYSTEM CHANGED
