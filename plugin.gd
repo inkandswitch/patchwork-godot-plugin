@@ -6,7 +6,7 @@ var config: PatchworkConfig
 var file_system: FileSystem
 var sidebar
 
-var last_synced_heads: Array[String]
+var last_synced_heads: PackedStringArray
 
 func _process(_delta: float) -> void:
 	if godot_project:
