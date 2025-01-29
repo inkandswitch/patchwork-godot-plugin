@@ -77,20 +77,67 @@ func _scan_directory_for_files(dir: DirAccess, current_path: String, files: Arra
 			
 		file_name = dir.get_next()
 
+
+var _control_chars = PackedByteArray([10, 13, 9, 12, 8])
+var _printable_ascii = _control_chars + PackedByteArray(range(32, 127))
+var _printable_high_ascii = PackedByteArray(range(127, 256))
+
+func is_binary_string(bytes_to_check: PackedByteArray) -> bool:
+	if bytes_to_check.size() == 0:
+		return false
+
+
+	var low_chars = PackedByteArray()
+	for byte in bytes_to_check:
+		if not _printable_ascii.has(byte):
+			low_chars.append(byte)
+	var nontext_ratio1 = float(low_chars.size()) / float(bytes_to_check.size())
+	print_debug("nontext_ratio1: ", nontext_ratio1)
+	var high_chars = PackedByteArray()
+	for byte in bytes_to_check:
+		if not _printable_high_ascii.has(byte):
+			high_chars.append(byte)
+	var nontext_ratio2 = float(high_chars.size()) / float(bytes_to_check.size())
+	print_debug("nontext_ratio2: ", nontext_ratio2)
+	if nontext_ratio1 > 0.90 and nontext_ratio2 > 0.90:
+		return true
+
+	var is_likely_binary = (nontext_ratio1 > 0.3 and nontext_ratio2 < 0.05) or (nontext_ratio1 > 0.8 and nontext_ratio2 > 0.8)
+	# UTF-8 is the only encoding that Godot supports, sooooo...
+	var decodable_as_unicode = GodotProject.detect_utf8(bytes_to_check)
+	if is_likely_binary:
+		if decodable_as_unicode:
+			return false
+		else:
+			return true
+	else:
+		if decodable_as_unicode:
+			return false
+		else:
+			if 0 in bytes_to_check or 255 in bytes_to_check:
+				# Check for NULL bytes last
+				return true
+		return false
+	
 func is_binary(file) -> bool:
 	# Read first chunk to detect if binary
-	var test_bytes = file.get_buffer(min(1024, file.get_length()))
-	
+	var test_bytes = file.get_buffer(min(8000, file.get_length()))
+
 	# Reset file position
 	file.seek(0)
-
-	# Check for null bytes and high ratio of non-printable chars
-	var non_printable = 0
-	
-	for i in range(test_bytes.size()):
-		if test_bytes[i] == 0 or (test_bytes[i] < 32 and test_bytes[i] != 10 and test_bytes[i] != 13 and test_bytes[i] != 9):
-			non_printable += 1
-	return (non_printable / float(test_bytes.size())) > 0.3
+	var ret: bool
+	# This is what git does to detect binary files; it just checks the first 8000 bytes for null bytes
+	if 0 in test_bytes:
+		ret = true
+	# if it's valid unicode, it's not binary
+	elif GodotProject.detect_utf8(test_bytes):
+		ret = false
+	# otherwise, we do a more thorough check
+	else:
+		# print_debug("More thorough check on ", file.get_path())
+		ret = is_binary_string(test_bytes)
+	# print_debug("%s is binary: %s" % [file.get_path(), str(ret)])
+	return ret
 
 func get_file(path: String):
 	var file = FileAccess.open(path, FileAccess.READ)
