@@ -120,7 +120,7 @@ func _on_checked_out_branch():
 
 	sync_patchwork_to_godot()
 	
-func _on_local_file_changed(path: String, content: String):
+func _on_local_file_changed(path: String, content: Variant):
 	if _is_relevant_file(path):
 		print("save file: ", path)
 		godot_project.save_file(path, content)
