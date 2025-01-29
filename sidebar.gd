@@ -10,15 +10,17 @@ var godot_project: GodotProject
 
 var branches = []
 var plugin: EditorPlugin
-
 const CREATE_BRANCH_IDX = 1
 const MERGE_BRANCH_IDX = 2
 
 func init(plugin: EditorPlugin, godot_project: GodotProject) -> void:
+	print("Sidebar initialized!")
 	self.godot_project = godot_project
 	self.plugin = plugin
 
+# TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
+	print("Sidebar ready!")
 	branch_picker.item_selected.connect(_on_branch_picker_item_selected)
 	update_ui()
 
@@ -120,6 +122,10 @@ func _on_create_new_branch() -> void:
 
 
 func update_ui() -> void:
+	if not godot_project:
+		# update_ui() called before init
+		print("ERROR: update_ui() called before init")
+		return
 	self.branches = godot_project.get_branches()
 
 	# update branch picker
