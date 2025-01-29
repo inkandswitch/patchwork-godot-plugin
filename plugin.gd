@@ -99,12 +99,18 @@ func sync_patchwork_to_godot():
 	# 		file_system.delete_file(path)
 
 
-var sync_binary_files: bool = false
+var sync_binary_files: bool = true
+const BANNED_FILES = [".DS_Store", "thumbs.db", "desktop.ini"] # system files that should be ignored
 
 func _is_relevant_file(path: String) -> bool:
 	var is_excluded_path = path.begins_with("res://addons/") or path.begins_with("res://target/")
 	if is_excluded_path:
 		return false
+
+	var file = path.get_file()
+	if BANNED_FILES.has(file):
+		return false
+
 	
 	if sync_binary_files:
 		return true
