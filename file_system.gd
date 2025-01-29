@@ -40,12 +40,12 @@ func stop():
 		#file_system.disconnect("filesystem_changed", _on_filesystem_changed)
 		#file_system.disconnect("resources_reload", _on_resources_reloaded)
 
-func trigger_file_changed(file_path: String, content: String) -> void:
-	#print("trigger file changed?", file_path)
+func trigger_file_changed(file_path: String, content: Variant) -> void:
+	print("?? trigger file changed?", file_path)
 
-	#var stored_content = file_contents.get(file_path, "")
-	#if content != stored_content:
-	print("trigger file changed!")
+	var stored_content = file_contents.get(file_path, "")
+	if content != stored_content:
+		print("!! trigger file changed!")
 
 	file_contents[file_path] = content
 	file_changed.emit(file_path, content)
