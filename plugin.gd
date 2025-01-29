@@ -20,6 +20,7 @@ func _enter_tree() -> void:
 	print("_enter_tree() -> init_godot_project()")
 	await init_godot_project()
 	print("end _enter_tree() -> init_godot_project()")
+	
 	# listen for file changes once we have initialized the godot project
 	file_system.connect("file_changed", _on_local_file_changed)
 	
@@ -40,7 +41,7 @@ func init_godot_project():
 
 	# todo: godo project should signal when it's ready
 	# right now we just wait a bit
-	await get_tree().create_timer(1.0).timeout
+	await get_tree().create_timer(10.0).timeout
 
 
 	if !project_doc_id:
@@ -72,11 +73,6 @@ func sync_patchwork_to_godot():
 	var files_in_godot = get_relevant_godot_files()
 	var files_in_patchwork = godot_project.list_all_files()
 
-	print("files in patchwork")
-
-	for path in files_in_patchwork:
-		print(path)
-
 	print("sync patchwork -> godot (", files_in_patchwork.size(), ")")
 
 	# load checked out patchwork files into godot
@@ -99,7 +95,6 @@ func sync_patchwork_to_godot():
 	# 		file_system.delete_file(path)
 
 
-var sync_binary_files: bool = true
 const BANNED_FILES = [".DS_Store", "thumbs.db", "desktop.ini"] # system files that should be ignored
 
 func _is_relevant_file(path: String) -> bool:
@@ -111,11 +106,7 @@ func _is_relevant_file(path: String) -> bool:
 	if BANNED_FILES.has(file):
 		return false
 
-	
-	if sync_binary_files:
-		return true
-		
-	return path.ends_with(".tscn") or path.ends_with(".gd")
+	return true
 
 func get_relevant_godot_files() -> Array[String]:
 	# right now we only sync script and scene files, also we ignore the addons folder
@@ -127,6 +118,8 @@ func _on_checked_out_branch():
 	sync_patchwork_to_godot()
 	
 func _on_local_file_changed(path: String, content: Variant):
+	print("file changed", path)
+
 	if _is_relevant_file(path):
 		print("save file: ", path)
 		godot_project.save_file(path, content)

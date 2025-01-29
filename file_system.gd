@@ -19,12 +19,6 @@ func _init(editor_plugin: EditorPlugin):
 	file_system.connect("filesystem_changed", _on_filesystem_changed)
 	file_system.connect("resources_reload", _on_resources_reloaded)
 
-	# disable granular updates for now
-
-	# listen to changes of scene file
-	# editor_plugin.get_undo_redo().connect("version_changed", _on_changed)
-	# editor_plugin.get_undo_redo().connect("history_changed", _on_changed)
-
 
 func ignore_changes(callback: Callable) -> void:
 	_ignore_changes = true
@@ -40,15 +34,30 @@ func stop():
 		#file_system.disconnect("filesystem_changed", _on_filesystem_changed)
 		#file_system.disconnect("resources_reload", _on_resources_reloaded)
 
-func trigger_file_changed(file_path: String, content: Variant) -> void:
-	print("?? trigger file changed?", file_path)
+func check_has_file_changed(file_path: String, content: Variant) -> void:
+	var stored_content = file_contents.get(file_path)
+	
+	# Handle case where file is new
+	if stored_content == null:
+		file_contents[file_path] = content
+		file_changed.emit(file_path, content)
+		return
+		
+	# Compare contents based on type
+	var has_changed = _is_content_equal(content, stored_content)
+	
+	if has_changed:
+		file_contents[file_path] = content
+		file_changed.emit(file_path, content)
 
-	var stored_content = file_contents.get(file_path, "")
-	if content != stored_content:
-		print("!! trigger file changed!")
-
-	file_contents[file_path] = content
-	file_changed.emit(file_path, content)
+func _is_content_equal(content_a: Variant, content_b: Variant) -> bool:
+	if content_a is String and content_b is String:
+		return content_a != content_b
+	elif content_a is PackedByteArray and content_b is PackedByteArray:
+		return content_a != content_b
+	else:
+		# Type mismatch - file changed from text to binary or vice versa
+		return true
 
 func list_all_files() -> Array[String]:
 	var files: Array[String] = []
@@ -85,7 +94,6 @@ var _printable_high_ascii = PackedByteArray(range(127, 256))
 func is_binary_string(bytes_to_check: PackedByteArray) -> bool:
 	if bytes_to_check.size() == 0:
 		return false
-
 
 	var low_chars = PackedByteArray()
 	for byte in bytes_to_check:
@@ -212,45 +220,12 @@ func _scan_directory(dir: DirAccess, current_path: String):
 			file_name = dir.get_next()
 
 func _check_file_changes(file_path: String):
-
-	print("check file ", file_path);
-
 	var content = get_file(file_path)
-	if not content:
-			print("error no file found", file_path);
-			return
-
-	trigger_file_changed(file_path, content)
-
-
-## SCENE CHANGED
-
-# todo: figure out how to do this without creating a temp file
-# todo: figure out how to make ids stable
-func _on_changed():
-	if _ignore_changes:
+	if content == null:
+		# Handle deleted files
+		if file_contents.has(file_path):
+			file_contents.erase(file_path)
+			file_changed.emit(file_path, null)
 		return
 
-	var root = editor_plugin.get_editor_interface().get_edited_scene_root()
-	if root:
-		var packed_scene = PackedScene.new()
-		packed_scene.pack(root)
-		
-		var temp_path = "user://scene.tscn"
-		
-		# Save to temp file
-		var error = ResourceSaver.save(packed_scene, temp_path)
-		if error != OK:
-			print("Error saving scene: ", error)
-			return
-			
-		# Read the file contents
-		var file = FileAccess.open(temp_path, FileAccess.READ)
-		if file:
-			var content = file.get_as_text()
-			trigger_file_changed(root.scene_file_path, content)
-			file.close()
-
-
-		# Delete the temp file
-		DirAccess.remove_absolute(temp_path)
+	check_has_file_changed(file_path, content)
