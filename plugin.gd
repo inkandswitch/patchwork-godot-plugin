@@ -6,6 +6,8 @@ var config: PatchworkConfig
 var file_system: FileSystem
 var sidebar
 
+var last_synced_heads: Array[String]
+
 func _process(_delta: float) -> void:
 	if godot_project:
 		godot_project.process()
@@ -58,6 +60,8 @@ func sync_godot_to_patchwork():
 		print("  save file: ", path)
 		godot_project.save_file(path, file_system.get_file(path))
 
+	last_synced_heads = godot_project.get_heads()
+
 
 func sync_patchwork_to_godot():
 	
@@ -94,6 +98,8 @@ func sync_patchwork_to_godot():
 	# 		print("  delete file: ", path)
 	# 		file_system.delete_file(path)
 
+	last_synced_heads = godot_project.get_heads()
+
 
 var sync_binary_files: bool = false
 
@@ -119,7 +125,11 @@ func _on_checked_out_branch():
 func _on_local_file_changed(path: String, content: String):
 	if _is_relevant_file(path):
 		print("save file: ", path)
-		godot_project.save_file(path, content)
+
+		var heads_string = ",".join(Array(last_synced_heads))
+
+		godot_project.save_file_at(path, heads_string, content)
+		last_synced_heads = godot_project.get_heads()
 
 
 func _exit_tree() -> void:
