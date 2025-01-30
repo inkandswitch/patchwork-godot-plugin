@@ -1,5 +1,8 @@
 @tool
 extends MarginContainer
+# This is a Godot 4.x script file, written in GDScript 2.0. Connections are made using the identifier for the callable directly.
+# Godot 3.x: something.connect("signal_name", self, "_on_signal_name")
+# Godot 4.x: something.connect("signal_name", self._on_signal_name)
 
 var godot_project: GodotProject
 
@@ -18,12 +21,19 @@ func init(plugin: EditorPlugin, godot_project: GodotProject) -> void:
 	self.godot_project = godot_project
 	self.plugin = plugin
 
+func _on_resource_saved(path):
+	print("Resource saved: %s" % [path])
+func _on_scene_saved(path):
+	print("Scene saved: %s" % [path])
+	
+
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
 	print("Sidebar ready!")
 	branch_picker.item_selected.connect(_on_branch_picker_item_selected)
 	update_ui()
-
+	plugin.connect("resource_saved", self._on_resource_saved)
+	plugin.connect("scene_saved", self._on_scene_saved)
 	godot_project.connect("branches_changed", update_ui);
 	godot_project.connect("files_changed", update_ui);
 
@@ -58,10 +68,19 @@ static func popup_box(parent_window: Node, dialog: AcceptDialog, message: String
 	dialog.connect("canceled", cancel_func)
 	dialog.popup_centered()
 
-func merge_branch():
-	EditorInterface.save_all_scenes()
+# This should be called before any patchwork source control action (e.g. checkout, merge, etc.)
+func _before_cvs_action():
+	EditorInterface.save_all_scenes();
+	plugin.sync_godot_to_patchwork()
+
+func _merge_branch():
 	godot_project.merge_branch(godot_project.get_checked_out_branch_id())
 	godot_project.checkout_branch("main");
+	print("checked out!")
+
+func merge_branch():
+	_before_cvs_action()
+	call_deferred("_merge_branch")
 
 func _on_menu_button_id_pressed(id: int) -> void:
 	match id:
@@ -100,7 +119,7 @@ func _on_menu_button_id_pressed(id: int) -> void:
 			pass
 
 func _checkout_branch(branch_id: String) -> void:
-	EditorInterface.save_all_scenes();
+	_before_cvs_action()
 	godot_project.checkout_branch(branch_id)
 	update_ui()
 
@@ -111,7 +130,7 @@ func checkout_branch(branch_id: String) -> void:
 	_checkout_branch(branch_id)
 
 func _on_create_new_branch() -> void:
-	EditorInterface.save_all_scenes()
+	_before_cvs_action()
 	var dialog = ConfirmationDialog.new()
 	dialog.title = "Create New Branch"
 	
