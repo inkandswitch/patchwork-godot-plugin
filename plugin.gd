@@ -22,7 +22,7 @@ func _enter_tree() -> void:
 	print("_enter_tree() -> init_godot_project()")
 	await init_godot_project()
 	print("end _enter_tree() -> init_godot_project()")
-	
+
 	# listen for file changes once we have initialized the godot project
 	file_system.connect("file_changed", _on_local_file_changed)
 	
@@ -43,7 +43,7 @@ func init_godot_project():
 
 	# todo: godo project should signal when it's ready
 	# right now we just wait a bit
-	await get_tree().create_timer(10.0).timeout
+	await get_tree().create_timer(20.0).timeout
 
 
 	if !project_doc_id:
@@ -83,6 +83,14 @@ func sync_patchwork_to_godot():
 	for path in files_in_patchwork:
 		var content = godot_project.get_file(path)
 		var current_content = file_system.get_file(path)
+
+		print("check file: ", path)
+
+		# log if current content is not the same type as content
+		if typeof(current_content) != typeof(content):
+			print("  different types at ", path, ": ", typeof(current_content), " vs ", typeof(content))
+			continue
+
 		if content != current_content:
 			print("  reload file: ", path)
 			file_system.save_file(path, content)
