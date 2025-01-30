@@ -76,3 +76,5 @@ layout_mode = 2
 text = "0 changes"
 
 [node name="ConfirmationDialog" type="ConfirmationDialog" parent="."]
+
+[node name="ErrorDialog" type="AcceptDialog" parent="."]

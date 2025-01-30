@@ -72,11 +72,33 @@ func _on_menu_button_id_pressed(id: int) -> void:
 				_on_create_new_branch()
 
 		MERGE_BRANCH_IDX:
+			# check if we're on the main branch or not
+			var found = false
+			var checked_out_branch = godot_project.get_checked_out_branch_id()
+			var selected_id = branch_picker.get_selected_id()
+			for i in range(branch_picker.item_count):
+				if i == selected_id and branch_picker.get_item_text(i) == "main":
+					popup_box(self, $ErrorDialog, "Can't merge the main branch!", "Error")
+					return
+				elif checked_out_branch == branch_picker.get_item_metadata(i) and branch_picker.get_item_text(i) == "main":
+					popup_box(self, $ErrorDialog, "Can't merge the main branch and shouldn't have gotten here!!", "Error")
+					return
+			var branches: Array = godot_project.get_branches()
+			# print("current branches:")
+			for branch in branches:
+				print("%s: %s" % [branch.id, branch.name])
+				if branch.id == checked_out_branch:
+					found = true
+					# print("Current checked out branch: %s" % [branch.name])
+					if branch.name == "main":
+						popup_box(self, $ErrorDialog, "Can't merge the main branch and shouldn't have gotten here!!", "Error")
+						return	
 			if godot_project.unsaved_files_open():
 				popup_box(self, $ConfirmationDialog, "You have unsaved files open. Do you want to save them before merging?", "Unsaved Files", self.merge_branch)
 			else:
 				merge_branch()
 			pass
+
 func _checkout_branch(branch_id: String) -> void:
 	EditorInterface.save_all_scenes();
 	godot_project.checkout_branch(branch_id)
@@ -135,7 +157,7 @@ func update_ui() -> void:
 	for i in range(branches.size()):
 		var branch = branches[i]
 		branch_picker.add_item(branch.name, i)
-
+		branch_picker.set_item_metadata(i, branch.id)
 		if branch.id == checked_out_branch_id:
 			branch_picker.select(i)
 
