@@ -41,11 +41,10 @@ func init_godot_project():
 		print("Failed to create GodotProject instance.")
 		return
 
-	# todo: godo project should signal when it's ready
-	# right now we just wait a bit
-	await get_tree().create_timer(20.0).timeout
 
+	await godot_project.initialized
 
+	print("*** Patchwork Godot Project initialized! ***")
 	if !project_doc_id:
 		config.set_value("project_doc_id", godot_project.get_doc_id())
 		sync_godot_to_patchwork()
