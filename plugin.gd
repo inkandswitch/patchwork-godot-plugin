@@ -45,7 +45,7 @@ func _enter_tree() -> void:
 	file_system = FileSystem.new(self)
 	
 	print("_enter_tree() -> init_godot_project()")
-	await init_godot_project()
+	init_godot_project()
 	print("end _enter_tree() -> init_godot_project()")
 
 	# listen for file changes once we have initialized the godot project
@@ -66,8 +66,6 @@ func init_godot_project():
 		print("Failed to create GodotProject instance.")
 		return
 
-
-	await godot_project.initialized
 
 	print("*** Patchwork Godot Project initialized! ***")
 	if !project_doc_id:
