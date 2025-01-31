@@ -80,19 +80,21 @@ func sync_patchwork_to_godot():
 
 	# load checked out patchwork files into godot
 	for path in files_in_patchwork:
-		var content = godot_project.get_file(path)
-		var current_content = file_system.get_file(path)
+		var gp_content = godot_project.get_file(path)
+		var fs_content = file_system.get_file(path)
 
-		print("check file: ", path)
-
-		# log if current content is not the same type as content
-		if typeof(current_content) != typeof(content):
-			print("  different types at ", path, ": ", typeof(current_content), " vs ", typeof(content))
+		print("? check file: ", path)
+		if typeof(gp_content) == TYPE_NIL:
+			print("!!!!!ERROR: patchwork missing file content even though path exists: ", path)
+			continue
+		elif fs_content != null and typeof(fs_content) != typeof(gp_content):
+			# log if current content is not the same type as content
+			print("ERROR: different types at ", path, ": ", typeof(fs_content), " vs ", typeof(gp_content))
 			continue
 
-		if content != current_content:
+		if gp_content != fs_content:
 			print("  reload file: ", path)
-			file_system.save_file(path, content)
+			file_system.save_file(path, gp_content)
 
 			# Trigger reload of scene files to update references
 			if path.ends_with(".tscn"):
