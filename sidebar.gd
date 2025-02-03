@@ -26,6 +26,13 @@ func _on_resource_saved(path):
 func _on_scene_saved(path):
 	print("Scene saved: %s" % [path])
 	
+func _update_ui_on_branches_changed():
+	print("Branches changed, updating UI")
+	update_ui()
+
+func _update_ui_on_files_changed():
+	print("Files changed, updating UI")
+	update_ui()
 
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
@@ -34,9 +41,8 @@ func _ready() -> void:
 	update_ui()
 	plugin.connect("resource_saved", self._on_resource_saved)
 	plugin.connect("scene_saved", self._on_scene_saved)
-	godot_project.connect("branches_changed", update_ui);
-	godot_project.connect("files_changed", update_ui);
-
+	godot_project.connect("branches_changed", self._update_ui_on_branches_changed);
+	godot_project.connect("files_changed", self._update_ui_on_files_changed);
 	var popup = menu_button.get_popup()
 	popup.id_pressed.connect(_on_menu_button_id_pressed)
 
@@ -121,7 +127,7 @@ func _on_menu_button_id_pressed(id: int) -> void:
 func _checkout_branch(branch_id: String) -> void:
 	_before_cvs_action()
 	godot_project.checkout_branch(branch_id)
-	update_ui()
+	update_ui(branch_id)
 
 func checkout_branch(branch_id: String) -> void:
 	if godot_project.unsaved_files_open():
@@ -161,8 +167,7 @@ func _on_create_new_branch() -> void:
 	add_child(dialog)
 	dialog.popup_centered()
 
-
-func update_ui() -> void:
+func update_ui( checked_out_branch: String = "") -> void:
 	if not godot_project:
 		# update_ui() called before init
 		print("ERROR: update_ui() called before init")
@@ -171,8 +176,7 @@ func update_ui() -> void:
 
 	# update branch picker
 	branch_picker.clear()
-
-	var checked_out_branch_id = godot_project.get_checked_out_branch_id()
+	var checked_out_branch_id = godot_project.get_checked_out_branch_id() if checked_out_branch == null else checked_out_branch
 	for i in range(branches.size()):
 		var branch = branches[i]
 		branch_picker.add_item(branch.name, i)

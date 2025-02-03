@@ -19,11 +19,6 @@ func _process(_delta: float) -> void:
 	if godot_project:
 		godot_project.process()
 
-	# todo: we should trigger an event in Godot but it's easier to do this check here
-	if prev_checked_out_branch_id != godot_project.get_checked_out_branch_id():
-		prev_checked_out_branch_id = godot_project.get_checked_out_branch_id()
-		_on_checked_out_branch()
-
 	if current_pw_to_godot_sync_task_id != -1:
 		# currently running sync task
 		_try_wait_for_pw_to_godot_sync_task()
@@ -184,10 +179,10 @@ func get_relevant_godot_files() -> Array[String]:
 	# right now we only sync script and scene files, also we ignore the addons folder
 	return file_system.list_all_files().filter(_is_relevant_file)
 
-func _on_checked_out_branch():
-	print("checked out branch ", godot_project.get_branch_doc_id(), " (", godot_project.list_all_files().size(), " files)")
+func _on_checked_out_branch(checked_out_branch: String):
+	print("checked out branch ", checked_out_branch, " (", godot_project.list_all_files().size(), " files)")
 
-	sidebar.update_ui()
+	sidebar.update_ui(checked_out_branch)
 	sync_patchwork_to_godot()
 	
 func _on_local_file_changed(path: String, content: Variant):
