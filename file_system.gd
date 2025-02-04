@@ -171,8 +171,6 @@ func save_file(path: String, content: Variant) -> void:
 	var dir_path = path.get_base_dir()
 	if !DirAccess.dir_exists_absolute(dir_path):
 		DirAccess.make_dir_recursive_absolute(dir_path)
-	if content is String:
-		print("IS STRING!")
 	var file = FileAccess.open(path, FileAccess.WRITE)
 	if file:
 		if content is String:
