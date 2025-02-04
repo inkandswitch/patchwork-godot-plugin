@@ -117,7 +117,7 @@ func _on_menu_button_id_pressed(id: int) -> void:
 					# print("Current checked out branch: %s" % [branch.name])
 					if branch.name == "main":
 						popup_box(self, $ErrorDialog, "Can't merge the main branch and shouldn't have gotten here!!", "Error")
-						return	
+						return
 			if godot_project.unsaved_files_open():
 				popup_box(self, $ConfirmationDialog, "You have unsaved files open. Do you want to save them before merging?", "Unsaved Files", self.merge_branch)
 			else:
@@ -127,7 +127,6 @@ func _on_menu_button_id_pressed(id: int) -> void:
 func _checkout_branch(branch_id: String) -> void:
 	_before_cvs_action()
 	godot_project.checkout_branch(branch_id)
-	update_ui(branch_id)
 
 func checkout_branch(branch_id: String) -> void:
 	if godot_project.unsaved_files_open():
@@ -136,7 +135,6 @@ func checkout_branch(branch_id: String) -> void:
 	_checkout_branch(branch_id)
 
 func _on_create_new_branch() -> void:
-	_before_cvs_action()
 	var dialog = ConfirmationDialog.new()
 	dialog.title = "Create New Branch"
 	
@@ -156,6 +154,7 @@ func _on_create_new_branch() -> void:
 	
 	dialog.confirmed.connect(func():
 		if line_edit.text.strip_edges() != "":
+			_before_cvs_action()
 			var new_branch_name = line_edit.text.strip_edges()
 			var new_branch_id = godot_project.create_branch(new_branch_name)
 			checkout_branch(new_branch_id)
@@ -167,7 +166,9 @@ func _on_create_new_branch() -> void:
 	add_child(dialog)
 	dialog.popup_centered()
 
-func update_ui( checked_out_branch: String = "") -> void:
+func update_ui() -> void:
+	var checked_out_branch = godot_project.get_checked_out_branch_id()
+
 	if not godot_project:
 		# update_ui() called before init
 		print("ERROR: update_ui() called before init")

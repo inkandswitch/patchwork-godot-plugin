@@ -182,7 +182,7 @@ func get_relevant_godot_files() -> Array[String]:
 func _on_checked_out_branch(checked_out_branch: String):
 	print("checked out branch ", checked_out_branch, " (", godot_project.list_all_files().size(), " files)")
 
-	sidebar.update_ui(checked_out_branch)
+	sidebar.update_ui()
 	sync_patchwork_to_godot()
 	
 func _on_local_file_changed(path: String, content: Variant):
