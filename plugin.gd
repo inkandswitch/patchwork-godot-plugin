@@ -54,7 +54,6 @@ func _process(_delta: float) -> void:
 				for line in token[1].split("\n"):
 					if line.begins_with("uid="):
 						uid = line.split("=")[1].strip_edges()
-						
 				add_new_uid(new_path, uid)
 			if path.get_extension() == "tscn":
 				# reload scene files to update references
@@ -186,7 +185,7 @@ func sync_patchwork_to_godot():
 const BANNED_FILES = [".DS_Store", "thumbs.db", "desktop.ini"] # system files that should be ignored
 
 func _is_relevant_file(path: String) -> bool:
-	var is_excluded_path = path.begins_with("res://addons/") or path.begins_with("res://target/")
+	var is_excluded_path = path.begins_with("res://addons/") or path.begins_with("res://target/") or path.begins_with("res://.")
 	if is_excluded_path:
 		return false
 
@@ -198,7 +197,9 @@ func _is_relevant_file(path: String) -> bool:
 
 func get_relevant_godot_files() -> Array[String]:
 	# right now we only sync script and scene files, also we ignore the addons folder
-	return file_system.list_all_files().filter(_is_relevant_file)
+	var ret = file_system.list_all_files().filter(_is_relevant_file)
+	# print(ret)
+	return ret
 
 func _on_checked_out_branch(checked_out_branch: String):
 	print("checked out branch ", checked_out_branch, " (", godot_project.list_all_files().size(), " files)")
