@@ -62,6 +62,7 @@ func _is_content_equal(content_a: Variant, content_b: Variant) -> bool:
 func list_all_files() -> Array[String]:
 	var files: Array[String] = []
 	var dir = DirAccess.open("res://")
+	dir.include_hidden = true
 	if dir:
 		_scan_directory_for_files(dir, "res://", files)
 	return files

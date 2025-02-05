@@ -15,6 +15,15 @@ var deferred_pw_to_godot_sync: bool = false
 
 var prev_checked_out_branch_id
 
+func add_new_uid(path: String, uid: String):
+	var id = ResourceUID.text_to_id(uid)
+	if id == ResourceUID.INVALID_ID:
+		return
+	if not ResourceUID.has_id(id):
+		ResourceUID.add_id(id, path)
+	elif not ResourceUID.get_id_path(id) == path:
+		ResourceUID.set_id(id, path)
+		
 func _process(_delta: float) -> void:
 	if godot_project:
 		godot_project.process()
@@ -35,6 +44,18 @@ func _process(_delta: float) -> void:
 		for token in new_files_to_reload:
 			var path = token[0]
 			file_system.save_file(path, token[1])
+			if path.get_extension() == "uid":
+				var new_path = path.get_basename()
+				var uid = token[1].strip_edges()
+				add_new_uid(new_path, uid)
+			if path.get_extension() == "import":
+				var new_path = path.get_basename()
+				var uid = ""
+				for line in token[1].split("\n"):
+					if line.begins_with("uid="):
+						uid = line.split("=")[1].strip_edges()
+						
+				add_new_uid(new_path, uid)
 			if path.get_extension() == "tscn":
 				# reload scene files to update references
 				get_editor_interface().reload_scene_from_path(path)
