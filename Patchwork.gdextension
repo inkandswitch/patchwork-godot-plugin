@@ -1,0 +1,14 @@
+[configuration]
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = 4.1
+reloadable = false
+
+[libraries]
+linux.debug.x86_64 =    "res://target/x86_64-unknown-linux-gnu/debug/librust_project.so"
+linux.release.x86_64 =  "res://target/x86_64-unknown-linux-gnu/release/librust_project.so"
+windows.debug.x86_64 =   "res://target/x86_64-pc-windows-gnu/debug/rust_project.dll"
+windows.release.x86_64 = "res://target/x86_64-pc-windows-gnu/release/rust_project.dll"
+macos.debug =            "res://target/x86_64-apple-darwin/debug/librust_project.dylib"
+macos.release =          "res://target/x86_64-apple-darwin/release/librust_project.dylib"
+macos.debug.arm64 =      "res://target/aarch64-apple-darwin/debug/librust_project.dylib"
+macos.release.arm64 =    "res://target/aarch64-apple-darwin/release/librust_project.dylib"
