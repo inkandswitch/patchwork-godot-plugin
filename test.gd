@@ -23,9 +23,13 @@ func _on_loaded() -> void:
 
 	godot_project.save_file("res://test.txt", "test on main")
 
+	var binary = "hello world".to_utf8_buffer()
+	godot_project.save_file("res://test.bin", binary)
+
 	await get_tree().create_timer(1.0).timeout
 
 	print("test.txt on main: ", godot_project.get_file("res://test.txt"))
+	print("test.bin on main: ", godot_project.get_file("res://test.bin"))
 
 	print("files on main: ", godot_project.list_all_files())
 
