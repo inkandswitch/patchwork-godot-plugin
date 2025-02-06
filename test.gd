@@ -25,45 +25,45 @@ func _on_loaded() -> void:
 
 	await get_tree().create_timer(1.0).timeout
 
-	print("content", godot_project.get_file("res://test.txt"))
+	print("test.txt on main: ", godot_project.get_file("res://test.txt"))
 
 	print("files on main: ", godot_project.list_all_files())
 
-	# print("branches: ", godot_project.get_branches())
+	print("branches: ", godot_project.get_branches())
 
-	# var main_branch_id = godot_project.get_checked_out_branch_id()
+	var main_branch_id = godot_project.get_checked_out_branch_id()
 
-	# print("checked out branch ", main_branch_id)
+	print("checked out branch ", main_branch_id)
 
-	# print("create_branch 'another'");
+	print("create_branch 'another'");
 
-	# godot_project.create_branch("another")
+	godot_project.create_branch("another")
 
-	# print("waiting for checked out branch")
+	print("waiting for checked out branch")
 
-	# await godot_project.checked_out_branch
+	await godot_project.checked_out_branch
 
-	# print("done waiting for checked out branch")
+	print("done waiting for checked out branch")
 
-	# print("branches: ", godot_project.get_branches())
+	print("branches: ", godot_project.get_branches())
 
-	# print("checked out branch ", godot_project.get_checked_out_branch_id())
+	print("checked out branch ", godot_project.get_checked_out_branch_id())
 
-	# godot_project.save_file("res://test.txt", "on another branch")
+	godot_project.save_file("res://test.txt", "on another branch")
 
-	# print("files on another branch: ", godot_project.list_all_files())
+	print("files on another branch: ", godot_project.list_all_files())
 
-	# print("text.txt on another branch: ", godot_project.get_file("res://test.txt"))
+	print("text.txt on another branch: ", godot_project.get_file("res://test.txt"))
 
 
-	# print("go back to main")
+	print("go back to main")
 
-	# godot_project.checkout_branch(main_branch_id)
+	godot_project.checkout_branch(main_branch_id)
 
-	# print("waiting for checked out branch")
+	print("waiting for checked out branch")
 
-	# await godot_project.checked_out_branch
+	await godot_project.checked_out_branch
 
-	# print("done waiting for checked out branch")
+	print("done waiting for checked out branch")
 
-	# print("text.txt on main: ", godot_project.get_file("res://test.txt"))
+	print("text.txt on main: ", godot_project.get_file("res://test.txt"))
