@@ -129,9 +129,6 @@ impl GodotProject {
     
     #[signal]
     fn checked_out_branch(branch_id: String);
-
-    #[signal]
-    fn branches_changed();
     
     #[signal]
     fn files_changed();

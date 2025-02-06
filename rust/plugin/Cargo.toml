@@ -8,7 +8,7 @@ rust-version = "1.57.0"
 
 [lib]
 name = "patchwork_rust_core"
-crate-type = ["staticlib"]
+crate-type = ["dylib"]
 bench = false
 doc = false
 

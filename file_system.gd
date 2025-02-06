@@ -113,7 +113,7 @@ func is_binary_string(bytes_to_check: PackedByteArray) -> bool:
 
 	var is_likely_binary = (nontext_ratio1 > 0.3 and nontext_ratio2 < 0.05) or (nontext_ratio1 > 0.8 and nontext_ratio2 > 0.8)
 	# UTF-8 is the only encoding that Godot supports, sooooo...
-	var decodable_as_unicode = GodotProject.detect_utf8(bytes_to_check)
+	var decodable_as_unicode = PatchworkEditor.detect_utf8(bytes_to_check)
 	if is_likely_binary:
 		if decodable_as_unicode:
 			return false
@@ -139,7 +139,7 @@ func is_binary(file) -> bool:
 	if 0 in test_bytes:
 		ret = true
 	# if it's valid unicode, it's not binary
-	elif GodotProject.detect_utf8(test_bytes):
+	elif PatchworkEditor.detect_utf8(test_bytes):
 		ret = false
 	# otherwise, we do a more thorough check
 	else:
