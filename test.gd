@@ -18,4 +18,8 @@ func _enter_tree() -> void:
 
 
 func _on_branches_updated() -> void:
-	print("branches updated")
+	print("branches updated:")
+
+	var branches = godot_project.get_branches()
+	for branch in branches:
+		print("  ", branch.name)
