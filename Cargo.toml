@@ -1,4 +1,0 @@
-[workspace]
-members = ["rust/plugin"]
-
-resolver = "2"
