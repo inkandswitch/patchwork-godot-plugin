@@ -29,7 +29,7 @@ use std::ops::Deref;
 use std::os::raw::c_char;
 use tokio::{net::TcpStream, runtime::Runtime};
 
-use crate::godot_project::StringOrPackedByteArray::PackedByteArray;
+use crate::godot_project::StringOrPackedByteArray::Binary;
 use crate::utils::parse_automerge_url;
 use crate::{
     doc_utils::SimpleDocReader,
@@ -85,7 +85,7 @@ enum SyncEvent {
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
 pub enum StringOrPackedByteArray {
     String(String),
-    PackedByteArray(Vec<u8>),
+    Binary(Vec<u8>),
 }
 
 #[derive(Debug, Clone)]
@@ -305,7 +305,7 @@ impl GodotProject {
             .and_then(|doc_id| self.doc_handles.get(&doc_id))
             .and_then(|doc_handle| {
                 doc_handle.with_doc(|d| {
-                    Some(StringOrPackedByteArray::PackedByteArray(
+                    Some(StringOrPackedByteArray::Binary(
                         d.get_bytes(ROOT, "content").unwrap(),
                     ))
                 })
@@ -315,7 +315,7 @@ impl GodotProject {
     fn get_file(&self, path: String) -> Variant {
         match self._get_file(path) {
             Some(StringOrPackedByteArray::String(s)) => GString::from(s).to_variant(),
-            Some(StringOrPackedByteArray::PackedByteArray(bytes)) => bytes.to_variant(),
+            Some(StringOrPackedByteArray::Binary(bytes)) => PackedByteArray::from(bytes).to_variant(),
             None => Variant::nil(),
         }
     }
@@ -448,7 +448,7 @@ impl GodotProject {
     fn save_file(&self, path: String, content: Variant) {
         let content = match content.get_type() {
             VariantType::STRING => StringOrPackedByteArray::String(content.to_string()),
-            VariantType::PACKED_BYTE_ARRAY => StringOrPackedByteArray::PackedByteArray(
+            VariantType::PACKED_BYTE_ARRAY => StringOrPackedByteArray::Binary(
                 content.to::<godot::builtin::PackedByteArray>().to_vec(),
             ),
             _ => {

@@ -18,7 +18,7 @@ automerge = { "git" = "https://github.com/automerge/automerge.git" , "rev" = "a2
 automerge_repo = { git = "https://github.com/nikitalita/automerge-repo-rs", rev = "5a6739cb1cea7f8968527315465a99b075e491c5", features = ["tokio"] }
 autosurgeon = {git = "https://github.com/nikitalita/autosurgeon", rev = "b7ac13f9aea141a2c194092c369601cb523ec2c6"}
 futures = "0.3.31"
-godot = "0.2.1"
+godot = { version = "0.2.3", features = ["experimental-threads", "api-custom"]}
 tokio = { version = "1.41.1", features = ["full"] }
 tracing-subscriber = "0.3.18"
 tree-sitter = "0.20.10"

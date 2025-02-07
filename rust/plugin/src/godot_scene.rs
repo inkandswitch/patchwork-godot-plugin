@@ -8,7 +8,7 @@ pub struct PackedGodotScene {
     nodes: HashMap<String, GodotSceneNode>,
     external_resources: HashMap<String, GodotSceneNode>,
     internal_resources: HashMap<String, GodotSceneNode>,
-    connections: HashMap<String, GodotSceneConnections>
+    connections: HashMap<String, GodotSceneConnections>,
 }
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]

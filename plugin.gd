@@ -80,7 +80,7 @@ func _enter_tree() -> void:
 
 func init_godot_project():
 	print("init_godot_project()")
-	var project_doc_id = "" # config.get_value("project_doc_id", "")
+	var project_doc_id = config.get_value("project_doc_id", "")
 
 	godot_project = GodotProject.create(project_doc_id)
 
@@ -191,8 +191,9 @@ func sync_patchwork_to_godot():
 const BANNED_FILES = [".DS_Store", "thumbs.db", "desktop.ini"] # system files that should be ignored
 
 func _is_relevant_file(path: String) -> bool:
-	var is_excluded_path = path.begins_with("res://addons/") or path.begins_with("res://target/") or path.begins_with("res://.")
-	if is_excluded_path:
+	if path.trim_prefix("res://").begins_with("target"):
+		return false
+	if path.begins_with("res://addons/") or path.begins_with("res://target/") or path.begins_with("res://."):
 		return false
 
 	var file = path.get_file()
