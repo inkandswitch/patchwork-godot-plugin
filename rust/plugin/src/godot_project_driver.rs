@@ -15,7 +15,7 @@ use futures::{channel::mpsc::{UnboundedReceiver, UnboundedSender}, executor::blo
 use std::ffi::c_void;
 use std::ops::Deref;
 use std::os::raw::c_char;
-use crate::{doc_handle_map::DocHandleMap, godot_project::{BranchesMetadataDoc, GodotProjectDoc, StringOrPackedByteArray}, godot_scene::PackedGodotScene, utils::get_linked_docs_of_branch};
+use crate::{ godot_project::{BranchesMetadataDoc, GodotProjectDoc, StringOrPackedByteArray}, godot_scene::PackedGodotScene, utils::get_linked_docs_of_branch};
 
 // use godot::prelude::*;
 use tokio::{net::TcpStream, runtime::Runtime};
@@ -54,6 +54,7 @@ pub enum DriverOutputEvent {
     Initialized {
         branches: HashMap<String, Branch>,
         checked_out_branch_doc_handle: DocHandle,
+        branches_metadata_doc_handle: DocHandle,
     },
     DocHandleChanged {
         doc_handle: DocHandle,
@@ -405,7 +406,8 @@ impl DriverState {
 
         self.tx.unbounded_send(DriverOutputEvent::Initialized {
             branches: self.project.as_ref().unwrap().branches.clone(),
-            checked_out_branch_doc_handle: self.project.as_ref().unwrap().checked_out_branch_doc_handle.clone()
+            checked_out_branch_doc_handle: self.project.as_ref().unwrap().checked_out_branch_doc_handle.clone(),
+            branches_metadata_doc_handle: self.project.as_ref().unwrap().branches_metadata_doc_handle.clone()
         }).unwrap();
 
 

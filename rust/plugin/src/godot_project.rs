@@ -32,7 +32,6 @@ use tokio::{net::TcpStream, runtime::Runtime};
 use crate::godot_project::StringOrPackedByteArray::PackedByteArray;
 use crate::utils::parse_automerge_url;
 use crate::{
-    doc_handle_map::DocHandleMap,
     doc_utils::SimpleDocReader,
     godot_project_driver::{DriverInputEvent, DriverOutputEvent, GodotProjectDriver},
 };
@@ -102,6 +101,7 @@ pub struct GodotProject {
     branches: HashMap<String, Branch>,
     doc_handles: HashMap<DocumentId, DocHandle>,
     checked_out_branch_doc_handle: Option<DocHandle>,
+    branches_metadata_doc_handle: Option<DocHandle>,
     driver: GodotProjectDriver,
     driver_input_tx: UnboundedSender<DriverInputEvent>,
     driver_output_rx: UnboundedReceiver<DriverOutputEvent>,
@@ -194,10 +194,21 @@ impl GodotProject {
             branches: HashMap::new(),
             doc_handles: HashMap::new(),
             checked_out_branch_doc_handle: None,
+            branches_metadata_doc_handle: None,
             driver,
             driver_input_tx,
             driver_output_rx,
         })
+    }
+
+    fn get_branches_metadata_doc_handle(&self) -> Option<DocHandle> {
+        match self.branches_metadata_doc_handle.clone() {
+            Some(doc_handle) => Some(doc_handle),
+            None => {
+                println!("warning: tried to access branches metadata doc handle when no branch was checked out");
+                return None;
+            }
+        }
     }
 
     fn get_checked_out_branch_handle(&self) -> Option<DocHandle> {
@@ -224,20 +235,24 @@ impl GodotProject {
 
     #[func]
     fn get_doc_id(&self) -> String {
-        todo!("not implemented");
-        // self.branches_metadata_doc_id.to_string()
+        match self.get_branches_metadata_doc_handle() {
+            Some(doc_handle) => doc_handle.document_id().to_string(),
+            None => String::new(),
+        }
     }
 
     #[func]
-    fn get_heads(&self) -> PackedStringArray /* String[] */ {
-        todo!("not implemented");
-        // self.get_checked_out_doc_handle().with_doc(|d| {
-        //     d.get_heads()
-        //     .to_vec()
-        //     .iter()
-        //     .map(|h| h.to_string())
-        //     .collect::<Vec<String>>()
-        // })
+    fn get_heads(&self) -> Array<Variant> /* String[] */ {
+        match self.get_checked_out_branch_handle() {
+            Some(doc_handle) => doc_handle.with_doc(|d| {
+                d.get_heads()
+                    .to_vec()
+                    .iter()
+                    .map(|h| h.to_string().to_variant())
+                    .collect::<Array<_>>()
+            }),
+            None => array![],
+        }
     }
 
     #[func]
@@ -630,9 +645,6 @@ impl GodotProject {
                         branch_doc_handle.document_id()
                     );
                     self.checked_out_branch_doc_handle = Some(branch_doc_handle.clone());
-                    let doc_id_c_str =
-                        std::ffi::CString::new(format!("{}", &branch_doc_handle.document_id()))
-                            .unwrap();
                     self.base_mut().emit_signal(
                         "checked_out_branch",
                         &[branch_doc_handle.document_id().to_string().to_variant()],
@@ -641,11 +653,13 @@ impl GodotProject {
                 DriverOutputEvent::Initialized {
                     branches,
                     checked_out_branch_doc_handle,
+                    branches_metadata_doc_handle,
                 } => {
                     println!("rust: Initialized event");
                     self.branches = branches;
                     self.checked_out_branch_doc_handle =
                         Some(checked_out_branch_doc_handle.clone());
+                    self.branches_metadata_doc_handle = Some(branches_metadata_doc_handle.clone());
                     self.base_mut().emit_signal("initialized", &[]);
                 }
             }

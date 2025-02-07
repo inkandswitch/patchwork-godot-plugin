@@ -67,7 +67,7 @@ func _enter_tree() -> void:
 	file_system = FileSystem.new(self)
 	
 	print("_enter_tree() -> init_godot_project()")
-	init_godot_project()
+	await init_godot_project()
 	print("end _enter_tree() -> init_godot_project()")
 
 	# listen for file changes once we have initialized the godot project
@@ -80,14 +80,17 @@ func _enter_tree() -> void:
 
 func init_godot_project():
 	print("init_godot_project()")
-	var project_doc_id = config.get_value("project_doc_id", "")
-
+	var project_doc_id = "" # config.get_value("project_doc_id", "")
 
 	godot_project = GodotProject.create(project_doc_id)
+
 	if godot_project == null:
 		print("Failed to create GodotProject instance.")
 		return
 
+	await godot_project.initialized
+
+	print("branches: ", godot_project.get_branches())
 
 	print("*** Patchwork Godot Project initialized! ***")
 	if !project_doc_id:
@@ -129,6 +132,7 @@ func _do_pw_to_godot_sync_element(i: int, files_in_patchwork: PackedStringArray)
 	if typeof(gp_content) == TYPE_NIL:
 		printerr("patchwork missing file content even though path exists: ", path)
 		return
+
 	elif fs_content != null and typeof(fs_content) != typeof(gp_content):
 		# log if current content is not the same type as content
 		printerr("different types at ", path, ": ", typeof(fs_content), " vs ", typeof(gp_content))
@@ -175,8 +179,10 @@ func _try_wait_for_pw_to_godot_sync_task(force: bool = false):
 
 func sync_patchwork_to_godot():
 	# only sync once the user has saved all files
-	if godot_project.unsaved_files_open():
-		return
+
+	# todo: add unsaved files check back
+	# if godot_project.unsaved_files_open():
+	# 	return
 	current_pw_to_godot_sync_task_id = WorkerThreadPool.add_task(self.do_pw_to_godot_sync_task, false, "sync_patchwork_to_godot")
 	call_deferred("_try_wait_for_pw_to_godot_sync_task")
 

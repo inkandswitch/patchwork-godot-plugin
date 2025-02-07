@@ -156,8 +156,7 @@ func _on_create_new_branch() -> void:
 		if line_edit.text.strip_edges() != "":
 			_before_cvs_action()
 			var new_branch_name = line_edit.text.strip_edges()
-			var new_branch_id = godot_project.create_branch(new_branch_name)
-			checkout_branch(new_branch_id)
+			godot_project.create_branch(new_branch_name)
 		
 		dialog.queue_free()
 	)
