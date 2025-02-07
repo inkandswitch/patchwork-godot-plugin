@@ -30,8 +30,16 @@ pub enum DriverInputEvent {
         doc_id: Option<DocumentId>,
     },
 
+    CreateBranch {
+        name: String
+    },
+
     CheckoutBranch {
-        branch_doc_id: DocumentId,
+        branch_doc_handle: DocHandle,
+    },
+
+    MergeBranch {
+        branch_doc_handle: DocHandle,
     },
 
     SaveFile {
@@ -40,9 +48,6 @@ pub enum DriverInputEvent {
         heads: Option<Vec<ChangeHash>>
     },
 
-    CreateBranch {
-        name: String
-    },
 }
 
 pub enum DriverOutputEvent {
@@ -157,14 +162,19 @@ impl GodotProjectDriver {
                                 state.init_project(doc_id).await
                             }
 
-                            DriverInputEvent::CheckoutBranch { branch_doc_id } => {
-                                println!("rust: Checking out branch: {:?}", branch_doc_id);
-                                state.checkout_branch(branch_doc_id).await
+                            DriverInputEvent::CheckoutBranch { branch_doc_handle } => {
+                                println!("rust: Checking out branch: {:?}", branch_doc_handle.document_id());
+                                state.checkout_branch(branch_doc_handle).await
                             },
 
                             DriverInputEvent::CreateBranch {name} => {
                                 println!("rust: Creating new branch: {}", name);
                                 state.create_branch(name)
+                            },
+
+                            DriverInputEvent::MergeBranch { branch_doc_handle } => {
+                                println!("rust: Merging branch: {:?}", branch_doc_handle.document_id());
+                                state.merge_branch(branch_doc_handle)
                             },
 
                             DriverInputEvent::SaveFile { path, content, heads} => {
@@ -220,63 +230,6 @@ struct DocHandleWithType {
     heads: Vec<ChangeHash>,
 }
 
-struct RepoState {
-    repo_handle: RepoHandle,
-    doc_handles: HashMap<DocumentId, DocHandle>,
-    tx: UnboundedSender<DriverOutputEvent>
-}
-
-impl RepoState {
-
-    fn clone_doc(&mut self, doc_handle: DocHandle) -> DocHandle {
-        let new_doc_handle = self.new_document();
-
-        let _ = doc_handle
-            .with_doc_mut(|mut main_d| new_doc_handle.with_doc_mut(|d| d.merge(&mut main_d)));
-
-
-        return new_doc_handle
-    }
-
-    fn new_document(&mut self) -> DocHandle {
-        let doc_handle = self.repo_handle.new_document();
-
-        self._add_handle(doc_handle.clone());
-        self.tx.unbounded_send(DriverOutputEvent::DocHandleChanged { doc_handle: doc_handle.clone() }).unwrap();
-
-        doc_handle
-    }
-
-    async fn request_document(&mut self, doc_id: &DocumentId) -> Result<DocHandle, RepoError> {
-        if let Some(doc_handle) = self.doc_handles.get(doc_id) {
-            return Ok(doc_handle.clone());
-        }
-
-        let doc_handle = match self.repo_handle.request_document(doc_id.clone()).await {
-            Ok(handle) => handle,
-            Err(e) => {
-                return Err(e);
-            }
-        };
-
-        self._add_handle(doc_handle.clone());
-        self.tx.unbounded_send(DriverOutputEvent::DocHandleChanged { doc_handle: doc_handle.clone() }).unwrap();
-
-        Ok(doc_handle)
-    }
-
-    fn _add_handle(&mut self, doc_handle: DocHandle) {
-        let doc_id = doc_handle.document_id();
-        if self.doc_handles.insert(doc_id.clone(), doc_handle.clone()).is_none() {
-
-            // self.tx.unbounded_send(DriverOutputEvent::DocHandleChanged { doc_handle: doc_handle.clone() }).unwrap();
-        }
-
-
-        self.tx.unbounded_send(DriverOutputEvent::DocHandleChanged { doc_handle: doc_handle.clone() }).unwrap();
-    }
-}
-
 #[derive(Clone)]
 struct ProjectState {
     branches_metadata_doc_handle: DocHandle,
@@ -301,6 +254,22 @@ impl ProjectState {
 
 
         self.branches.insert(branch.id.clone(), branch.clone());
+        self.tx.unbounded_send(DriverOutputEvent::BranchesUpdated { branches: self.branches.clone() }).unwrap();
+    }
+
+    fn mark_branch_as_merged(&mut self, branch_doc_id: DocumentId) {
+        self.branches_metadata_doc_handle.with_doc_mut(|d| {
+            let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
+            let mut tx = d.transaction();
+
+            branches_metadata.branches.get_mut(&branch_doc_id.to_string()).unwrap().is_merged = true;
+
+            self.branches = branches_metadata.branches.clone();
+
+            reconcile(&mut tx, branches_metadata);
+            tx.commit();
+        });
+
         self.tx.unbounded_send(DriverOutputEvent::BranchesUpdated { branches: self.branches.clone() }).unwrap();
     }
 
@@ -466,7 +435,30 @@ impl DriverState {
         return vec![new_branch_handle];
     }
 
-    async fn checkout_branch (&mut self, branch_doc_id: DocumentId) -> Vec<DocHandle> {
+    fn merge_branch(&mut self, branch_doc_handle: DocHandle) -> Vec<DocHandle> {
+        let mut project = match &self.project {
+            Some(project) => project.clone(),
+            None => {
+                println!("warning: triggered merge branch before project was initialized");
+                return vec![];
+            },
+        };
+
+        branch_doc_handle.with_doc_mut(|branch_doc| {
+            project.main_branch_doc_handle.with_doc_mut(|main_doc| {
+                let _ = main_doc.merge(branch_doc);
+            });
+        });
+
+        // mark branch as merged
+        project.mark_branch_as_merged(branch_doc_handle.document_id());
+        self.project = Some(project);
+
+        return vec![];
+    } 
+    
+
+    async fn checkout_branch (&mut self, branch_doc_handle: DocHandle) -> Vec<DocHandle> {
         let mut new_doc_handles = vec![];
 
         let mut project = match &self.project {
@@ -476,15 +468,6 @@ impl DriverState {
                 return vec![];
             },
         };
-
-        let branch_doc_handle = match self.repo_handle.request_document(branch_doc_id).await {
-            Ok(doc_handle) => doc_handle,
-            Err(e) => {
-                println!("failed to load branch doc: {:?}", e);
-                return vec![];
-            },
-        };
-        new_doc_handles.push(branch_doc_handle.clone());
 
         let linked_doc_ids = get_linked_docs_of_branch(&branch_doc_handle);
 
@@ -598,7 +581,7 @@ impl DriverState {
                 return vec![binary_doc_handle];
             },
         }
-    }
+    }    
 
 
 }
