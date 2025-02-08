@@ -29,7 +29,6 @@ use std::ops::Deref;
 use std::os::raw::c_char;
 use tokio::{net::TcpStream, runtime::Runtime};
 
-use crate::godot_project::StringOrPackedByteArray::Binary;
 use crate::utils::parse_automerge_url;
 use crate::{
     doc_utils::SimpleDocReader,
@@ -459,6 +458,25 @@ impl GodotProject {
 
         self._save_file(path, None, content);
     }
+
+    #[func]
+    fn save_file_at(&self, path: String, heads: PackedStringArray, content: Variant) {
+        let content = match content.get_type() {
+            VariantType::STRING => StringOrPackedByteArray::String(content.to_string()),
+            VariantType::PACKED_BYTE_ARRAY => StringOrPackedByteArray::Binary(
+                content.to::<godot::builtin::PackedByteArray>().to_vec(),
+            ),
+            _ => {
+                println!("invalid content type");
+                return;
+            }
+        };
+
+        self._save_file(path, Some(heads.to_vec().iter().filter_map(|h| {
+            ChangeHash::from_str(h.to_string().as_str()).ok()
+        }).collect()), content);
+    }
+
 
     #[func]
     fn merge_branch(&self, branch_id: String) {
