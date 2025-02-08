@@ -91,7 +91,7 @@ func merge_branch():
 func _on_menu_button_id_pressed(id: int) -> void:
 	match id:
 		CREATE_BRANCH_IDX:
-			if godot_project.unsaved_files_open():
+			if PatchworkEditor.unsaved_files_open():
 				popup_box(self, $ConfirmationDialog, "You have unsaved files open. Do you want to save them before creating a new branch?", "Unsaved Files", self._on_create_new_branch)
 			else:
 				_on_create_new_branch()
@@ -118,7 +118,7 @@ func _on_menu_button_id_pressed(id: int) -> void:
 					if branch.name == "main":
 						popup_box(self, $ErrorDialog, "Can't merge the main branch and shouldn't have gotten here!!", "Error")
 						return
-			if godot_project.unsaved_files_open():
+			if PatchworkEditor.unsaved_files_open():
 				popup_box(self, $ConfirmationDialog, "You have unsaved files open. Do you want to save them before merging?", "Unsaved Files", self.merge_branch)
 			else:
 				merge_branch()
@@ -129,7 +129,7 @@ func _checkout_branch(branch_id: String) -> void:
 	godot_project.checkout_branch(branch_id)
 
 func checkout_branch(branch_id: String) -> void:
-	if godot_project.unsaved_files_open():
+	if PatchworkEditor.unsaved_files_open():
 		popup_box(self, $ConfirmationDialog, "You have unsaved files open. Do you want to save them before checking out?", "Unsaved Files", self._checkout_branch.bind(branch_id))
 		return
 	_checkout_branch(branch_id)
