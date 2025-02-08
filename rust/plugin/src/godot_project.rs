@@ -241,16 +241,15 @@ impl GodotProject {
     }
 
     #[func]
-    fn get_heads(&self) -> Array<Variant> /* String[] */ {
+    fn get_heads(&self) -> PackedStringArray /* String[] */ {
         match self.get_checked_out_branch_handle() {
             Some(doc_handle) => doc_handle.with_doc(|d| {
                 d.get_heads()
-                    .to_vec()
                     .iter()
-                    .map(|h| h.to_string().to_variant())
-                    .collect::<Array<_>>()
+                    .map(|h| GString::from(h.to_string()))
+                    .collect::<PackedStringArray>()
             }),
-            None => array![],
+            None => PackedStringArray::new(),
         }
     }
 
