@@ -70,10 +70,11 @@ pub enum DriverOutputEvent {
         checked_out_branch_doc_handle: DocHandle,
         branches_metadata_doc_handle: DocHandle,
     },
-    DocHandleChanged {
+    NewDocHandle {
         doc_handle: DocHandle,
     },
-    BranchesUpdated {
+    FilesChanged,
+    BranchesChanged {
         branches: HashMap<String, Branch>,
     },
     CheckedOutBranch {
@@ -171,10 +172,17 @@ impl GodotProjectDriver {
                 futures::select! {
                     changed_doc_handle = all_doc_changes.select_next_some() => {
 
+                        let new_doc_handles = state.handle_doc_change(&changed_doc_handle, &tracked_doc_handle_ids).await;            
 
-                     println!("rust: Changed doc handle");
+                        for doc_handle in new_doc_handles {
+                            if ! tracked_doc_handle_ids.contains(&doc_handle.document_id()) {
+                                tx.unbounded_send(DriverOutputEvent::NewDocHandle { doc_handle: doc_handle.clone() }).unwrap();
+                            }
 
-                      tx.unbounded_send(DriverOutputEvent::DocHandleChanged { doc_handle: changed_doc_handle }).unwrap();
+                            let doc_handle_id = doc_handle.document_id().clone();
+                    
+                            tracked_doc_handle_ids.insert(doc_handle_id);
+                        }   
                     },
 
                     message = rx.select_next_some() => {
@@ -206,7 +214,7 @@ impl GodotProjectDriver {
                         };
 
                         for doc_handle in new_doc_handles {
-                            tx.unbounded_send(DriverOutputEvent::DocHandleChanged { doc_handle: doc_handle.clone() }).unwrap();
+                            tx.unbounded_send(DriverOutputEvent::NewDocHandle { doc_handle: doc_handle.clone() }).unwrap();
 
                             let doc_handle_id = doc_handle.document_id().clone();
 
@@ -214,9 +222,17 @@ impl GodotProjectDriver {
                             if tracked_doc_handle_ids.contains(&doc_handle_id) {
                                 continue;
                             }
+
+                            println!("RUST: track document: {:?}", doc_handle_id);
+                    
+                            let doc_handle_id_clone = doc_handle_id.clone();
+
                             tracked_doc_handle_ids.insert(doc_handle_id);                        
                             let change_stream = handle_changes(doc_handle.clone()).filter_map(move |diff| {
                                 let doc_handle = doc_handle.clone();
+
+                                println!("RUST: doc changed document: {:?}", &doc_handle_id_clone.clone());
+
                                 async move {
                                     if diff.is_empty() {
                                         None
@@ -269,13 +285,13 @@ impl ProjectState {
             branches_metadata
                 .branches
                 .insert(branch_clone.id.clone(), branch_clone);
-            reconcile(&mut tx, branches_metadata);
+            let _ = reconcile(&mut tx, branches_metadata);
             tx.commit();
         });
 
         self.branches.insert(branch.id.clone(), branch.clone());
         self.tx
-            .unbounded_send(DriverOutputEvent::BranchesUpdated {
+            .unbounded_send(DriverOutputEvent::BranchesChanged {
                 branches: self.branches.clone(),
             })
             .unwrap();
@@ -299,7 +315,7 @@ impl ProjectState {
         });
 
         self.tx
-            .unbounded_send(DriverOutputEvent::BranchesUpdated {
+            .unbounded_send(DriverOutputEvent::BranchesChanged {
                 branches: self.branches.clone(),
             })
             .unwrap();
@@ -311,7 +327,7 @@ impl ProjectState {
             .with_doc(|d| hydrate(d).unwrap());
 
         self.tx
-            .unbounded_send(DriverOutputEvent::BranchesUpdated {
+            .unbounded_send(DriverOutputEvent::BranchesChanged {
                 branches: branches_metadata.branches,
             })
             .unwrap();
@@ -325,6 +341,65 @@ struct DriverState {
 }
 
 impl DriverState {
+
+    async fn handle_doc_change(&mut self, doc_handle: &DocHandle, loaded_doc_handle_ids: &HashSet<DocumentId>) -> Vec<DocHandle> {
+        let project = match &self.project {
+            Some(project) => project.clone(),
+            None => {
+                return vec![];
+            }
+        };
+
+
+        let checked_out_branch_id = project.checked_out_branch_doc_handle.document_id();
+        if checked_out_branch_id == doc_handle.document_id() {
+
+            let linked_doc_ids: Vec<DocumentId> = project.checked_out_branch_doc_handle.with_doc(|d| {
+                return get_linked_docs_of_branch(doc_handle);
+            });
+
+            let mut new_doc_handles = Vec::new();
+
+            // make sure all linked docs are loaded
+
+            let mut linked_doc_results = Vec::new();
+            for doc_id in linked_doc_ids {
+                if loaded_doc_handle_ids.contains(&doc_id) {
+                    continue;
+                }
+
+                let result = self.repo_handle.request_document(doc_id).await;
+                if let Ok(doc_handle) = &result {
+                    new_doc_handles.push(doc_handle.clone());
+                }
+                linked_doc_results.push(result);
+            }
+
+            if linked_doc_results.iter().any(|result| result.is_err()) {
+                println!("failed update doc handle, couldn't load all linked docs for ");
+                return vec![];
+            }
+
+            self.tx.unbounded_send(DriverOutputEvent::FilesChanged).unwrap();
+
+            return new_doc_handles;
+        }
+
+        let branches_metadata_doc_id = project.branches_metadata_doc_handle.document_id();
+        if branches_metadata_doc_id == doc_handle.document_id() {
+
+            project.reconcile_branches();
+
+            self.tx.unbounded_send(DriverOutputEvent::BranchesChanged {
+                branches: project.branches.clone(),
+            }).unwrap();
+            return vec![];
+        }
+
+        return vec![];
+
+    }
+
     async fn init_project(&mut self, doc_id: Option<DocumentId>) -> Vec<DocHandle> {
         let mut new_doc_handles = vec![];
 
@@ -361,7 +436,7 @@ impl DriverState {
                         }
                     };
 
-                new_doc_handles.push(branches_metadata_doc_handle.clone());
+                new_doc_handles.push(main_branch_doc_handle.clone());
 
                 let linked_doc_ids = get_linked_docs_of_branch(&main_branch_doc_handle);
 
@@ -380,6 +455,8 @@ impl DriverState {
                     println!("failed init, couldn't load all binary docs for ");
                     return vec![];
                 }
+
+                println!("RUST: init project main branch doc: {:?}", main_branch_doc_handle.document_id());
 
                 self.project = Some(ProjectState {
                     branches_metadata_doc_handle,
@@ -495,7 +572,7 @@ impl DriverState {
         self.project = Some(project.clone());
 
         self.tx
-            .unbounded_send(DriverOutputEvent::BranchesUpdated {
+            .unbounded_send(DriverOutputEvent::BranchesChanged {
                 branches: project.branches.clone(),
             })
             .unwrap();
@@ -599,7 +676,7 @@ impl DriverState {
 
         match content {
             StringOrPackedByteArray::String(content) => {
-                println!("rust: save file: {:?} {:?}", path, content);
+                println!("rust: save file: {:?}", path);
                 project.checked_out_branch_doc_handle.with_doc_mut(|d| {
                     let mut tx = match heads {
                         Some(heads) => d.transaction_at(

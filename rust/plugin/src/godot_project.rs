@@ -314,7 +314,9 @@ impl GodotProject {
     fn get_file(&self, path: String) -> Variant {
         match self._get_file(path) {
             Some(StringOrPackedByteArray::String(s)) => GString::from(s).to_variant(),
-            Some(StringOrPackedByteArray::Binary(bytes)) => PackedByteArray::from(bytes).to_variant(),
+            Some(StringOrPackedByteArray::Binary(bytes)) => {
+                PackedByteArray::from(bytes).to_variant()
+            }
             None => Variant::nil(),
         }
     }
@@ -472,11 +474,18 @@ impl GodotProject {
             }
         };
 
-        self._save_file(path, Some(heads.to_vec().iter().filter_map(|h| {
-            ChangeHash::from_str(h.to_string().as_str()).ok()
-        }).collect()), content);
+        self._save_file(
+            path,
+            Some(
+                heads
+                    .to_vec()
+                    .iter()
+                    .filter_map(|h| ChangeHash::from_str(h.to_string().as_str()).ok())
+                    .collect(),
+            ),
+            content,
+        );
     }
-
 
     #[func]
     fn merge_branch(&self, branch_id: String) {
@@ -500,27 +509,6 @@ impl GodotProject {
         self.driver_input_tx
             .unbounded_send(DriverInputEvent::CreateBranch { name })
             .unwrap();
-        // let mut branches_metadata = self.get_branches_metadata_doc();
-
-        // let main_doc_id = DocumentId::from_str(&branches_metadata.main_doc_id).unwrap();
-        // let new_doc_id = self.clone_doc(main_doc_id);
-
-        // branches_metadata.branches.insert(
-        //     new_doc_id.to_string(),
-        //     Branch {
-        //         is_merged: false,
-        //         name,
-        //         id: new_doc_id.to_string(),
-        //     },
-        // );
-
-        // self.get_branches_metadata_doc_handle().with_doc_mut(|d| {
-        //     let mut tx = d.transaction();
-        //     reconcile(&mut tx, branches_metadata).unwrap();
-        //     tx.commit();
-        // });
-
-        // new_doc_id.to_string()
     }
 
     // checkout branch in a separate thread
@@ -644,7 +632,12 @@ impl GodotProject {
     fn process(&mut self) {
         while let Ok(Some(event)) = self.driver_output_rx.try_next() {
             match event {
-                DriverOutputEvent::DocHandleChanged { doc_handle } => {
+                DriverOutputEvent::FilesChanged => {
+                    println!("rust: FilesChanged event");
+                    self.base_mut().emit_signal("files_changed", &[]);
+                }
+
+                DriverOutputEvent::NewDocHandle { doc_handle } => {
                     println!(
                         "rust: DocHandleChanged event for doc {}",
                         doc_handle.document_id()
@@ -652,9 +645,9 @@ impl GodotProject {
                     self.doc_handles
                         .insert(doc_handle.document_id(), doc_handle.clone());
                 }
-                DriverOutputEvent::BranchesUpdated { branches } => {
+                DriverOutputEvent::BranchesChanged { branches } => {
+                    println!("received branches changed {:?}", branches);
                     self.branches = branches;
-                    // (self.signal_callback)(self.signal_user_data, SIGNAL_BRANCHES_CHANGED.as_ptr(), std::ptr::null(), 0);
                     self.base_mut().emit_signal("branches_changed", &[]);
                 }
                 DriverOutputEvent::CheckedOutBranch { branch_doc_handle } => {

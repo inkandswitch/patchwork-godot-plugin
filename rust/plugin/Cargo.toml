@@ -1,7 +1,10 @@
 [package]
 name = "patchwork_rust"
 version = "0.0.1"
-authors = ["Orion Henry <orion.henry@gmail.com>", "Jason Kankiewicz <jason.kankiewicz@gmail.com>"]
+authors = [
+  "Orion Henry <orion.henry@gmail.com>",
+  "Jason Kankiewicz <jason.kankiewicz@gmail.com>",
+]
 edition = "2021"
 license = "MIT"
 rust-version = "1.57.0"
@@ -14,15 +17,19 @@ doc = false
 
 
 [dependencies]
-automerge = { "git" = "https://github.com/automerge/automerge.git" , "rev" = "a2ba7326ec886a9e6d02377fd904dbdde35eb89d"}
-automerge_repo = { git = "https://github.com/nikitalita/automerge-repo-rs", rev = "5a6739cb1cea7f8968527315465a99b075e491c5", features = ["tokio"] }
-autosurgeon = {git = "https://github.com/nikitalita/autosurgeon", rev = "b7ac13f9aea141a2c194092c369601cb523ec2c6"}
+automerge = { "git" = "https://github.com/automerge/automerge.git", "rev" = "a2ba7326ec886a9e6d02377fd904dbdde35eb89d" }
+automerge_repo = { git = "https://github.com/nikitalita/automerge-repo-rs", rev = "5a6739cb1cea7f8968527315465a99b075e491c5", features = [
+  "tokio",
+] }
+autosurgeon = { git = "https://github.com/nikitalita/autosurgeon", rev = "b7ac13f9aea141a2c194092c369601cb523ec2c6" }
 futures = "0.3.31"
-godot = { version = "0.2.3", features = ["experimental-threads", "api-custom"]}
+godot = { git = "https://github.com/godot-rust/gdext", branch = "master", features = [
+  "experimental-threads",
+] }
 tokio = { version = "1.41.1", features = ["full"] }
 tracing-subscriber = "0.3.18"
 tree-sitter = "0.20.10"
-tree-sitter-godot-resource = { git = "https://github.com/PrestonKnopp/tree-sitter-godot-resource.git", rev = "74105cc46a09850ebe626b894ecc6c61a12fb999"}
+tree-sitter-godot-resource = { git = "https://github.com/PrestonKnopp/tree-sitter-godot-resource.git", rev = "74105cc46a09850ebe626b894ecc6c61a12fb999" }
 safer-ffi = "0.1.13"
 
 [build-dependencies]

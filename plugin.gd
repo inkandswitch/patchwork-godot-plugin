@@ -218,11 +218,8 @@ func _on_local_file_changed(path: String, content: Variant):
 	print("file changed", path)
 
 	if _is_relevant_file(path):
-		print("save file: ", path)
 
-		var heads_string = ",".join(Array(last_synced_heads))
-
-		godot_project.save_file_at(path, heads_string, content)
+		godot_project.save_file_at(path, last_synced_heads, content)
 		last_synced_heads = godot_project.get_heads()
 
 
