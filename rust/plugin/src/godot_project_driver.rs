@@ -195,13 +195,15 @@ impl GodotProjectDriver {
                             });
 
                             all_doc_changes.push(change_stream.boxed());
-                            if ! tracked_doc_handle_ids.insert(doc_handle_id.clone()) {
+                            // if tracked_doc_handle_ids.insert(doc_handle_id.clone()) {
                                 tx.unbounded_send(DriverOutputEvent::NewDocHandle { doc_handle: doc_handle.clone() }).unwrap();
-                            }
+                            // }
                         }
                         if let Some(event) = event {
                             tx.unbounded_send(event).unwrap();
                         }
+                        
+                        // println!("done weeeee");
                     },
 
                     message = rx.select_next_some() => {

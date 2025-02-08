@@ -12,6 +12,7 @@ var file_content_to_reload: Array = []
 var files_to_reload_mutex: Mutex = Mutex.new()
 var current_pw_to_godot_sync_task_id: int = -1
 var deferred_pw_to_godot_sync: bool = false
+var timer: SceneTreeTimer = null
 
 var prev_checked_out_branch_id
 
@@ -34,11 +35,15 @@ func _process(_delta: float) -> void:
 	else:
 		# reload after sync
 		var new_files_to_reload: Array = []
+		var should_rerun = false
 		files_to_reload_mutex.lock()
 		# append array here, because otherwise new_files_to_reload just gets a reference to file_content_to_reload
 		new_files_to_reload.append_array(file_content_to_reload)
 		file_content_to_reload.clear()
+		should_rerun = deferred_pw_to_godot_sync
+		deferred_pw_to_godot_sync = false
 		files_to_reload_mutex.unlock()
+		
 		if len(new_files_to_reload) > 0:
 			print("reloading %d files: " % new_files_to_reload.size())
 		for token in new_files_to_reload:
@@ -58,6 +63,11 @@ func _process(_delta: float) -> void:
 			if path.get_extension() == "tscn":
 				# reload scene files to update references
 				get_editor_interface().reload_scene_from_path(path)
+
+		if should_rerun:
+			timer = get_tree().create_timer(5, true)
+			timer.timeout.connect(self.do_pw_to_godot_sync_task)
+
 
 func _enter_tree() -> void:
 	print("start patchwork!!!");
@@ -127,10 +137,13 @@ func _do_pw_to_godot_sync_element(i: int, files_in_patchwork: PackedStringArray)
 
 	var path = files_in_patchwork[i]
 	var gp_content = godot_project.get_file(path)
-	var fs_content = file_system.get_file(path)
+	var fs_content = file_system.get_file(path) 
 
 	if typeof(gp_content) == TYPE_NIL:
 		printerr("patchwork missing file content even though path exists: ", path)
+		files_to_reload_mutex.lock()
+		deferred_pw_to_godot_sync = true
+		files_to_reload_mutex.unlock()
 		return
 
 	elif fs_content != null and typeof(fs_content) != typeof(gp_content):
