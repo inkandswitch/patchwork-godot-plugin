@@ -541,7 +541,7 @@ impl GodotProject {
 
         self.driver_input_tx
             .unbounded_send(DriverInputEvent::CheckoutBranch {
-                branch_doc_handle: self.doc_handles.get(&branch_doc_id).unwrap().clone(),
+                branch_doc_id: branch_doc_id,
             })
             .unwrap();
     }

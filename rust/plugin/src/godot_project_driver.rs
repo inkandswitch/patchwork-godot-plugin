@@ -50,7 +50,7 @@ pub enum DriverInputEvent {
     },
 
     CheckoutBranch {
-        branch_doc_handle: DocHandle,
+        branch_doc_id: DocumentId,
     },
 
     MergeBranch {
@@ -184,9 +184,9 @@ impl GodotProjectDriver {
                                 state.init_project(doc_id).await
                             }
 
-                            DriverInputEvent::CheckoutBranch { branch_doc_handle } => {
-                                println!("rust: Checking out branch: {:?}", branch_doc_handle.document_id());
-                                state.checkout_branch(branch_doc_handle).await
+                            DriverInputEvent::CheckoutBranch { branch_doc_id } => {
+                                println!("rust: Checking out branch: {:?}", branch_doc_id);
+                                state.checkout_branch(branch_doc_id).await
                             },
 
                             DriverInputEvent::CreateBranch {name} => {
@@ -530,8 +530,15 @@ impl DriverState {
         return vec![];
     }
 
-    async fn checkout_branch(&mut self, branch_doc_handle: DocHandle) -> Vec<DocHandle> {
-        let mut new_doc_handles = vec![];
+    async fn checkout_branch(&mut self, branch_doc_id: DocumentId) -> Vec<DocHandle> {
+        let branch_doc_handle = match self.repo_handle.request_document(branch_doc_id).await {
+            Ok(doc_handle) => doc_handle,
+            Err(e) => {
+                println!("failed to checkout branch: {:?}", e);
+                return vec![];
+            }
+        };
+        let mut new_doc_handles = vec![branch_doc_handle.clone()];
 
         let mut project = match &self.project {
             Some(project) => project.clone(),
@@ -573,7 +580,6 @@ impl DriverState {
                 branch_doc_handle: branch_doc_handle.clone(),
             })
             .unwrap();
-
         return new_doc_handles;
     }
 
