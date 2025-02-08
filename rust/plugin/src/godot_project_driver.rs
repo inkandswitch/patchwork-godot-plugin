@@ -331,7 +331,7 @@ impl ProjectState {
 
             self.branches = branches_metadata.branches.clone();
 
-            reconcile(&mut tx, branches_metadata);
+            let _ = reconcile(&mut tx, branches_metadata);
             tx.commit();
         });
 
@@ -344,7 +344,7 @@ impl ProjectState {
 
     fn reconcile_branches(&self) {
         let branches_metadata: BranchesMetadataDoc = self
-            .main_branch_doc_handle
+            .branches_metadata_doc_handle
             .with_doc(|d| hydrate(d).unwrap());
 
         self.tx
