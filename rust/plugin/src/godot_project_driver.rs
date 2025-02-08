@@ -172,17 +172,36 @@ impl GodotProjectDriver {
                 futures::select! {
                     changed_doc_handle = all_doc_changes.select_next_some() => {
 
-                        let new_doc_handles = state.handle_doc_change(&changed_doc_handle, &tracked_doc_handle_ids).await;            
-
+                        let (new_doc_handles, event) = state.handle_doc_change(&changed_doc_handle, &tracked_doc_handle_ids).await;            
+                        
                         for doc_handle in new_doc_handles {
-                            if ! tracked_doc_handle_ids.contains(&doc_handle.document_id()) {
-                                tx.unbounded_send(DriverOutputEvent::NewDocHandle { doc_handle: doc_handle.clone() }).unwrap();
-                            }
+                            let doc_handle_clone = doc_handle.clone();
 
                             let doc_handle_id = doc_handle.document_id().clone();
-                    
-                            tracked_doc_handle_ids.insert(doc_handle_id);
-                        }   
+                            let doc_handle_id_clone = doc_handle_id.clone();
+
+                            let change_stream = handle_changes(doc_handle.clone()).filter_map(move |diff| {
+                                let doc_handle = doc_handle_clone.clone();
+
+                                println!("RUST: doc changed document: {:?}", &doc_handle_id_clone);
+
+                                async move {
+                                    if diff.is_empty() {
+                                        None
+                                    } else {
+                                        Some(doc_handle.clone())
+                                    }
+                                }
+                            });
+
+                            all_doc_changes.push(change_stream.boxed());
+                            if ! tracked_doc_handle_ids.insert(doc_handle_id.clone()) {
+                                tx.unbounded_send(DriverOutputEvent::NewDocHandle { doc_handle: doc_handle.clone() }).unwrap();
+                            }
+                        }
+                        if let Some(event) = event {
+                            tx.unbounded_send(event).unwrap();
+                        }
                     },
 
                     message = rx.select_next_some() => {
@@ -210,7 +229,7 @@ impl GodotProjectDriver {
                             DriverInputEvent::SaveFile { path, content, heads} => {
                                 println!("rust: Saving file: {} (with {} heads)", path, heads.as_ref().map_or(0, |h| h.len()));
                                 state.save_file(path, heads, content)
-                            },                        
+                            },
                         };
 
                         for doc_handle in new_doc_handles {
@@ -342,11 +361,11 @@ struct DriverState {
 
 impl DriverState {
 
-    async fn handle_doc_change(&mut self, doc_handle: &DocHandle, loaded_doc_handle_ids: &HashSet<DocumentId>) -> Vec<DocHandle> {
+    async fn handle_doc_change(&mut self, doc_handle: &DocHandle, loaded_doc_handle_ids: &HashSet<DocumentId>) -> (Vec<DocHandle>, Option<DriverOutputEvent>) {
         let project = match &self.project {
             Some(project) => project.clone(),
             None => {
-                return vec![];
+                return (vec![], None);
             }
         };
 
@@ -377,26 +396,23 @@ impl DriverState {
 
             if linked_doc_results.iter().any(|result| result.is_err()) {
                 println!("failed update doc handle, couldn't load all linked docs for ");
-                return vec![];
+                return (vec![], None);
             }
 
-            self.tx.unbounded_send(DriverOutputEvent::FilesChanged).unwrap();
 
-            return new_doc_handles;
+            return (new_doc_handles, Some(DriverOutputEvent::FilesChanged));
         }
 
         let branches_metadata_doc_id = project.branches_metadata_doc_handle.document_id();
         if branches_metadata_doc_id == doc_handle.document_id() {
 
             project.reconcile_branches();
-
-            self.tx.unbounded_send(DriverOutputEvent::BranchesChanged {
+            return (vec![], Some(DriverOutputEvent::BranchesChanged {
                 branches: project.branches.clone(),
-            }).unwrap();
-            return vec![];
+            }));
         }
 
-        return vec![];
+        return (vec![], None);
 
     }
 
@@ -723,7 +739,7 @@ impl DriverState {
                 let binary_doc_handle = self.repo_handle.new_document();
                 binary_doc_handle.with_doc_mut(|d| {
                     let mut tx = d.transaction();
-                    let _ = tx.put(ROOT, "content", content.to_vec());
+                    let _ = tx.put(ROOT, "content", content);
                     tx.commit();
                 });
 
@@ -758,9 +774,9 @@ impl DriverState {
 
 fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = Vec<automerge::Patch>> + Send {
     futures::stream::unfold(handle, |doc_handle| async {
-        let heads_before = doc_handle.with_doc(|d| d.get_heads().to_vec());
+        let heads_before = doc_handle.with_doc(|d| d.get_heads());
         let _ = doc_handle.changed().await;
-        let heads_after = doc_handle.with_doc(|d| d.get_heads().to_vec());
+        let heads_after = doc_handle.with_doc(|d| d.get_heads());
         let diff = doc_handle.with_doc(|d| {
             d.diff(
                 &heads_before,

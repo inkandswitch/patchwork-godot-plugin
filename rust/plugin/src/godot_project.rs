@@ -302,10 +302,14 @@ impl GodotProject {
             .and_then(|url| parse_automerge_url(&url))
             .and_then(|doc_id| self.doc_handles.get(&doc_id))
             .and_then(|doc_handle| {
-                doc_handle.with_doc(|d| {
-                    Some(StringOrPackedByteArray::Binary(
-                        d.get_bytes(ROOT, "content").unwrap(),
-                    ))
+                doc_handle.with_doc(|d| match d.get(ROOT, "content") {
+                    Ok(Some((value, _))) if value.is_bytes() => {
+                        Some(StringOrPackedByteArray::Binary(value.into_bytes().unwrap()))
+                    },
+                    Ok(Some((value, _))) if value.is_str() => {
+                        Some(StringOrPackedByteArray::String(value.into_string().unwrap()))
+                    },
+                    _ => None,
                 })
             })
     }
@@ -377,79 +381,14 @@ impl GodotProject {
                 content,
             })
             .unwrap();
-        // todo: this
-        // // ignore if file is already up to date
-        // if let Some(stored_content) = self.get_file(path.clone()) {
-        //     if stored_content == content {
-        //         println!("file {:?} is already up to date", path.clone());
-        //         return;
-        //     }
-        // }
-
-        // self.get_checked_out_doc_handle()
-        // .with_doc_mut(|d| {
-        //         let mut tx = match heads {
-        //             Some(heads) => {
-        //                 d.transaction_at(PatchLog::inactive(TextRepresentation::String(TextEncoding::Utf8CodeUnit)), &heads)
-        //             },
-        //             None => {
-        //                 d.transaction()
-        //             }
-        //         };
-
-        //         let files = match tx.get(ROOT, "files") {
-        //             Ok(Some((automerge::Value::Object(ObjType::Map), files))) => files,
-        //             _ => panic!("Invalid project doc, doesn't have files map"),
-        //         };
-
-        //         match content {
-        //             StringOrPackedByteArray::String(content) => {
-        //                 println!("write string {:}", path);
-
-        //                 // get existing file url or create new one
-        //                 let file_entry = match tx.get(&files, &path) {
-        //                     Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
-        //                     _ => tx.put_object(files, &path, ObjType::Map).unwrap()
-        //                 };
-
-        //                 // delete url in file entry if it previously had one
-        //                 if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
-        //                     let _ = tx.delete(&file_entry, "url");
-        //                 }
-
-        //                 // either get existing text or create new text
-        //                 let content_key = match tx.get(&file_entry, "content") {
-        //                     Ok(Some((automerge::Value::Object(ObjType::Text), content))) => content,
-        //                     _ => tx.put_object(&file_entry, "content", ObjType::Text).unwrap(),
-        //                 };
-        //                 let _ = tx.update_text(&content_key, &content);
-        //             },
-        //             StringOrPackedByteArray::PackedByteArray(content) => {
-        //                 println!("write binary {:}", path);
-
-        //                 // create content doc
-        //                 let content_doc_id = self.create_doc(|d| {
-        //                     let mut tx = d.transaction();
-        //                     let _ = tx.put(ROOT, "content", content.to_vec());
-        //                     tx.commit();
-        //                 });
-
-        //                 // write url to content doc into project doc
-        //                 let file_entry = tx.put_object(files, path, ObjType::Map);
-        //                 let _ = tx.put(file_entry.unwrap(), "url", format!("automerge:{}", content_doc_id));
-        //             },
-        //         }
-
-        //         tx.commit();
-        //     });
     }
 
     #[func]
     fn save_file(&self, path: String, content: Variant) {
         let content = match content.get_type() {
-            VariantType::STRING => StringOrPackedByteArray::String(content.to_string()),
+            VariantType::STRING => StringOrPackedByteArray::String(String::from(content.to::<GString>())),
             VariantType::PACKED_BYTE_ARRAY => StringOrPackedByteArray::Binary(
-                content.to::<godot::builtin::PackedByteArray>().to_vec(),
+                content.to::<PackedByteArray>().to_vec(),
             ),
             _ => {
                 println!("invalid content type");
@@ -463,9 +402,9 @@ impl GodotProject {
     #[func]
     fn save_file_at(&self, path: String, heads: PackedStringArray, content: Variant) {
         let content = match content.get_type() {
-            VariantType::STRING => StringOrPackedByteArray::String(content.to_string()),
+            VariantType::STRING => StringOrPackedByteArray::String(String::from(content.to::<GString>())),
             VariantType::PACKED_BYTE_ARRAY => StringOrPackedByteArray::Binary(
-                content.to::<godot::builtin::PackedByteArray>().to_vec(),
+                content.to::<PackedByteArray>().to_vec(),
             ),
             _ => {
                 println!("invalid content type");
@@ -710,7 +649,7 @@ fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = Vec<automerg
             d.diff(
                 &heads_before,
                 &heads_after,
-                automerge::patches::TextRepresentation::String(TextEncoding::Utf8CodeUnit),
+                TextRepresentation::String(TextEncoding::Utf8CodeUnit),
             )
         });
 
