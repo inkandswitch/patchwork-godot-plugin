@@ -213,7 +213,10 @@ func _scan_directory(dir: DirAccess, current_path: String):
 					continue
 					
 			var full_path = current_path.path_join(file_name)
-			
+			if not editor_plugin._is_relevant_file(full_path):
+				file_name = dir.get_next()
+				continue
+
 			if dir.current_is_dir():
 					var sub_dir = DirAccess.open(full_path)
 					if sub_dir:
@@ -224,6 +227,8 @@ func _scan_directory(dir: DirAccess, current_path: String):
 			file_name = dir.get_next()
 
 func _check_file_changes(file_path: String):
+	if not editor_plugin._is_relevant_file(file_path):
+		return
 	var content = get_file(file_path)
 	if content == null:
 		# Handle deleted files
