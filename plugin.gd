@@ -66,7 +66,7 @@ func _process(_delta: float) -> void:
 
 		if should_rerun:
 			timer = get_tree().create_timer(5, true)
-			timer.timeout.connect(self.do_pw_to_godot_sync_task)
+			timer.timeout.connect(self.sync_patchwork_to_godot)
 
 
 func _enter_tree() -> void:
@@ -194,8 +194,12 @@ func sync_patchwork_to_godot():
 	# only sync once the user has saved all files
 
 	# todo: add unsaved files check back
-	# if godot_project.unsaved_files_open():
-	# 	return
+	if PatchworkEditor.unsaved_files_open():
+		print("unsaved files open, not syncing")
+		files_to_reload_mutex.lock()
+		deferred_pw_to_godot_sync = true
+		files_to_reload_mutex.unlock()
+		return
 	current_pw_to_godot_sync_task_id = WorkerThreadPool.add_task(self.do_pw_to_godot_sync_task, false, "sync_patchwork_to_godot")
 	call_deferred("_try_wait_for_pw_to_godot_sync_task")
 
