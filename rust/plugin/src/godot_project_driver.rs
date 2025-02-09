@@ -225,7 +225,7 @@ impl GodotProjectDriver {
 
                             DriverInputEvent::MergeBranch { branch_doc_handle } => {
                                 println!("rust: Merging branch: {:?}", branch_doc_handle.document_id());
-                                state.merge_branch(branch_doc_handle)
+                                state.merge_branch(branch_doc_handle).await
                             },
 
                             DriverInputEvent::SaveFile { path, content, heads} => {
@@ -603,7 +603,7 @@ impl DriverState {
         return vec![new_branch_handle];
     }
 
-    fn merge_branch(&mut self, branch_doc_handle: DocHandle) -> Vec<DocHandle> {
+    async fn merge_branch(&mut self, branch_doc_handle: DocHandle) -> Vec<DocHandle> {
         let mut project = match &self.project {
             Some(project) => project.clone(),
             None => {
@@ -620,9 +620,13 @@ impl DriverState {
 
         // mark branch as merged
         project.mark_branch_as_merged(branch_doc_handle.document_id());
-        self.project = Some(project);
+        let main_branch_doc_id = project.clone().main_branch_doc_handle.document_id();
 
-        return vec![];
+        self.project = Some(project);
+        
+        
+
+        return self.checkout_branch(main_branch_doc_id).await;
     }
 
     async fn checkout_branch(&mut self, branch_doc_id: DocumentId) -> Vec<DocHandle> {
