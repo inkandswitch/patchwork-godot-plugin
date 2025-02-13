@@ -1,37 +1,27 @@
+use futures::Stream;
 use ::safer_ffi::prelude::*;
 use std::collections::HashSet;
-use std::env::var;
 use std::{
     collections::HashMap,
-    future::Future,
     str::FromStr,
-    sync::{
-        mpsc::{Receiver, Sender},
-        Arc, Mutex,
-    },
 };
 
 use crate::{
     godot_project::{BranchesMetadataDoc, GodotProjectDoc, StringOrPackedByteArray},
-    godot_scene::PackedGodotScene,
     utils::get_linked_docs_of_branch,
 };
 use automerge::{
-    patches::TextRepresentation, transaction::Transactable, Automerge, Change, ChangeHash, ObjType,
+    patches::TextRepresentation, transaction::Transactable, ChangeHash, ObjType,
     PatchLog, ReadDoc, TextEncoding, ROOT,
 };
 use automerge_repo::{
-    tokio::FsStorage, ConnDirection, DocHandle, DocumentId, Repo, RepoError, RepoHandle,
+    tokio::FsStorage, ConnDirection, DocHandle, DocumentId, Repo, RepoHandle,
 };
-use autosurgeon::{bytes, hydrate, reconcile, Hydrate, HydrateError, Reconcile};
+use autosurgeon::{ hydrate, reconcile};
 use futures::{
     channel::mpsc::{UnboundedReceiver, UnboundedSender},
-    executor::block_on,
-    FutureExt, StreamExt,
+     StreamExt,
 };
-use std::ffi::c_void;
-use std::ops::Deref;
-use std::os::raw::c_char;
 
 // use godot::prelude::*;
 use tokio::{net::TcpStream, runtime::Runtime};
@@ -40,7 +30,7 @@ use crate::{doc_utils::SimpleDocReader, godot_project::Branch};
 
 const SERVER_URL: &str = "104.131.179.247:8080";
 
-pub enum DriverInputEvent {
+pub enum InputEvent {
     InitBranchesMetadataDoc {
         doc_id: Option<DocumentId>,
     },
@@ -64,7 +54,7 @@ pub enum DriverInputEvent {
     },
 }
 
-pub enum DriverOutputEvent {
+pub enum OutputEvent {
     Initialized {
         checked_out_branch_doc_handle: DocHandle,
         branches_metadata_doc_handle: DocHandle,
@@ -80,6 +70,53 @@ pub enum DriverOutputEvent {
         branches: HashMap<String, Branch>,
     },
 }
+
+pub struct SubscribedDocHandles {
+    subscribed_doc_handle_ids: HashSet<DocumentId>,
+    futures: futures::stream::SelectAll<std::pin::Pin<Box<dyn Stream<Item = (DocHandle, Vec<automerge::Patch>)> + Send>>>,
+}
+
+impl SubscribedDocHandles {
+    pub fn new() -> Self {
+        return Self {
+            subscribed_doc_handle_ids: HashSet::new(),
+            futures: futures::stream::SelectAll::new(),
+        };
+    }
+
+    pub fn add_doc_handle(&mut self, doc_handle: DocHandle) {
+
+        println!("rust: subscribed to doc handle: {:?}", doc_handle.document_id());
+
+        if self.subscribed_doc_handle_ids.contains(&doc_handle.document_id()) {
+            return;
+        }
+
+        self.subscribed_doc_handle_ids.insert(doc_handle.document_id());
+        self.futures.push(handle_changes(doc_handle).boxed());
+    }
+}
+
+fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = (DocHandle, Vec<automerge::Patch>)> + Send {
+    futures::stream::unfold(handle, |doc_handle| async {
+        let heads_before = doc_handle.with_doc(|d| d.get_heads());
+        let _ = doc_handle.changed().await;
+        let heads_after = doc_handle.with_doc(|d| d.get_heads());
+        let diff = doc_handle.with_doc(|d| {
+            d.diff(
+                &heads_before,
+                &heads_after,
+                automerge::patches::TextRepresentation::String(TextEncoding::Utf8CodeUnit),
+            )
+        });
+
+        Some((
+            (doc_handle.clone(), diff),
+            doc_handle,
+        ))
+    })
+}
+
 
 pub struct GodotProjectDriver {
     runtime: Runtime,
@@ -107,8 +144,8 @@ impl GodotProjectDriver {
 
     pub fn spawn(
         &self,
-        rx: UnboundedReceiver<DriverInputEvent>,
-        tx: UnboundedSender<DriverOutputEvent>,
+        rx: UnboundedReceiver<InputEvent>,
+        tx: UnboundedSender<OutputEvent>,
     ) {
         // Spawn connection task
         self.spawn_connection_task();
@@ -150,8 +187,8 @@ impl GodotProjectDriver {
 
     fn spawn_driver_task(
         &self,
-        mut rx: UnboundedReceiver<DriverInputEvent>,
-        tx: UnboundedSender<DriverOutputEvent>,
+        mut rx: UnboundedReceiver<InputEvent>,
+        tx: UnboundedSender<OutputEvent>,
     ) {
         let repo_handle = self.repo_handle.clone();
 
@@ -162,111 +199,61 @@ impl GodotProjectDriver {
                 tx: tx.clone()
             };
 
-            let mut tracked_doc_handle_ids: HashSet<DocumentId> = HashSet::new();
-            let mut all_doc_changes =  futures::stream::SelectAll::new();
+            let mut subscribed_doc_handles = SubscribedDocHandles::new();
 
+    
             // Now, drive the SelectAll and also wait for any new documents to arrive and add
             // them to the selectall
             loop {
                 futures::select! {
-                    changed_doc_handle = all_doc_changes.select_next_some() => {
+                    (changed_doc_handle, diff) = subscribed_doc_handles.futures.select_next_some() => {
+                        let (new_doc_handles, event) = state.handle_doc_change(&changed_doc_handle, &subscribed_doc_handles.subscribed_doc_handle_ids).await;            
 
-                        let (new_doc_handles, event) = state.handle_doc_change(&changed_doc_handle, &tracked_doc_handle_ids).await;            
-                        
+                        println!("rust: doc handle changed: {:?}", changed_doc_handle.document_id());
+
                         for doc_handle in new_doc_handles {
-                            let doc_handle_clone = doc_handle.clone();
-
-                            let doc_handle_id = doc_handle.document_id().clone();
-                            let doc_handle_id_clone = doc_handle_id.clone();
-
-                            let change_stream = handle_changes(doc_handle.clone()).filter_map(move |diff| {
-                                let doc_handle = doc_handle_clone.clone();
-
-                                println!("RUST: doc changed document: {:?}", &doc_handle_id_clone);
-
-                                async move {
-                                    if diff.is_empty() {
-                                        None
-                                    } else {
-                                        Some(doc_handle.clone())
-                                    }
-                                }
-                            });
-
-                            all_doc_changes.push(change_stream.boxed());
-                            // if tracked_doc_handle_ids.insert(doc_handle_id.clone()) {
-                                tx.unbounded_send(DriverOutputEvent::NewDocHandle { doc_handle: doc_handle.clone() }).unwrap();
-                            // }
+                            subscribed_doc_handles.add_doc_handle(doc_handle);
                         }
+
                         if let Some(event) = event {
                             tx.unbounded_send(event).unwrap();
-                        }
-                        
-                        // println!("done weeeee");
+                        }                    
                     },
 
                     message = rx.select_next_some() => {
                         let new_doc_handles : Vec<DocHandle> = match message {
-                            DriverInputEvent::InitBranchesMetadataDoc { doc_id } => {
+                            InputEvent::InitBranchesMetadataDoc { doc_id } => {
                                 println!("rust: Initializing project with metadata doc: {:?}", doc_id);
                                 state.init_project(doc_id).await
                             }
 
-                            DriverInputEvent::CheckoutBranch { branch_doc_id } => {
+                            InputEvent::CheckoutBranch { branch_doc_id } => {
                                 println!("rust: Checking out branch: {:?}", branch_doc_id);
                                 state.checkout_branch(branch_doc_id).await
                             },
 
-                            DriverInputEvent::CreateBranch {name} => {
+                            InputEvent::CreateBranch {name} => {
                                 println!("rust: Creating new branch: {}", name);
                                 state.create_branch(name)
                             },
 
-                            DriverInputEvent::MergeBranch { branch_doc_handle } => {
+                            InputEvent::MergeBranch { branch_doc_handle } => {
                                 println!("rust: Merging branch: {:?}", branch_doc_handle.document_id());
                                 state.merge_branch(branch_doc_handle).await
                             },
 
-                            DriverInputEvent::SaveFile { path, content, heads} => {
+                            InputEvent::SaveFile { path, content, heads} => {
                                 println!("rust: Saving file: {} (with {} heads)", path, heads.as_ref().map_or(0, |h| h.len()));
                                 state.save_file(path, heads, content)
                             },
                         };
 
                         for doc_handle in new_doc_handles {
-                            tx.unbounded_send(DriverOutputEvent::NewDocHandle { doc_handle: doc_handle.clone() }).unwrap();
-
-                            let doc_handle_id = doc_handle.document_id().clone();
-
-                            // make sure we don't add the same doc handle twice
-                            if tracked_doc_handle_ids.contains(&doc_handle_id) {
-                                continue;
-                            }
-
-                            println!("RUST: track document: {:?}", doc_handle_id);
-                    
-                            let doc_handle_id_clone = doc_handle_id.clone();
-
-                            tracked_doc_handle_ids.insert(doc_handle_id);                        
-                            let change_stream = handle_changes(doc_handle.clone()).filter_map(move |diff| {
-                                let doc_handle = doc_handle.clone();
-
-                                println!("RUST: doc changed document: {:?}", &doc_handle_id_clone.clone());
-
-                                async move {
-                                    if diff.is_empty() {
-                                        None
-                                    } else {
-                                        Some(doc_handle.clone())
-                                    }
-                                }
-                            });
-            
-                            all_doc_changes.push(change_stream.boxed());
+                            subscribed_doc_handles.add_doc_handle(doc_handle);
                         }                
                     }
                 }
-            }
+            }    
         });
     }
 }
@@ -322,12 +309,12 @@ impl ProjectState {
 struct DriverState {
     repo_handle: RepoHandle,
     project: Option<ProjectState>,
-    tx: UnboundedSender<DriverOutputEvent>,
+    tx: UnboundedSender<OutputEvent>,
 }
 
 impl DriverState {
 
-    async fn handle_doc_change(&mut self, doc_handle: &DocHandle, loaded_doc_handle_ids: &HashSet<DocumentId>) -> (Vec<DocHandle>, Option<DriverOutputEvent>) {
+    async fn handle_doc_change(&mut self, doc_handle: &DocHandle, loaded_doc_handle_ids: &HashSet<DocumentId>) -> (Vec<DocHandle>, Option<OutputEvent>) {
         let project = match &self.project {
             Some(project) => project.clone(),
             None => {
@@ -365,7 +352,9 @@ impl DriverState {
                 return (vec![], None);
             }
 
-            return (new_doc_handles, Some(DriverOutputEvent::FilesChanged));
+            println!("rust: files changed");
+
+            return (new_doc_handles, Some(OutputEvent::FilesChanged));
         }
 
         let branches_metadata_doc_id = project.branches_metadata_doc_handle.document_id();
@@ -373,7 +362,7 @@ impl DriverState {
 
             println!("RUST: branches metadata doc changed {:?}", project.get_branches_metadata());
 
-            return (vec![], Some(DriverOutputEvent::BranchesChanged {
+            return (vec![], Some(OutputEvent::BranchesChanged {
                 branches: project.get_branches_metadata().branches
             }));
         }
@@ -509,7 +498,7 @@ impl DriverState {
         }
 
         self.tx
-            .unbounded_send(DriverOutputEvent::Initialized {
+            .unbounded_send(OutputEvent::Initialized {
                 checked_out_branch_doc_handle: self
                     .project
                     .as_ref()
@@ -549,7 +538,7 @@ impl DriverState {
         self.project = Some(project.clone());
 
         self.tx
-            .unbounded_send(DriverOutputEvent::CheckedOutBranch {
+            .unbounded_send(OutputEvent::CheckedOutBranch {
                 branch_doc_handle: new_branch_handle.clone(),
             })
             .unwrap();
@@ -625,7 +614,7 @@ impl DriverState {
 
         self.project = Some(project);
         self.tx
-            .unbounded_send(DriverOutputEvent::CheckedOutBranch {
+            .unbounded_send(OutputEvent::CheckedOutBranch {
                 branch_doc_handle: branch_doc_handle.clone(),
             })
             .unwrap();
@@ -728,22 +717,6 @@ impl DriverState {
     }
 }
 
-fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = Vec<automerge::Patch>> + Send {
-    futures::stream::unfold(handle, |doc_handle| async {
-        let heads_before = doc_handle.with_doc(|d| d.get_heads());
-        let _ = doc_handle.changed().await;
-        let heads_after = doc_handle.with_doc(|d| d.get_heads());
-        let diff = doc_handle.with_doc(|d| {
-            d.diff(
-                &heads_before,
-                &heads_after,
-                automerge::patches::TextRepresentation::String(TextEncoding::Utf8CodeUnit),
-            )
-        });
-
-        Some((diff, doc_handle))
-    })
-}
 
 fn clone_doc(repo_handle: &RepoHandle, doc_handle: &DocHandle) -> DocHandle {
     let new_doc_handle = repo_handle.new_document();

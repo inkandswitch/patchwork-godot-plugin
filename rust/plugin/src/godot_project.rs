@@ -32,7 +32,7 @@ use tokio::{net::TcpStream, runtime::Runtime};
 use crate::utils::parse_automerge_url;
 use crate::{
     doc_utils::SimpleDocReader,
-    godot_project_driver::{DriverInputEvent, DriverOutputEvent, GodotProjectDriver},
+    godot_project_driver::{GodotProjectDriver, InputEvent, OutputEvent},
 };
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
@@ -101,8 +101,8 @@ pub struct GodotProject {
     checked_out_branch_doc_handle: Option<DocHandle>,
     branches_metadata_doc_handle: Option<DocHandle>,
     driver: GodotProjectDriver,
-    driver_input_tx: UnboundedSender<DriverInputEvent>,
-    driver_output_rx: UnboundedReceiver<DriverOutputEvent>,
+    driver_input_tx: UnboundedSender<InputEvent>,
+    driver_output_rx: UnboundedReceiver<OutputEvent>,
 }
 
 #[godot_api]
@@ -140,7 +140,7 @@ impl GodotProject {
         };
 
         driver_input_tx
-            .unbounded_send(DriverInputEvent::InitBranchesMetadataDoc {
+            .unbounded_send(InputEvent::InitBranchesMetadataDoc {
                 doc_id: branches_metadata_doc_id,
             })
             .unwrap();
@@ -336,7 +336,7 @@ impl GodotProject {
         }
 
         self.driver_input_tx
-            .unbounded_send(DriverInputEvent::SaveFile {
+            .unbounded_send(InputEvent::SaveFile {
                 path,
                 heads,
                 content,
@@ -401,7 +401,7 @@ impl GodotProject {
         };
 
         self.driver_input_tx
-            .unbounded_send(DriverInputEvent::MergeBranch {
+            .unbounded_send(InputEvent::MergeBranch {
                 branch_doc_handle: self.doc_handles.get(&branch_doc_id).unwrap().clone(),
             })
             .unwrap();
@@ -410,7 +410,7 @@ impl GodotProject {
     #[func]
     fn create_branch(&self, name: String) {
         self.driver_input_tx
-            .unbounded_send(DriverInputEvent::CreateBranch { name })
+            .unbounded_send(InputEvent::CreateBranch { name })
             .unwrap();
     }
 
@@ -431,7 +431,7 @@ impl GodotProject {
         };
 
         self.driver_input_tx
-            .unbounded_send(DriverInputEvent::CheckoutBranch {
+            .unbounded_send(InputEvent::CheckoutBranch {
                 branch_doc_id: branch_doc_id,
             })
             .unwrap();
@@ -533,12 +533,12 @@ impl GodotProject {
     fn process(&mut self) {
         while let Ok(Some(event)) = self.driver_output_rx.try_next() {
             match event {
-                DriverOutputEvent::FilesChanged => {
+                OutputEvent::FilesChanged => {
                     println!("rust: FilesChanged event");
                     self.base_mut().emit_signal("files_changed", &[]);
                 }
 
-                DriverOutputEvent::NewDocHandle { doc_handle } => {
+                OutputEvent::NewDocHandle { doc_handle } => {
                     println!(
                         "rust: DocHandleChanged event for doc {}",
                         doc_handle.document_id()
@@ -546,7 +546,7 @@ impl GodotProject {
                     self.doc_handles
                         .insert(doc_handle.document_id(), doc_handle.clone());
                 }
-                DriverOutputEvent::BranchesChanged { branches } => {
+                OutputEvent::BranchesChanged { branches } => {
                     let branches_gd = branches_to_gd(&branches);
 
                     println!("RUST: receive branches changed {:?}", branches.len());
@@ -554,7 +554,7 @@ impl GodotProject {
                     self.base_mut()
                         .emit_signal("branches_changed", &[branches_gd.to_variant()]);
                 }
-                DriverOutputEvent::CheckedOutBranch { branch_doc_handle } => {
+                OutputEvent::CheckedOutBranch { branch_doc_handle } => {
                     println!(
                         "rust: CheckedOutBranch event for doc {}",
                         branch_doc_handle.document_id()
@@ -565,7 +565,7 @@ impl GodotProject {
                         &[branch_doc_handle.document_id().to_string().to_variant()],
                     );
                 }
-                DriverOutputEvent::Initialized {
+                OutputEvent::Initialized {
                     checked_out_branch_doc_handle,
                     branches_metadata_doc_handle,
                 } => {
