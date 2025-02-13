@@ -48,9 +48,8 @@ pub enum InputEvent {
         branch_doc_handle: DocHandle,
     },
 
-    SaveFile {
-        path: String,
-        content: StringOrPackedByteArray,
+    SaveFiles {
+        files: HashMap<String,StringOrPackedByteArray>,
         heads: Option<Vec<ChangeHash>>,
     },
 }
@@ -265,10 +264,10 @@ impl GodotProjectDriver {
                                 state.merge_branch(branch_doc_handle).await
                             },
 
-                            InputEvent::SaveFile { path, content, heads} => {
-                                println!("rust: Saving file: {} (with {} heads)", path, heads.as_ref().map_or(0, |h| h.len()));
-                                state.save_file(&path, heads, content)
-                            }
+                            InputEvent::SaveFiles { files, heads } => {
+                                println!("rust: Saving {} files", files.len());
+                                state.save_files(files, heads)
+                            },
                         };
 
 
@@ -651,99 +650,78 @@ impl DriverState {
         return new_doc_handles;
     }
 
-    fn save_file(
+    fn save_files(
         &mut self,
-        path: &String,
+        files: HashMap<String, StringOrPackedByteArray>,
         heads: Option<Vec<ChangeHash>>,
-        content: StringOrPackedByteArray,
     ) -> Vec<DocHandle> {
         let project = match &self.project {
             Some(project) => project.clone(),
             None => {
-                println!("warning: triggered save file before project was initialized");
+                println!("warning: triggered save files before project was initialized");
                 return vec![];
             }
         };
 
-        match content {
-            StringOrPackedByteArray::String(content) => {
-                println!("rust: save file: {:?}", path);
-                project.checked_out_branch_doc_handle.with_doc_mut(|d| {
-                    let mut tx = match heads {
-                        Some(heads) => d.transaction_at(
-                            PatchLog::inactive(TextRepresentation::String(
-                                TextEncoding::Utf8CodeUnit,
-                            )),
-                            &heads,
-                        ),
-                        None => d.transaction(),
-                    };
+        let mut new_doc_handles = Vec::new();
 
-                    let files = tx.get_obj_id(ROOT, "files").unwrap();
+        project.checked_out_branch_doc_handle.with_doc_mut(|d| {
+            let mut tx = match heads {
+                Some(heads) => d.transaction_at(
+                    PatchLog::inactive(TextRepresentation::String(TextEncoding::Utf8CodeUnit)),
+                    &heads,
+                ),
+                None => d.transaction(),
+            };
 
-                    let _ = tx.put_object(ROOT, "fo", ObjType::Map);
+            let files_obj = tx.get_obj_id(ROOT, "files").unwrap();
 
-                    // get existing file url or create new one
-                    let file_entry = match tx.get(&files, path) {
-                        Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => {
-                            file_entry
+            for (path, content) in files {
+                match content {
+                    StringOrPackedByteArray::String(content) => {
+                        // Handle text content
+                        let file_entry = match tx.get(&files_obj, &path) {
+                            Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
+                            _ => tx.put_object(&files_obj, &path, ObjType::Map).unwrap(),
+                        };
+
+                        // Remove existing url if present
+                        if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
+                            let _ = tx.delete(&file_entry, "url");
                         }
-                        _ => tx.put_object(files, path, ObjType::Map).unwrap(),
-                    };
 
-                    // delete url in file entry if it previously had one
-                    if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
-                        let _ = tx.delete(&file_entry, "url");
+                        // Update or create text content
+                        let content_key = match tx.get(&file_entry, "content") {
+                            Ok(Some((automerge::Value::Object(ObjType::Text), content))) => content,
+                            _ => tx.put_object(&file_entry, "content", ObjType::Text).unwrap(),
+                        };
+                        let _ = tx.update_text(&content_key, &content);
                     }
+                    StringOrPackedByteArray::Binary(content) => {
+                        // Create binary doc
+                        let binary_doc_handle = self.repo_handle.new_document();
+                        binary_doc_handle.with_doc_mut(|binary_d| {
+                            let mut binary_tx = binary_d.transaction();
+                            let _ = binary_tx.put(ROOT, "content", content);
+                            binary_tx.commit();
+                        });
+                        new_doc_handles.push(binary_doc_handle.clone());
 
-                    // either get existing text or create new text
-                    let content_key = match tx.get(&file_entry, "content") {
-                        Ok(Some((automerge::Value::Object(ObjType::Text), content))) => content,
-                        _ => tx
-                            .put_object(&file_entry, "content", ObjType::Text)
-                            .unwrap(),
-                    };
-                    let _ = tx.update_text(&content_key, &content);
-                    tx.commit();
-                });
-
-                return vec![];
+                        // Store reference in project doc
+                        let file_entry = tx.put_object(&files_obj, &path, ObjType::Map).unwrap();
+                        let _ = tx.put(
+                            file_entry,
+                            "url",
+                            format!("automerge:{}", &binary_doc_handle.document_id()),
+                        );
+                    }
+                }
             }
-            StringOrPackedByteArray::Binary(content) => {
-                // create binary doc
-                let binary_doc_handle = self.repo_handle.new_document();
-                binary_doc_handle.with_doc_mut(|d| {
-                    let mut tx = d.transaction();
-                    let _ = tx.put(ROOT, "content", content);
-                    tx.commit();
-                });
 
-                // write url to content doc into project doc
-                project.checked_out_branch_doc_handle.with_doc_mut(|d| {
-                    let mut tx = match heads {
-                        Some(heads) => d.transaction_at(
-                            PatchLog::inactive(TextRepresentation::String(
-                                TextEncoding::Utf8CodeUnit,
-                            )),
-                            &heads,
-                        ),
-                        None => d.transaction(),
-                    };
+            tx.commit();
+        });
 
-                    let files = tx.get_obj_id(ROOT, "files").unwrap();
-
-                    let file_entry = tx.put_object(files, path, ObjType::Map);
-                    let _ = tx.put(
-                        file_entry.unwrap(),
-                        "url",
-                        format!("automerge:{}", &binary_doc_handle.document_id()),
-                    );
-                    tx.commit();
-                });
-
-                return vec![binary_doc_handle];
-            }
-        }
+        return new_doc_handles;
     }
 }
 
