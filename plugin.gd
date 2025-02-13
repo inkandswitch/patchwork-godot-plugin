@@ -64,9 +64,9 @@ func _process(_delta: float) -> void:
 				# reload scene files to update references
 				get_editor_interface().reload_scene_from_path(path)
 
-		if should_rerun:
-			timer = get_tree().create_timer(5, true)
-			timer.timeout.connect(self.sync_patchwork_to_godot)
+		# if should_rerun:
+		# 	timer = get_tree().create_timer(5, true)
+		# 	timer.timeout.connect(self.sync_patchwork_to_godot)
 
 
 func _enter_tree() -> void:
@@ -137,7 +137,7 @@ func _do_pw_to_godot_sync_element(i: int, files_in_patchwork: PackedStringArray)
 
 	var path = files_in_patchwork[i]
 	var gp_content = godot_project.get_file(path)
-	var fs_content = file_system.get_file(path) 
+	var fs_content = file_system.get_file(path)
 
 	if typeof(gp_content) == TYPE_NIL:
 		printerr("patchwork missing file content even though path exists: ", path)
@@ -165,7 +165,10 @@ func do_pw_to_godot_sync_task():
 	var files_in_godot = get_relevant_godot_files()
 	var files_in_patchwork = godot_project.list_all_files()
 
-	print("sync patchwork -> godot (", files_in_patchwork.size(), ")")
+	print("sync patchwork -> godot {")
+	for path in files_in_patchwork:
+		print("  ", path)
+	print("}")
 
 	var group_id = WorkerThreadPool.add_group_task(self._do_pw_to_godot_sync_element.bind(files_in_patchwork), files_in_patchwork.size())
 	WorkerThreadPool.wait_for_group_task_completion(group_id)
@@ -210,7 +213,7 @@ const BANNED_FILES = [".DS_Store", "thumbs.db", "desktop.ini"] # system files th
 func _is_relevant_file(path: String) -> bool:
 	if path.trim_prefix("res://").begins_with("target"):
 		return false
-	if path.begins_with("res://addons/") or path.begins_with("res://target/") or path.begins_with("res://."):
+	if path.begins_with("res://patchwork.cfg") or path.begins_with("res://addons/") or path.begins_with("res://target/") or path.begins_with("res://."):
 		return false
 
 	var file = path.get_file()

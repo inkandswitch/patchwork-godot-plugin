@@ -30,6 +30,7 @@ use crate::{doc_utils::SimpleDocReader, godot_project::Branch};
 
 const SERVER_URL: &str = "104.131.179.247:8080";
 
+#[derive(Debug, Clone)]
 pub enum InputEvent {
     InitBranchesMetadataDoc {
         doc_id: Option<DocumentId>,
@@ -54,6 +55,7 @@ pub enum InputEvent {
     },
 }
 
+#[derive(Debug, Clone)]
 pub enum OutputEvent {
     Initialized {
         checked_out_branch_doc_handle: DocHandle,
@@ -71,12 +73,22 @@ pub enum OutputEvent {
     },
 }
 
-pub struct SubscribedDocHandles {
-    subscribed_doc_handle_ids: HashSet<DocumentId>,
-    futures: futures::stream::SelectAll<std::pin::Pin<Box<dyn Stream<Item = (DocHandle, Vec<automerge::Patch>)> + Send>>>,
+enum SubscriptionMessage {
+    Changed {
+        doc_handle: DocHandle,
+        diff: Vec<automerge::Patch>,
+    },
+    Added {
+        doc_handle: DocHandle,
+    },
 }
 
-impl SubscribedDocHandles {
+pub struct DocHandleSubscriptions {
+    subscribed_doc_handle_ids: HashSet<DocumentId>,
+    futures: futures::stream::SelectAll<std::pin::Pin<Box<dyn Stream<Item = SubscriptionMessage> + Send>>>,
+}
+
+impl DocHandleSubscriptions {
     pub fn new() -> Self {
         return Self {
             subscribed_doc_handle_ids: HashSet::new(),
@@ -93,11 +105,14 @@ impl SubscribedDocHandles {
         }
 
         self.subscribed_doc_handle_ids.insert(doc_handle.document_id());
-        self.futures.push(handle_changes(doc_handle).boxed());
+        self.futures.push(handle_changes(doc_handle.clone()).boxed());
+        self.futures.push(futures::stream::once(async move {
+            SubscriptionMessage::Added { doc_handle }
+        }).boxed());
     }
 }
 
-fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = (DocHandle, Vec<automerge::Patch>)> + Send {
+fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = SubscriptionMessage> + Send {
     futures::stream::unfold(handle, |doc_handle| async {
         let heads_before = doc_handle.with_doc(|d| d.get_heads());
         let _ = doc_handle.changed().await;
@@ -111,7 +126,7 @@ fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = (DocHandle, 
         });
 
         Some((
-            (doc_handle.clone(), diff),
+            SubscriptionMessage::Changed { doc_handle: doc_handle.clone(), diff },
             doc_handle,
         ))
     })
@@ -196,25 +211,33 @@ impl GodotProjectDriver {
             let mut state = DriverState {
                 repo_handle,
                 project: None,
-                tx: tx.clone()
+                tx: tx.clone(),
             };
 
-            let mut subscribed_doc_handles = SubscribedDocHandles::new();
+            let mut subscribed_doc_handles = DocHandleSubscriptions::new();
 
     
             // Now, drive the SelectAll and also wait for any new documents to arrive and add
             // them to the selectall
             loop {
                 futures::select! {
-                    (changed_doc_handle, diff) = subscribed_doc_handles.futures.select_next_some() => {
-                        let (new_doc_handles, event) = state.handle_doc_change(&changed_doc_handle, &subscribed_doc_handles.subscribed_doc_handle_ids).await;            
+                    message = subscribed_doc_handles.futures.select_next_some() => {
+                        let (new_doc_handles, event) = match message {
+                            SubscriptionMessage::Changed { doc_handle, diff } => {
+                                state.handle_doc_change(&doc_handle, &subscribed_doc_handles.subscribed_doc_handle_ids).await
+                            },
+                            SubscriptionMessage::Added { doc_handle } => {
+                                tx.unbounded_send(OutputEvent::NewDocHandle { doc_handle: doc_handle.clone() }).unwrap();
+                                state.handle_doc_change(&doc_handle, &subscribed_doc_handles.subscribed_doc_handle_ids).await
+                            },
+                        };            
 
-                        println!("rust: doc handle changed: {:?}", changed_doc_handle.document_id());
-
+                        // first emit events for new doc handles
                         for doc_handle in new_doc_handles {
                             subscribed_doc_handles.add_doc_handle(doc_handle);
                         }
 
+                        // ... so that they are available when we trigger the event that depends on them
                         if let Some(event) = event {
                             tx.unbounded_send(event).unwrap();
                         }                    
@@ -244,13 +267,15 @@ impl GodotProjectDriver {
 
                             InputEvent::SaveFile { path, content, heads} => {
                                 println!("rust: Saving file: {} (with {} heads)", path, heads.as_ref().map_or(0, |h| h.len()));
-                                state.save_file(path, heads, content)
-                            },
+                                state.save_file(&path, heads, content)
+                            }
                         };
 
+
+                        // first emit events for new doc handles
                         for doc_handle in new_doc_handles {
                             subscribed_doc_handles.add_doc_handle(doc_handle);
-                        }                
+                        }  
                     }
                 }
             }    
@@ -375,6 +400,9 @@ impl DriverState {
         let mut new_doc_handles = vec![];
 
         match doc_id {
+
+            // load existing project
+
             Some(doc_id) => {
                 let branches_metadata_doc_handle =
                     match self.repo_handle.request_document(doc_id).await {
@@ -435,6 +463,8 @@ impl DriverState {
                     checked_out_branch_doc_handle: main_branch_doc_handle.clone(),
                 });
             }
+
+            // create new project
 
             None => {
                 // Create new main branch doc
@@ -623,7 +653,7 @@ impl DriverState {
 
     fn save_file(
         &mut self,
-        path: String,
+        path: &String,
         heads: Option<Vec<ChangeHash>>,
         content: StringOrPackedByteArray,
     ) -> Vec<DocHandle> {
@@ -654,11 +684,11 @@ impl DriverState {
                     let _ = tx.put_object(ROOT, "fo", ObjType::Map);
 
                     // get existing file url or create new one
-                    let file_entry = match tx.get(&files, &path) {
+                    let file_entry = match tx.get(&files, path) {
                         Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => {
                             file_entry
                         }
-                        _ => tx.put_object(files, &path, ObjType::Map).unwrap(),
+                        _ => tx.put_object(files, path, ObjType::Map).unwrap(),
                     };
 
                     // delete url in file entry if it previously had one
