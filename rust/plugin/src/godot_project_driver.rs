@@ -66,7 +66,9 @@ pub enum OutputEvent {
     CheckedOutBranch {
         branch_doc_handle: DocHandle,
     },
-    FilesChanged,
+    FilesChanged {
+        files: HashMap<String, StringOrPackedByteArray>,
+    },
     BranchesChanged {
         branches: HashMap<String, Branch>,
     },
@@ -222,8 +224,8 @@ impl GodotProjectDriver {
                 futures::select! {
                     message = subscribed_doc_handles.futures.select_next_some() => {
                         let (new_doc_handles, event) = match message {
-                            SubscriptionMessage::Changed { doc_handle, diff } => {
-                                state.handle_doc_change(&doc_handle, &subscribed_doc_handles.subscribed_doc_handle_ids).await
+                            SubscriptionMessage::Changed { doc_handle, diff } => {                    
+                                state.handle_doc_change(&doc_handle, &diff, &subscribed_doc_handles.subscribed_doc_handle_ids).await
                             },
                             SubscriptionMessage::Added { doc_handle } => {
                                 tx.unbounded_send(OutputEvent::NewDocHandle { doc_handle: doc_handle.clone() }).unwrap();
@@ -338,7 +340,7 @@ struct DriverState {
 
 impl DriverState {
 
-    async fn handle_doc_change(&mut self, doc_handle: &DocHandle, loaded_doc_handle_ids: &HashSet<DocumentId>) -> (Vec<DocHandle>, Option<OutputEvent>) {
+    async fn handle_doc_change(&mut self, doc_handle: &DocHandle, diff: &Vec<automerge::Patch>, loaded_doc_handle_ids: &HashSet<DocumentId>) -> (Vec<DocHandle>, Option<OutputEvent>) {
         let project = match &self.project {
             Some(project) => project.clone(),
             None => {
@@ -375,6 +377,19 @@ impl DriverState {
                 println!("failed update doc handle, couldn't load all linked docs for ");
                 return (vec![], None);
             }
+
+
+            let files_changed: HashMap<String, StringOrPackedByteArray> = diff.iter().filter_map(|patch| {
+                let path = patch.path;
+
+                if path.len() == 2 {
+                    println!("rust: path: {:?}", path);
+                }
+
+                return None;
+
+            }).collect::<HashMap<String, StringOrPackedByteArray>>();
+
 
             println!("rust: files changed");
 
