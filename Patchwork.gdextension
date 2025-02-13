@@ -4,11 +4,11 @@ compatibility_minimum = 4.1
 reloadable = false
 
 [libraries]
-linux.debug.x86_64 =    "res://target/x86_64-unknown-linux-gnu/debug/librust_project.so"
-linux.release.x86_64 =  "res://target/x86_64-unknown-linux-gnu/release/librust_project.so"
-windows.debug.x86_64 =   "res://target/x86_64-pc-windows-gnu/debug/rust_project.dll"
-windows.release.x86_64 = "res://target/x86_64-pc-windows-gnu/release/rust_project.dll"
-macos.debug =            "res://target/debug/libpatchwork_rust_core.dylib"
-macos.release =          "res://target/debug/libpatchwork_rust_core.dylib"
-macos.debug.arm64 =      "res://target/debug/libpatchwork_rust_core.dylib"
-macos.release.arm64 =    "res://target/debug/libpatchwork_rust_core.dylib"
+linux.debug.x86_64 =    "res://addons/patchwork/rust/plugin/target/debug/x86_64-unknown-linux-gnu/debug/librust_project.so"
+linux.release.x86_64 =  "res://addons/patchwork/rust/plugin/target/debug/x86_64-unknown-linux-gnu/release/librust_project.so"
+windows.debug.x86_64 =   "res://addons/patchwork/rust/plugin/target/debug/x86_64-pc-windows-gnu/debug/rust_project.dll"
+windows.release.x86_64 = "res://addons/patchwork/rust/plugin/target/debug/x86_64-pc-windows-gnu/release/rust_project.dll"
+macos.debug =            "res://addons/patchwork/rust/plugin/target/debug/libpatchwork_rust_core.dylib"
+macos.release =          "res://addons/patchwork/rust/plugin/target/debug/libpatchwork_rust_core.dylib"
+macos.debug.arm64 =      "res://addons/patchwork/rust/plugin/target/debug/libpatchwork_rust_core.dylib"
+macos.release.arm64 =    "res://addons/patchwork/rust/plugin/target/debug/libpatchwork_rust_core.dylib"
