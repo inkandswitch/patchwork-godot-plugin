@@ -26,8 +26,8 @@ func _on_resource_saved(path):
 func _on_scene_saved(path):
 	print("Scene saved: %s" % [path])
 	
-func _update_ui_on_branches_changed():
-	print("Branches changed, updating UI")
+func _update_ui_on_branches_changed(branches: Array):
+	print("Branches changed, updating UI", branches)
 	update_ui()
 
 func _update_ui_on_files_changed():

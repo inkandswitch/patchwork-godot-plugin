@@ -66,19 +66,18 @@ pub enum DriverInputEvent {
 
 pub enum DriverOutputEvent {
     Initialized {
-        branches: HashMap<String, Branch>,
         checked_out_branch_doc_handle: DocHandle,
         branches_metadata_doc_handle: DocHandle,
     },
     NewDocHandle {
         doc_handle: DocHandle,
     },
+    CheckedOutBranch {
+        branch_doc_handle: DocHandle,
+    },
     FilesChanged,
     BranchesChanged {
         branches: HashMap<String, Branch>,
-    },
-    CheckedOutBranch {
-        branch_doc_handle: DocHandle,
     },
 }
 
@@ -293,8 +292,6 @@ struct ProjectState {
     branches_metadata_doc_handle: DocHandle,
     main_branch_doc_handle: DocHandle,
     checked_out_branch_doc_handle: DocHandle,
-    branches: HashMap<String, Branch>,
-    tx: UnboundedSender<DriverOutputEvent>,
 }
 
 impl ProjectState {
@@ -309,50 +306,17 @@ impl ProjectState {
             let _ = reconcile(&mut tx, branches_metadata);
             tx.commit();
         });
-
-        self.branches.insert(branch.id.clone(), branch.clone());
-        self.tx
-            .unbounded_send(DriverOutputEvent::BranchesChanged {
-                branches: self.branches.clone(),
-            })
-            .unwrap();
     }
 
-    fn mark_branch_as_merged(&mut self, branch_doc_id: DocumentId) {
-        self.branches_metadata_doc_handle.with_doc_mut(|d| {
-            let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
-            let mut tx = d.transaction();
-
-            branches_metadata
-                .branches
-                .get_mut(&branch_doc_id.to_string())
-                .unwrap()
-                .is_merged = true;
-
-            self.branches = branches_metadata.branches.clone();
-
-            let _ = reconcile(&mut tx, branches_metadata);
-            tx.commit();
-        });
-
-        self.tx
-            .unbounded_send(DriverOutputEvent::BranchesChanged {
-                branches: self.branches.clone(),
-            })
-            .unwrap();
-    }
-
-    fn reconcile_branches(&self) {
-        let branches_metadata: BranchesMetadataDoc = self
+    fn get_branches_metadata(&self) -> BranchesMetadataDoc {
+        let branches_metadata : BranchesMetadataDoc = self
             .branches_metadata_doc_handle
             .with_doc(|d| hydrate(d).unwrap());
 
-        self.tx
-            .unbounded_send(DriverOutputEvent::BranchesChanged {
-                branches: branches_metadata.branches,
-            })
-            .unwrap();
+        return branches_metadata
     }
+
+
 }
 
 struct DriverState {
@@ -401,16 +365,16 @@ impl DriverState {
                 return (vec![], None);
             }
 
-
             return (new_doc_handles, Some(DriverOutputEvent::FilesChanged));
         }
 
         let branches_metadata_doc_id = project.branches_metadata_doc_handle.document_id();
-        if branches_metadata_doc_id == doc_handle.document_id() {
+        if branches_metadata_doc_id == doc_handle.document_id() {        
 
-            project.reconcile_branches();
+            println!("RUST: branches metadata doc changed {:?}", project.get_branches_metadata());
+
             return (vec![], Some(DriverOutputEvent::BranchesChanged {
-                branches: project.branches.clone(),
+                branches: project.get_branches_metadata().branches
             }));
         }
 
@@ -480,8 +444,6 @@ impl DriverState {
                     branches_metadata_doc_handle,
                     main_branch_doc_handle: main_branch_doc_handle.clone(),
                     checked_out_branch_doc_handle: main_branch_doc_handle.clone(),
-                    branches: branches_metadata.branches,
-                    tx: self.tx.clone(),
                 });
             }
 
@@ -542,15 +504,12 @@ impl DriverState {
                     branches_metadata_doc_handle,
                     main_branch_doc_handle: main_branch_doc_handle.clone(),
                     checked_out_branch_doc_handle: main_branch_doc_handle.clone(),
-                    branches,
-                    tx: self.tx.clone(),
                 });
             }
         }
 
         self.tx
             .unbounded_send(DriverOutputEvent::Initialized {
-                branches: self.project.as_ref().unwrap().branches.clone(),
                 checked_out_branch_doc_handle: self
                     .project
                     .as_ref()
@@ -590,11 +549,6 @@ impl DriverState {
         self.project = Some(project.clone());
 
         self.tx
-            .unbounded_send(DriverOutputEvent::BranchesChanged {
-                branches: project.branches.clone(),
-            })
-            .unwrap();
-        self.tx
             .unbounded_send(DriverOutputEvent::CheckedOutBranch {
                 branch_doc_handle: new_branch_handle.clone(),
             })
@@ -604,7 +558,7 @@ impl DriverState {
     }
 
     async fn merge_branch(&mut self, branch_doc_handle: DocHandle) -> Vec<DocHandle> {
-        let mut project = match &self.project {
+        let project = match &self.project {
             Some(project) => project.clone(),
             None => {
                 println!("warning: triggered merge branch before project was initialized");
@@ -618,13 +572,9 @@ impl DriverState {
             });
         });
 
-        // mark branch as merged
-        project.mark_branch_as_merged(branch_doc_handle.document_id());
+        // todo: mark branch as merged
+        ///project.mark_branch_as_merged(branch_doc_handle.document_id());
         let main_branch_doc_id = project.clone().main_branch_doc_handle.document_id();
-
-        self.project = Some(project);
-        
-        
 
         return self.checkout_branch(main_branch_doc_id).await;
     }

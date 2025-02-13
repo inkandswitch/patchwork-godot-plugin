@@ -97,55 +97,12 @@ struct GodotProjectState {
 #[class(no_init, base=Node)]
 pub struct GodotProject {
     base: Base<Node>,
-    branches: HashMap<String, Branch>,
     doc_handles: HashMap<DocumentId, DocHandle>,
     checked_out_branch_doc_handle: Option<DocHandle>,
     branches_metadata_doc_handle: Option<DocHandle>,
     driver: GodotProjectDriver,
     driver_input_tx: UnboundedSender<DriverInputEvent>,
     driver_output_rx: UnboundedReceiver<DriverOutputEvent>,
-}
-
-const SERVER_URL: &str = "104.131.179.247:8080";
-static SIGNAL_BRANCHES_CHANGED: std::sync::LazyLock<std::ffi::CString> =
-    std::sync::LazyLock::new(|| std::ffi::CString::new("branches_changed").unwrap());
-static SIGNAL_FILES_CHANGED: std::sync::LazyLock<std::ffi::CString> =
-    std::sync::LazyLock::new(|| std::ffi::CString::new("files_changed").unwrap());
-static SIGNAL_CHECKED_OUT_BRANCH: std::sync::LazyLock<std::ffi::CString> =
-    std::sync::LazyLock::new(|| std::ffi::CString::new("checked_out_branch").unwrap());
-static SIGNAL_FILE_CHANGED: std::sync::LazyLock<std::ffi::CString> =
-    std::sync::LazyLock::new(|| std::ffi::CString::new("file_changed").unwrap());
-static SIGNAL_STARTED: std::sync::LazyLock<std::ffi::CString> =
-    std::sync::LazyLock::new(|| std::ffi::CString::new("started").unwrap());
-static SIGNAL_INITIALIZED: std::sync::LazyLock<std::ffi::CString> =
-    std::sync::LazyLock::new(|| std::ffi::CString::new("initialized").unwrap());
-// convert a slice of strings to a slice of char * strings (e.g. *const std::os::raw::c_char)
-fn to_c_strs(strings: &[&str]) -> Vec<std::ffi::CString> {
-    strings
-        .iter()
-        .map(|s| std::ffi::CString::new(*s).unwrap())
-        .collect()
-}
-fn strings_to_c_strs(strings: &[String]) -> Vec<std::ffi::CString> {
-    strings
-        .iter()
-        .map(|s| std::ffi::CString::new(s.as_str()).unwrap())
-        .collect()
-}
-
-// convert a HashMap to a slice of char * strings; e.g. ["key1", "value1", "key2", "value2"]
-fn to_c_strs_from_dict(dict: &HashMap<&str, String>) -> Vec<std::ffi::CString> {
-    let mut c_strs = Vec::new();
-    for (key, value) in dict.iter() {
-        c_strs.push(std::ffi::CString::new(*key).unwrap());
-        c_strs.push(std::ffi::CString::new(value.as_str()).unwrap());
-    }
-    c_strs
-}
-
-// convert a slice of std::ffi::CString to a slice of *const std::os::raw::c_char
-fn to_char_stars(c_strs: &[std::ffi::CString]) -> Vec<*const std::os::raw::c_char> {
-    c_strs.iter().map(|s| s.as_ptr()).collect()
 }
 
 #[godot_api]
@@ -163,7 +120,7 @@ impl GodotProject {
     fn files_changed();
 
     #[signal]
-    fn branches_changed();
+    fn branches_changed(branches: Array<Dictionary>);
 
     #[func]
     // hack: pass in empty string to create a new doc
@@ -190,7 +147,6 @@ impl GodotProject {
 
         Gd::from_init_fn(|base| Self {
             base,
-            branches: HashMap::new(),
             doc_handles: HashMap::new(),
             checked_out_branch_doc_handle: None,
             branches_metadata_doc_handle: None,
@@ -208,6 +164,11 @@ impl GodotProject {
                 return None;
             }
         }
+    }
+
+    fn get_branches_metadata(&self) -> Option<BranchesMetadataDoc> {
+        self.get_branches_metadata_doc_handle()
+            .map(|doc_handle| doc_handle.with_doc(|d| hydrate(d).unwrap()))
     }
 
     fn get_checked_out_branch_handle(&self) -> Option<DocHandle> {
@@ -305,10 +266,10 @@ impl GodotProject {
                 doc_handle.with_doc(|d| match d.get(ROOT, "content") {
                     Ok(Some((value, _))) if value.is_bytes() => {
                         Some(StringOrPackedByteArray::Binary(value.into_bytes().unwrap()))
-                    },
-                    Ok(Some((value, _))) if value.is_str() => {
-                        Some(StringOrPackedByteArray::String(value.into_string().unwrap()))
-                    },
+                    }
+                    Ok(Some((value, _))) if value.is_str() => Some(
+                        StringOrPackedByteArray::String(value.into_string().unwrap()),
+                    ),
                     _ => None,
                 })
             })
@@ -386,10 +347,12 @@ impl GodotProject {
     #[func]
     fn save_file(&self, path: String, content: Variant) {
         let content = match content.get_type() {
-            VariantType::STRING => StringOrPackedByteArray::String(String::from(content.to::<GString>())),
-            VariantType::PACKED_BYTE_ARRAY => StringOrPackedByteArray::Binary(
-                content.to::<PackedByteArray>().to_vec(),
-            ),
+            VariantType::STRING => {
+                StringOrPackedByteArray::String(String::from(content.to::<GString>()))
+            }
+            VariantType::PACKED_BYTE_ARRAY => {
+                StringOrPackedByteArray::Binary(content.to::<PackedByteArray>().to_vec())
+            }
             _ => {
                 println!("invalid content type");
                 return;
@@ -402,10 +365,12 @@ impl GodotProject {
     #[func]
     fn save_file_at(&self, path: String, heads: PackedStringArray, content: Variant) {
         let content = match content.get_type() {
-            VariantType::STRING => StringOrPackedByteArray::String(String::from(content.to::<GString>())),
-            VariantType::PACKED_BYTE_ARRAY => StringOrPackedByteArray::Binary(
-                content.to::<PackedByteArray>().to_vec(),
-            ),
+            VariantType::STRING => {
+                StringOrPackedByteArray::String(String::from(content.to::<GString>()))
+            }
+            VariantType::PACKED_BYTE_ARRAY => {
+                StringOrPackedByteArray::Binary(content.to::<PackedByteArray>().to_vec())
+            }
             _ => {
                 println!("invalid content type");
                 return;
@@ -474,15 +439,13 @@ impl GodotProject {
 
     #[func]
     fn get_branches(&self) -> Array<Dictionary> /* { name: String, id: String }[] */ {
-        self.branches
-            .values()
-            .map(|branch| {
-                dict! {
-                    "name": branch.name.clone(),
-                    "id": branch.id.clone()
-                }
-            })
-            .collect::<Array<Dictionary>>()
+        match self.get_branches_metadata() {
+            Some(branches_metadata) => {
+                println!("get branches {:?}", branches_metadata.branches);
+                branches_to_gd(&branches_metadata.branches)
+            }
+            None => Array::new(),
+        }
     }
 
     #[func]
@@ -584,9 +547,12 @@ impl GodotProject {
                         .insert(doc_handle.document_id(), doc_handle.clone());
                 }
                 DriverOutputEvent::BranchesChanged { branches } => {
-                    println!("received branches changed {:?}", branches);
-                    self.branches = branches;
-                    self.base_mut().emit_signal("branches_changed", &[]);
+                    let branches_gd = branches_to_gd(&branches);
+
+                    println!("RUST: receive branches changed {:?}", branches.len());
+
+                    self.base_mut()
+                        .emit_signal("branches_changed", &[branches_gd.to_variant()]);
                 }
                 DriverOutputEvent::CheckedOutBranch { branch_doc_handle } => {
                     println!(
@@ -600,12 +566,10 @@ impl GodotProject {
                     );
                 }
                 DriverOutputEvent::Initialized {
-                    branches,
                     checked_out_branch_doc_handle,
                     branches_metadata_doc_handle,
                 } => {
                     println!("rust: Initialized event");
-                    self.branches = branches;
                     self.checked_out_branch_doc_handle =
                         Some(checked_out_branch_doc_handle.clone());
                     self.branches_metadata_doc_handle = Some(branches_metadata_doc_handle.clone());
@@ -672,4 +636,16 @@ pub(crate) fn vec_string_to_packed_string_array(vec: &Vec<String>) -> PackedStri
 
 pub(crate) fn packed_string_array_to_vec_string(array: &PackedStringArray) -> Vec<String> {
     array.to_vec().iter().map(|s| String::from(s)).collect()
+}
+
+fn branches_to_gd(branches: &HashMap<String, Branch>) -> Array<Dictionary> {
+    branches
+        .iter()
+        .map(|(_, branch)| {
+            dict! {
+                "name": branch.name.clone(),
+                "id": branch.id.clone(),
+            }
+        })
+        .collect::<Array<Dictionary>>()
 }
