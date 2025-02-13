@@ -1,6 +1,6 @@
 class_name PatchworkConfig
 
-const CONFIG_FILE = "res://addons/patchwork/patchwork.cfg"
+const CONFIG_FILE = "res://patchwork.cfg"
 var _config = ConfigFile.new()
 
 func _init():
