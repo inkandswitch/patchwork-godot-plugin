@@ -140,7 +140,7 @@ impl GodotProject {
         };
 
         println!(
-            "rust: in driver send init branches metadata doc {:?}",
+            "rust: in frontend send init branches metadata doc {:?}",
             branches_metadata_doc_id
         );
 

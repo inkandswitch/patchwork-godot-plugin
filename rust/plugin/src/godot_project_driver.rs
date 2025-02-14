@@ -228,9 +228,9 @@ impl GodotProjectDriver {
             let mut subscribed_doc_handles = DocHandleSubscriptions::new();
 
     
-            let mut requesting_doc_handles : FuturesUnordered<_> = Vec::new().into_iter().collect();
+            /*let mut requesting_doc_handles : FuturesUnordered<_> = Vec::new().into_iter().collect();
 
-            requesting_doc_handles.push(state.repo_handle.request_document(DocumentId::from_str("123").unwrap()));
+            requesting_doc_handles.push(state.repo_handle.request_document(DocumentId::from_str("123").unwrap()));*/
 
             let mut pending_tasks: FuturesUnordered<Pin<Box<dyn Future<Output = TaskResult> + Send>>> = FuturesUnordered::new();
 
@@ -239,6 +239,8 @@ impl GodotProjectDriver {
             loop {
                 futures::select! {
                     message = subscribed_doc_handles.futures.select_next_some() => {
+            
+
                         let (new_doc_handles, event) = match message {
                             SubscriptionMessage::Changed { doc_handle, diff } => {
                                 state.handle_doc_change(&doc_handle, &subscribed_doc_handles.subscribed_doc_handle_ids).await
@@ -266,7 +268,7 @@ impl GodotProjectDriver {
 
                     },*/
 
-                    /*task_result = pending_tasks.select_next_some() => {                    
+                    task_result = pending_tasks.select_next_some() => {                    
                         for doc_handle in task_result.new_doc_handles {
                             subscribed_doc_handles.add_doc_handle(doc_handle);
                         }
@@ -278,7 +280,7 @@ impl GodotProjectDriver {
                         if let Some(event) = task_result.event {
                             tx.unbounded_send(event).unwrap();
                         }
-                    },*/                
+                    },             
 
                     message = rx.select_next_some() => {
                          match message {
