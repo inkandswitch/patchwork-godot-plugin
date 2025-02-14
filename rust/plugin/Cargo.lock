@@ -917,6 +917,7 @@ dependencies = [
  "futures",
  "godot",
  "safer-ffi",
+ "serde_json",
  "tokio",
  "tracing-subscriber",
  "tree-sitter",

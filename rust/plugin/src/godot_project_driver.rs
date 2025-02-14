@@ -351,6 +351,8 @@ impl DriverState {
         let checked_out_branch_id = project.checked_out_branch_doc_handle.document_id();
         if checked_out_branch_id == doc_handle.document_id() {
 
+            print_branch_doc("checked out branch doc", &project.checked_out_branch_doc_handle);
+
             let linked_doc_ids: Vec<DocumentId> = project.checked_out_branch_doc_handle.with_doc(|d| {
                 return get_linked_docs_of_branch(doc_handle);
             });
@@ -755,4 +757,26 @@ fn clone_doc(repo_handle: &RepoHandle, doc_handle: &DocHandle) -> DocHandle {
         doc_handle.with_doc_mut(|mut main_d| new_doc_handle.with_doc_mut(|d| d.merge(&mut main_d)));
 
     return new_doc_handle;
+}
+
+
+fn print_branch_doc (message: &str, doc_handle: &DocHandle) {
+    doc_handle.with_doc(|d| {
+        let files = d.get_obj_id(ROOT, "files").unwrap();
+
+        let keys = d.keys( files).into_iter().collect::<Vec<_>>();
+
+        println!("{:?}: {:?}", message, doc_handle.document_id());
+
+        for key in keys {
+            println!("  {:?}", key);
+        }
+
+    });
+}
+
+
+fn print_doc (message: &str, doc_handle: &DocHandle) {
+    let checked_out_doc_json = doc_handle.with_doc(|d| serde_json::to_string(&automerge::AutoSerde::from(d)).unwrap());
+    println!("rust: {:?}: {:?}", message, checked_out_doc_json);
 }
