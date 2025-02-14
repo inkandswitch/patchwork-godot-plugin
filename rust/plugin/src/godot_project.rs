@@ -321,44 +321,73 @@ impl GodotProject {
             .collect::<PackedStringArray>()
     }
 
-    #[func]
-    fn save_file(&self, path: String, content: Variant) {
-        let content = file_content_to_rust(content);
+    fn _save_file(
+        &self,
+        path: String,
+        heads: Option<Vec<ChangeHash>>,
+        content: StringOrPackedByteArray,
+    ) {
+        // ignore if file is already up to date // ignore if file is already up to date
+        if let Some(stored_content) = self._get_file(path.clone()) {
+            if stored_content == content {
+                println!("file {:?} is already up to date", path.clone());
+                return;
+            }
+        }
 
-        let _ = self.driver_input_tx.unbounded_send(InputEvent::SaveFiles {
-            files: HashMap::from([(path, content)]),
-            heads: None,
-        });
+        self.driver_input_tx
+            .unbounded_send(InputEvent::SaveFile {
+                path,
+                heads,
+                content,
+            })
+            .unwrap();
     }
 
     #[func]
-    fn save_files(&self, files: Dictionary) {
-        let files_map = files_dict_to_rust(files);
+    fn save_file(&self, path: String, content: Variant) {
+        let content = match content.get_type() {
+            VariantType::STRING => {
+                StringOrPackedByteArray::String(String::from(content.to::<GString>()))
+            }
+            VariantType::PACKED_BYTE_ARRAY => {
+                StringOrPackedByteArray::Binary(content.to::<PackedByteArray>().to_vec())
+            }
+            _ => {
+                println!("invalid content type");
+                return;
+            }
+        };
 
-        let _ = self.driver_input_tx.unbounded_send(InputEvent::SaveFiles {
-            files: files_map,
-            heads: None,
-        });
+        self._save_file(path, None, content);
     }
 
     #[func]
     fn save_file_at(&self, path: String, heads: PackedStringArray, content: Variant) {
-        let content = file_content_to_rust(content);
+        let content = match content.get_type() {
+            VariantType::STRING => {
+                StringOrPackedByteArray::String(String::from(content.to::<GString>()))
+            }
+            VariantType::PACKED_BYTE_ARRAY => {
+                StringOrPackedByteArray::Binary(content.to::<PackedByteArray>().to_vec())
+            }
+            _ => {
+                println!("invalid content type");
+                return;
+            }
+        };
 
-        let _ = self.driver_input_tx.unbounded_send(InputEvent::SaveFiles {
-            files: HashMap::from([(path, content)]),
-            heads: Some(heads_to_rust(heads)),
-        });
-    }
-
-    #[func]
-    fn save_files_at(&self, files: Dictionary, heads: PackedStringArray) {
-        let files_map = files_dict_to_rust(files);
-
-        let _ = self.driver_input_tx.unbounded_send(InputEvent::SaveFiles {
-            files: files_map,
-            heads: Some(heads_to_rust(heads)),
-        });
+        self._save_file(
+            path,
+            Some(
+                heads
+                    .to_vec()
+                    .iter()
+                    .filter_map(|h| ChangeHash::from_str(h.to_string().as_str()).ok())
+                    .collect(),
+            ),
+            content,
+        );
     }
 
     #[func]
@@ -619,37 +648,4 @@ fn branches_to_gd(branches: &HashMap<String, Branch>) -> Array<Dictionary> {
             }
         })
         .collect::<Array<Dictionary>>()
-}
-
-fn heads_to_rust(heads: PackedStringArray) -> Vec<ChangeHash> {
-    heads
-        .to_vec()
-        .iter()
-        .map(|h| ChangeHash::from_str(h.to_string().as_str()).unwrap())
-        .collect()
-}
-
-fn files_dict_to_rust(files: Dictionary) -> HashMap<String, StringOrPackedByteArray> {
-    let mut files_map = HashMap::new();
-
-    for (path, content) in files.iter_shared() {
-        let content = file_content_to_rust(content);
-        files_map.insert(path.to_string(), content);
-    }
-
-    files_map
-}
-
-fn file_content_to_rust(content: Variant) -> StringOrPackedByteArray {
-    match content.get_type() {
-        VariantType::STRING => {
-            StringOrPackedByteArray::String(String::from(content.to::<GString>()))
-        }
-        VariantType::PACKED_BYTE_ARRAY => {
-            StringOrPackedByteArray::Binary(content.to::<PackedByteArray>().to_vec())
-        }
-        _ => {
-            panic!("invalid content type");
-        }
-    }
 }
