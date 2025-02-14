@@ -139,6 +139,11 @@ impl GodotProject {
             Err(e) => None,
         };
 
+        println!(
+            "rust: in driver send init branches metadata doc {:?}",
+            branches_metadata_doc_id
+        );
+
         driver_input_tx
             .unbounded_send(InputEvent::InitBranchesMetadataDoc {
                 doc_id: branches_metadata_doc_id,
