@@ -129,26 +129,14 @@ impl GodotProject {
         let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
         let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
 
-        let driver = GodotProjectDriver::create();
-
-        driver.spawn(driver_input_rx, driver_output_tx);
-
-        // @AI simplify
         let branches_metadata_doc_id = match DocumentId::from_str(&maybe_branches_metadata_doc_id) {
             Ok(doc_id) => Some(doc_id),
             Err(e) => None,
         };
 
-        println!(
-            "rust: in frontend send init branches metadata doc {:?}",
-            branches_metadata_doc_id
-        );
+        let driver = GodotProjectDriver::create();
 
-        driver_input_tx
-            .unbounded_send(InputEvent::InitBranchesMetadataDoc {
-                doc_id: branches_metadata_doc_id,
-            })
-            .unwrap();
+        driver.spawn(driver_input_rx, driver_output_tx, branches_metadata_doc_id);
 
         Gd::from_init_fn(|base| Self {
             base,

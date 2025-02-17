@@ -36,10 +36,6 @@ const SERVER_URL: &str = "104.131.179.247:8080";
 
 #[derive(Debug, Clone)]
 pub enum InputEvent {
-    InitBranchesMetadataDoc {
-        doc_id: Option<DocumentId>,
-    },
-
     CreateBranch {
         name: String,
     },
@@ -167,12 +163,13 @@ impl GodotProjectDriver {
         &self,
         rx: UnboundedReceiver<InputEvent>,
         tx: UnboundedSender<OutputEvent>,
+        maybe_branches_metadata_doc_id: Option<DocumentId>,
     ) {
         // Spawn connection task
         self.spawn_connection_task();
 
         // Spawn sync task for all doc handles
-        self.spawn_driver_task(rx, tx);
+        self.spawn_driver_task(rx, tx, maybe_branches_metadata_doc_id);
     }
 
     fn spawn_connection_task(&self) {
@@ -210,20 +207,22 @@ impl GodotProjectDriver {
         &self,
         mut rx: UnboundedReceiver<InputEvent>,
         tx: UnboundedSender<OutputEvent>,
+        branches_metadata_doc_id: Option<DocumentId>,
     ) {
         let repo_handle = self.repo_handle.clone();
 
-
         self.runtime.spawn(async move {
-            let mut state = DriverState {
-                repo_handle,
-                project: None,
 
-                // todo: track state of branches
-
-                // branch_deps_map: HashMap::new(),
-                // doc_handles: HashMap::new(),
+            let state = DriverState {
+                repo_handle: repo_handle.clone(),
+                project: init_project(&repo_handle, branches_metadata_doc_id).await
             };
+
+            tx.unbounded_send(OutputEvent::Initialized {
+                checked_out_branch_doc_handle: state.project.checked_out_branch_doc_handle.clone(),
+                branches_metadata_doc_handle: state.project.branches_metadata_doc_handle.clone(),
+            }).unwrap();
+            
 
             let mut subscribed_doc_handles = DocHandleSubscriptions::new();
 
@@ -239,9 +238,8 @@ impl GodotProjectDriver {
             loop {
                 futures::select! {
                     message = subscribed_doc_handles.futures.select_next_some() => {
-            
-
-                        let (new_doc_handles, event) = match message {
+        
+                       /*  let (new_doc_handles, event) = match message {
                             SubscriptionMessage::Changed { doc_handle, diff } => {
                                 state.handle_doc_change(&doc_handle, &subscribed_doc_handles.subscribed_doc_handle_ids).await
                             },
@@ -259,7 +257,7 @@ impl GodotProjectDriver {
                         // ... so that they are available when we trigger the event that depends on them
                         if let Some(event) = event {
                             tx.unbounded_send(event).unwrap();
-                        }                    
+                        }   */                 
                     },
 
                     /* 
@@ -268,7 +266,7 @@ impl GodotProjectDriver {
 
                     },*/
 
-                    task_result = pending_tasks.select_next_some() => {                    
+                    /*task_result = pending_tasks.select_next_some() => {                    
                         for doc_handle in task_result.new_doc_handles {
                             subscribed_doc_handles.add_doc_handle(doc_handle);
                         }
@@ -280,46 +278,148 @@ impl GodotProjectDriver {
                         if let Some(event) = task_result.event {
                             tx.unbounded_send(event).unwrap();
                         }
-                    },             
+                    }*/
 
                     message = rx.select_next_some() => {
                          match message {
-                            InputEvent::InitBranchesMetadataDoc { doc_id } => {
-                                println!("rust: Recieved init branches metadata doc: {:?}", doc_id);
-
-                                pending_tasks.push(Box::pin(state.init_project(doc_id)));
-                            }
 
                             InputEvent::CheckoutBranch { branch_doc_id } => {
                                 println!("rust: Checking out branch: {:?}", branch_doc_id);
-                                pending_tasks.push(Box::pin(state.checkout_branch(branch_doc_id)));
+                                // pending_tasks.push(Box::pin(state.checkout_branch(branch_doc_id)));
                             },
 
                             InputEvent::CreateBranch {name} => {
                                 println!("rust: Creating new branch: {}", name);
-                                pending_tasks.push(Box::pin(std::future::ready(state.create_branch(name))));
+                                // pending_tasks.push(Box::pin(std::future::ready(state.create_branch(name))));
                             },
 
                             InputEvent::MergeBranch { branch_doc_handle } => {
                                 println!("rust: Merging branch: {:?}", branch_doc_handle.document_id());
-                                pending_tasks.push(Box::pin(state.merge_branch(branch_doc_handle)));
+                                // pending_tasks.push(Box::pin(state.merge_branch(branch_doc_handle)));
                             },
 
                             InputEvent::SaveFile { path, content, heads} => {
                                 println!("rust: Saving file: {} (with {} heads)", path, heads.as_ref().map_or(0, |h| h.len()));
-                                pending_tasks.push(Box::pin(state.save_file(&path, heads, content)));
+                                // pending_tasks.push(Box::pin(state.save_file(&path, heads, content)));
                             }
                         };
-
-
-                        // first emit events for new doc handles
-                       /* for doc_handle in new_doc_handles {
-                            subscribed_doc_handles.add_doc_handle(doc_handle);
-                        } */ 
                     }
                 }
             }    
         });
+    }
+}
+
+async fn init_project(repo_handle: &RepoHandle, doc_id: Option<DocumentId>) -> ProjectState {
+    match doc_id {
+
+        // load existing project
+
+        Some(doc_id) => {
+            let mut new_doc_handles = vec![];
+
+            let branches_metadata_doc_handle = repo_handle.request_document(doc_id.clone()).await.unwrap_or_else(|e| {
+                panic!("failed init, can't load branches metadata doc: {:?}", e);
+            });
+                        
+            new_doc_handles.push(branches_metadata_doc_handle.clone());
+
+            let branches_metadata: BranchesMetadataDoc = branches_metadata_doc_handle.with_doc(|d| hydrate(d).unwrap_or_else(|_| {
+                panic!("failed init, can't hydrate metadata doc");
+            }));
+        
+            let main_branch_doc_handle: DocHandle =
+                repo_handle.request_document(DocumentId::from_str(&branches_metadata.main_doc_id).unwrap()).await.unwrap_or_else(|_| {
+                    panic!("failed init, can't load main branchs doc");
+                });
+
+            new_doc_handles.push(main_branch_doc_handle.clone());
+
+            let linked_doc_ids = get_linked_docs_of_branch(&main_branch_doc_handle);
+
+            // alex ?
+            // todo: do this in parallel
+            let mut linked_doc_results = Vec::new();
+            for doc_id in linked_doc_ids {
+                let result = repo_handle.request_document(doc_id).await;
+                if let Ok(doc_handle) = &result {
+                    new_doc_handles.push(doc_handle.clone());
+                }
+                linked_doc_results.push(result);
+            }
+
+            if linked_doc_results.iter().any(|result| result.is_err()) {
+                panic!("failed init, couldn't load all binary docs for {:?}", doc_id);
+            }
+
+            println!("RUST: init project main branch doc: {:?}", main_branch_doc_handle.document_id());
+
+            return ProjectState {
+                branches_metadata_doc_handle: branches_metadata_doc_handle.clone(),
+                main_branch_doc_handle: main_branch_doc_handle.clone(),
+                checked_out_branch_doc_handle: main_branch_doc_handle.clone(),
+            }
+        }
+
+        // create new project
+
+        None => {
+            let mut new_doc_handles = vec![];
+
+            // Create new main branch doc
+            let main_branch_doc_handle = repo_handle.new_document();
+            main_branch_doc_handle.with_doc_mut(|d| {
+                let mut tx = d.transaction();
+                let _ = reconcile(
+                    &mut tx,
+                    GodotProjectDoc {
+                        files: HashMap::new(),
+                        state: HashMap::new(),
+                    },
+                );
+                tx.commit();
+            });
+
+            new_doc_handles.push(main_branch_doc_handle.clone());
+
+            let main_branch_doc_id = main_branch_doc_handle.document_id().to_string();
+            let main_branch_doc_id_clone = main_branch_doc_id.clone();
+            let branches = HashMap::from([(
+                main_branch_doc_id,
+                Branch {
+                    name: String::from("main"),
+                    id: main_branch_doc_handle.document_id().to_string(),
+                    is_merged: true,
+                },
+            )]);
+            let branches_clone = branches.clone();
+
+            // create new branches metadata doc
+            let branches_metadata_doc_handle = repo_handle.new_document();
+            branches_metadata_doc_handle.with_doc_mut(|d| {
+                let mut tx = d.transaction();
+                let _ = reconcile(
+                    &mut tx,
+                    BranchesMetadataDoc {
+                        main_doc_id: main_branch_doc_id_clone,
+                        branches: branches_clone,
+                    },
+                );
+                tx.commit();
+            });
+            new_doc_handles.push(branches_metadata_doc_handle.clone());
+
+            println!(
+                "rust: branches metadata doc handle: {:?}",
+                branches_metadata_doc_handle.document_id()
+            );
+
+            return ProjectState {
+                branches_metadata_doc_handle: branches_metadata_doc_handle.clone(),
+                main_branch_doc_handle: main_branch_doc_handle.clone(),
+                checked_out_branch_doc_handle: main_branch_doc_handle.clone(),
+            }
+        }
     }
 }
 
@@ -361,19 +461,17 @@ struct TaskResult {
 
 struct DriverState {
     repo_handle: RepoHandle,
-    project: Option<ProjectState>,
+    project: ProjectState,
 }
+
 
 impl DriverState {
 
+    /* 
+
     // return a vector of linked docs
     async fn handle_doc_change(&mut self, doc_handle: &DocHandle, loaded_doc_handle_ids: &HashSet<DocumentId>) -> (Vec<DocHandle>, Option<OutputEvent>) {
-        let project = match &self.project {
-            Some(project) => project.clone(),
-            None => {
-                return (vec![], None);
-            }
-        };
+        let project = &self.project;
 
         let checked_out_branch_id = project.checked_out_branch_doc_handle.document_id();
         if checked_out_branch_id == doc_handle.document_id() {
@@ -426,147 +524,9 @@ impl DriverState {
 
     }
 
-    fn init_project(&self, doc_id: Option<DocumentId>) -> impl Future<Output = TaskResult> + 'static {
-        let repo_handle = self.repo_handle.clone();
-
-
-        println!("rust: CALL init project {:?}", doc_id);
-        
-        async move {
-            match doc_id {
-
-                // load existing project
-
-                Some(doc_id) => {
-                    let mut new_doc_handles = vec![];
-
-                    let branches_metadata_doc_handle = repo_handle.request_document(doc_id.clone()).await.unwrap_or_else(|e| {
-                        panic!("failed init, can't load branches metadata doc: {:?}", e);
-                    });
-                                
-                    new_doc_handles.push(branches_metadata_doc_handle.clone());
-
-                    let branches_metadata: BranchesMetadataDoc = branches_metadata_doc_handle.with_doc(|d| hydrate(d).unwrap_or_else(|_| {
-                        panic!("failed init, can't hydrate metadata doc");
-                    }));
-                
-                    let main_branch_doc_handle: DocHandle =
-                        repo_handle.request_document(DocumentId::from_str(&branches_metadata.main_doc_id).unwrap()).await.unwrap_or_else(|_| {
-                            panic!("failed init, can't load main branchs doc");
-                        });
-
-                    new_doc_handles.push(main_branch_doc_handle.clone());
-
-                    let linked_doc_ids = get_linked_docs_of_branch(&main_branch_doc_handle);
-
-                    // alex ?
-                    // todo: do this in parallel
-                    let mut linked_doc_results = Vec::new();
-                    for doc_id in linked_doc_ids {
-                        let result = repo_handle.request_document(doc_id).await;
-                        if let Ok(doc_handle) = &result {
-                            new_doc_handles.push(doc_handle.clone());
-                        }
-                        linked_doc_results.push(result);
-                    }
-
-                    if linked_doc_results.iter().any(|result| result.is_err()) {
-                        panic!("failed init, couldn't load all binary docs for {:?}", doc_id);
-                    }
-
-                    println!("RUST: init project main branch doc: {:?}", main_branch_doc_handle.document_id());
-
-                    return TaskResult {
-                        project: Some(ProjectState {
-                            branches_metadata_doc_handle: branches_metadata_doc_handle.clone(),
-                            main_branch_doc_handle: main_branch_doc_handle.clone(),
-                            checked_out_branch_doc_handle: main_branch_doc_handle.clone(),
-                        }),
-                        new_doc_handles,
-                        event: Some(OutputEvent::Initialized {
-                            checked_out_branch_doc_handle: main_branch_doc_handle.clone(),
-                            branches_metadata_doc_handle: branches_metadata_doc_handle.clone(),
-                        }),
-                    }
-                }
-
-                // create new project
-
-                None => {
-                    let mut new_doc_handles = vec![];
-
-                    // Create new main branch doc
-                    let main_branch_doc_handle = repo_handle.new_document();
-                    main_branch_doc_handle.with_doc_mut(|d| {
-                        let mut tx = d.transaction();
-                        let _ = reconcile(
-                            &mut tx,
-                            GodotProjectDoc {
-                                files: HashMap::new(),
-                                state: HashMap::new(),
-                            },
-                        );
-                        tx.commit();
-                    });
-
-                    new_doc_handles.push(main_branch_doc_handle.clone());
-
-                    let main_branch_doc_id = main_branch_doc_handle.document_id().to_string();
-                    let main_branch_doc_id_clone = main_branch_doc_id.clone();
-                    let branches = HashMap::from([(
-                        main_branch_doc_id,
-                        Branch {
-                            name: String::from("main"),
-                            id: main_branch_doc_handle.document_id().to_string(),
-                            is_merged: true,
-                        },
-                    )]);
-                    let branches_clone = branches.clone();
-
-                    // create new branches metadata doc
-                    let branches_metadata_doc_handle = repo_handle.new_document();
-                    branches_metadata_doc_handle.with_doc_mut(|d| {
-                        let mut tx = d.transaction();
-                        let _ = reconcile(
-                            &mut tx,
-                            BranchesMetadataDoc {
-                                main_doc_id: main_branch_doc_id_clone,
-                                branches: branches_clone,
-                            },
-                        );
-                        tx.commit();
-                    });
-                    new_doc_handles.push(branches_metadata_doc_handle.clone());
-
-                    println!(
-                        "rust: branches metadata doc handle: {:?}",
-                        branches_metadata_doc_handle.document_id()
-                    );
-
-                    return TaskResult {
-                        project: Some(ProjectState {
-                            branches_metadata_doc_handle: branches_metadata_doc_handle.clone(),
-                            main_branch_doc_handle: main_branch_doc_handle.clone(),
-                            checked_out_branch_doc_handle: main_branch_doc_handle.clone(),
-                        }),
-                        new_doc_handles,
-                        event: Some(OutputEvent::Initialized {
-                            checked_out_branch_doc_handle: main_branch_doc_handle.clone(),
-                            branches_metadata_doc_handle: branches_metadata_doc_handle.clone(),
-                        }),
-                    }
-                }
-            };        
-        }
-    }
-
-    fn create_branch(&mut self, name: String) -> TaskResult {
-        let mut project = match &self.project {
-            Some(project) => project.clone(),
-            None => {
-                panic!("triggered create branch '{}' before project was initialized", name);
-            }
-        };
+    fn create_branch(&mut self, name: String)  {
+           let mut project = &self.project;
+     
 
         let new_branch_handle = clone_doc(&self.repo_handle, &project.main_branch_doc_handle);
 
@@ -577,10 +537,10 @@ impl DriverState {
         });
         project.checked_out_branch_doc_handle = new_branch_handle.clone();
 
-        self.project = Some(project.clone());
+        self.project = project.clone();
 
         TaskResult {
-            project: Some(project),
+            project: Some(project.clone()),
             new_doc_handles: vec![new_branch_handle.clone()],
             event: Some(OutputEvent::CheckedOutBranch {
                 branch_doc_handle: new_branch_handle.clone(),
@@ -755,7 +715,7 @@ impl DriverState {
                 }
             }
         }
-    }
+    } */
 }
 
 
