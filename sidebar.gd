@@ -145,7 +145,6 @@ func checkout_branch(branch_id: String) -> void:
 	_checkout_branch(branch_id)
 
 func _on_create_new_branch() -> void:
-	_before_cvs_action("Creating new branch")
 	var dialog = ConfirmationDialog.new()
 	dialog.title = "Create New Branch"
 	
@@ -165,6 +164,7 @@ func _on_create_new_branch() -> void:
 	
 	dialog.confirmed.connect(func():
 		if line_edit.text.strip_edges() != "":
+			_before_cvs_action("Creating new branch")
 			var new_branch_name = line_edit.text.strip_edges()
 			godot_project.create_branch(new_branch_name)
 		
