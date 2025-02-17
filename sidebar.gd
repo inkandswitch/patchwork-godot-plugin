@@ -74,10 +74,20 @@ static func popup_box(parent_window: Node, dialog: AcceptDialog, message: String
 	dialog.connect("canceled", cancel_func)
 	dialog.popup_centered()
 
+var current_cvs_action = []
+
 # This should be called before any patchwork source control action (e.g. checkout, merge, etc.)
-func _before_cvs_action():
+func _before_cvs_action(cvs_action: String):
 	EditorInterface.save_all_scenes();
+	current_cvs_action.append(cvs_action)
+	PatchworkEditor.progress_add_task(cvs_action, cvs_action, 10, false)
 	plugin.sync_godot_to_patchwork()
+
+func _after_cvs_action():
+	if not current_cvs_action.is_empty():
+		for i in range(current_cvs_action.size()):
+			PatchworkEditor.progress_end_task(current_cvs_action[i])
+		current_cvs_action = []
 
 func _merge_branch():
 	godot_project.merge_branch(godot_project.get_checked_out_branch_id())
@@ -85,7 +95,7 @@ func _merge_branch():
 	print("checked out!")
 
 func merge_branch():
-	_before_cvs_action()
+	_before_cvs_action("Merging branch")
 	call_deferred("_merge_branch")
 
 func _on_menu_button_id_pressed(id: int) -> void:
@@ -125,7 +135,7 @@ func _on_menu_button_id_pressed(id: int) -> void:
 			pass
 
 func _checkout_branch(branch_id: String) -> void:
-	_before_cvs_action()
+	_before_cvs_action("Checking out branch")
 	godot_project.checkout_branch(branch_id)
 
 func checkout_branch(branch_id: String) -> void:
@@ -135,7 +145,7 @@ func checkout_branch(branch_id: String) -> void:
 	_checkout_branch(branch_id)
 
 func _on_create_new_branch() -> void:
-	_before_cvs_action()
+	_before_cvs_action("Creating new branch")
 	var dialog = ConfirmationDialog.new()
 	dialog.title = "Create New Branch"
 	

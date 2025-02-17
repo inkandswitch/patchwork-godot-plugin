@@ -238,6 +238,7 @@ func _on_checked_out_branch(checked_out_branch: String):
 
 	sidebar.update_ui()
 	sync_patchwork_to_godot()
+	sidebar._after_cvs_action()
 	
 func _on_local_file_changed(path: String, content: Variant):
 	print("file changed", path)
