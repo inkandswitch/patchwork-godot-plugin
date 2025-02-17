@@ -46,6 +46,7 @@ func _process(_delta: float) -> void:
 		
 		if len(new_files_to_reload) > 0:
 			print("reloading %d files: " % new_files_to_reload.size())
+		var files_to_reimport = {}
 		for token in new_files_to_reload:
 			var path = token[0]
 			file_system.save_file(path, token[1])
@@ -55,15 +56,19 @@ func _process(_delta: float) -> void:
 				add_new_uid(new_path, uid)
 			if path.get_extension() == "import":
 				var new_path = path.get_basename()
+				files_to_reimport[new_path] = true
 				var uid = ""
 				for line in token[1].split("\n"):
 					if line.begins_with("uid="):
 						uid = line.split("=")[1].strip_edges()
 				add_new_uid(new_path, uid)
+			elif FileAccess.file_exists(path + ".import"):
+				files_to_reimport[path] = true
 			if path.get_extension() == "tscn":
 				# reload scene files to update references
 				get_editor_interface().reload_scene_from_path(path)
-
+		if files_to_reimport.size() > 0:
+			EditorInterface.get_resource_filesystem().reimport_files(files_to_reimport)
 		# if should_rerun:
 		# 	timer = get_tree().create_timer(5, true)
 		# 	timer.timeout.connect(self.sync_patchwork_to_godot)
