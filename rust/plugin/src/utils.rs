@@ -1,10 +1,12 @@
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
 use crate::doc_utils::SimpleDocReader;
 use automerge::{ReadDoc, ROOT};
 use automerge_repo::{DocHandle, DocumentId};
 
-pub(crate) fn get_linked_docs_of_branch(branch_doc_handle: &DocHandle) -> Vec<DocumentId> {
+pub(crate) fn get_linked_docs_of_branch(
+    branch_doc_handle: &DocHandle,
+) -> HashMap<String, DocumentId> {
     // Collect all linked doc IDs from this branch
     branch_doc_handle.with_doc(|d| {
         let files = match d.get_obj_id(ROOT, "files") {
@@ -14,7 +16,7 @@ pub(crate) fn get_linked_docs_of_branch(branch_doc_handle: &DocHandle) -> Vec<Do
                     "Failed to load files for branch doc {:?}",
                     branch_doc_handle.document_id()
                 );
-                return vec![];
+                return HashMap::new();
             }
         };
 
@@ -35,9 +37,9 @@ pub(crate) fn get_linked_docs_of_branch(branch_doc_handle: &DocHandle) -> Vec<Do
                     }
                 };
 
-                parse_automerge_url(&url)
+                parse_automerge_url(&url).map(|id| (path.clone(), id))
             })
-            .collect::<Vec<_>>()
+            .collect::<HashMap<String, DocumentId>>()
     })
 }
 

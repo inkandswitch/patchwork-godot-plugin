@@ -1,5 +1,5 @@
 use futures::stream::FuturesUnordered;
-use futures::Stream;
+use futures::{FutureExt, Stream, TryFutureExt};
 use ::safer_ffi::prelude::*;
 use std::collections::HashSet;
 use std::future::Future;
@@ -212,32 +212,80 @@ impl GodotProjectDriver {
         let repo_handle = self.repo_handle.clone();
 
         self.runtime.spawn(async move {
+            let mut subscribed_doc_handles = DocHandleSubscriptions::new();
 
-            let state = DriverState {
+            let mut state = DriverState {
                 repo_handle: repo_handle.clone(),
-                project: init_project(&repo_handle, branches_metadata_doc_id).await
-            };
+                project: init_project(&repo_handle, branches_metadata_doc_id).await,
+                binary_doc_states: HashMap::new(),
+            };    
+
+            subscribed_doc_handles.add_doc_handle(state.project.branches_metadata_doc_handle.clone());
+            subscribed_doc_handles.add_doc_handle(state.project.checked_out_branch_doc_handle.clone());
+
+            let linked_doc_ids = get_linked_docs_of_branch(&state.project.checked_out_branch_doc_handle);
+
+            let mut requesting_binary_docs = FuturesUnordered::new();
+
+            for (path, doc_id) in linked_doc_ids {
+                state.binary_doc_states.insert(path.clone(), BinaryDocState {
+                    doc_handle: None,
+                    path: path.clone(),
+                });
+
+                requesting_binary_docs.push(state.repo_handle.request_document(doc_id).map(|doc_handle| {
+                    (path, doc_handle)
+                }));
+            }
+
+            println!("rust: load binary docs: {:?}", requesting_binary_docs.len());
+
+            // await all requesting binary docs
+            while let Some((path, result)) = requesting_binary_docs.next().await {
+                match result {
+                    Ok(doc_handle) => {
+                        add_binary_doc_handle(&mut state, &path, &doc_handle);
+                        tx.unbounded_send(OutputEvent::NewDocHandle { doc_handle: doc_handle.clone() }).unwrap();
+                    }
+                    Err(e) => {
+                        panic!("couldn't init project missing binary doc {:?}: {:?}",path, e);
+                    }
+                }
+            }
+
+            println!("rust: done loading binary docs => send init project");
 
             tx.unbounded_send(OutputEvent::Initialized {
                 checked_out_branch_doc_handle: state.project.checked_out_branch_doc_handle.clone(),
                 branches_metadata_doc_handle: state.project.branches_metadata_doc_handle.clone(),
             }).unwrap();
             
-
-            let mut subscribed_doc_handles = DocHandleSubscriptions::new();
-
     
             /*let mut requesting_doc_handles : FuturesUnordered<_> = Vec::new().into_iter().collect();
 
             requesting_doc_handles.push(state.repo_handle.request_document(DocumentId::from_str("123").unwrap()));*/
 
-            let mut pending_tasks: FuturesUnordered<Pin<Box<dyn Future<Output = TaskResult> + Send>>> = FuturesUnordered::new();
+            // let mut pending_tasks: FuturesUnordered<Pin<Box<dyn Future<Output = TaskResult> + Send>>> = FuturesUnordered::new();
 
             // Now, drive the SelectAll and also wait for any new documents to arrive and add
             // them to the selectall
             loop {
                 futures::select! {
-                    message = subscribed_doc_handles.futures.select_next_some() => {
+                    next = requesting_binary_docs.next() => {
+                        if let Some((path, result)) = next {
+                            match result {
+                                Ok(doc_handle) => {
+                                    add_binary_doc_handle(&mut state, &path, &doc_handle);
+                                    tx.unbounded_send(OutputEvent::NewDocHandle { doc_handle: doc_handle.clone() }).unwrap();
+                                },
+                                Err(e) => {
+                                    println!("error requesting binary doc: {:?}", e);
+                                }
+                            }                        
+                        }
+                    },
+
+                    /*message = subscribed_doc_handles.futures.select_next_some() => {
         
                        /*  let (new_doc_handles, event) = match message {
                             SubscriptionMessage::Changed { doc_handle, diff } => {
@@ -258,7 +306,7 @@ impl GodotProjectDriver {
                         if let Some(event) = event {
                             tx.unbounded_send(event).unwrap();
                         }   */                 
-                    },
+                    },*/
 
                     /* 
                     message = requesting_doc_handles.select_next_some() => {
@@ -282,7 +330,6 @@ impl GodotProjectDriver {
 
                     message = rx.select_next_some() => {
                          match message {
-
                             InputEvent::CheckoutBranch { branch_doc_id } => {
                                 println!("rust: Checking out branch: {:?}", branch_doc_id);
                                 // pending_tasks.push(Box::pin(state.checkout_branch(branch_doc_id)));
@@ -299,8 +346,10 @@ impl GodotProjectDriver {
                             },
 
                             InputEvent::SaveFile { path, content, heads} => {
-                                println!("rust: Saving file: {} (with {} heads)", path, heads.as_ref().map_or(0, |h| h.len()));
-                                // pending_tasks.push(Box::pin(state.save_file(&path, heads, content)));
+                                let result = save_file(&state.repo_handle, &state.project, &path, heads, content);
+                                if let Some(binary_doc_handle) = result {
+                                    add_binary_doc_handle(&mut state, &path, &binary_doc_handle);
+                                }                                
                             }
                         };
                     }
@@ -316,13 +365,11 @@ async fn init_project(repo_handle: &RepoHandle, doc_id: Option<DocumentId>) -> P
         // load existing project
 
         Some(doc_id) => {
-            let mut new_doc_handles = vec![];
+            println!("rust: loading existing project: {:?}", doc_id);
 
             let branches_metadata_doc_handle = repo_handle.request_document(doc_id.clone()).await.unwrap_or_else(|e| {
                 panic!("failed init, can't load branches metadata doc: {:?}", e);
             });
-                        
-            new_doc_handles.push(branches_metadata_doc_handle.clone());
 
             let branches_metadata: BranchesMetadataDoc = branches_metadata_doc_handle.with_doc(|d| hydrate(d).unwrap_or_else(|_| {
                 panic!("failed init, can't hydrate metadata doc");
@@ -332,27 +379,6 @@ async fn init_project(repo_handle: &RepoHandle, doc_id: Option<DocumentId>) -> P
                 repo_handle.request_document(DocumentId::from_str(&branches_metadata.main_doc_id).unwrap()).await.unwrap_or_else(|_| {
                     panic!("failed init, can't load main branchs doc");
                 });
-
-            new_doc_handles.push(main_branch_doc_handle.clone());
-
-            let linked_doc_ids = get_linked_docs_of_branch(&main_branch_doc_handle);
-
-            // alex ?
-            // todo: do this in parallel
-            let mut linked_doc_results = Vec::new();
-            for doc_id in linked_doc_ids {
-                let result = repo_handle.request_document(doc_id).await;
-                if let Ok(doc_handle) = &result {
-                    new_doc_handles.push(doc_handle.clone());
-                }
-                linked_doc_results.push(result);
-            }
-
-            if linked_doc_results.iter().any(|result| result.is_err()) {
-                panic!("failed init, couldn't load all binary docs for {:?}", doc_id);
-            }
-
-            println!("RUST: init project main branch doc: {:?}", main_branch_doc_handle.document_id());
 
             return ProjectState {
                 branches_metadata_doc_handle: branches_metadata_doc_handle.clone(),
@@ -364,7 +390,7 @@ async fn init_project(repo_handle: &RepoHandle, doc_id: Option<DocumentId>) -> P
         // create new project
 
         None => {
-            let mut new_doc_handles = vec![];
+            println!("rust: creating new project");
 
             // Create new main branch doc
             let main_branch_doc_handle = repo_handle.new_document();
@@ -379,8 +405,6 @@ async fn init_project(repo_handle: &RepoHandle, doc_id: Option<DocumentId>) -> P
                 );
                 tx.commit();
             });
-
-            new_doc_handles.push(main_branch_doc_handle.clone());
 
             let main_branch_doc_id = main_branch_doc_handle.document_id().to_string();
             let main_branch_doc_id_clone = main_branch_doc_id.clone();
@@ -407,12 +431,6 @@ async fn init_project(repo_handle: &RepoHandle, doc_id: Option<DocumentId>) -> P
                 );
                 tx.commit();
             });
-            new_doc_handles.push(branches_metadata_doc_handle.clone());
-
-            println!(
-                "rust: branches metadata doc handle: {:?}",
-                branches_metadata_doc_handle.document_id()
-            );
 
             return ProjectState {
                 branches_metadata_doc_handle: branches_metadata_doc_handle.clone(),
@@ -421,6 +439,101 @@ async fn init_project(repo_handle: &RepoHandle, doc_id: Option<DocumentId>) -> P
             }
         }
     }
+}
+
+fn save_file(
+    repo_handle: &RepoHandle,
+    project: &ProjectState,
+    path: &String,
+    heads: Option<Vec<ChangeHash>>,
+    content: StringOrPackedByteArray,
+) -> Option<DocHandle> {
+
+    match content {
+        StringOrPackedByteArray::String(content) => {
+            println!("rust: save file: {:?}", path);
+            project.checked_out_branch_doc_handle.with_doc_mut(|d| {
+                let mut tx = match heads {
+                    Some(heads) => d.transaction_at(
+                        PatchLog::inactive(TextRepresentation::String(
+                            TextEncoding::Utf8CodeUnit,
+                        )),
+                        &heads,
+                    ),
+                    None => d.transaction(),
+                };
+
+                let files = tx.get_obj_id(ROOT, "files").unwrap();
+
+                let _ = tx.put_object(ROOT, "fo", ObjType::Map);
+
+                // get existing file url or create new one
+                let file_entry = match tx.get(&files, path) {
+                    Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => {
+                        file_entry
+                    }
+                    _ => tx.put_object(files, path, ObjType::Map).unwrap(),
+                };
+
+                // delete url in file entry if it previously had one
+                if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
+                    let _ = tx.delete(&file_entry, "url");
+                }
+
+                // either get existing text or create new text
+                let content_key = match tx.get(&file_entry, "content") {
+                    Ok(Some((automerge::Value::Object(ObjType::Text), content))) => content,
+                    _ => tx
+                        .put_object(&file_entry, "content", ObjType::Text)
+                        .unwrap(),
+                };
+                let _ = tx.update_text(&content_key, &content);
+                tx.commit();
+            });
+            return None;
+        }
+        StringOrPackedByteArray::Binary(content) => {
+            // create binary doc
+            let binary_doc_handle = repo_handle.new_document();
+            binary_doc_handle.with_doc_mut(|d| {
+                let mut tx = d.transaction();
+                let _ = tx.put(ROOT, "content", content);
+                tx.commit();
+            });
+
+            // write url to content doc into project doc
+            project.checked_out_branch_doc_handle.with_doc_mut(|d| {
+                let mut tx = match heads {
+                    Some(heads) => d.transaction_at(
+                        PatchLog::inactive(TextRepresentation::String(
+                            TextEncoding::Utf8CodeUnit,
+                        )),
+                        &heads,
+                    ),
+                    None => d.transaction(),
+                };
+
+                let files = tx.get_obj_id(ROOT, "files").unwrap();
+
+                let file_entry = tx.put_object(files, path, ObjType::Map);
+                let _ = tx.put(
+                    file_entry.unwrap(),
+                    "url",
+                    format!("automerge:{}", &binary_doc_handle.document_id()),
+                );
+                tx.commit();
+            });     
+
+            return Some(binary_doc_handle);
+        }
+    }
+}
+
+fn add_binary_doc_handle(state: &mut DriverState, path: &String, binary_doc_handle: &DocHandle) {
+    state.binary_doc_states.insert(path.clone(), BinaryDocState {
+        doc_handle: Some(binary_doc_handle.clone()),
+        path: path.clone(),
+    });
 }
 
 #[derive(Clone)]
@@ -453,15 +566,15 @@ impl ProjectState {
     }
 }
 
-struct TaskResult {
-    project: Option<ProjectState>,
-    new_doc_handles: Vec<DocHandle>,
-    event: Option<OutputEvent>,
+pub struct BinaryDocState {
+    doc_handle: Option<DocHandle>, // is null if the binary doc is being requested but not loaded yet
+    path: String,
 }
 
 struct DriverState {
     repo_handle: RepoHandle,
     project: ProjectState,
+    binary_doc_states: HashMap<String, BinaryDocState>,
 }
 
 
