@@ -285,28 +285,29 @@ impl GodotProjectDriver {
                         }
                     },
 
-                    /*message = subscribed_doc_handles.futures.select_next_some() => {
-        
-                       /*  let (new_doc_handles, event) = match message {
+                    message = subscribed_doc_handles.futures.select_next_some() => {
+
+                       let doc_handle = match message {
                             SubscriptionMessage::Changed { doc_handle, diff } => {
-                                state.handle_doc_change(&doc_handle, &subscribed_doc_handles.subscribed_doc_handle_ids).await
+                                doc_handle
                             },
                             SubscriptionMessage::Added { doc_handle } => {
                                 tx.unbounded_send(OutputEvent::NewDocHandle { doc_handle: doc_handle.clone() }).unwrap();
-                                state.handle_doc_change(&doc_handle, &subscribed_doc_handles.subscribed_doc_handle_ids).await
+                                doc_handle
                             },
-                        };            
+                        };      
 
-                        // first emit events for new doc handles
-                        for doc_handle in new_doc_handles {
-                            subscribed_doc_handles.add_doc_handle(doc_handle);
+                        let document_id = doc_handle.document_id();
+                        
+
+                        if document_id == state.project.branches_metadata_doc_handle.document_id() {
+                            tx.unbounded_send(OutputEvent::BranchesChanged { branches: state.project.get_branches_metadata().branches }).unwrap();
                         }
 
-                        // ... so that they are available when we trigger the event that depends on them
-                        if let Some(event) = event {
-                            tx.unbounded_send(event).unwrap();
-                        }   */                 
-                    },*/
+                        if document_id == state.project.checked_out_branch_doc_handle.document_id() {
+                            tx.unbounded_send(OutputEvent::FilesChanged).unwrap();
+                        }
+                    },
 
                     /* 
                     message = requesting_doc_handles.select_next_some() => {
