@@ -141,27 +141,37 @@ pub struct BinaryDocState {
 }
 
 #[derive(Debug, Clone)]
-pub struct BranchState {
-    doc_handle: DocHandle,
-    linked_doc_ids: HashSet<DocumentId>,
+enum BranchState {
+    Requesting,
+    Loaded {
+        name: String,
+        doc_handle: DocHandle,
+        linked_doc_ids: HashSet<DocumentId>,
+    },
 }
 
 #[derive(Debug, Clone)]
 enum CheckedOutBranchState {
     NothingCheckedOut,
-    CheckingOut(BranchState),
-    CheckedOut(BranchState),
+    CheckingOut(DocumentId),
+    CheckedOut(DocumentId),
 }
 
 struct DriverState {
     tx: UnboundedSender<OutputEvent>,
     repo_handle: RepoHandle,
-    binary_doc_states: HashMap<DocumentId, BinaryDocState>,
-    checked_out_branch_state: CheckedOutBranchState,
+
     main_branch_doc_handle: DocHandle,
     branches_metadata_doc_handle: DocHandle,
+    
+    binary_doc_states: HashMap<DocumentId, BinaryDocState>,
+    branch_states: HashMap<DocumentId, BranchState>,
+
+    checked_out_branch_state: CheckedOutBranchState,
     is_initialized: bool,
-    requesting_binary_docs: FuturesUnordered<Pin<Box<dyn Future<Output = (String, Result<DocHandle, RepoError>)> + Send>>>
+
+    requesting_binary_docs: FuturesUnordered<Pin<Box<dyn Future<Output = (String, Result<DocHandle, RepoError>)> + Send>>>,
+    requesting_branch_docs: FuturesUnordered<Pin<Box<dyn Future<Output = (String, Result<DocHandle, RepoError>)> + Send>>>,
 }
 
 pub struct GodotProjectDriver {
@@ -251,10 +261,19 @@ impl GodotProjectDriver {
                 repo_handle: repo_handle.clone(),            
                 binary_doc_states: HashMap::new(),
                 checked_out_branch_state: CheckedOutBranchState::NothingCheckedOut,
-                main_branch_doc_handle,
+                main_branch_doc_handle: main_branch_doc_handle.clone(),                                
                 branches_metadata_doc_handle,
                 is_initialized: false,
-                requesting_binary_docs : FuturesUnordered::new()
+                branch_states: HashMap::from([(main_branch_doc_handle.document_id().clone(), BranchState::Loaded { 
+                    name: "main".to_string(), 
+                    doc_handle: main_branch_doc_handle.clone(), 
+                    linked_doc_ids: get_linked_docs_of_branch(&main_branch_doc_handle)
+                        .iter()
+                        .map(|(_, doc_id)| doc_id.clone())
+                        .collect(),
+                })]),
+                requesting_binary_docs : FuturesUnordered::new(),
+                requesting_branch_docs: FuturesUnordered::new(),
             };
 
             subscribed_doc_handles.add_doc_handle(state.branches_metadata_doc_handle.clone());
@@ -269,32 +288,7 @@ impl GodotProjectDriver {
                             match result {
                                 Ok(doc_handle) => {
                                     state.add_binary_doc_handle(&path, &doc_handle);
-
-                                    // we are trying to check out a branch ?
-                                    if let CheckedOutBranchState::CheckingOut(branch_state) = state.checked_out_branch_state.clone() {
-                                        if
-                                            // check if the doc is linked to the branch
-                                            branch_state.linked_doc_ids.contains(&doc_handle.document_id()) && 
-                                                                            
-                                            // and all linked docs are loaded
-                                            branch_state.linked_doc_ids.iter().all(|doc_id| {                                        
-                                            if let Some(binary_doc_state) =  state.binary_doc_states.get(doc_id) {
-                                                binary_doc_state.doc_handle.is_some()
-                                            } else {
-                                                false
-                                            }                                    
-                                        }) {
-                                            state.checked_out_branch_state = CheckedOutBranchState::CheckedOut(branch_state.clone());
-                                        
-                                            if state.is_initialized {
-                                                tx.unbounded_send(OutputEvent::CheckedOutBranch { branch_doc_handle: branch_state.doc_handle.clone() }).unwrap();
-                                            } else {
-                                                state.is_initialized = true;
-                                                tx.unbounded_send(OutputEvent::Initialized { checked_out_branch_doc_handle: branch_state.doc_handle.clone(), branches_metadata_doc_handle: state.branches_metadata_doc_handle.clone() }).unwrap();
-                                            }
-                                        }
-                                    }
-
+                                    state.transition_checked_out_branch_state_if_loaded();
                                 },
                                 Err(e) => {
                                     println!("error requesting binary doc: {:?}", e);
@@ -466,18 +460,14 @@ impl DriverState {
     }
 
     fn checkout_branch(&mut self, branch_doc_handle: DocHandle) {
-        let linked_docs = get_linked_docs_of_branch(&branch_doc_handle);
-    
-        let mut are_all_linked_docs_loaded = true;
+        let linked_docs = get_linked_docs_of_branch(&branch_doc_handle);    
 
         // request all linked docs that haven't been requested yet
         for (path, doc_id) in linked_docs.clone() {
             if self.binary_doc_states.contains_key(&doc_id) {
                 continue;
             }
-
-            are_all_linked_docs_loaded = false;
-    
+     
             self.binary_doc_states.insert(doc_id.clone(), BinaryDocState {
                 doc_handle: None,
                 path: path.clone(),
@@ -487,29 +477,9 @@ impl DriverState {
                 (path, doc_handle)
             }).boxed());
         }
-    
-        let branch_state = BranchState {
-            doc_handle: branch_doc_handle.clone(),
-            linked_doc_ids: linked_docs.clone().iter().map(|(_, doc_id)| doc_id.clone()).collect(),
-        };
 
-        if are_all_linked_docs_loaded {            
-            self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(branch_state.clone());
-
-            if (!self.is_initialized) {
-                self.is_initialized = true;
-                self.tx.unbounded_send(OutputEvent::Initialized { 
-                    checked_out_branch_doc_handle: branch_state.doc_handle.clone(), 
-                    branches_metadata_doc_handle: self.branches_metadata_doc_handle.clone() 
-                }).unwrap();
-            }    else {
-                self.tx.unbounded_send(OutputEvent::CheckedOutBranch { branch_doc_handle: branch_doc_handle.clone() }).unwrap();
-            }
-
-        } else {
-            println!("checkout branch: checking out");
-            self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(branch_state);                        
-        }
+        self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(branch_doc_handle.document_id());
+        self.transition_checked_out_branch_state_if_loaded();
     }
     
     fn save_file(
@@ -518,13 +488,14 @@ impl DriverState {
         heads: Option<Vec<ChangeHash>>,
         content: StringOrPackedByteArray,
     ) {
-        let checked_out_branch_doc_handle = match &self.checked_out_branch_state {
-            CheckedOutBranchState::CheckedOut(branch_state) => branch_state.doc_handle.clone(),
-            _ => {
-                println!(": save file called before branch is checked out");
-                return;
-            }
-        };
+       
+       let checked_out_branch_doc_handle = match     self.get_checked_out_branch_doc_handle() {
+        Some(doc_handle) => doc_handle,
+        None => {
+            println!("WARNING: save file called before branch is checked out");
+            return;
+        }
+       };
 
         match content {
             StringOrPackedByteArray::String(content) => {
@@ -622,6 +593,47 @@ impl DriverState {
         return branches_metadata
     }
 
+    fn get_checked_out_branch_doc_handle(&self) -> Option<DocHandle> {
+        match &self.checked_out_branch_state {
+            CheckedOutBranchState::CheckedOut(branch_doc_id) =>  match self.branch_states.get(branch_doc_id) {
+                Some(BranchState::Loaded { doc_handle, .. }) => Some(doc_handle.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn transition_checked_out_branch_state_if_loaded(&mut self) {
+        let branch_doc_id  = match &self.checked_out_branch_state {
+            CheckedOutBranchState::CheckingOut(branch_doc_id) => branch_doc_id,
+            _ => return,
+        };
+
+        let (linked_doc_ids, doc_handle) = match self.branch_states.get_mut(&branch_doc_id) {
+            Some(BranchState::Loaded { name: _, doc_handle, linked_doc_ids }) => (linked_doc_ids, doc_handle),
+            _ => return
+        };
+
+        if linked_doc_ids.iter().all(|doc_id| {                                                                                             
+            if let Some(binary_doc_state) =  self.binary_doc_states.get(doc_id) {
+                binary_doc_state.doc_handle.is_some()
+            } else {
+                false
+            }                                    
+        }) {
+            self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(branch_doc_id.clone());
+        
+            if self.is_initialized {
+                self.tx.unbounded_send(OutputEvent::CheckedOutBranch { branch_doc_handle: doc_handle.clone() }).unwrap();
+            } else {
+                self.is_initialized = true;
+                self.tx.unbounded_send(OutputEvent::Initialized { 
+                    checked_out_branch_doc_handle: doc_handle.clone(),
+                    branches_metadata_doc_handle: self.branches_metadata_doc_handle.clone() 
+                }).unwrap();
+            }
+        }            
+    }
 }
 
 
