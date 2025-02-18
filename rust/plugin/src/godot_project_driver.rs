@@ -373,9 +373,9 @@ impl GodotProjectDriver {
                             },
 
                             InputEvent::MergeBranch { branch_doc_handle } => {
-                                println!("rust: Merging branch: {:?}", branch_doc_handle.document_id());
-                                // pending_tasks.push(Box::pin(state.merge_branch(branch_doc_handle)));
-                            },
+                                state.merge_branch(branch_doc_handle);
+                                state.checkout_branch(state.main_branch_doc_handle.clone());
+                            },                        
 
                             InputEvent::SaveFile { path, content, heads} => {
                                 state.save_file(&path, heads, content);                           
@@ -619,6 +619,27 @@ impl DriverState {
         }
     }
 
+    fn merge_branch(&mut self, branch_doc_handle: DocHandle)  {    
+        branch_doc_handle.with_doc_mut(|branch_doc| {
+            self.main_branch_doc_handle.with_doc_mut(|main_doc| {
+                let _ = main_doc.merge(branch_doc);
+            });
+        });
+
+        // mark branch as merged
+        self.branches_metadata_doc_handle.with_doc_mut(|d| {
+            let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
+            let mut tx = d.transaction();
+            branches_metadata
+                .branches.entry(branch_doc_handle.document_id().to_string()).and_modify(|branch| {
+                    branch.is_merged = true;
+                });
+
+            let _ = reconcile(&mut tx, branches_metadata);
+            tx.commit();
+        });
+    }
+
     fn add_binary_doc_handle(&mut self, path: &String, binary_doc_handle: &DocHandle) {
         self.binary_doc_states.insert(binary_doc_handle.document_id().clone(), BinaryDocState {
             doc_handle: Some(binary_doc_handle.clone()),
@@ -688,299 +709,4 @@ fn clone_doc(repo_handle: &RepoHandle, doc_handle: &DocHandle) -> DocHandle {
         doc_handle.with_doc_mut(|mut main_d| new_doc_handle.with_doc_mut(|d| d.merge(&mut main_d)));
 
     return new_doc_handle;
-}
-
-/* 
-impl ProjectState {
-    fn add_branch(&mut self, branch: Branch) {
-        let branch_clone = branch.clone();
-        self.branches_metadata_doc_handle.with_doc_mut(|d| {
-            let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
-            let mut tx = d.transaction();
-            branches_metadata
-                .branches
-                .insert(branch_clone.id.clone(), branch_clone);
-            let _ = reconcile(&mut tx, branches_metadata);
-            tx.commit();
-        });
-    }
-
- 
-}
-
-*/
-
-
-impl DriverState {
-
-    /* 
-
-    // return a vector of linked docs
-    async fn handle_doc_change(&mut self, doc_handle: &DocHandle, loaded_doc_handle_ids: &HashSet<DocumentId>) -> (Vec<DocHandle>, Option<OutputEvent>) {
-        let project = &self.project;
-
-        let checked_out_branch_id = project.checked_out_branch_doc_handle.document_id();
-        if checked_out_branch_id == doc_handle.document_id() {
-
-            println!("rust: wait on all linked docs to be loaded {:?}", doc_handle.document_id());
-
-            let linked_doc_ids: Vec<DocumentId> = get_linked_docs_of_branch(doc_handle);
-
-            print_doc("rust: docs", doc_handle);
-
-
-            let mut new_doc_handles = Vec::new();
-
-            // make sure all linked docs are loaded
-
-            let mut linked_doc_results = Vec::new();
-            for doc_id in linked_doc_ids {
-                if loaded_doc_handle_ids.contains(&doc_id) {
-                    continue;
-                }
-
-                let result = self.repo_handle.request_document(doc_id).await;
-                if let Ok(doc_handle) = &result {
-                    new_doc_handles.push(doc_handle.clone());
-                }
-                linked_doc_results.push(result);
-            }
-
-            if linked_doc_results.iter().any(|result| result.is_err()) {
-                println!("failed update doc handle, couldn't load all linked docs for ");
-                return (vec![], None);
-            }
-
-            println!("rust: files changed");
-
-            return (new_doc_handles, Some(OutputEvent::FilesChanged));
-        }
-
-        let branches_metadata_doc_id = project.branches_metadata_doc_handle.document_id();
-        if branches_metadata_doc_id == doc_handle.document_id() {        
-
-            println!("RUST: branches metadata doc changed {:?}", project.get_branches_metadata());
-
-            return (vec![], Some(OutputEvent::BranchesChanged {
-                branches: project.get_branches_metadata().branches
-            }));
-        }
-
-        return (vec![], None);
-
-    }
-
-    fn create_branch(&mut self, name: String)  {
-           let mut project = &self.project;
-     
-
-        let new_branch_handle = clone_doc(&self.repo_handle, &project.main_branch_doc_handle);
-
-        project.add_branch(Branch {
-            id: new_branch_handle.document_id().to_string().clone(),
-            name: name.clone(),
-            is_merged: false,
-        });
-        project.checked_out_branch_doc_handle = new_branch_handle.clone();
-
-        self.project = project.clone();
-
-        TaskResult {
-            project: Some(project.clone()),
-            new_doc_handles: vec![new_branch_handle.clone()],
-            event: Some(OutputEvent::CheckedOutBranch {
-                branch_doc_handle: new_branch_handle.clone(),
-            }),
-        }
-    }
-
-    fn merge_branch(&mut self, branch_doc_handle: DocHandle) -> impl Future<Output = TaskResult> + 'static {
-        let project = match &self.project {
-            Some(project) => project.clone(),
-            None => {
-                panic!("triggered merge branch '{}' before project was initialized", branch_doc_handle.document_id());
-            }
-        };
-
-        branch_doc_handle.with_doc_mut(|branch_doc| {
-            project.main_branch_doc_handle.with_doc_mut(|main_doc| {
-                let _ = main_doc.merge(branch_doc);
-            });
-        });
-
-        // todo: mark branch as merged
-        let main_branch_doc_id = project.clone().main_branch_doc_handle.document_id();
-
-        self.checkout_branch(main_branch_doc_id)
-    }
-
-    fn checkout_branch(&self, branch_doc_id: DocumentId) -> impl Future<Output = TaskResult> + 'static {
-        let repo_handle = self.repo_handle.clone();
-        let mut project = self.project.as_ref().unwrap_or_else(|| {
-            panic!("triggered checkout branch '{}' before project was initialized", branch_doc_id);
-        }).clone();       
-
-        async move {
-            let branch_doc_handle = repo_handle.request_document(branch_doc_id).await.unwrap_or_else(|e| {
-                panic!("failed to checkout branch: {:?}", e);
-            });
-
-            let mut new_doc_handles = vec![branch_doc_handle.clone()];
-
-            let linked_doc_ids = get_linked_docs_of_branch(&branch_doc_handle);
-
-            // alex ?
-            // todo: do this in parallel
-            let mut linked_doc_results = Vec::new();
-            for doc_id in linked_doc_ids {
-                let result = repo_handle.request_document(doc_id).await;
-                if let Ok(doc_handle) = &result {
-                    new_doc_handles.push(doc_handle.clone());
-                }
-                linked_doc_results.push(result);
-            }
-
-            if linked_doc_results.iter().any(|result| result.is_err()) {
-                panic!("failed to checkout branch, some linked docs are missing:");
-            }
-
-            project.checked_out_branch_doc_handle = branch_doc_handle.clone();
-
-            TaskResult {
-                project: Some(project),
-                new_doc_handles,
-                event: Some(OutputEvent::CheckedOutBranch {
-                    branch_doc_handle: branch_doc_handle.clone(),
-                }),
-            }
-        }
-    }
-
-    fn save_file(
-        &self,
-        path: &String,
-        heads: Option<Vec<ChangeHash>>,
-        content: StringOrPackedByteArray,
-    ) -> impl Future<Output = TaskResult> + 'static {
-        let project = match &self.project {
-            Some(project) => project.clone(),
-            None => {
-                panic!("triggered save file '{}' before project was initialized", path);
-            }
-        };
-
-        let path = path.clone();
-        let repo_handle = self.repo_handle.clone();
-
-        async move {
-            match content {
-                StringOrPackedByteArray::String(content) => {
-                    println!("rust: save file: {:?}", path);
-                    project.checked_out_branch_doc_handle.with_doc_mut(|d| {
-                        let mut tx = match heads {
-                            Some(heads) => d.transaction_at(
-                                PatchLog::inactive(TextRepresentation::String(
-                                    TextEncoding::Utf8CodeUnit,
-                                )),
-                                &heads,
-                            ),
-                            None => d.transaction(),
-                        };
-
-                        let files = tx.get_obj_id(ROOT, "files").unwrap();
-
-                        let _ = tx.put_object(ROOT, "fo", ObjType::Map);
-
-                        // get existing file url or create new one
-                        let file_entry = match tx.get(&files, &path) {
-                            Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => {
-                                file_entry
-                            }
-                            _ => tx.put_object(files, &path, ObjType::Map).unwrap(),
-                        };
-
-                        // delete url in file entry if it previously had one
-                        if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
-                            let _ = tx.delete(&file_entry, "url");
-                        }
-
-                        // either get existing text or create new text
-                        let content_key = match tx.get(&file_entry, "content") {
-                            Ok(Some((automerge::Value::Object(ObjType::Text), content))) => content,
-                            _ => tx
-                                .put_object(&file_entry, "content", ObjType::Text)
-                                .unwrap(),
-                        };
-                        let _ = tx.update_text(&content_key, &content);
-                        tx.commit();
-                    });
-
-                    TaskResult {
-                        project: Some(project),
-                        new_doc_handles: vec![],
-                        event: None,
-                    }
-                }
-                StringOrPackedByteArray::Binary(content) => {
-                    // create binary doc
-                    let binary_doc_handle = repo_handle.new_document();
-                    binary_doc_handle.with_doc_mut(|d| {
-                        let mut tx = d.transaction();
-                        let _ = tx.put(ROOT, "content", content);
-                        tx.commit();
-                    });
-
-                    // write url to content doc into project doc
-                    project.checked_out_branch_doc_handle.with_doc_mut(|d| {
-                        let mut tx = match heads {
-                            Some(heads) => d.transaction_at(
-                                PatchLog::inactive(TextRepresentation::String(
-                                    TextEncoding::Utf8CodeUnit,
-                                )),
-                                &heads,
-                            ),
-                            None => d.transaction(),
-                        };
-
-                        let files = tx.get_obj_id(ROOT, "files").unwrap();
-
-                        let file_entry = tx.put_object(files, &path, ObjType::Map);
-                        let _ = tx.put(
-                            file_entry.unwrap(),
-                            "url",
-                            format!("automerge:{}", &binary_doc_handle.document_id()),
-                        );
-                        tx.commit();
-                    });
-
-                    TaskResult {
-                        project: Some(project),
-                        new_doc_handles: vec![binary_doc_handle],
-                        event: None,
-                    }
-                }
-            }
-        }
-    } */
-}
-
-fn print_branch_doc (message: &str, doc_handle: &DocHandle) {
-    doc_handle.with_doc(|d| {
-        let files = d.get_obj_id(ROOT, "files").unwrap();
-
-        let keys = d.keys( files).into_iter().collect::<Vec<_>>();
-
-        println!("{:?}: {:?}", message, doc_handle.document_id());
-
-        for key in keys {
-            println!("  {:?}", key);
-        }
-
-    });
-}
-
-
-fn print_doc (message: &str, doc_handle: &DocHandle) {
-    let checked_out_doc_json = doc_handle.with_doc(|d| serde_json::to_string(&automerge::AutoSerde::from(d)).unwrap());
-    println!("rust: {:?}: {:?}", message, checked_out_doc_json);
 }

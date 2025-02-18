@@ -52,3 +52,23 @@ pub(crate) fn parse_automerge_url(url: &str) -> Option<DocumentId> {
     let hash = &url[PREFIX.len()..];
     DocumentId::from_str(hash).ok()
 }
+
+pub(crate) fn print_branch_doc(message: &str, doc_handle: &DocHandle) {
+    doc_handle.with_doc(|d| {
+        let files = d.get_obj_id(ROOT, "files").unwrap();
+
+        let keys = d.keys(files).into_iter().collect::<Vec<_>>();
+
+        println!("{:?}: {:?}", message, doc_handle.document_id());
+
+        for key in keys {
+            println!("  {:?}", key);
+        }
+    });
+}
+
+pub(crate) fn print_doc(message: &str, doc_handle: &DocHandle) {
+    let checked_out_doc_json =
+        doc_handle.with_doc(|d| serde_json::to_string(&automerge::AutoSerde::from(d)).unwrap());
+    println!("rust: {:?}: {:?}", message, checked_out_doc_json);
+}
