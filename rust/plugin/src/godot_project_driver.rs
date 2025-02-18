@@ -1,6 +1,6 @@
 use automerge_repo::RepoError;
 use futures::stream::FuturesUnordered;
-use futures::{FutureExt, Stream, TryFutureExt};
+use futures::{FutureExt, Stream};
 use ::safer_ffi::prelude::*;
 use std::collections::HashSet;
 use std::future::Future;
@@ -32,7 +32,6 @@ use tokio::{net::TcpStream, runtime::Runtime};
 
 use crate::{doc_utils::SimpleDocReader, godot_project::Branch};
 
-//const SERVER_URL: &str = "104.131.179.247:8000"; // invalid server url
 const SERVER_URL: &str = "104.131.179.247:8080";
 
 #[derive(Debug, Clone)]
@@ -307,7 +306,7 @@ impl GodotProjectDriver {
                     message = subscribed_doc_handles.futures.select_next_some() => {
 
                        let doc_handle = match message {
-                            SubscriptionMessage::Changed { doc_handle, diff } => {
+                            SubscriptionMessage::Changed { doc_handle, diff: _ } => {
                                 doc_handle
                             },
                             SubscriptionMessage::Added { doc_handle } => {
@@ -320,7 +319,7 @@ impl GodotProjectDriver {
                         
 
                         if document_id == state.branches_metadata_doc_handle.document_id() {
-                            tx.unbounded_send(OutputEvent::BranchesChanged { branches: HashMap::new() /*get_branches_metadata().branches*/ }).unwrap();
+                            tx.unbounded_send(OutputEvent::BranchesChanged { branches: state.get_branches_metadata().branches }).unwrap();
                         }
 
                         if document_id == state.main_branch_doc_handle.document_id() {
@@ -328,12 +327,11 @@ impl GodotProjectDriver {
                         }
                     },
 
-
                     message = rx.select_next_some() => {
 
                         match message {
                             InputEvent::CheckoutBranch { branch_doc_handle } => {
-                                state.checkout_branch(branch_doc_handle);
+                                state.checkout_branch(branch_doc_handle);                                
                             },
 
                             InputEvent::CreateBranch {name} => {
@@ -495,10 +493,21 @@ impl DriverState {
             linked_doc_ids: linked_docs.clone().iter().map(|(_, doc_id)| doc_id.clone()).collect(),
         };
 
-        if are_all_linked_docs_loaded {
-            self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(branch_state);
-            self.tx.unbounded_send(OutputEvent::CheckedOutBranch { branch_doc_handle: branch_doc_handle.clone() }).unwrap();
+        if are_all_linked_docs_loaded {            
+            self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(branch_state.clone());
+
+            if (!self.is_initialized) {
+                self.is_initialized = true;
+                self.tx.unbounded_send(OutputEvent::Initialized { 
+                    checked_out_branch_doc_handle: branch_state.doc_handle.clone(), 
+                    branches_metadata_doc_handle: self.branches_metadata_doc_handle.clone() 
+                }).unwrap();
+            }    else {
+                self.tx.unbounded_send(OutputEvent::CheckedOutBranch { branch_doc_handle: branch_doc_handle.clone() }).unwrap();
+            }
+
         } else {
+            println!("checkout branch: checking out");
             self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(branch_state);                        
         }
     }
@@ -602,9 +611,16 @@ impl DriverState {
             doc_handle: Some(binary_doc_handle.clone()),
             path: path.clone(),
         });
-        &self.tx.unbounded_send(OutputEvent::NewDocHandle { doc_handle: binary_doc_handle.clone() }).unwrap();
+        let _ = &self.tx.unbounded_send(OutputEvent::NewDocHandle { doc_handle: binary_doc_handle.clone() }).unwrap();
     }
-    
+
+    fn get_branches_metadata(&self) -> BranchesMetadataDoc {
+        let branches_metadata : BranchesMetadataDoc = self
+            .branches_metadata_doc_handle
+            .with_doc(|d| hydrate(d).unwrap());
+
+        return branches_metadata
+    }
 
 }
 
@@ -636,13 +652,7 @@ impl ProjectState {
         });
     }
 
-    fn get_branches_metadata(&self) -> BranchesMetadataDoc {
-        let branches_metadata : BranchesMetadataDoc = self
-            .branches_metadata_doc_handle
-            .with_doc(|d| hydrate(d).unwrap());
-
-        return branches_metadata
-    }
+ 
 }
 
 */
