@@ -368,7 +368,8 @@ impl GodotProjectDriver {
                             },
 
                             InputEvent::CreateBranch { name } => {
-                                let new_branch_doc_handle = state.create_branch(name.clone());                                
+                                let new_branch_doc_handle = state.create_branch(name.clone());
+                                subscribed_doc_handles.add_doc_handle(new_branch_doc_handle.clone());
                                 state.checkout_branch(new_branch_doc_handle);
                             },
 
@@ -479,11 +480,9 @@ async fn init_project_doc_handles (repo_handle: &RepoHandle, doc_id: Option<Docu
 
 impl DriverState {
 
-    fn create_branch(&self, name: String) -> DocHandle {
+    fn create_branch(&mut self, name: String) -> DocHandle {
         let new_branch_handle = clone_doc(&self.repo_handle, &self.main_branch_doc_handle);
-
-
-        let branch = Branch { name, id: new_branch_handle.document_id().to_string(), is_merged: false};
+        let branch = Branch { name: name.clone(), id: new_branch_handle.document_id().to_string(), is_merged: false};
 
         self.branches_metadata_doc_handle.with_doc_mut(|d| {
             let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
@@ -495,6 +494,14 @@ impl DriverState {
             tx.commit();
         });
 
+        self.branch_states.insert(new_branch_handle.document_id().clone(), BranchState {
+            name: name,
+            doc_handle: new_branch_handle.clone(),
+            linked_doc_ids: get_linked_docs_of_branch(&new_branch_handle)
+                .iter()
+                .map(|(_, doc_id)| doc_id.clone())
+                .collect(),
+        });
 
         return new_branch_handle;
     }
