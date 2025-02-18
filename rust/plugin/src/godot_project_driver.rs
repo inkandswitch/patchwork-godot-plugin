@@ -355,8 +355,10 @@ impl GodotProjectDriver {
                         }
 
                         // checked out branch doc changed
-                        if document_id == state.main_branch_doc_handle.document_id() {
-                            tx.unbounded_send(OutputEvent::FilesChanged).unwrap();
+                        if let Some(checked_out_branch_doc_handle) = state.get_checked_out_branch_doc_handle() {
+                            if document_id == checked_out_branch_doc_handle.document_id() {
+                                tx.unbounded_send(OutputEvent::FilesChanged).unwrap();
+                            }
                         }
                     },
 
