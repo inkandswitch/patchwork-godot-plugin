@@ -75,6 +75,11 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "0 changes"
 
+[node name="PatchesCountLabel" type="Label" parent="VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "0 patches"
+
 [node name="ConfirmationDialog" type="ConfirmationDialog" parent="."]
 
 [node name="ErrorDialog" type="AcceptDialog" parent="."]

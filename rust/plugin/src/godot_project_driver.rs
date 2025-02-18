@@ -452,6 +452,7 @@ async fn init_project_doc_handles (repo_handle: &RepoHandle, doc_id: Option<Docu
                     name: String::from("main"),
                     id: main_branch_doc_handle.document_id().to_string(),
                     is_merged: true,
+                    forked_at: Vec::new(),
                 },
             )]);
             let branches_clone = branches.clone();
@@ -484,7 +485,8 @@ impl DriverState {
 
     fn create_branch(&mut self, name: String) -> DocHandle {
         let new_branch_handle = clone_doc(&self.repo_handle, &self.main_branch_doc_handle);
-        let branch = Branch { name: name.clone(), id: new_branch_handle.document_id().to_string(), is_merged: false};
+        let main_heads = self.main_branch_doc_handle.with_doc(|d| d.get_heads()).iter().map(|h| h.to_string()).collect();
+        let branch = Branch { name: name.clone(), id: new_branch_handle.document_id().to_string(), is_merged: false, forked_at: main_heads};
 
         self.branches_metadata_doc_handle.with_doc_mut(|d| {
             let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();

@@ -10,6 +10,7 @@ var godot_project: GodotProject
 @onready var menu_button: MenuButton = %MenuButton
 @onready var history_list: ItemList = %HistoryList
 @onready var change_count_label: Label = %ChangeCountLabel
+@onready var patches_count_label: Label = %PatchesCountLabel
 
 var branches = []
 var plugin: EditorPlugin
@@ -199,7 +200,12 @@ func update_ui() -> void:
 	var history = godot_project.get_changes()
 	history_list.clear()
 
+	# update changes count
 	change_count_label.text = str(history.size()) + " change" if history.size() == 1 else str(history.size()) + " changes"
+
+	# update patches count
+	var patches_count = godot_project.get_diff()
+	patches_count_label.text = str(patches_count) + " patch" if patches_count == 1 else str(patches_count) + " patches"
 
 	for change in history:
 		history_list.add_item(change)

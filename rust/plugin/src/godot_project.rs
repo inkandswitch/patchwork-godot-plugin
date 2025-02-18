@@ -65,6 +65,7 @@ pub struct Branch {
     pub name: String,
     pub id: String,
     pub is_merged: bool,
+    pub forked_at: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -276,6 +277,53 @@ impl GodotProject {
             }
             None => Variant::nil(),
         }
+    }
+
+    #[func]
+    fn get_diff(&self) -> i64 {
+        let branch_doc_handle = match self.get_checked_out_branch_handle() {
+            Some(doc_handle) => doc_handle,
+            None => return -1,
+        };
+
+        let branch = match self.get_branches_metadata() {
+            Some(branches) => match branches
+                .branches
+                .get(&branch_doc_handle.document_id().to_string())
+            {
+                Some(branch) => branch.clone(),
+                None => return -1,
+            },
+            None => return -1,
+        };
+
+        // ignore main, doesn't have a diff
+        if branch.forked_at.is_empty() {
+            return 0;
+        }
+
+        let forked_at: Vec<ChangeHash> = branch
+            .forked_at
+            .iter()
+            .map(|h| ChangeHash::from_str(h.as_str()).unwrap())
+            .collect();
+
+        let branch_heads = branch_doc_handle.with_doc(|d| d.get_heads());
+
+        let patches = branch_doc_handle.with_doc(|d| {
+            d.diff(
+                &forked_at,
+                &branch_heads,
+                TextRepresentation::String(TextEncoding::Utf8CodeUnit),
+            )
+        });
+
+        // log all patches
+        for patch in patches.clone() {
+            println!("patch: {:?}", patch);
+        }
+
+        return patches.len() as i64;
     }
 
     #[func]
