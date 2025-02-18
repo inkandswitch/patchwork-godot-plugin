@@ -141,13 +141,10 @@ pub struct BinaryDocState {
 }
 
 #[derive(Debug, Clone)]
-enum BranchState {
-    Requesting,
-    Loaded {
-        name: String,
-        doc_handle: DocHandle,
-        linked_doc_ids: HashSet<DocumentId>,
-    },
+struct BranchState {
+    name: String,
+    doc_handle: DocHandle,
+    linked_doc_ids: HashSet<DocumentId>,
 }
 
 #[derive(Debug, Clone)]
@@ -169,6 +166,8 @@ struct DriverState {
 
     checked_out_branch_state: CheckedOutBranchState,
     is_initialized: bool,
+
+    pending_branch_doc_ids: HashSet<DocumentId>,
 
     requesting_binary_docs: FuturesUnordered<Pin<Box<dyn Future<Output = (String, Result<DocHandle, RepoError>)> + Send>>>,
     requesting_branch_docs: FuturesUnordered<Pin<Box<dyn Future<Output = (String, Result<DocHandle, RepoError>)> + Send>>>,
@@ -264,7 +263,7 @@ impl GodotProjectDriver {
                 main_branch_doc_handle: main_branch_doc_handle.clone(),                                
                 branches_metadata_doc_handle,
                 is_initialized: false,
-                branch_states: HashMap::from([(main_branch_doc_handle.document_id().clone(), BranchState::Loaded { 
+                branch_states: HashMap::from([(main_branch_doc_handle.document_id().clone(), BranchState { 
                     name: "main".to_string(), 
                     doc_handle: main_branch_doc_handle.clone(), 
                     linked_doc_ids: get_linked_docs_of_branch(&main_branch_doc_handle)
@@ -272,6 +271,7 @@ impl GodotProjectDriver {
                         .map(|(_, doc_id)| doc_id.clone())
                         .collect(),
                 })]),
+                pending_branch_doc_ids: HashSet::new(),
                 requesting_binary_docs : FuturesUnordered::new(),
                 requesting_branch_docs: FuturesUnordered::new(),
             };
@@ -297,8 +297,31 @@ impl GodotProjectDriver {
                         }
                     },
 
-                    message = subscribed_doc_handles.futures.select_next_some() => {
+                    next = state.requesting_branch_docs.next() => {
+                        if let Some((branch_name, result)) = next {
+                            match result {
+                                Ok(doc_handle) => {
+                                    state.pending_branch_doc_ids.remove(&doc_handle.document_id());
+                                    state.branch_states.insert(doc_handle.document_id().clone(), BranchState {
+                                        name: branch_name.clone(),
+                                        doc_handle: doc_handle.clone(),
+                                        linked_doc_ids: get_linked_docs_of_branch(&doc_handle)
+                                            .values()
+                                            .cloned()
+                                            .collect(),
+                                    });
+                                    subscribed_doc_handles.add_doc_handle(doc_handle.clone());
+                                    println!("rust: added branch doc: {:?}", branch_name);
 
+                                }
+                                Err(e) => {
+                                    println!("error requesting branch doc: {:?}", e);
+                                }
+                            }
+                        }
+                    },
+
+                    message = subscribed_doc_handles.futures.select_next_some() => {
                        let doc_handle = match message {
                             SubscriptionMessage::Changed { doc_handle, diff: _ } => {
                                 doc_handle
@@ -309,13 +332,29 @@ impl GodotProjectDriver {
                             },
                         };      
 
-                        let document_id = doc_handle.document_id();
-                        
+                        let document_id = doc_handle.document_id();                    
 
+                        // branches metadata doc changed
                         if document_id == state.branches_metadata_doc_handle.document_id() {
-                            tx.unbounded_send(OutputEvent::BranchesChanged { branches: state.get_branches_metadata().branches }).unwrap();
+                            let branches = state.get_branches_metadata().branches.clone();
+
+                            // check if there are new branches that haven't loaded yet
+                            for (branch_id_str, branch) in branches.iter() {
+                                let branch_id = DocumentId::from_str(branch_id_str).unwrap();                            
+                                let branch_name = branch.name.clone();
+
+                                if !state.branch_states.contains_key(&branch_id) && !state.pending_branch_doc_ids.contains(&branch_id) {
+                                    state.pending_branch_doc_ids.insert(branch_id.clone());
+                                    state.requesting_branch_docs.push(repo_handle.request_document(branch_id.clone()).map(|doc_handle| {
+                                        (branch_name, doc_handle)
+                                    }).boxed());
+                                }
+                            }
+
+                            tx.unbounded_send(OutputEvent::BranchesChanged { branches: branches.clone() }).unwrap();
                         }
 
+                        // checked out branch doc changed
                         if document_id == state.main_branch_doc_handle.document_id() {
                             tx.unbounded_send(OutputEvent::FilesChanged).unwrap();
                         }
@@ -328,8 +367,9 @@ impl GodotProjectDriver {
                                 state.checkout_branch(branch_doc_handle);                                
                             },
 
-                            InputEvent::CreateBranch {name} => {
-//                                state.create_branch(&mut state, name);
+                            InputEvent::CreateBranch { name } => {
+                                let new_branch_doc_handle = state.create_branch(name.clone());                                
+                                state.checkout_branch(new_branch_doc_handle);
                             },
 
                             InputEvent::MergeBranch { branch_doc_handle } => {
@@ -439,7 +479,7 @@ async fn init_project_doc_handles (repo_handle: &RepoHandle, doc_id: Option<Docu
 
 impl DriverState {
 
-    fn create_branch(&self, name: String)  {
+    fn create_branch(&self, name: String) -> DocHandle {
         let new_branch_handle = clone_doc(&self.repo_handle, &self.main_branch_doc_handle);
 
 
@@ -456,7 +496,7 @@ impl DriverState {
         });
 
 
-        // todo: checkout the new branch
+        return new_branch_handle;
     }
 
     fn checkout_branch(&mut self, branch_doc_handle: DocHandle) {
@@ -477,6 +517,8 @@ impl DriverState {
                 (path, doc_handle)
             }).boxed());
         }
+
+
 
         self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(branch_doc_handle.document_id());
         self.transition_checked_out_branch_state_if_loaded();
@@ -596,7 +638,7 @@ impl DriverState {
     fn get_checked_out_branch_doc_handle(&self) -> Option<DocHandle> {
         match &self.checked_out_branch_state {
             CheckedOutBranchState::CheckedOut(branch_doc_id) =>  match self.branch_states.get(branch_doc_id) {
-                Some(BranchState::Loaded { doc_handle, .. }) => Some(doc_handle.clone()),
+                Some(branch_state) => Some(branch_state.doc_handle.clone()),
                 _ => None,
             },
             _ => None,
@@ -604,17 +646,19 @@ impl DriverState {
     }
 
     fn transition_checked_out_branch_state_if_loaded(&mut self) {
+
+        // ignore if we are not checking out a branch
         let branch_doc_id  = match &self.checked_out_branch_state {
             CheckedOutBranchState::CheckingOut(branch_doc_id) => branch_doc_id,
             _ => return,
         };
 
-        let (linked_doc_ids, doc_handle) = match self.branch_states.get_mut(&branch_doc_id) {
-            Some(BranchState::Loaded { name: _, doc_handle, linked_doc_ids }) => (linked_doc_ids, doc_handle),
+        let branch_state = match self.branch_states.get_mut(&branch_doc_id) {
+            Some(branch_state) => branch_state,
             _ => return
         };
 
-        if linked_doc_ids.iter().all(|doc_id| {                                                                                             
+        if branch_state.linked_doc_ids.iter().all(|doc_id| {                                                                                             
             if let Some(binary_doc_state) =  self.binary_doc_states.get(doc_id) {
                 binary_doc_state.doc_handle.is_some()
             } else {
@@ -624,20 +668,17 @@ impl DriverState {
             self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(branch_doc_id.clone());
         
             if self.is_initialized {
-                self.tx.unbounded_send(OutputEvent::CheckedOutBranch { branch_doc_handle: doc_handle.clone() }).unwrap();
+                self.tx.unbounded_send(OutputEvent::CheckedOutBranch { branch_doc_handle: branch_state.doc_handle.clone() }).unwrap();
             } else {
                 self.is_initialized = true;
                 self.tx.unbounded_send(OutputEvent::Initialized { 
-                    checked_out_branch_doc_handle: doc_handle.clone(),
+                    checked_out_branch_doc_handle: branch_state.doc_handle.clone(),
                     branches_metadata_doc_handle: self.branches_metadata_doc_handle.clone() 
                 }).unwrap();
             }
         }            
     }
 }
-
-
-
 
 
 fn clone_doc(repo_handle: &RepoHandle, doc_handle: &DocHandle) -> DocHandle {
