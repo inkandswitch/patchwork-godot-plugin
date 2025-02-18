@@ -415,17 +415,20 @@ impl GodotProject {
 
     #[func]
     fn checkout_branch(&mut self, branch_doc_id: String) {
-        let branch_doc_id = match DocumentId::from_str(&branch_doc_id) {
-            Ok(id) => id,
-            Err(e) => {
-                println!("invalid branch doc id: {:?}", e);
+        let maybe_branch_doc_handle =
+            DocumentId::from_str(&branch_doc_id).map(|id| self.doc_handles.get(&id));
+
+        let branch_doc_handle = match maybe_branch_doc_handle {
+            Ok(Some(doc_handle)) => doc_handle.clone(),
+            _ => {
+                println!("invalid branch doc id: {:?}", maybe_branch_doc_handle);
                 return;
             }
         };
 
         self.driver_input_tx
             .unbounded_send(InputEvent::CheckoutBranch {
-                branch_doc_id: branch_doc_id,
+                branch_doc_handle: branch_doc_handle.clone(),
             })
             .unwrap();
     }
