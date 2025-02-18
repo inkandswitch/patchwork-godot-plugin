@@ -204,8 +204,10 @@ func update_ui() -> void:
 	change_count_label.text = str(history.size()) + " change" if history.size() == 1 else str(history.size()) + " changes"
 
 	# update patches count
-	var patches_count = godot_project.get_diff()
-	patches_count_label.text = str(patches_count) + " patch" if patches_count == 1 else str(patches_count) + " patches"
+	var patches = godot_project.get_diff();
+	var patches_count = patches.size()
+
+	patches_count_label.text = "" if patches_count == 0 else "Changed files: " + ", ".join(patches)
 
 	for change in history:
 		history_list.add_item(change)

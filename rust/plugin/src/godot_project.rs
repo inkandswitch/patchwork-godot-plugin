@@ -280,10 +280,10 @@ impl GodotProject {
     }
 
     #[func]
-    fn get_diff(&self) -> i64 {
+    fn get_diff(&self) -> PackedStringArray {
         let branch_doc_handle = match self.get_checked_out_branch_handle() {
             Some(doc_handle) => doc_handle,
-            None => return -1,
+            None => return PackedStringArray::new(),
         };
 
         let branch = match self.get_branches_metadata() {
@@ -292,14 +292,14 @@ impl GodotProject {
                 .get(&branch_doc_handle.document_id().to_string())
             {
                 Some(branch) => branch.clone(),
-                None => return -1,
+                None => return PackedStringArray::new(),
             },
-            None => return -1,
+            None => return PackedStringArray::new(),
         };
 
         // ignore main, doesn't have a diff
         if branch.forked_at.is_empty() {
-            return 0;
+            return PackedStringArray::new();
         }
 
         let forked_at: Vec<ChangeHash> = branch
@@ -318,12 +318,38 @@ impl GodotProject {
             )
         });
 
+        let mut changed_files = HashSet::new();
+
         // log all patches
         for patch in patches.clone() {
-            println!("patch: {:?}", patch);
+            let first_key = match patch.path.get(0) {
+                Some((_, prop)) => match prop {
+                    automerge::Prop::Map(string) => string,
+                    _ => continue,
+                },
+                _ => continue,
+            };
+
+            // get second key
+            let second_key = match patch.path.get(1) {
+                Some((_, prop)) => match prop {
+                    automerge::Prop::Map(string) => string,
+                    _ => continue,
+                },
+                _ => continue,
+            };
+
+            if first_key == "files" {
+                changed_files.insert(second_key.to_string());
+            }
+
+            println!("changed files: {:?}", changed_files);
         }
 
-        return patches.len() as i64;
+        return changed_files
+            .iter()
+            .map(|s| GString::from(s))
+            .collect::<PackedStringArray>();
     }
 
     #[func]
