@@ -129,21 +129,14 @@ impl GodotProject {
         let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
         let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
 
-        let driver = GodotProjectDriver::create();
-
-        driver.spawn(driver_input_rx, driver_output_tx);
-
-        // @AI simplify
         let branches_metadata_doc_id = match DocumentId::from_str(&maybe_branches_metadata_doc_id) {
             Ok(doc_id) => Some(doc_id),
             Err(e) => None,
         };
 
-        driver_input_tx
-            .unbounded_send(InputEvent::InitBranchesMetadataDoc {
-                doc_id: branches_metadata_doc_id,
-            })
-            .unwrap();
+        let driver = GodotProjectDriver::create();
+
+        driver.spawn(driver_input_rx, driver_output_tx, branches_metadata_doc_id);
 
         Gd::from_init_fn(|base| Self {
             base,
@@ -422,17 +415,20 @@ impl GodotProject {
 
     #[func]
     fn checkout_branch(&mut self, branch_doc_id: String) {
-        let branch_doc_id = match DocumentId::from_str(&branch_doc_id) {
-            Ok(id) => id,
-            Err(e) => {
-                println!("invalid branch doc id: {:?}", e);
+        let maybe_branch_doc_handle =
+            DocumentId::from_str(&branch_doc_id).map(|id| self.doc_handles.get(&id));
+
+        let branch_doc_handle = match maybe_branch_doc_handle {
+            Ok(Some(doc_handle)) => doc_handle.clone(),
+            _ => {
+                println!("invalid branch doc id: {:?}", maybe_branch_doc_handle);
                 return;
             }
         };
 
         self.driver_input_tx
             .unbounded_send(InputEvent::CheckoutBranch {
-                branch_doc_id: branch_doc_id,
+                branch_doc_handle: branch_doc_handle.clone(),
             })
             .unwrap();
     }
