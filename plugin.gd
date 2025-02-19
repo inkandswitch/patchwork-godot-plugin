@@ -129,9 +129,14 @@ func do_sync_godot_to_patchwork():
 
 	print("sync godot -> patchwork (", files_in_godot.size(), ")")
 
+	var files_to_save = {}
+
 	for path in files_in_godot:
-		print("  save file: ", path)
-		godot_project.save_file(path, file_system.get_file(path))
+		files_to_save[path] = file_system.get_file(path)
+
+	print("saved ", files_to_save.size(), " file(s) to patchwork")
+
+	godot_project.save_files(files_to_save)
 
 
 func sync_godot_to_patchwork():

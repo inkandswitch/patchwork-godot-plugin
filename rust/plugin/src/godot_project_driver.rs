@@ -1,6 +1,7 @@
 use automerge_repo::RepoError;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, Stream};
+use godot::builtin::PackedByteArray;
 use ::safer_ffi::prelude::*;
 use std::collections::HashSet;
 use std::future::Future;
@@ -48,10 +49,9 @@ pub enum InputEvent {
         branch_doc_handle: DocHandle,
     },
 
-    SaveFile {
-        path: String,
-        content: StringOrPackedByteArray,
+    SaveFiles {
         heads: Option<Vec<ChangeHash>>,
+        files: Vec<(String, StringOrPackedByteArray)>,
     },
 
     StartShutdown,
@@ -390,8 +390,8 @@ impl GodotProjectDriver {
                                 state.checkout_branch(state.main_branch_doc_handle.clone());
                             },                        
 
-                            InputEvent::SaveFile { path, content, heads} => {
-                                state.save_file(&path, heads, content);                           
+                            InputEvent::SaveFiles { files, heads} => {
+                                state.save_files(files, heads);                                                           
                             }
 
                             InputEvent::StartShutdown => {
@@ -555,99 +555,96 @@ impl DriverState {
         self.transition_checked_out_branch_state_if_loaded("checkout branch");
     }
     
-    fn save_file(
+    fn save_files(
         &mut self,
-        path: &String,
+        files: Vec<(String, StringOrPackedByteArray)>,
         heads: Option<Vec<ChangeHash>>,
-        content: StringOrPackedByteArray,
     ) {
        
-       let checked_out_branch_doc_handle = match     self.get_checked_out_branch_doc_handle() {
-        Some(doc_handle) => doc_handle,
-        None => {
-            println!("WARNING: save file called before branch is checked out");
-            return;
-        }
+       let checked_out_branch_doc_handle = match self.get_checked_out_branch_doc_handle() {
+            Some(doc_handle) => doc_handle,
+            None => {
+                println!("WARNING: save file called before branch is checked out");
+                return;
+            }
        };
 
-        match content {
-            StringOrPackedByteArray::String(content) => {
-                println!("rust: save file: {:?}", path);
-                checked_out_branch_doc_handle.with_doc_mut(|d| {
-                    let mut tx = match heads {
-                        Some(heads) => d.transaction_at(
-                            PatchLog::inactive(TextRepresentation::String(
-                                TextEncoding::Utf8CodeUnit,
-                            )),
-                            &heads,
-                        ),
-                        None => d.transaction(),
-                    };
-
-                    let files = tx.get_obj_id(ROOT, "files").unwrap();
-
-                    let _ = tx.put_object(ROOT, "fo", ObjType::Map);
-
-                    // get existing file url or create new one
-                    let file_entry = match tx.get(&files, path) {
-                        Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => {
-                            file_entry
-                        }
-                        _ => tx.put_object(files, path, ObjType::Map).unwrap(),
-                    };
-
-                    // delete url in file entry if it previously had one
-                    if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
-                        let _ = tx.delete(&file_entry, "url");
-                    }
-
-                    // either get existing text or create new text
-                    let content_key = match tx.get(&file_entry, "content") {
-                        Ok(Some((automerge::Value::Object(ObjType::Text), content))) => content,
-                        _ => tx
-                            .put_object(&file_entry, "content", ObjType::Text)
-                            .unwrap(),
-                    };
-                    let _ = tx.update_text(&content_key, &content);
-                    tx.commit();
-                });
-            }
-            StringOrPackedByteArray::Binary(content) => {
-                // create binary doc
+        let binary_entries: Vec<(String, DocHandle)> = files.iter().filter_map(|(path, content)| {
+            if let StringOrPackedByteArray::Binary(content) = content {
                 let binary_doc_handle = self.repo_handle.new_document();
                 binary_doc_handle.with_doc_mut(|d| {
                     let mut tx = d.transaction();
-                    let _ = tx.put(ROOT, "content", content);
+                    let _ = tx.put(ROOT, "content", content.clone());
                     tx.commit();
                 });
 
-                // add to binary doc states
                 self.add_binary_doc_handle(path, &binary_doc_handle);
 
-                // write url to content doc into project doc
-                checked_out_branch_doc_handle.with_doc_mut(|d| {
-                    let mut tx = match heads {
-                        Some(heads) => d.transaction_at(
-                            PatchLog::inactive(TextRepresentation::String(
-                                TextEncoding::Utf8CodeUnit,
-                            )),
-                            &heads,
-                        ),
-                        None => d.transaction(),
-                    };
-
-                    let files = tx.get_obj_id(ROOT, "files").unwrap();
-
-                    let file_entry = tx.put_object(files, path, ObjType::Map);
-                    let _ = tx.put(
-                        file_entry.unwrap(),
-                        "url",
-                        format!("automerge:{}", &binary_doc_handle.document_id()),
-                    );
-                    tx.commit();
-                });
+                Some((path.clone(), binary_doc_handle))
+            } else {
+                None
             }
-        }
+        }).collect();
+
+        let text_entries: Vec<(String, &String)> = files.iter().filter_map(|(path, content)| {
+            if let StringOrPackedByteArray::String(content) = content {
+                Some((path.clone(), content))
+            } else {
+                None
+            }
+        }).collect();
+
+        checked_out_branch_doc_handle.with_doc_mut(|d| {
+            let mut tx = match heads {
+                Some(heads) => d.transaction_at(
+                    PatchLog::inactive(TextRepresentation::String(
+                        TextEncoding::Utf8CodeUnit,
+                    )),
+                    &heads,
+                ),
+                None => d.transaction(),
+            };
+
+            let files = tx.get_obj_id(ROOT, "files").unwrap();
+
+
+            // write text entries to doc
+            for (path, content) in text_entries {
+
+                // get existing file url or create new one
+                let file_entry = match tx.get(&files, &path) {
+                    Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => {
+                        file_entry
+                    }
+                    _ => tx.put_object(&files, &path, ObjType::Map).unwrap(),
+                };
+
+                 // delete url in file entry if it previously had one
+                 if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
+                    let _ = tx.delete(&file_entry, "url");
+                }
+
+                // either get existing text or create new text
+                let content_key = match tx.get(&file_entry, "content") {
+                    Ok(Some((automerge::Value::Object(ObjType::Text), content))) => content,
+                    _ => tx
+                        .put_object(&file_entry, "content", ObjType::Text)
+                        .unwrap(),
+                };
+                let _ = tx.update_text(&content_key, &content);
+            }
+
+            for (path, binary_doc_handle) in binary_entries {
+                let file_entry = tx.put_object(&files, &path, ObjType::Map);
+                let _ = tx.put(
+                    file_entry.unwrap(),
+                    "url",
+                    format!("automerge:{}", &binary_doc_handle.document_id()),
+                );
+            }
+
+            tx.commit();
+        });
     }
 
     fn merge_branch(&mut self, branch_doc_handle: DocHandle)  {    

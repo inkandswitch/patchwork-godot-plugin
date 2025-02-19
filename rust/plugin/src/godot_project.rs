@@ -401,73 +401,84 @@ impl GodotProject {
             .collect::<PackedStringArray>()
     }
 
-    fn _save_file(
+    #[func]
+    fn save_files_at(
         &self,
-        path: String,
-        heads: Option<Vec<ChangeHash>>,
-        content: StringOrPackedByteArray,
+        files: Dictionary, /*  Record<String, Variant> */
+        heads: PackedStringArray,
     ) {
-        // ignore if file is already up to date // ignore if file is already up to date
-        if let Some(stored_content) = self._get_file(path.clone()) {
-            if stored_content == content {
-                println!("file {:?} is already up to date", path.clone());
-                return;
-            }
-        }
+        let heads: Vec<ChangeHash> = heads
+            .to_vec()
+            .iter()
+            .filter_map(|h| ChangeHash::from_str(h.to_string().as_str()).ok())
+            .collect();
 
-        self.driver_input_tx
-            .unbounded_send(InputEvent::SaveFile {
-                path,
-                heads,
-                content,
-            })
-            .unwrap();
+        self._save_files(files, Some(heads));
+    }
+
+    #[func]
+    fn save_files(&self, files: Dictionary) {
+        self._save_files(files, None);
     }
 
     #[func]
     fn save_file(&self, path: String, content: Variant) {
-        let content = match content.get_type() {
-            VariantType::STRING => {
-                StringOrPackedByteArray::String(String::from(content.to::<GString>()))
-            }
-            VariantType::PACKED_BYTE_ARRAY => {
-                StringOrPackedByteArray::Binary(content.to::<PackedByteArray>().to_vec())
-            }
-            _ => {
-                println!("invalid content type");
-                return;
-            }
-        };
-
-        self._save_file(path, None, content);
+        self.save_files(dict! { path: content });
     }
 
     #[func]
     fn save_file_at(&self, path: String, heads: PackedStringArray, content: Variant) {
-        let content = match content.get_type() {
-            VariantType::STRING => {
-                StringOrPackedByteArray::String(String::from(content.to::<GString>()))
-            }
-            VariantType::PACKED_BYTE_ARRAY => {
-                StringOrPackedByteArray::Binary(content.to::<PackedByteArray>().to_vec())
-            }
-            _ => {
-                println!("invalid content type");
-                return;
-            }
-        };
+        self.save_files_at(dict! { path: content }, heads);
+    }
 
-        self._save_file(
-            path,
-            Some(
-                heads
-                    .to_vec()
-                    .iter()
-                    .filter_map(|h| ChangeHash::from_str(h.to_string().as_str()).ok())
-                    .collect(),
-            ),
-            content,
-        );
+    fn _save_files(
+        &self,
+        files: Dictionary, /*  Record<String, Variant> */
+        heads: Option<Vec<ChangeHash>>,
+    ) {
+        // we filter the files here because godot sends us indiscriminately all the files in the project
+        // we only want to save the files that have actually changed
+        let changed_files: Vec<(String, StringOrPackedByteArray)> = files
+            .iter_shared()
+            .filter_map(|(path, content)| match content.get_type() {
+                VariantType::STRING => {
+                    let content = String::from(content.to::<GString>());
+
+                    if let Some(StringOrPackedByteArray::String(stored_content)) =
+                        self._get_file(path.to_string())
+                    {
+                        if stored_content == content {
+                            println!("file {:?} is already up to date", path.to_string());
+                            return None;
+                        }
+                    }
+
+                    Some((path.to_string(), StringOrPackedByteArray::String(content)))
+                }
+                VariantType::PACKED_BYTE_ARRAY => {
+                    let content = content.to::<PackedByteArray>().to_vec();
+
+                    if let Some(StringOrPackedByteArray::Binary(stored_content)) =
+                        self._get_file(path.to_string())
+                    {
+                        if stored_content == content {
+                            println!("file {:?} is already up to date", path.to_string());
+                            return None;
+                        }
+                    }
+
+                    Some((path.to_string(), StringOrPackedByteArray::Binary(content)))
+                }
+                _ => panic!("invalid content type"),
+            })
+            .collect();
+
+        self.driver_input_tx
+            .unbounded_send(InputEvent::SaveFiles {
+                heads,
+                files: changed_files,
+            })
+            .unwrap();
     }
 
     #[func]
