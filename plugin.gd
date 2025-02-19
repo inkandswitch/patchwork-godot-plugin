@@ -68,7 +68,7 @@ func _process(_delta: float) -> void:
 				# reload scene files to update references
 				get_editor_interface().reload_scene_from_path(path)
 		if files_to_reimport.size() > 0:
-			EditorInterface.get_resource_filesystem().reimport_files(files_to_reimport)
+			EditorInterface.get_resource_filesystem().reimport_files(files_to_reimport.keys())
 		if should_rerun:
 			timer = get_tree().create_timer(5, true)
 			timer.timeout.connect(self.sync_patchwork_to_godot)
