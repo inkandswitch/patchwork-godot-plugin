@@ -123,6 +123,9 @@ impl GodotProject {
     #[signal]
     fn branches_changed(branches: Array<Dictionary>);
 
+    #[signal]
+    fn shutdown_completed();
+
     #[func]
     // hack: pass in empty string to create a new doc
     // godot rust doens't seem to support Option args
@@ -183,8 +186,10 @@ impl GodotProject {
     // PUBLIC API
 
     #[func]
-    fn stop(&self) {
-        // todo
+    fn shutdown(&self) {
+        self.driver_input_tx
+            .unbounded_send(InputEvent::StartShutdown)
+            .unwrap();
     }
 
     #[func]
@@ -652,6 +657,11 @@ impl GodotProject {
                         Some(checked_out_branch_doc_handle.clone());
                     self.branches_metadata_doc_handle = Some(branches_metadata_doc_handle.clone());
                     self.base_mut().emit_signal("initialized", &[]);
+                }
+
+                OutputEvent::CompletedShutdown => {
+                    println!("rust: CompletedShutdown event");
+                    self.base_mut().emit_signal("shutdown_completed", &[]);
                 }
             }
         }

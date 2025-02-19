@@ -80,6 +80,11 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "0 patches"
 
+[node name="ShutdownButton" type="Button" parent="VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Click me before closing Godot"
+
 [node name="ConfirmationDialog" type="ConfirmationDialog" parent="."]
 
 [node name="ErrorDialog" type="AcceptDialog" parent="."]

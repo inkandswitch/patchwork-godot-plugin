@@ -53,6 +53,8 @@ pub enum InputEvent {
         content: StringOrPackedByteArray,
         heads: Option<Vec<ChangeHash>>,
     },
+
+    StartShutdown,
 }
 
 #[derive(Debug, Clone)]
@@ -71,6 +73,8 @@ pub enum OutputEvent {
     BranchesChanged {
         branches: HashMap<String, Branch>,
     },
+
+    CompletedShutdown,
 }
 
 enum SubscriptionMessage {
@@ -250,6 +254,8 @@ impl GodotProjectDriver {
         let repo_handle = self.repo_handle.clone();
 
         self.runtime.spawn(async move {
+            let repo_handle_clone = repo_handle.clone();
+
             let mut subscribed_doc_handles = DocHandleSubscriptions::new();        
 
             // destructure project doc handles
@@ -281,7 +287,11 @@ impl GodotProjectDriver {
 
             state.checkout_branch(state.main_branch_doc_handle.clone());        
 
+//            let repo_handle_clone = self.repo_handle.clone();
+
             loop {
+                let repo_handle_clone = repo_handle.clone();
+
                 futures::select! {
                     next = state.requesting_binary_docs.next() => {
                         if let Some((path, result)) = next {
@@ -382,6 +392,16 @@ impl GodotProjectDriver {
 
                             InputEvent::SaveFile { path, content, heads} => {
                                 state.save_file(&path, heads, content);                           
+                            }
+
+                            InputEvent::StartShutdown => {
+                                println!("rust: shutting down");
+
+                                let result = repo_handle_clone.stop();
+
+                                println!("rust: shutdown result: {:?}", result);
+
+                                tx.unbounded_send(OutputEvent::CompletedShutdown).unwrap();
                             }
                         };                    
                     }
