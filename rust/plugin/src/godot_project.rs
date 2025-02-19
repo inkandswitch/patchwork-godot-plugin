@@ -552,70 +552,82 @@ impl GodotProject {
 
     // State api
 
+    #[func]
     fn set_state_int(&self, entity_id: String, prop: String, value: i64) {
-        todo!("not implemented");
-        // // let checked_out_doc_handle = self.get_checked_out_doc_handle();
+        let checked_out_doc_handle = match self.checked_out_branch_doc_handle.clone() {
+            Some(doc_handle) => doc_handle,
+            None => {
+                println!("failed to set {}.{} to {}", entity_id, prop, value);
+                return;
+            }
+        };
 
-        // checked_out_doc_handle.with_doc_mut(|d| {
-        //     let mut tx = d.transaction();
-        //     let state = match tx.get_obj_id(ROOT, "state") {
-        //         Some(id) => id,
-        //         _ => {
-        //             println!("failed to load state");
-        //             return
-        //         }
-        //     };
+        println!("set {}.{} to {}", entity_id, prop, value);
 
-        //     match tx.get_obj_id(&state, &entity_id) {
-        //         Some(id) => {
-        //             let _ = tx.put(id, prop, value);
-        //         },
+        checked_out_doc_handle.with_doc_mut(|d| {
+            let mut tx = d.transaction();
+            let state = match tx.get_obj_id(ROOT, "state") {
+                Some(id) => id,
+                _ => {
+                    println!("failed to load state");
+                    return;
+                }
+            };
 
-        //         None => {
-        //             match tx.put_object(state, &entity_id, ObjType::Map) {
-        //                 Ok(id) => {
-        //                     let _ = tx.put(id, prop, value);
-        //                 },
-        //                 Err(e) => {
-        //                     println!("failed to create state object: {:?}", e);
-        //                 }
-        //             }
-        //         }
-        //     }
+            match tx.get_obj_id(&state, &entity_id) {
+                Some(id) => {
+                    let _ = tx.put(id, prop, value);
+                }
 
-        //     tx.commit();
-        // });
+                None => match tx.put_object(state, &entity_id, ObjType::Map) {
+                    Ok(id) => {
+                        let _ = tx.put(id, prop, value);
+                    }
+                    Err(e) => {
+                        println!("failed to create state object: {:?}", e);
+                    }
+                },
+            }
+
+            tx.commit();
+        });
     }
 
-    fn get_state_int(&self, entity_id: String, prop: String) -> Option<i64> {
-        todo!("not implemented");
+    #[func]
+    fn get_state_int(&self, entity_id: String, prop: String) -> Variant /* float? */ {
+        let checked_out_branch_doc_handle = match self.checked_out_branch_doc_handle.clone() {
+            Some(doc_handle) => doc_handle,
+            None => {
+                println!("failed to get {}.{}", entity_id, prop);
+                return Variant::nil();
+            }
+        };
 
-        //     self.get_checked_out_doc_handle().with_doc(|checked_out_doc| {
+        println!("get {}.{}", entity_id, prop);
 
-        //    let state  = match checked_out_doc.get_obj_id(ROOT, "state") {
-        //         Some(id) => id,
-        //         None => {
-        //             println!("invalid document, no state property");
-        //             return None
-        //         }
-        //     };
+        checked_out_branch_doc_handle.with_doc(|checked_out_doc| {
+            let state = match checked_out_doc.get_obj_id(ROOT, "state") {
+                Some(id) => id,
+                None => {
+                    println!("invalid document, no state property");
+                    return Variant::nil();
+                }
+            };
 
-        //    let entity_id_clone = entity_id.clone();
-        //    let entity  = match checked_out_doc.get_obj_id(state, entity_id) {
-        //         Some(id) => id,
-        //         None => {
-        //             println!("entity {:?} does not exist", &entity_id_clone);
-        //             return None
-        //         }
-        //     };
+            let entity_id_clone = entity_id.clone();
+            let entity = match checked_out_doc.get_obj_id(state, entity_id) {
+                Some(id) => id,
+                None => {
+                    println!("entity {:?} does not exist", &entity_id_clone);
+                    return Variant::nil();
+                }
+            };
 
-        //     return match checked_out_doc.get_int(entity, prop) {
-        //         Some(value) => Some(value),
-        //         None =>  None
-
-        //     };
-
-        // })
+            return match checked_out_doc.get_int(entity, prop) {
+                Some(value) => value.to_variant(),
+                None => Variant::nil(),
+            };
+        })
     }
 
     // these functions below should be extracted into a separate SyncRepo class
