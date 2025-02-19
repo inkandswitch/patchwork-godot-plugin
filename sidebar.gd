@@ -79,10 +79,14 @@ var current_cvs_action = []
 
 # This should be called before any patchwork source control action (e.g. checkout, merge, etc.)
 func _before_cvs_action(cvs_action: String):
+	print("Saving all scenes before CVS action %s" % [cvs_action])
+	plugin.file_system.disconnect_from_file_system()
 	EditorInterface.save_all_scenes();
 	current_cvs_action.append(cvs_action)
 	PatchworkEditor.progress_add_task(cvs_action, cvs_action, 10, false)
 	plugin.sync_godot_to_patchwork()
+	plugin.file_system.connect_to_file_system()
+	print("All scenes saved!")
 
 func _after_cvs_action():
 	if not current_cvs_action.is_empty():

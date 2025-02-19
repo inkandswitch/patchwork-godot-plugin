@@ -47,26 +47,29 @@ func _process(_delta: float) -> void:
 		if len(new_files_to_reload) > 0:
 			print("reloading %d files: " % new_files_to_reload.size())
 		var files_to_reimport = {}
-		for token in new_files_to_reload:
-			var path = token[0]
-			file_system.save_file(path, token[1])
-			if path.get_extension() == "uid":
-				var new_path = path.get_basename()
-				var uid = token[1].strip_edges()
-				add_new_uid(new_path, uid)
-			if path.get_extension() == "import":
-				var new_path = path.get_basename()
-				files_to_reimport[new_path] = true
-				var uid = ""
-				for line in token[1].split("\n"):
-					if line.begins_with("uid="):
-						uid = line.split("=")[1].strip_edges()
-				add_new_uid(new_path, uid)
-			elif FileAccess.file_exists(path + ".import"):
-				files_to_reimport[path] = true
-			if path.get_extension() == "tscn":
-				# reload scene files to update references
-				get_editor_interface().reload_scene_from_path(path)
+		if len(new_files_to_reload) > 0:
+			file_system.disconnect_from_file_system()
+			for token in new_files_to_reload:
+				var path = token[0]
+				file_system.save_file(path, token[1])
+				if path.get_extension() == "uid":
+					var new_path = path.get_basename()
+					var uid = token[1].strip_edges()
+					add_new_uid(new_path, uid)
+				if path.get_extension() == "import":
+					var new_path = path.get_basename()
+					files_to_reimport[new_path] = true
+					var uid = ""
+					for line in token[1].split("\n"):
+						if line.begins_with("uid="):
+							uid = line.split("=")[1].strip_edges()
+					add_new_uid(new_path, uid)
+				elif FileAccess.file_exists(path + ".import"):
+					files_to_reimport[path] = true
+				if path.get_extension() == "tscn":
+					# reload scene files to update references
+					get_editor_interface().reload_scene_from_path(path)
+			file_system.connect_to_file_system()
 		if files_to_reimport.size() > 0:
 			EditorInterface.get_resource_filesystem().reimport_files(files_to_reimport.keys())
 		if should_rerun:
@@ -177,7 +180,6 @@ func do_pw_to_godot_sync_task():
 
 	var group_id = WorkerThreadPool.add_group_task(self._do_pw_to_godot_sync_element.bind(files_in_patchwork), files_in_patchwork.size())
 	WorkerThreadPool.wait_for_group_task_completion(group_id)
-
 	# todo: this is still buggy
 	# delete gd and tscn files that are not in checked out patchwork files
 	# for path in files_in_godot:

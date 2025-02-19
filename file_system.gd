@@ -16,8 +16,17 @@ func _init(editor_plugin: EditorPlugin):
 
 	# listen to file system
 	var file_system = editor_plugin.get_editor_interface().get_resource_filesystem()
+	connect_to_file_system()
+	
+func connect_to_file_system():
+	var file_system = editor_plugin.get_editor_interface().get_resource_filesystem()
 	file_system.connect("filesystem_changed", _on_filesystem_changed)
 	file_system.connect("resources_reload", _on_resources_reloaded)
+
+func disconnect_from_file_system():
+	var file_system = editor_plugin.get_editor_interface().get_resource_filesystem()
+	file_system.disconnect("filesystem_changed", _on_filesystem_changed)
+	file_system.disconnect("resources_reload", _on_resources_reloaded)
 
 
 func ignore_changes(callback: Callable) -> void:
