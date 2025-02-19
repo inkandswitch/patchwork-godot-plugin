@@ -553,7 +553,7 @@ impl GodotProject {
     // State api
 
     #[func]
-    fn set_state_int(&self, entity_id: String, prop: String, value: i64) {
+    fn set_entity_state(&self, entity_id: String, prop: String, value: Variant) {
         let checked_out_doc_handle = match self.checked_out_branch_doc_handle.clone() {
             Some(doc_handle) => doc_handle,
             None => {
@@ -561,8 +561,6 @@ impl GodotProject {
                 return;
             }
         };
-
-        println!("set {}.{} to {}", entity_id, prop, value);
 
         checked_out_doc_handle.with_doc_mut(|d| {
             let mut tx = d.transaction();
@@ -574,19 +572,36 @@ impl GodotProject {
                 }
             };
 
-            match tx.get_obj_id(&state, &entity_id) {
-                Some(id) => {
-                    let _ = tx.put(id, prop, value);
-                }
-
+            let entity_id = match tx.get_obj_id(&state, &entity_id) {
+                Some(id) => id,
                 None => match tx.put_object(state, &entity_id, ObjType::Map) {
-                    Ok(id) => {
-                        let _ = tx.put(id, prop, value);
-                    }
+                    Ok(id) => id,
                     Err(e) => {
                         println!("failed to create state object: {:?}", e);
+                        return;
                     }
                 },
+            };
+
+            match value.get_type() {
+                VariantType::INT => {
+                    let _ = tx.put(entity_id, prop, value.to::<i64>());
+                }
+                VariantType::FLOAT => {
+                    let _ = tx.put(entity_id, prop, value.to::<f64>());
+                }
+                VariantType::STRING => {
+                    let _ = tx.put(entity_id, prop, value.to::<GString>().to_string());
+                }
+                VariantType::BOOL => {
+                    let _ = tx.put(entity_id, prop, value.to::<bool>());
+                }
+                _ => println!(
+                    "failed to store {}.{} unsupported value type: {:?}",
+                    entity_id,
+                    prop,
+                    value.get_type()
+                ),
             }
 
             tx.commit();
@@ -594,7 +609,8 @@ impl GodotProject {
     }
 
     #[func]
-    fn get_state_int(&self, entity_id: String, prop: String) -> Variant /* float? */ {
+    fn get_entity_state(&self, entity_id: String, prop: String) -> Variant /* Option<int | float | string | bool */
+    {
         let checked_out_branch_doc_handle = match self.checked_out_branch_doc_handle.clone() {
             Some(doc_handle) => doc_handle,
             None => {
@@ -623,8 +639,8 @@ impl GodotProject {
                 }
             };
 
-            return match checked_out_doc.get_int(entity, prop) {
-                Some(value) => value.to_variant(),
+            return match checked_out_doc.get_variant(entity, prop) {
+                Some(value) => value,
                 None => Variant::nil(),
             };
         })
