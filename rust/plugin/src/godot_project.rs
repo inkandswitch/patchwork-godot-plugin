@@ -236,7 +236,7 @@ impl GodotProject {
 
         let files = doc.get(ROOT, "files").unwrap().unwrap().1;
         // does the file exist?
-        let file_entry = match doc.get(files, path) {
+        let file_entry = match doc.get(files, &path) {
             Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
             _ => return None,
         };
@@ -264,7 +264,15 @@ impl GodotProject {
                     Ok(Some((value, _))) if value.is_str() => Some(
                         StringOrPackedByteArray::String(value.into_string().unwrap()),
                     ),
-                    _ => None,
+                    _ => {
+                        println!(
+                            "failed to read binary doc {:?} {:?} {:?}",
+                            path,
+                            doc_handle.document_id(),
+                            doc_handle.with_doc(|d| d.get_heads())
+                        );
+                        None
+                    }
                 })
             })
     }

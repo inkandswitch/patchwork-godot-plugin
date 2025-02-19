@@ -288,7 +288,7 @@ impl GodotProjectDriver {
                             match result {
                                 Ok(doc_handle) => {
                                     state.add_binary_doc_handle(&path, &doc_handle);
-                                    state.transition_checked_out_branch_state_if_loaded();
+                                    state.transition_checked_out_branch_state_if_loaded(&format!("binary doc {} {:?} loaded", path, doc_handle.with_doc(|d| d.get_heads())));
                                 },
                                 Err(e) => {
                                     println!("error requesting binary doc: {:?}", e);
@@ -532,7 +532,7 @@ impl DriverState {
 
 
         self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(branch_doc_handle.document_id());
-        self.transition_checked_out_branch_state_if_loaded();
+        self.transition_checked_out_branch_state_if_loaded("checkout branch");
     }
     
     fn save_file(
@@ -677,7 +677,7 @@ impl DriverState {
         }
     }
 
-    fn transition_checked_out_branch_state_if_loaded(&mut self) {
+    fn transition_checked_out_branch_state_if_loaded(&mut self, reason: &str) {
 
         // ignore if we are not checking out a branch
         let branch_doc_id  = match &self.checked_out_branch_state {
@@ -697,11 +697,15 @@ impl DriverState {
                 false
             }                                    
         }) {
+            let branch_doc_id_clone = branch_doc_id.clone();
+            
             self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(branch_doc_id.clone());
         
             if self.is_initialized {
+                println!("rust: checked out branch {} because {:?}", branch_doc_id_clone, reason);
                 self.tx.unbounded_send(OutputEvent::CheckedOutBranch { branch_doc_handle: branch_state.doc_handle.clone() }).unwrap();
             } else {
+                println!("rust: initialized project because {:?}", reason);
                 self.is_initialized = true;
                 self.tx.unbounded_send(OutputEvent::Initialized { 
                     checked_out_branch_doc_handle: branch_state.doc_handle.clone(),
