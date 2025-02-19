@@ -4,6 +4,9 @@ use tree_sitter::{Parser, Query, QueryCursor};
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
 pub struct PackedGodotScene {
+    format: u64,
+    uid: String,
+    script_class: String,
     attributes: HashMap<String, String>,
     nodes: HashMap<String, GodotSceneNode>,
     external_resources: HashMap<String, GodotSceneNode>,
@@ -12,12 +15,25 @@ pub struct PackedGodotScene {
 }
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
+pub struct PackedGodotResource {
+    format: u64,
+    uid: String,
+    script_class: String,
+    godot_type: String,
+    attributes: HashMap<String, String>,
+    external_resources: HashMap<String, GodotSceneNode>,
+    internal_resources: HashMap<String, GodotSceneNode>,
+}
+
+
+#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
 pub struct GodotSceneConnections {
     attributes: HashMap<String, String>, // key value pairs in the header of the section
 }
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
 pub struct GodotSceneNode {
+    
     attributes: HashMap<String, String>, // key value pairs in the header of the section
     properties: HashMap<String, String>, // key value pairs below the section header
 }
