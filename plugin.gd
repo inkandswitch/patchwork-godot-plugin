@@ -72,9 +72,9 @@ func _process(_delta: float) -> void:
 			file_system.connect_to_file_system()
 		if files_to_reimport.size() > 0:
 			EditorInterface.get_resource_filesystem().reimport_files(files_to_reimport.keys())
-		if should_rerun:
-			timer = get_tree().create_timer(5, true)
-			timer.timeout.connect(self.sync_patchwork_to_godot)
+		# if should_rerun:
+		# 	timer = get_tree().create_timer(5, true)
+		# 	timer.timeout.connect(self.sync_patchwork_to_godot)
 
 
 func _enter_tree() -> void:
@@ -117,7 +117,10 @@ func init_godot_project():
 	else:
 		sync_patchwork_to_godot()
 
-	godot_project.connect("files_changed", sync_patchwork_to_godot)
+	godot_project.connect("files_changed", func():
+		print("files changed!!!!")
+		sync_patchwork_to_godot()
+	)
 	godot_project.checked_out_branch.connect(_on_checked_out_branch)
 	print("end init_godot_project()")
 
@@ -202,6 +205,8 @@ func _try_wait_for_pw_to_godot_sync_task(force: bool = false):
 
 func sync_patchwork_to_godot():
 	# only sync once the user has saved all files
+
+	print("sync_patchwork_to_godot is called")
 
 	# todo: add unsaved files check back
 	if PatchworkEditor.unsaved_files_open():
