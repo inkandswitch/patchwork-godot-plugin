@@ -101,7 +101,7 @@ func _merge_branch():
 
 func merge_branch():
 	_before_cvs_action("Merging branch")
-	call_deferred("_merge_branch")
+	_merge_branch()
 
 func _on_menu_button_id_pressed(id: int) -> void:
 	match id:

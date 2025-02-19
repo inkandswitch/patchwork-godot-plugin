@@ -216,7 +216,7 @@ func sync_patchwork_to_godot():
 		files_to_reload_mutex.unlock()
 		return
 	current_pw_to_godot_sync_task_id = WorkerThreadPool.add_task(self.do_pw_to_godot_sync_task, false, "sync_patchwork_to_godot")
-	call_deferred("_try_wait_for_pw_to_godot_sync_task")
+	_try_wait_for_pw_to_godot_sync_task(false)
 
 	return
 
