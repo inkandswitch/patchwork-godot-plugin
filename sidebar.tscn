@@ -1,6 +1,6 @@
 [gd_scene load_steps=3 format=3 uid="uid://cxyjgsyba1v85"]
 
-[ext_resource type="Script" uid="uid://bxgybx6gjahju" path="res://addons/patchwork/sidebar.gd" id="1_ebh36"]
+[ext_resource type="Script" path="res://addons/patchwork/sidebar.gd" id="1_ebh36"]
 [ext_resource type="Texture2D" uid="uid://ymewwqpn0vi4" path="res://addons/patchwork/icons/GuiTabMenuHl.svg" id="2_rfxbe"]
 
 [node name="Patchwork" type="MarginContainer"]
@@ -79,11 +79,6 @@ text = "0 changes"
 unique_name_in_owner = true
 layout_mode = 2
 text = "0 patches"
-
-[node name="ShutdownButton" type="Button" parent="VBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Click me before closing Godot"
 
 [node name="ConfirmationDialog" type="ConfirmationDialog" parent="."]
 

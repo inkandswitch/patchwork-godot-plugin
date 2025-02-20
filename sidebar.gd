@@ -40,10 +40,18 @@ func _ready() -> void:
 	print("Sidebar ready!")
 	branch_picker.item_selected.connect(_on_branch_picker_item_selected)
 	update_ui()
-	plugin.connect("resource_saved", self._on_resource_saved)
-	plugin.connect("scene_saved", self._on_scene_saved)
-	godot_project.connect("branches_changed", self._update_ui_on_branches_changed);
-	godot_project.connect("files_changed", self._update_ui_on_files_changed);
+
+	# @Paul: I think somewhere besides the plugin sidebar gets instantiated. Is this something godot does?
+	# to paper over this we check if plugin and godot_project are set
+
+	if plugin:
+		plugin.connect("resource_saved", self._on_resource_saved)
+		plugin.connect("scene_saved", self._on_scene_saved)
+	
+	if godot_project:
+		godot_project.connect("branches_changed", self._update_ui_on_branches_changed);
+		godot_project.connect("files_changed", self._update_ui_on_files_changed);
+	
 	var popup = menu_button.get_popup()
 	popup.id_pressed.connect(_on_menu_button_id_pressed)
 
@@ -181,12 +189,12 @@ func _on_create_new_branch() -> void:
 	dialog.popup_centered()
 
 func update_ui() -> void:
+	if not godot_project:
+		print("warning: update_ui() called before init")
+		return
+
 	var checked_out_branch = godot_project.get_checked_out_branch_id()
 
-	if not godot_project:
-		# update_ui() called before init
-		print("ERROR: update_ui() called before init")
-		return
 	self.branches = godot_project.get_branches()
 
 	# update branch picker
