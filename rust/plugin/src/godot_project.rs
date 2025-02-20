@@ -557,7 +557,6 @@ impl GodotProject {
         let checked_out_doc_handle = match self.checked_out_branch_doc_handle.clone() {
             Some(doc_handle) => doc_handle,
             None => {
-                println!("failed to set {}.{} to {}", entity_id, prop, value);
                 return;
             }
         };
@@ -593,6 +592,9 @@ impl GodotProject {
                 VariantType::STRING => {
                     let _ = tx.put(entity_id, prop, value.to::<GString>().to_string());
                 }
+                VariantType::STRING_NAME => {
+                    let _ = tx.put(entity_id, prop, value.to::<StringName>().to_string());
+                }
                 VariantType::BOOL => {
                     let _ = tx.put(entity_id, prop, value.to::<bool>());
                 }
@@ -614,12 +616,9 @@ impl GodotProject {
         let checked_out_branch_doc_handle = match self.checked_out_branch_doc_handle.clone() {
             Some(doc_handle) => doc_handle,
             None => {
-                println!("failed to get {}.{}", entity_id, prop);
                 return Variant::nil();
             }
         };
-
-        println!("get {}.{}", entity_id, prop);
 
         checked_out_branch_doc_handle.with_doc(|checked_out_doc| {
             let state = match checked_out_doc.get_obj_id(ROOT, "state") {
@@ -630,11 +629,9 @@ impl GodotProject {
                 }
             };
 
-            let entity_id_clone = entity_id.clone();
             let entity = match checked_out_doc.get_obj_id(state, entity_id) {
                 Some(id) => id,
                 None => {
-                    println!("entity {:?} does not exist", &entity_id_clone);
                     return Variant::nil();
                 }
             };
@@ -646,9 +643,22 @@ impl GodotProject {
         })
     }
 
-    // these functions below should be extracted into a separate SyncRepo class
+    #[func]
+    fn get_all_entity_ids(&self) -> PackedStringArray {
+        let checked_out_branch_doc_handle = match self.checked_out_branch_doc_handle.clone() {
+            Some(doc_handle) => doc_handle,
+            None => return PackedStringArray::new(),
+        };
 
-    // SYNC
+        checked_out_branch_doc_handle.with_doc(|d| {
+            let state = match d.get_obj_id(ROOT, "state") {
+                Some(id) => id,
+                None => return PackedStringArray::new(),
+            };
+
+            d.keys(&state).map(|k| GString::from(k)).collect()
+        })
+    }
 
     // needs to be called every frame to process the internal events
     #[func]
