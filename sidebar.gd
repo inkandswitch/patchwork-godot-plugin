@@ -11,7 +11,6 @@ var godot_project: GodotProject
 @onready var history_list: ItemList = %HistoryList
 @onready var change_count_label: Label = %ChangeCountLabel
 @onready var patches_count_label: Label = %PatchesCountLabel
-@onready var shutdown_button: Button = %ShutdownButton
 
 var branches = []
 var plugin: EditorPlugin
@@ -48,21 +47,9 @@ func _ready() -> void:
 	var popup = menu_button.get_popup()
 	popup.id_pressed.connect(_on_menu_button_id_pressed)
 
-	shutdown_button.pressed.connect(_on_shutdown_button_pressed)
-
 func _on_branch_picker_item_selected(index: int) -> void:
 	var selected_branch = branches[index]
 	checkout_branch(selected_branch.id)
-
-func _on_shutdown_button_pressed() -> void:
-
-	print("Shut down")
-
-	godot_project.shutdown()
-
-	await godot_project.shutdown_completed
-
-	print("It is now safe to turn off your godot")
 
 static var void_func = func(): return
 static func popup_box(parent_window: Node, dialog: AcceptDialog, message: String, box_title: String, confirm_func: Callable = void_func, cancel_func: Callable = void_func):
