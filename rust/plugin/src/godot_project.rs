@@ -29,6 +29,7 @@ use std::ops::Deref;
 use std::os::raw::c_char;
 use tokio::{net::TcpStream, runtime::Runtime};
 
+use crate::godot_project_driver::DocHandleType;
 use crate::utils::parse_automerge_url;
 use crate::{
     doc_utils::SimpleDocReader,
@@ -670,11 +671,18 @@ impl GodotProject {
                     self.base_mut().emit_signal("files_changed", &[]);
                 }
 
-                OutputEvent::NewDocHandle { doc_handle } => {
-                    println!(
-                        "rust: DocHandleChanged event for doc {}",
-                        doc_handle.document_id()
-                    );
+                OutputEvent::NewDocHandle {
+                    doc_handle,
+                    doc_handle_type,
+                } => {
+                    if doc_handle_type == DocHandleType::Binary {
+                        println!(
+                            "rust: NewBinaryDocHandle {} {} changes",
+                            doc_handle.document_id(),
+                            doc_handle.with_doc(|d| d.get_heads().len())
+                        );
+                    }
+
                     self.doc_handles
                         .insert(doc_handle.document_id(), doc_handle.clone());
                 }
