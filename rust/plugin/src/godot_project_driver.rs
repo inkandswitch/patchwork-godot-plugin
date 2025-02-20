@@ -57,6 +57,12 @@ pub enum InputEvent {
     StartShutdown,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum DocHandleType {
+    Binary,
+    Unknown,
+}
+
 #[derive(Debug, Clone)]
 pub enum OutputEvent {
     Initialized {
@@ -65,6 +71,7 @@ pub enum OutputEvent {
     },
     NewDocHandle {
         doc_handle: DocHandle,
+        doc_handle_type: DocHandleType,
     },
     CheckedOutBranch {
         branch_doc_handle: DocHandle,
@@ -85,57 +92,6 @@ enum SubscriptionMessage {
     Added {
         doc_handle: DocHandle,
     },
-}
-
-
-// todo: pull this into the driver state
-pub struct DocHandleSubscriptions {
-    subscribed_doc_handle_ids: HashSet<DocumentId>,
-    futures: futures::stream::SelectAll<std::pin::Pin<Box<dyn Stream<Item = SubscriptionMessage> + Send>>>,
-}
-
-impl DocHandleSubscriptions {
-    pub fn new() -> Self {
-        return Self {
-            subscribed_doc_handle_ids: HashSet::new(),
-            futures: futures::stream::SelectAll::new(),
-        };
-    }
-
-    pub fn add_doc_handle(&mut self, doc_handle: DocHandle) {
-
-        println!("rust: subscribed to doc handle: {:?}", doc_handle.document_id());
-
-        if self.subscribed_doc_handle_ids.contains(&doc_handle.document_id()) {
-            return;
-        }
-
-        self.subscribed_doc_handle_ids.insert(doc_handle.document_id());
-        self.futures.push(handle_changes(doc_handle.clone()).boxed());
-        self.futures.push(futures::stream::once(async move {
-            SubscriptionMessage::Added { doc_handle }
-        }).boxed());
-    }
-}
-
-fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = SubscriptionMessage> + Send {
-    futures::stream::unfold(handle, |doc_handle| async {
-        let heads_before = doc_handle.with_doc(|d| d.get_heads());
-        let _ = doc_handle.changed().await;
-        let heads_after = doc_handle.with_doc(|d| d.get_heads());
-        let diff = doc_handle.with_doc(|d| {
-            d.diff(
-                &heads_before,
-                &heads_after,
-                automerge::patches::TextRepresentation::String(TextEncoding::Utf8CodeUnit),
-            )
-        });
-
-        Some((
-            SubscriptionMessage::Changed { doc_handle: doc_handle.clone(), diff },
-            doc_handle,
-        ))
-    })
 }
 
 #[derive(Debug, Clone)]
@@ -175,6 +131,10 @@ struct DriverState {
 
     requesting_binary_docs: FuturesUnordered<Pin<Box<dyn Future<Output = (String, Result<DocHandle, RepoError>)> + Send>>>,
     requesting_branch_docs: FuturesUnordered<Pin<Box<dyn Future<Output = (String, Result<DocHandle, RepoError>)> + Send>>>,
+
+    subscribed_doc_ids: HashSet<DocumentId>,
+    all_doc_changes: futures::stream::SelectAll<std::pin::Pin<Box<dyn Stream<Item = SubscriptionMessage> + Send>>>
+
 }
 
 pub struct GodotProjectDriver {
@@ -254,10 +214,6 @@ impl GodotProjectDriver {
         let repo_handle = self.repo_handle.clone();
 
         self.runtime.spawn(async move {
-            let repo_handle_clone = repo_handle.clone();
-
-            let mut subscribed_doc_handles = DocHandleSubscriptions::new();        
-
             // destructure project doc handles
             let ProjectDocHandles { branches_metadata_doc_handle, main_branch_doc_handle } = init_project_doc_handles(&repo_handle, branches_metadata_doc_id).await;
 
@@ -280,10 +236,12 @@ impl GodotProjectDriver {
                 pending_branch_doc_ids: HashSet::new(),
                 requesting_binary_docs : FuturesUnordered::new(),
                 requesting_branch_docs: FuturesUnordered::new(),
+                subscribed_doc_ids: HashSet::new(),
+                all_doc_changes: futures::stream::SelectAll::new(),
             };
 
-            subscribed_doc_handles.add_doc_handle(state.branches_metadata_doc_handle.clone());
-            subscribed_doc_handles.add_doc_handle(state.main_branch_doc_handle.clone());
+            state.subscribe_to_doc_handle(state.branches_metadata_doc_handle.clone());
+            state.subscribe_to_doc_handle(state.main_branch_doc_handle.clone());
 
             state.checkout_branch(state.main_branch_doc_handle.clone());        
 
@@ -320,7 +278,7 @@ impl GodotProjectDriver {
                                             .cloned()
                                             .collect(),
                                     });
-                                    subscribed_doc_handles.add_doc_handle(doc_handle.clone());
+                                    state.subscribe_to_doc_handle(doc_handle.clone());
                                     println!("rust: added branch doc: {:?}", branch_name);
 
                                 }
@@ -331,13 +289,13 @@ impl GodotProjectDriver {
                         }
                     },
 
-                    message = subscribed_doc_handles.futures.select_next_some() => {
+                    message = state.all_doc_changes.select_next_some() => {
                        let doc_handle = match message {
                             SubscriptionMessage::Changed { doc_handle, diff: _ } => {
                                 doc_handle
                             },
                             SubscriptionMessage::Added { doc_handle } => {
-                                tx.unbounded_send(OutputEvent::NewDocHandle { doc_handle: doc_handle.clone() }).unwrap();
+                                tx.unbounded_send(OutputEvent::NewDocHandle { doc_handle: doc_handle.clone(), doc_handle_type: DocHandleType::Unknown }).unwrap();
                                 doc_handle
                             },
                         };      
@@ -381,7 +339,7 @@ impl GodotProjectDriver {
 
                             InputEvent::CreateBranch { name } => {
                                 let new_branch_doc_handle = state.create_branch(name.clone());
-                                subscribed_doc_handles.add_doc_handle(new_branch_doc_handle.clone());
+                                state.subscribe_to_doc_handle(new_branch_doc_handle.clone());
                                 state.checkout_branch(new_branch_doc_handle);
                             },
 
@@ -578,6 +536,8 @@ impl DriverState {
                     tx.commit();
                 });
 
+                println!("create binary doc: {:?} size: {:?}", path, content.len());
+
                 self.add_binary_doc_handle(path, &binary_doc_handle);
 
                 Some((path.clone(), binary_doc_handle))
@@ -673,7 +633,22 @@ impl DriverState {
             doc_handle: Some(binary_doc_handle.clone()),
             path: path.clone(),
         });
-        let _ = &self.tx.unbounded_send(OutputEvent::NewDocHandle { doc_handle: binary_doc_handle.clone() }).unwrap();
+        let _ = &self.tx.unbounded_send(OutputEvent::NewDocHandle { doc_handle: binary_doc_handle.clone(), doc_handle_type: DocHandleType::Binary }).unwrap();
+    }
+
+    pub fn subscribe_to_doc_handle(&mut self, doc_handle: DocHandle) {
+
+        println!("rust: subscribed to doc handle: {:?}", doc_handle.document_id());
+
+        if self.subscribed_doc_ids.contains(&doc_handle.document_id()) {
+            return;
+        }
+
+        self.subscribed_doc_ids.insert(doc_handle.document_id());
+        self.all_doc_changes.push(handle_changes(doc_handle.clone()).boxed());
+        self.all_doc_changes.push(futures::stream::once(async move {
+            SubscriptionMessage::Added { doc_handle }
+        }).boxed());
     }
 
     fn get_branches_metadata(&self) -> BranchesMetadataDoc {
@@ -741,4 +716,24 @@ fn clone_doc(repo_handle: &RepoHandle, doc_handle: &DocHandle) -> DocHandle {
         doc_handle.with_doc_mut(|mut main_d| new_doc_handle.with_doc_mut(|d| d.merge(&mut main_d)));
 
     return new_doc_handle;
+}
+
+fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = SubscriptionMessage> + Send {
+    futures::stream::unfold(handle, |doc_handle| async {
+        let heads_before = doc_handle.with_doc(|d| d.get_heads());
+        let _ = doc_handle.changed().await;
+        let heads_after = doc_handle.with_doc(|d| d.get_heads());
+        let diff = doc_handle.with_doc(|d| {
+            d.diff(
+                &heads_before,
+                &heads_after,
+                automerge::patches::TextRepresentation::String(TextEncoding::Utf8CodeUnit),
+            )
+        });
+
+        Some((
+            SubscriptionMessage::Changed { doc_handle: doc_handle.clone(), diff },
+            doc_handle,
+        ))
+    })
 }
