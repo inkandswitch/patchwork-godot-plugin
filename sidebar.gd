@@ -9,8 +9,10 @@ var godot_project: GodotProject
 @onready var branch_picker: OptionButton = %BranchPicker
 @onready var menu_button: MenuButton = %MenuButton
 @onready var history_list: ItemList = %HistoryList
+@onready var changed_files_list: ItemList = %ChangedFilesList
 @onready var change_count_label: Label = %ChangeCountLabel
 @onready var patches_count_label: Label = %PatchesCountLabel
+@onready var changed_files_container: Node = %ChangedFilesContainer
 
 var branches = []
 var plugin: EditorPlugin
@@ -193,18 +195,20 @@ func update_ui() -> void:
 		print("warning: update_ui() called before init")
 		return
 
-	var checked_out_branch = godot_project.get_checked_out_branch_id()
 
 	self.branches = godot_project.get_branches()
 
 	# update branch picker
+
 	branch_picker.clear()
-	var checked_out_branch_id = godot_project.get_checked_out_branch_id() if checked_out_branch == null else checked_out_branch
+	var checked_out_branch_id = godot_project.get_checked_out_branch_id()
+	var checked_out_branch
 	for i in range(branches.size()):
 		var branch = branches[i]
 		branch_picker.add_item(branch.name, i)
 		branch_picker.set_item_metadata(i, branch.id)
 		if branch.id == checked_out_branch_id:
+			checked_out_branch = branch
 			branch_picker.select(i)
 
 	# update history
@@ -212,19 +216,22 @@ func update_ui() -> void:
 	var history = godot_project.get_changes()
 	history_list.clear()
 
-	# update changes count
-	change_count_label.text = str(history.size()) + " change" if history.size() == 1 else str(history.size()) + " changes"
-
-	# update patches count
-	var patches = godot_project.get_diff();
-	var patches_count = patches.size()
-
-	patches_count_label.text = "" if patches_count == 0 else "Changed files: " + ", ".join(patches)
-
 	for change in history:
 		history_list.add_item(change)
 
+	# update changed files
+
+	changed_files_container.visible = checked_out_branch.name != "main"
+
+	var changed_files = godot_project.get_diff();
+
+	changed_files_list.clear()
+
+	for file in changed_files:
+		changed_files_list.add_item(file)
+
 	# update context menu
+
 	var menu_popup = menu_button.get_popup()
 	
 	menu_popup.clear()

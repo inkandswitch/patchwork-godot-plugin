@@ -46,16 +46,45 @@ layout_mode = 2
 theme_override_constants/separation = 16
 
 [node name="TabContainer" type="TabContainer" parent="VBoxContainer"]
-visible = false
 layout_mode = 2
 size_flags_vertical = 3
 current_tab = 0
 
-[node name="History" type="TabBar" parent="VBoxContainer/TabContainer"]
+[node name="Review" type="TabBar" parent="VBoxContainer/TabContainer"]
 layout_mode = 2
 metadata/_tab_index = 0
 
-[node name="HistoryList" type="ItemList" parent="VBoxContainer/TabContainer/History"]
+[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer/TabContainer/Review"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="ChangedFilesContainer" type="VBoxContainer" parent="VBoxContainer/TabContainer/Review/MarginContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="ChangedFiles" type="Label" parent="VBoxContainer/TabContainer/Review/MarginContainer/ChangedFilesContainer"]
+layout_mode = 2
+text = "Changed files"
+
+[node name="ChangedFilesList" type="ItemList" parent="VBoxContainer/TabContainer/Review/MarginContainer/ChangedFilesContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Debug" type="TabBar" parent="VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+metadata/_tab_index = 1
+
+[node name="HistoryList" type="ItemList" parent="VBoxContainer/TabContainer/Debug"]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
@@ -64,21 +93,6 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_vertical = 3
-
-[node name="Changes" type="TabBar" parent="VBoxContainer/TabContainer"]
-visible = false
-layout_mode = 2
-metadata/_tab_index = 1
-
-[node name="ChangeCountLabel" type="Label" parent="VBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "0 changes"
-
-[node name="PatchesCountLabel" type="Label" parent="VBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "0 patches"
 
 [node name="ConfirmationDialog" type="ConfirmationDialog" parent="."]
 
