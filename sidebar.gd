@@ -10,8 +10,6 @@ var godot_project: GodotProject
 @onready var menu_button: MenuButton = %MenuButton
 @onready var history_list: ItemList = %HistoryList
 @onready var changed_files_list: ItemList = %ChangedFilesList
-@onready var change_count_label: Label = %ChangeCountLabel
-@onready var patches_count_label: Label = %PatchesCountLabel
 @onready var changed_files_container: Node = %ChangedFilesContainer
 
 var branches = []
