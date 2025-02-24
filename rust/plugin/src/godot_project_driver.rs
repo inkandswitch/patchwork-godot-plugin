@@ -12,10 +12,7 @@ use std::{
 };
 
 use crate::utils::commit_with_attribution_and_timestamp;
-use crate::{
-    godot_project::{BranchesMetadataDoc, GodotProjectDoc, StringOrPackedByteArray},
-    utils::get_linked_docs_of_branch,
-};
+use crate::{godot_project::{BranchesMetadataDoc, GodotProjectDoc, StringOrPackedByteArray}, godot_scene, utils::get_linked_docs_of_branch};
 use automerge::{
     patches::TextRepresentation, transaction::Transactable, ChangeHash, ObjType,
     PatchLog, ReadDoc, TextEncoding, ROOT,
@@ -597,15 +594,29 @@ impl DriverState {
                  if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
                     let _ = tx.delete(&file_entry, "url");
                 }
-
-                // either get existing text or create new text
-                let content_key = match tx.get(&file_entry, "content") {
-                    Ok(Some((automerge::Value::Object(ObjType::Text), content))) => content,
-                    _ => tx
-                        .put_object(&file_entry, "content", ObjType::Text)
-                        .unwrap(),
-                };
-                let _ = tx.update_text(&content_key, &content);
+                // else if the path is tres or tscn, delete the content
+                if path.ends_with(".tscn") || path.ends_with(".tres") {
+                    if let Ok(Some((_, content_key))) = tx.get(&file_entry, "content") {
+                        let _ = tx.delete(&content_key, "");
+                    }
+                    // the key for this is "struct_content" in the godot scene format
+                    if let Ok(Some((_, content_key))) = tx.get(&file_entry, "struct_content") {
+                        let _ = tx.delete(&content_key, "");
+                    }
+                    let res = godot_scene::parse(&content);
+                    res.iter().for_each(|(key, value)| {
+                        let _ = tx.put(&file_entry, key, value);
+                    });
+                } else {
+                    // either get existing text or create new text
+                    let content_key = match tx.get(&file_entry, "content") {
+                        Ok(Some((automerge::Value::Object(ObjType::Text), content))) => content,
+                        _ => tx
+                            .put_object(&file_entry, "content", ObjType::Text)
+                            .unwrap(),
+                    };
+                    let _ = tx.update_text(&content_key, &content);
+                }
             }
 
             for (path, binary_doc_handle) in binary_entries {

@@ -12,6 +12,7 @@ pub struct PackedGodotScene {
     external_resources: HashMap<String, GodotSceneNode>,
     internal_resources: HashMap<String, GodotSceneNode>,
     connections: HashMap<String, GodotSceneConnections>,
+    editable_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
@@ -115,11 +116,15 @@ pub fn parse(source: &String) -> Result<PackedGodotScene, String> {
             let mut query_cursor = QueryCursor::new();
             let matches = query_cursor.matches(&query, tree.root_node(), content_bytes);
             let mut scene = PackedGodotScene {
+                format: 4,
+                uid: String::new(),
+                script_class: String::new(),            
                 attributes: HashMap::new(),
                 nodes: HashMap::new(),
                 external_resources: HashMap::new(),
                 internal_resources: HashMap::new(),
                 connections: HashMap::new(),
+                editable_paths: Vec::new(),
             };
 
             for m in matches {
@@ -184,6 +189,9 @@ pub fn parse(source: &String) -> Result<PackedGodotScene, String> {
                     if let Some(node_path) = get_node_path(scene_clone, node) {
                         scene.nodes.insert(node_path, node_clone);
                     }
+                } else if section_id == "editable_path" {
+                    let editable_path = node.properties.get("path").unwrap();
+                    scene.editable_paths.push(editable_path.clone());
                 } else if section_id == "ext_resource" {
                     let node_clone = node.clone();
                     if let Some(raw_id) = attributes_clone.get("id") {
