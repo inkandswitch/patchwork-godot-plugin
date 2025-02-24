@@ -404,18 +404,24 @@ impl GodotProject {
     }
 
     #[func]
-    fn get_changes(&self) -> PackedStringArray /* String[]  */ {
+    fn get_changes(&self) -> Array<Dictionary> /* String[]  */ {
         let checked_out_branch_doc = match self.get_checked_out_branch_doc() {
             Some(doc) => doc,
-            None => return PackedStringArray::new(),
+            None => return Array::new(),
         };
 
         checked_out_branch_doc
             .get_changes(&[])
             .to_vec()
             .iter()
-            .map(|c| GString::from(c.hash().to_string()))
-            .collect::<PackedStringArray>()
+            .map(|c| {
+                dict! {
+                    "hash": GString::from(c.hash().to_string()).to_variant(),
+                    "user_name": GString::from(c.message().unwrap_or(&String::new())).to_variant(),
+                    "timestamp": c.timestamp(),
+                }
+            })
+            .collect::<Array<Dictionary>>()
     }
 
     #[func]

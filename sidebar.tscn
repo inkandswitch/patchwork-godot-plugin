@@ -85,12 +85,12 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="Debug" type="TabBar" parent="VBoxContainer/TabContainer"]
+[node name="History" type="TabBar" parent="VBoxContainer/TabContainer"]
 visible = false
 layout_mode = 2
 metadata/_tab_index = 1
 
-[node name="HistoryList" type="ItemList" parent="VBoxContainer/TabContainer/Debug"]
+[node name="HistoryList" type="ItemList" parent="VBoxContainer/TabContainer/History"]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15

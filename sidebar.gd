@@ -217,6 +217,7 @@ func _on_user_button_pressed():
 
 			print(new_user_name)
 			config.set_user_value("user_name", new_user_name)
+			godot_project.set_user_name(new_user_name)
 
 		update_ui()
 		dialog.queue_free()
@@ -252,8 +253,17 @@ func update_ui() -> void:
 	var history = godot_project.get_changes()
 	history_list.clear()
 
+	print("changes:", history.size())
+
+
 	for change in history:
-		history_list.add_item(change)
+		var change_hash = change.hash.substr(0, 7)
+		var change_author = change.user_name
+		var change_timestamp = human_readable_timestamp(change.timestamp)
+
+
+		history_list.add_item(change_hash + " - " + change_author + " - " + change_timestamp)
+
 
 	# update changed files
 
@@ -279,3 +289,22 @@ func update_ui() -> void:
 
 	var user_name = config.get_user_value("user_name", "")
 	user_button.text = user_name
+
+func human_readable_timestamp(timestamp: int) -> String:
+	var now = Time.get_unix_time_from_system() * 1000 # Convert to ms
+	var diff = (now - timestamp) / 1000 # Convert diff to seconds
+	
+	if diff < 60:
+		return str(int(diff)) + " seconds ago"
+	elif diff < 3600:
+		return str(int(diff / 60)) + " minutes ago"
+	elif diff < 86400:
+		return str(int(diff / 3600)) + " hours ago"
+	elif diff < 604800:
+		return str(int(diff / 86400)) + " days ago"
+	elif diff < 2592000:
+		return str(int(diff / 604800)) + " weeks ago"
+	elif diff < 31536000:
+		return str(int(diff / 2592000)) + " months ago"
+	else:
+		return str(int(diff / 31536000)) + " years ago"
