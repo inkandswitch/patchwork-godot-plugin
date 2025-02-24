@@ -108,8 +108,7 @@ dependencies = [
 [[package]]
 name = "automerge_repo"
 version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51624a74100852fb242db11838c815f32db58ae4328460cb5818068a59be8897"
+source = "git+https://github.com/automerge/automerge-repo-rs?rev=e1a4f55b0bba6cadcdd20e6ca50e6ae0d487e2dc#e1a4f55b0bba6cadcdd20e6ca50e6ae0d487e2dc"
 dependencies = [
  "automerge",
  "bs58",

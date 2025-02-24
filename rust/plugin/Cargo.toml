@@ -18,7 +18,9 @@ doc = false
 
 [dependencies]
 automerge = "0.6.0"
-automerge_repo = { version = "0.2.1", features = ["tokio"] }
+automerge_repo = { git = "https://github.com/automerge/automerge-repo-rs", rev = "e1a4f55b0bba6cadcdd20e6ca50e6ae0d487e2dc", features = [
+  "tokio",
+] }
 autosurgeon = "0.8.7"
 futures = "0.3.31"
 godot = { git = "https://github.com/godot-rust/gdext", branch = "master", features = [
