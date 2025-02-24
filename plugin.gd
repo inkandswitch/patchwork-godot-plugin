@@ -99,8 +99,9 @@ func _enter_tree() -> void:
 func init_godot_project():
 	print("init_godot_project()")
 	var project_doc_id = config.get_project_value("project_doc_id", "")
+	var user_name = config.get_user_value("user_name", "")
 
-	godot_project = GodotProject.create(project_doc_id)
+	godot_project = GodotProject.create(project_doc_id, user_name)
 
 	if godot_project == null:
 		print("Failed to create GodotProject instance.")

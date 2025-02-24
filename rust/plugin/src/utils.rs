@@ -1,7 +1,14 @@
-use std::{collections::HashMap, str::FromStr};
+use std::{
+    collections::HashMap,
+    str::FromStr,
+    time::{Instant, SystemTime},
+};
 
 use crate::doc_utils::SimpleDocReader;
-use automerge::{ReadDoc, ROOT};
+use automerge::{
+    transaction::{CommitOptions, Transaction},
+    ReadDoc, ROOT,
+};
 use automerge_repo::{DocHandle, DocumentId};
 
 pub(crate) fn get_linked_docs_of_branch(
@@ -71,4 +78,26 @@ pub(crate) fn print_doc(message: &str, doc_handle: &DocHandle) {
     let checked_out_doc_json =
         doc_handle.with_doc(|d| serde_json::to_string(&automerge::AutoSerde::from(d)).unwrap());
     println!("rust: {:?}: {:?}", message, checked_out_doc_json);
+}
+
+pub(crate) fn commit_with_attribution_and_timestamp(tx: Transaction, name: &Option<String>) {
+    let timestamp = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+
+    match name {
+        Some(name) => {
+            tx.commit_with(
+                CommitOptions::default()
+                    .with_message(name)
+                    .with_time(timestamp),
+            );
+
+            println!("commit with name and timestamp: {:?}", name);
+        }
+        None => {
+            tx.commit_with(CommitOptions::default().with_time(timestamp));
+        }
+    }
 }

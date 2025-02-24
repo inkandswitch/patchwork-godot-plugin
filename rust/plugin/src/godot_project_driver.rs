@@ -11,6 +11,7 @@ use std::{
     str::FromStr,
 };
 
+use crate::utils::commit_with_attribution_and_timestamp;
 use crate::{
     godot_project::{BranchesMetadataDoc, GodotProjectDoc, StringOrPackedByteArray},
     utils::get_linked_docs_of_branch,
@@ -52,6 +53,10 @@ pub enum InputEvent {
     SaveFiles {
         heads: Option<Vec<ChangeHash>>,
         files: Vec<(String, StringOrPackedByteArray)>,
+    },
+
+    SetUserName {
+        name: String,
     },
 
     StartShutdown,
@@ -118,6 +123,8 @@ struct DriverState {
     tx: UnboundedSender<OutputEvent>,
     repo_handle: RepoHandle,
 
+    user_name: Option<String>,
+
     main_branch_doc_handle: DocHandle,
     branches_metadata_doc_handle: DocHandle,
     
@@ -155,7 +162,7 @@ impl GodotProjectDriver {
         let repo = Repo::new(None, Box::new(storage));
         let repo_handle = repo.run();
 
-        return Self {
+        return Self {            
             runtime,
             repo_handle,
         };
@@ -166,12 +173,13 @@ impl GodotProjectDriver {
         rx: UnboundedReceiver<InputEvent>,
         tx: UnboundedSender<OutputEvent>,
         maybe_branches_metadata_doc_id: Option<DocumentId>,
+        user_name: Option<String>,
     ) {
         // Spawn connection task
         self.spawn_connection_task();
 
         // Spawn sync task for all doc handles
-        self.spawn_driver_task(rx, tx, maybe_branches_metadata_doc_id);
+        self.spawn_driver_task(rx, tx, maybe_branches_metadata_doc_id, &user_name);
     }
 
     fn spawn_connection_task(&self) {
@@ -210,16 +218,18 @@ impl GodotProjectDriver {
         mut rx: UnboundedReceiver<InputEvent>,
         tx: UnboundedSender<OutputEvent>,
         branches_metadata_doc_id: Option<DocumentId>,
+        user_name: &Option<String>,
     ) {
         let repo_handle = self.repo_handle.clone();
+        let user_name = user_name.clone();
 
         self.runtime.spawn(async move {
             // destructure project doc handles
-            let ProjectDocHandles { branches_metadata_doc_handle, main_branch_doc_handle } = init_project_doc_handles(&repo_handle, branches_metadata_doc_id).await;
-
-            let mut state = DriverState {
+            let ProjectDocHandles { branches_metadata_doc_handle, main_branch_doc_handle } = init_project_doc_handles(&repo_handle, branches_metadata_doc_id, &user_name).await;
+            let mut state = DriverState {                
                 tx: tx.clone(),
                 repo_handle: repo_handle.clone(),            
+                user_name: user_name.clone(),
                 binary_doc_states: HashMap::new(),
                 checked_out_branch_state: CheckedOutBranchState::NothingCheckedOut,
                 main_branch_doc_handle: main_branch_doc_handle.clone(),                                
@@ -361,6 +371,10 @@ impl GodotProjectDriver {
 
                                 tx.unbounded_send(OutputEvent::CompletedShutdown).unwrap();
                             }
+
+                            InputEvent::SetUserName { name } => {
+                                state.user_name = Some(name.clone());
+                            }
                         };                    
                     }
                 }
@@ -376,7 +390,7 @@ struct ProjectDocHandles {
     main_branch_doc_handle: DocHandle,
 }
 
-async fn init_project_doc_handles (repo_handle: &RepoHandle, doc_id: Option<DocumentId>) -> ProjectDocHandles  {
+async fn init_project_doc_handles (repo_handle: &RepoHandle, doc_id: Option<DocumentId>, user_name: &Option<String>) -> ProjectDocHandles  {
     match doc_id {
 
         // load existing project
@@ -419,7 +433,7 @@ async fn init_project_doc_handles (repo_handle: &RepoHandle, doc_id: Option<Docu
                         state: HashMap::new(),
                     },
                 );
-                tx.commit();
+                commit_with_attribution_and_timestamp(tx, &user_name);
             });
 
             let main_branch_doc_id = main_branch_doc_handle.document_id().to_string();
@@ -446,7 +460,7 @@ async fn init_project_doc_handles (repo_handle: &RepoHandle, doc_id: Option<Docu
                         branches: branches_clone,
                     },
                 );
-                tx.commit();
+                commit_with_attribution_and_timestamp(tx, &user_name);
             });
 
             return ProjectDocHandles {
@@ -473,7 +487,7 @@ impl DriverState {
                 .branches
                 .insert(branch.id.clone(), branch);
             let _ = reconcile(&mut tx, branches_metadata);
-            tx.commit();
+            commit_with_attribution_and_timestamp(tx, &self.user_name);
         });
 
         self.branch_states.insert(new_branch_handle.document_id().clone(), BranchState {
@@ -533,7 +547,7 @@ impl DriverState {
                 binary_doc_handle.with_doc_mut(|d| {
                     let mut tx = d.transaction();
                     let _ = tx.put(ROOT, "content", content.clone());
-                    tx.commit();
+                    commit_with_attribution_and_timestamp(tx, &self.user_name);
                 });
 
                 println!("create binary doc: {:?} size: {:?}", path, content.len());
@@ -603,7 +617,7 @@ impl DriverState {
                 );
             }
 
-            tx.commit();
+            commit_with_attribution_and_timestamp(tx, &self.user_name);
         });
     }
 
@@ -624,7 +638,7 @@ impl DriverState {
                 });
 
             let _ = reconcile(&mut tx, branches_metadata);
-            tx.commit();
+            commit_with_attribution_and_timestamp(tx, &self.user_name);
         });
     }
 
