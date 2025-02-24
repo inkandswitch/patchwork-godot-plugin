@@ -11,17 +11,19 @@ var godot_project: GodotProject
 @onready var history_list: ItemList = %HistoryList
 @onready var changed_files_list: ItemList = %ChangedFilesList
 @onready var changed_files_container: Node = %ChangedFilesContainer
+@onready var user_button: Button = %UserButton
 
 var branches = []
 var plugin: EditorPlugin
+var config: PatchworkConfig
 const CREATE_BRANCH_IDX = 1
 const MERGE_BRANCH_IDX = 2
 
-func init(plugin: EditorPlugin, godot_project: GodotProject) -> void:
+func init(plugin: EditorPlugin, godot_project: GodotProject, config: PatchworkConfig) -> void:
 	print("Sidebar initialized!")
 	self.godot_project = godot_project
 	self.plugin = plugin
-
+	self.config = config
 func _on_resource_saved(path):
 	print("Resource saved: %s" % [path])
 func _on_scene_saved(path):
@@ -54,6 +56,8 @@ func _ready() -> void:
 	
 	var popup = menu_button.get_popup()
 	popup.id_pressed.connect(_on_menu_button_id_pressed)
+
+	user_button.pressed.connect(_on_user_button_pressed)
 
 func _on_branch_picker_item_selected(index: int) -> void:
 	var selected_branch = branches[index]
@@ -188,6 +192,40 @@ func _on_create_new_branch() -> void:
 	add_child(dialog)
 	dialog.popup_centered()
 
+func _on_user_button_pressed():
+	var dialog = ConfirmationDialog.new()
+	dialog.title = "Set User Name"
+	
+	var line_edit = LineEdit.new()
+	line_edit.placeholder_text = "User name"
+	line_edit.text = config.get_user_value("user_name", "")
+	dialog.add_child(line_edit)
+	
+	# Position line edit in dialog
+	line_edit.position = Vector2(8, 8)
+	line_edit.size = Vector2(200, 30)
+	
+	# Make dialog big enough for line edit
+	dialog.size = Vector2(220, 100)
+	
+	dialog.get_ok_button().text = "Save"
+	dialog.canceled.connect(func(): dialog.queue_free())
+	
+	dialog.confirmed.connect(func():
+		if line_edit.text.strip_edges() != "":
+			var new_user_name = line_edit.text.strip_edges()
+
+			print(new_user_name)
+			config.set_user_value("user_name", new_user_name)
+
+		update_ui()
+		dialog.queue_free()
+	)
+	
+	add_child(dialog)
+	dialog.popup_centered()
+
+
 func update_ui() -> void:
 	if not godot_project:
 		print("warning: update_ui() called before init")
@@ -236,3 +274,8 @@ func update_ui() -> void:
 
 	menu_popup.add_item("Create new branch", CREATE_BRANCH_IDX) # Create new branch menu item
 	menu_popup.add_item("Merge branch", MERGE_BRANCH_IDX)
+
+	# update user name
+
+	var user_name = config.get_user_value("user_name", "")
+	user_button.text = user_name

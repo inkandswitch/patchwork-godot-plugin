@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3 uid="uid://cxyjgsyba1v85"]
+[gd_scene load_steps=4 format=3 uid="uid://cxyjgsyba1v85"]
 
 [ext_resource type="Script" path="res://addons/patchwork/sidebar.gd" id="1_ebh36"]
 [ext_resource type="Texture2D" uid="uid://ymewwqpn0vi4" path="res://addons/patchwork/icons/GuiTabMenuHl.svg" id="2_rfxbe"]
+[ext_resource type="Texture2D" uid="uid://xec6o14n4y2v" path="res://addons/patchwork/icons/person.svg" id="3_m2w8q"]
 
 [node name="Patchwork" type="MarginContainer"]
 anchors_preset = 15
@@ -40,6 +41,11 @@ item_count = 2
 popup/item_0/id = 0
 popup/item_1/text = "another"
 popup/item_1/id = 1
+
+[node name="UserButton" type="Button" parent="VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+icon = ExtResource("3_m2w8q")
 
 [node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
 layout_mode = 2

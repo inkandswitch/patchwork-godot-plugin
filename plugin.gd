@@ -93,12 +93,12 @@ func _enter_tree() -> void:
 	
 	# setup patchwork sidebar
 	sidebar = preload("res://addons/patchwork/sidebar.tscn").instantiate()
-	sidebar.init(self, godot_project)
+	sidebar.init(self, godot_project, config)
 	add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
 
 func init_godot_project():
 	print("init_godot_project()")
-	var project_doc_id = config.get_value("project_doc_id", "")
+	var project_doc_id = config.get_project_value("project_doc_id", "")
 
 	godot_project = GodotProject.create(project_doc_id)
 
@@ -112,7 +112,7 @@ func init_godot_project():
 
 	print("*** Patchwork Godot Project initialized! ***")
 	if !project_doc_id:
-		config.set_value("project_doc_id", godot_project.get_doc_id())
+		config.set_project_value("project_doc_id", godot_project.get_doc_id())
 		sync_godot_to_patchwork()
 	else:
 		sync_patchwork_to_godot()
@@ -210,7 +210,6 @@ func _try_wait_for_pw_to_godot_sync_task(force: bool = false):
 
 func sync_patchwork_to_godot():
 	# only sync once the user has saved all files
-
 	print("sync_patchwork_to_godot is called")
 
 	# todo: add unsaved files check back
@@ -256,7 +255,6 @@ func _on_local_file_changed(path: String, content: Variant):
 	print("file changed", path)
 
 	if _is_relevant_file(path):
-
 		godot_project.save_file_at(path, last_synced_heads, content)
 		last_synced_heads = godot_project.get_heads()
 
