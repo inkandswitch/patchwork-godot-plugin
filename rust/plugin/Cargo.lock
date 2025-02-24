@@ -85,7 +85,8 @@ checksum = "ace50bade8e6234aa140d9a2f552bbee1db4d353f69b8217bc503490fc1a9f26"
 [[package]]
 name = "automerge"
 version = "0.6.0"
-source = "git+https://github.com/automerge/automerge.git?rev=a2ba7326ec886a9e6d02377fd904dbdde35eb89d#a2ba7326ec886a9e6d02377fd904dbdde35eb89d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86c634517baf879cd5a95f915d00f8dcc9822d60670241e05618195acf005360"
 dependencies = [
  "cfg-if",
  "flate2",
@@ -106,8 +107,9 @@ dependencies = [
 
 [[package]]
 name = "automerge_repo"
-version = "0.2.0"
-source = "git+https://github.com/nikitalita/automerge-repo-rs?rev=5a6739cb1cea7f8968527315465a99b075e491c5#5a6739cb1cea7f8968527315465a99b075e491c5"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51624a74100852fb242db11838c815f32db58ae4328460cb5818068a59be8897"
 dependencies = [
  "automerge",
  "bs58",
@@ -129,8 +131,9 @@ dependencies = [
 
 [[package]]
 name = "autosurgeon"
-version = "0.8.6"
-source = "git+https://github.com/nikitalita/autosurgeon?rev=b7ac13f9aea141a2c194092c369601cb523ec2c6#b7ac13f9aea141a2c194092c369601cb523ec2c6"
+version = "0.8.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb09e782087199bfbea2848b7dc808a93eaaf9a185d2706a6efabc7e606fcb04"
 dependencies = [
  "automerge",
  "autosurgeon-derive",
@@ -141,7 +144,8 @@ dependencies = [
 [[package]]
 name = "autosurgeon-derive"
 version = "0.8.1"
-source = "git+https://github.com/nikitalita/autosurgeon?rev=b7ac13f9aea141a2c194092c369601cb523ec2c6#b7ac13f9aea141a2c194092c369601cb523ec2c6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbf16fd191f2b254f0cc64783196f818ebe02c9c918deee82fe96fad07a72aa6"
 dependencies = [
  "proc-macro2",
  "quote",
