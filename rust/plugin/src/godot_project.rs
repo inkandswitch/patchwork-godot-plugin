@@ -678,10 +678,15 @@ impl GodotProject {
                         .insert(doc_handle.document_id(), doc_handle.clone());
                 }
                 OutputEvent::BranchStateChanged { branch_state } => {
-                    let is_new_branch = self
+                    let (is_new_branch, previous_heads) = match self
                         .branch_states
                         .get(&branch_state.doc_handle.document_id())
-                        .is_none();
+                    {
+                        Some(previous_branch_state) => {
+                            (false, previous_branch_state.synced_heads.clone())
+                        }
+                        None => (true, vec![]),
+                    };
 
                     self.branch_states
                         .insert(branch_state.doc_handle.document_id(), branch_state.clone());
@@ -752,6 +757,17 @@ impl GodotProject {
                                         .to_variant()],
                                 );
                             } else {
+                                branch_state.doc_handle.with_doc(|d| {
+                                    let heads = d.get_heads();
+                                    let diff = d.diff(
+                                        &previous_heads,
+                                        &heads,
+                                        TextRepresentation::String(TextEncoding::Utf8CodeUnit),
+                                    );
+
+                                    println!("rust: PATCHES: {:?}", diff);
+                                });
+
                                 println!("rust: TRIGGER files changed");
                                 self.base_mut().emit_signal("files_changed", &[]);
                             }
