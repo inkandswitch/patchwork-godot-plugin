@@ -595,7 +595,7 @@ impl DriverState {
                     let _ = tx.delete(&file_entry, "url");
                 }
                 // else if the path is tres or tscn, delete the content
-                if path.ends_with(".tscn") || path.ends_with(".tres") {
+                /*if path.ends_with(".tscn") || path.ends_with(".tres") {
                     if let Ok(Some((_, content_key))) = tx.get(&file_entry, "content") {
                         let _ = tx.delete(&content_key, "");
                     }
@@ -607,7 +607,7 @@ impl DriverState {
                     res.iter().for_each(|(key, value)| {
                         let _ = tx.put(&file_entry, key, value);
                     });
-                } else {
+                } else {*/
                     // either get existing text or create new text
                     let content_key = match tx.get(&file_entry, "content") {
                         Ok(Some((automerge::Value::Object(ObjType::Text), content))) => content,
@@ -616,7 +616,7 @@ impl DriverState {
                             .unwrap(),
                     };
                     let _ = tx.update_text(&content_key, &content);
-                }
+                // }
             }
 
             for (path, binary_doc_handle) in binary_entries {
