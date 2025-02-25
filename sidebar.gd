@@ -238,14 +238,15 @@ func update_ui() -> void:
 	# update branch picker
 
 	branch_picker.clear()
-	var checked_out_branch_id = godot_project.get_checked_out_branch_id()
-	var checked_out_branch
+	var checked_out_branch = godot_project.get_checked_out_branch()
+
+	print("UI: checked out branch: ", checked_out_branch)
+
 	for i in range(branches.size()):
 		var branch = branches[i]
 		branch_picker.add_item(branch.name, i)
 		branch_picker.set_item_metadata(i, branch.id)
-		if branch.id == checked_out_branch_id:
-			checked_out_branch = branch
+		if branch.id == checked_out_branch.id:
 			branch_picker.select(i)
 
 	# update history
@@ -267,9 +268,9 @@ func update_ui() -> void:
 
 	# update changed files
 
-	changed_files_container.visible = checked_out_branch.name != "main"
+	changed_files_container.visible = checked_out_branch.is_main
 
-	var changed_files = godot_project.get_diff();
+	var changed_files = godot_project.get_changed_files();
 
 	changed_files_list.clear()
 
@@ -288,6 +289,7 @@ func update_ui() -> void:
 	# update user name
 
 	var user_name = config.get_user_value("user_name", "")
+
 	user_button.text = user_name
 
 func human_readable_timestamp(timestamp: int) -> String:

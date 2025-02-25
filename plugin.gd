@@ -107,13 +107,13 @@ func init_godot_project():
 		print("Failed to create GodotProject instance.")
 		return
 
-	await godot_project.initialized
+	await godot_project.checked_out_branch
 
 	print("branches: ", godot_project.get_branches())
 
 	print("*** Patchwork Godot Project initialized! ***")
 	if !project_doc_id:
-		config.set_project_value("project_doc_id", godot_project.get_doc_id())
+		config.set_project_value("project_doc_id", godot_project.get_project_doc_id())
 		sync_godot_to_patchwork()
 	else:
 		sync_patchwork_to_godot()
@@ -246,8 +246,6 @@ func get_relevant_godot_files() -> Array[String]:
 	return ret
 
 func _on_checked_out_branch(checked_out_branch: String):
-	print("checked out branch ", checked_out_branch, " (", godot_project.list_all_files().size(), " files)")
-
 	sidebar.update_ui()
 	sync_patchwork_to_godot()
 	sidebar._after_cvs_action()

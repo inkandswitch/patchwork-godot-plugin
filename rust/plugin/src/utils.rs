@@ -4,7 +4,7 @@ use std::{
     time::{Instant, SystemTime},
 };
 
-use crate::doc_utils::SimpleDocReader;
+use crate::{doc_utils::SimpleDocReader, godot_project_driver::BranchState};
 use automerge::{
     transaction::{CommitOptions, Transaction},
     ReadDoc, ROOT,
@@ -100,4 +100,11 @@ pub(crate) fn commit_with_attribution_and_timestamp(tx: Transaction, name: &Opti
             tx.commit_with(CommitOptions::default().with_time(timestamp));
         }
     }
+}
+
+pub(crate) fn print_branch_state(message: &str, branch_state: &BranchState) {
+    println!(
+        "rust: {:?}: {:?} {:?} {:?}",
+        message, branch_state.name, branch_state.linked_doc_ids, branch_state.synced_heads
+    );
 }
