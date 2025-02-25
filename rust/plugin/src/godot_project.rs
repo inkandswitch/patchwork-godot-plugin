@@ -375,7 +375,7 @@ impl GodotProject {
             Some(branch_state) => {
                 self._save_files(branch_state.doc_handle.clone(), files, Some(heads))
             }
-            None => println!("couldn't save files, no checked out branch"),
+            None => panic!("couldn't save files, no checked out branch"),
         }
     }
 
@@ -383,7 +383,7 @@ impl GodotProject {
     fn save_files(&self, files: Dictionary) {
         match &self.get_checked_out_branch_state() {
             Some(branch_state) => self._save_files(branch_state.doc_handle.clone(), files, None),
-            None => println!("couldn't save files, no checked out branch"),
+            None => panic!("couldn't save files, no checked out branch"),
         }
     }
 
@@ -476,10 +476,12 @@ impl GodotProject {
     }
 
     #[func]
-    fn create_branch(&self, name: String) {
+    fn create_branch(&mut self, name: String) {
         self.driver_input_tx
             .unbounded_send(InputEvent::CreateBranch { name })
             .unwrap();
+
+        self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut;
     }
 
     #[func]
@@ -754,6 +756,11 @@ impl GodotProject {
                 }
                 OutputEvent::Initialized { project_doc_id } => {
                     self.project_doc_id = Some(project_doc_id);
+                }
+
+                OutputEvent::CompletedCreateBranch { branch_doc_id } => {
+                    self.checked_out_branch_state =
+                        CheckedOutBranchState::CheckingOut(branch_doc_id);
                 }
 
                 OutputEvent::CompletedShutdown => {

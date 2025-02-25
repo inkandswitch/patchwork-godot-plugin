@@ -246,7 +246,7 @@ func update_ui() -> void:
 		var branch = branches[i]
 		branch_picker.add_item(branch.name, i)
 		branch_picker.set_item_metadata(i, branch.id)
-		if branch.id == checked_out_branch.id:
+		if checked_out_branch && branch.id == checked_out_branch.id:
 			branch_picker.select(i)
 
 	# update history
@@ -268,7 +268,7 @@ func update_ui() -> void:
 
 	# update changed files
 
-	changed_files_container.visible = checked_out_branch.is_main
+	changed_files_container.visible = !checked_out_branch.is_main
 
 	var changed_files = godot_project.get_changed_files();
 

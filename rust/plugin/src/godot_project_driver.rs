@@ -74,6 +74,11 @@ pub enum OutputEvent {
     BranchStateChanged {
         branch_state: BranchState,
     },
+
+    CompletedCreateBranch {
+        branch_doc_id: DocumentId,
+    },
+
     CompletedShutdown,
 }
 
@@ -435,6 +440,10 @@ impl DriverState {
         let main_heads = self.main_branch_doc_handle.with_doc(|d| d.get_heads()).iter().map(|h| h.to_string()).collect();
         let branch = Branch { name: name.clone(), id: new_branch_handle.document_id().to_string(), is_merged: false, forked_at: main_heads};
 
+        self.tx.unbounded_send(OutputEvent::CompletedCreateBranch {
+            branch_doc_id: new_branch_handle.document_id(),
+        }).unwrap();  
+
         self.branches_metadata_doc_handle.with_doc_mut(|d| {
             let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
             let mut tx = d.transaction();
@@ -444,6 +453,7 @@ impl DriverState {
             let _ = reconcile(&mut tx, branches_metadata);
             commit_with_attribution_and_timestamp(tx, &self.user_name);
         });
+  
     }
 
     

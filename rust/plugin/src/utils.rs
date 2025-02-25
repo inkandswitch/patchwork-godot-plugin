@@ -9,7 +9,7 @@ use automerge::{
     transaction::{CommitOptions, Transaction},
     ReadDoc, ROOT,
 };
-use automerge_repo::{DocHandle, DocumentId};
+use automerge_repo::{DocHandle, DocumentId, RepoHandle};
 
 pub(crate) fn get_linked_docs_of_branch(
     branch_doc_handle: &DocHandle,
