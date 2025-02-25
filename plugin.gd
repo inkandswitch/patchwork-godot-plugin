@@ -177,6 +177,10 @@ func do_pw_to_godot_sync_task():
 	var files_in_godot = get_relevant_godot_files()
 	var files_in_patchwork = godot_project.list_all_files()
 
+	# skip if there are no files
+	if files_in_patchwork.size() == 0:
+		return
+
 	print("sync patchwork -> godot {")
 	for path in files_in_patchwork:
 		print("  ", path)
