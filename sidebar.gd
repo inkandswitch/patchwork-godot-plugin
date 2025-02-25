@@ -39,7 +39,6 @@ func _update_ui_on_files_changed():
 
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
-	print("Sidebar ready!")
 	branch_picker.item_selected.connect(_on_branch_picker_item_selected)
 	update_ui()
 
@@ -107,9 +106,7 @@ func _after_cvs_action():
 		current_cvs_action = []
 
 func _merge_branch():
-	godot_project.merge_branch(godot_project.get_checked_out_branch_id())
-	godot_project.checkout_branch("main");
-	print("checked out!")
+	godot_project.merge_branch(godot_project.get_checked_out_branch().ids)
 
 func merge_branch():
 	_before_cvs_action("Merging branch")
@@ -136,13 +133,11 @@ func _on_menu_button_id_pressed(id: int) -> void:
 					popup_box(self, $ErrorDialog, "Can't merge the main branch and shouldn't have gotten here!!", "Error")
 					return
 			var branches: Array = godot_project.get_branches()
-			# print("current branches:")
 			for branch in branches:
 				print("%s: %s" % [branch.id, branch.name])
 				if branch.id == checked_out_branch:
 					found = true
-					# print("Current checked out branch: %s" % [branch.name])
-					if branch.name == "main":
+					if branch.is_main:
 						popup_box(self, $ErrorDialog, "Can't merge the main branch and shouldn't have gotten here!!", "Error")
 						return
 			if PatchworkEditor.unsaved_files_open():
@@ -229,9 +224,7 @@ func _on_user_button_pressed():
 
 func update_ui() -> void:
 	if not godot_project:
-		print("warning: update_ui() called before init")
 		return
-
 
 	self.branches = godot_project.get_branches()
 

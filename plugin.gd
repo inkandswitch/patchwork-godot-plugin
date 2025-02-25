@@ -79,18 +79,15 @@ func _process(_delta: float) -> void:
 
 func _enter_tree() -> void:
 	print("start patchwork!!!");
-
 	config = PatchworkConfig.new();
-
 	file_system = FileSystem.new(self)
-	
 	print("_enter_tree() -> init_godot_project()")
 	await init_godot_project()
 	print("end _enter_tree() -> init_godot_project()")
 
 	# listen for file changes once we have initialized the godot project
 	file_system.connect("file_changed", _on_local_file_changed)
-	
+
 	# setup patchwork sidebar
 	sidebar = preload("res://addons/patchwork/sidebar.tscn").instantiate()
 	sidebar.init(self, godot_project, config)
@@ -108,8 +105,6 @@ func init_godot_project():
 		return
 
 	await godot_project.checked_out_branch
-
-	print("branches: ", godot_project.get_branches())
 
 	print("*** Patchwork Godot Project initialized! ***")
 	if !project_doc_id:

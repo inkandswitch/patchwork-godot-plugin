@@ -733,7 +733,15 @@ impl GodotProject {
                                 == branch_state.doc_handle.with_doc(|d| d.get_heads())
                         {
                             if checking_out_new_branch {
-                                println!("rust: checked out new branch");
+                                println!(
+                                    "rust: TRIGGER checked out new branch: {}",
+                                    branch_state.name
+                                );
+
+                                self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(
+                                    branch_state.doc_handle.document_id(),
+                                );
+
                                 self.base_mut().emit_signal(
                                     "checked_out_branch",
                                     &[branch_state
@@ -743,12 +751,8 @@ impl GodotProject {
                                         .to_variant()
                                         .to_variant()],
                                 );
-
-                                self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(
-                                    branch_state.doc_handle.document_id(),
-                                );
                             } else {
-                                println!("rust: files changed");
+                                println!("rust: TRIGGER files changed");
                                 self.base_mut().emit_signal("files_changed", &[]);
                             }
                         }
@@ -778,7 +782,13 @@ impl GodotProject {
             CheckedOutBranchState::CheckedOut(document_id) => {
                 self.branch_states.get(document_id).cloned()
             }
-            _ => None,
+            _ => {
+                println!(
+                    "tried to get checked out branch state but nothing is checked out: {:?}",
+                    self.checked_out_branch_state
+                );
+                None
+            }
         }
     }
 }
