@@ -182,14 +182,15 @@ func do_pw_to_godot_sync_task():
 		print("  ", path)
 	print("}")
 
+	# todo: do this async + reload	
+	# delete gd and tscn files that are not in checked out patchwork files
+	for path in files_in_godot:
+		if !files_in_patchwork.has(path):
+			print("  delete file: ", path)
+			file_system.delete_file(path)
+
 	var group_id = WorkerThreadPool.add_group_task(self._do_pw_to_godot_sync_element.bind(files_in_patchwork), files_in_patchwork.size())
 	WorkerThreadPool.wait_for_group_task_completion(group_id)
-	# todo: this is still buggy
-	# delete gd and tscn files that are not in checked out patchwork files
-	# for path in files_in_godot:
-	# 	if !files_in_patchwork.has(path) and (path.ends_with(".gd") or path.ends_with(".tscn")):
-	# 		print("  delete file: ", path)
-	# 		file_system.delete_file(path)
 
 	print("end patchwork to godot sync")
 
