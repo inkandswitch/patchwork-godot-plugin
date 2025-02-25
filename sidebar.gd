@@ -106,7 +106,7 @@ func _after_cvs_action():
 		current_cvs_action = []
 
 func _merge_branch():
-	godot_project.merge_branch(godot_project.get_checked_out_branch().ids)
+	godot_project.merge_branch(godot_project.get_checked_out_branch().id)
 
 func merge_branch():
 	_before_cvs_action("Merging branch")
@@ -121,25 +121,13 @@ func _on_menu_button_id_pressed(id: int) -> void:
 				_on_create_new_branch()
 
 		MERGE_BRANCH_IDX:
+			var checked_out_branch = godot_project.get_checked_out_branch()
+
 			# check if we're on the main branch or not
-			var found = false
-			var checked_out_branch = godot_project.get_checked_out_branch_id()
-			var selected_id = branch_picker.get_selected_id()
-			for i in range(branch_picker.item_count):
-				if i == selected_id and branch_picker.get_item_text(i) == "main":
-					popup_box(self, $ErrorDialog, "Can't merge the main branch!", "Error")
-					return
-				elif checked_out_branch == branch_picker.get_item_metadata(i) and branch_picker.get_item_text(i) == "main":
-					popup_box(self, $ErrorDialog, "Can't merge the main branch and shouldn't have gotten here!!", "Error")
-					return
-			var branches: Array = godot_project.get_branches()
-			for branch in branches:
-				print("%s: %s" % [branch.id, branch.name])
-				if branch.id == checked_out_branch:
-					found = true
-					if branch.is_main:
-						popup_box(self, $ErrorDialog, "Can't merge the main branch and shouldn't have gotten here!!", "Error")
-						return
+			if checked_out_branch.is_main:
+				popup_box(self, $ErrorDialog, "Can't merge the main branch!", "Error")
+				return
+		
 			if PatchworkEditor.unsaved_files_open():
 				popup_box(self, $ConfirmationDialog, "You have unsaved files open. Do you want to save them before merging?", "Unsaved Files", self.merge_branch)
 			else:
