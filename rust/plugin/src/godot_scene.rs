@@ -1,6 +1,12 @@
+use automerge::{
+    transaction::{Transactable, Transaction},
+    ObjType, ROOT,
+};
 use autosurgeon::{Hydrate, Reconcile};
 use std::collections::HashMap;
 use tree_sitter::{Parser, Query, QueryCursor};
+
+use crate::doc_utils::SimpleDocReader;
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
 pub struct PackedGodotScene {
@@ -26,7 +32,6 @@ pub struct PackedGodotResource {
     internal_resources: HashMap<String, GodotSceneNode>,
 }
 
-
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
 pub struct GodotSceneConnections {
     attributes: HashMap<String, String>, // key value pairs in the header of the section
@@ -34,9 +39,48 @@ pub struct GodotSceneConnections {
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
 pub struct GodotSceneNode {
-    
     attributes: HashMap<String, String>, // key value pairs in the header of the section
     properties: HashMap<String, String>, // key value pairs below the section header
+}
+
+impl PackedGodotScene {
+    pub fn reconcile(&self, tx: &mut Transaction, path: String) {
+        let files = tx
+            .get_obj_id(ROOT, "files")
+            .unwrap_or_else(|| panic!("Could not find files object in document"));
+
+        let scene_file = tx
+            .get_obj_id(&files, &path)
+            .unwrap_or_else(|| tx.put_object(&files, &path, ObjType::Map).unwrap());
+
+        let structured_content = tx
+            .get_obj_id(&scene_file, "structured_content")
+            .unwrap_or_else(|| {
+                tx.put_object(&scene_file, "structured_content", ObjType::Map)
+                    .unwrap()
+            });
+
+        let nodes = tx
+            .get_obj_id(&structured_content, "nodes")
+            .unwrap_or_else(|| {
+                tx.put_object(&structured_content, "nodes", ObjType::Map)
+                    .unwrap()
+            });
+
+        for (path, node) in &self.nodes {
+            let node_key = tx
+                .get_obj_id(&nodes, path)
+                .unwrap_or_else(|| tx.put_object(&nodes, path, ObjType::Map).unwrap());
+
+            for (key, value) in &node.attributes {
+                tx.put(&node_key, key, value);
+            }
+
+            for (key, value) in &node.properties {
+                tx.put(&node_key, key, value);
+            }
+        }
+    }
 }
 
 // WIP custom reconciler
@@ -118,7 +162,7 @@ pub fn parse(source: &String) -> Result<PackedGodotScene, String> {
             let mut scene = PackedGodotScene {
                 format: 4,
                 uid: String::new(),
-                script_class: String::new(),            
+                script_class: String::new(),
                 attributes: HashMap::new(),
                 nodes: HashMap::new(),
                 external_resources: HashMap::new(),
