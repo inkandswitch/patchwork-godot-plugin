@@ -707,6 +707,13 @@ impl DriverState {
             _ => return
         };
 
+        // if a branch has just one change that means it hasn't fully loaded yet
+        // the first change just sets up the project structure, the second change adds the files
+        if branch_state.doc_handle.with_doc(|d| d.get_changes(&[]).len() < 2) {
+            return;
+        }
+
+        // check that all linked docs have been loaded
         if branch_state.linked_doc_ids.iter().all(|doc_id| {                                                                                             
             if let Some(binary_doc_state) =  self.binary_doc_states.get(doc_id) {
                 binary_doc_state.doc_handle.is_some()
@@ -716,7 +723,8 @@ impl DriverState {
         }) {
             let branch_doc_id_clone = branch_doc_id.clone();
             
-            self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(branch_doc_id.clone());
+            self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(branch_doc_id.clone());                    
+
         
             if self.is_initialized {
                 println!("rust: checked out branch {} because {:?}", branch_doc_id_clone, reason);
