@@ -1,4 +1,6 @@
 use ::safer_ffi::prelude::*;
+use automerge::PatchLog;
+use automerge_repo::tokio::FsStorage;
 use autosurgeon::{Hydrate, Reconcile};
 use std::{collections::HashMap, str::FromStr};
 
@@ -6,14 +8,17 @@ use automerge::{
     patches::TextRepresentation, transaction::Transactable, ChangeHash, ObjType, ReadDoc,
     TextEncoding, ROOT,
 };
-use automerge_repo::{DocHandle, DocumentId};
+use automerge_repo::{DocHandle, DocumentId, Repo, RepoHandle};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use godot::prelude::*;
 
 use crate::godot_project_driver::{BranchState, DocHandleType};
-use crate::godot_scene::PackedGodotScene;
+use crate::godot_scene::{self, PackedGodotScene};
 use crate::patches::get_changed_files;
-use crate::utils::{array_to_heads, parse_automerge_url, print_branch_state};
+use crate::utils::{
+    array_to_heads, commit_with_attribution_and_timestamp, heads_to_array, parse_automerge_url,
+    print_branch_state,
+};
 use crate::{
     doc_utils::SimpleDocReader,
     godot_project_driver::{GodotProjectDriver, InputEvent, OutputEvent},
@@ -96,6 +101,8 @@ pub struct GodotProject {
     driver: GodotProjectDriver,
     driver_input_tx: UnboundedSender<InputEvent>,
     driver_output_rx: UnboundedReceiver<OutputEvent>,
+    repo_handle: RepoHandle,
+    user_name: String,
 }
 
 #[godot_api]
@@ -118,25 +125,29 @@ impl GodotProject {
     #[func]
     // hack: pass in empty string to create a new doc
     // godot rust doens't seem to support Option args
-    fn create(maybe_branches_metadata_doc_id: String, maybe_user_name: String) -> Gd<Self> {
+    fn create(maybe_branches_metadata_doc_id: String, user_name: String) -> Gd<Self> {
         let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
         let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
 
         let branches_metadata_doc_id = match DocumentId::from_str(&maybe_branches_metadata_doc_id) {
             Ok(doc_id) => Some(doc_id),
-            Err(e) => None,
+            Err(_) => None,
         };
 
-        let driver = GodotProjectDriver::create();
+        let storage = FsStorage::open("/tmp/automerge-godot-data").unwrap();
+        let repo = Repo::new(None, Box::new(storage));
+        let repo_handle = repo.run();
+
+        let driver = GodotProjectDriver::create(repo_handle.clone());
 
         driver.spawn(
             driver_input_rx,
             driver_output_tx,
             branches_metadata_doc_id,
-            if maybe_user_name == "" {
+            if user_name == "" {
                 None
             } else {
-                Some(maybe_user_name)
+                Some(user_name.clone())
             },
         );
 
@@ -149,13 +160,16 @@ impl GodotProject {
             driver,
             driver_input_tx,
             driver_output_rx,
+            repo_handle,
+            user_name,
         })
     }
 
     // PUBLIC API
 
     #[func]
-    fn set_user_name(&self, name: String) {
+    fn set_user_name(&mut self, name: String) {
+        self.user_name = name.clone();
         self.driver_input_tx
             .unbounded_send(InputEvent::SetUserName { name })
             .unwrap();
@@ -329,7 +343,7 @@ impl GodotProject {
         &self,
         files: Dictionary, /*  Record<String, Variant> */
         heads: PackedStringArray,
-    ) {
+    ) -> PackedStringArray {
         let heads = array_to_heads(heads);
 
         match &self.get_checked_out_branch_state() {
@@ -341,7 +355,7 @@ impl GodotProject {
     }
 
     #[func]
-    fn save_files(&self, files: Dictionary) {
+    fn save_files(&self, files: Dictionary) -> PackedStringArray {
         match &self.get_checked_out_branch_state() {
             Some(branch_state) => self._save_files(branch_state.doc_handle.clone(), files, None),
             None => panic!("couldn't save files, no checked out branch"),
@@ -349,13 +363,18 @@ impl GodotProject {
     }
 
     #[func]
-    fn save_file(&self, path: String, content: Variant) {
-        self.save_files(dict! { path: content });
+    fn save_file(&self, path: String, content: Variant) -> PackedStringArray {
+        self.save_files(dict! { path: content })
     }
 
     #[func]
-    fn save_file_at(&self, path: String, heads: PackedStringArray, content: Variant) {
-        self.save_files_at(dict! { path: content }, heads);
+    fn save_file_at(
+        &self,
+        path: String,
+        heads: PackedStringArray,
+        content: Variant,
+    ) -> PackedStringArray {
+        self.save_files_at(dict! { path: content }, heads)
     }
 
     fn _save_files(
@@ -363,12 +382,14 @@ impl GodotProject {
         branch_doc_handle: DocHandle,
         files: Dictionary, /*  Record<String, Variant> */
         heads: Option<Vec<ChangeHash>>,
-    ) {
+    ) -> PackedStringArray {
+        let mut binary_entries: Vec<(String, DocHandle)> = Vec::new();
+        let mut text_entries: Vec<(String, String)> = Vec::new();
+
         // we filter the files here because godot sends us indiscriminately all the files in the project
         // we only want to save the files that have actually changed
-        let changed_files: Vec<(String, StringOrPackedByteArray)> = files
-            .iter_shared()
-            .filter_map(|(path, content)| match content.get_type() {
+        for (path, content) in files.iter_shared() {
+            match content.get_type() {
                 VariantType::STRING => {
                     let content = String::from(content.to::<GString>());
 
@@ -377,11 +398,11 @@ impl GodotProject {
                     {
                         if stored_content == content {
                             println!("file {:?} is already up to date", path.to_string());
-                            return None;
+                            continue;
                         }
                     }
 
-                    Some((path.to_string(), StringOrPackedByteArray::String(content)))
+                    text_entries.push((path.to_string(), content.clone()));
                 }
                 VariantType::PACKED_BYTE_ARRAY => {
                     let content = content.to::<PackedByteArray>().to_vec();
@@ -391,23 +412,83 @@ impl GodotProject {
                     {
                         if stored_content == content {
                             println!("file {:?} is already up to date", path.to_string());
-                            return None;
+                            continue;
                         }
                     }
 
-                    Some((path.to_string(), StringOrPackedByteArray::Binary(content)))
+                    let binary_doc_handle = self.repo_handle.new_document();
+                    binary_doc_handle.with_doc_mut(|d| {
+                        let mut tx = d.transaction();
+                        let _ = tx.put(ROOT, "content", content.clone());
+                        commit_with_attribution_and_timestamp(tx, &Some(self.user_name.clone()));
+                    });
+
+                    binary_entries.push((path.to_string(), binary_doc_handle));
                 }
                 _ => panic!("invalid content type"),
-            })
-            .collect();
+            }
+        }
 
-        self.driver_input_tx
-            .unbounded_send(InputEvent::SaveFiles {
-                branch_doc_handle,
-                heads,
-                files: changed_files,
-            })
-            .unwrap();
+        branch_doc_handle.with_doc_mut(|d| {
+            let mut tx = match heads {
+                Some(heads) => d.transaction_at(
+                    PatchLog::inactive(TextRepresentation::String(TextEncoding::Utf8CodeUnit)),
+                    &heads,
+                ),
+                None => d.transaction(),
+            };
+
+            let files = tx.get_obj_id(ROOT, "files").unwrap();
+
+            // write text entries to doc
+            for (path, content) in text_entries {
+                // get existing file url or create new one
+                let file_entry = match tx.get(&files, &path) {
+                    Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
+                    _ => tx.put_object(&files, &path, ObjType::Map).unwrap(),
+                };
+
+                // delete url in file entry if it previously had one
+                if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
+                    let _ = tx.delete(&file_entry, "url");
+                }
+                // else if the path is tres or tscn, delete the content
+                if path.ends_with(".tscn") || path.ends_with(".tres") {
+                    let res = godot_scene::parse(&content);
+
+                    match res {
+                        Ok(scene) => {
+                            scene.reconcile(&mut tx, path);
+                        }
+                        Err(e) => {
+                            panic!("error parsing godot scene: {:?}", e);
+                        }
+                    }
+                } else {
+                    // either get existing text or create new text
+                    let content_key = match tx.get(&file_entry, "content") {
+                        Ok(Some((automerge::Value::Object(ObjType::Text), content))) => content,
+                        _ => tx
+                            .put_object(&file_entry, "content", ObjType::Text)
+                            .unwrap(),
+                    };
+                    let _ = tx.update_text(&content_key, &content);
+                }
+            }
+
+            for (path, binary_doc_handle) in binary_entries {
+                let file_entry = tx.put_object(&files, &path, ObjType::Map);
+                let _ = tx.put(
+                    file_entry.unwrap(),
+                    "url",
+                    format!("automerge:{}", &binary_doc_handle.document_id()),
+                );
+            }
+
+            commit_with_attribution_and_timestamp(tx, &Some(self.user_name.clone()));
+        });
+
+        heads_to_array(branch_doc_handle.with_doc(|d| d.get_heads()))
     }
 
     #[func]

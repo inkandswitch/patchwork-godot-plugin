@@ -42,12 +42,6 @@ pub enum InputEvent {
         branch_doc_handle: DocHandle,
     },
 
-    SaveFiles {
-        branch_doc_handle: DocHandle,
-        heads: Option<Vec<ChangeHash>>,
-        files: Vec<(String, StringOrPackedByteArray)>,
-    },
-
     SetUserName {
         name: String,
     },
@@ -136,17 +130,14 @@ pub struct GodotProjectDriver {
 }
 
 impl GodotProjectDriver {
-    pub fn create() -> Self {
+    pub fn create(repo_handle: RepoHandle) -> Self {
+
         let runtime: Runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .unwrap();
 
         let _guard = runtime.enter();
-
-        let storage = FsStorage::open("/tmp/automerge-godot-data").unwrap();
-        let repo = Repo::new(None, Box::new(storage));
-        let repo_handle = repo.run();
 
         return Self {            
             runtime,
@@ -317,10 +308,6 @@ impl GodotProjectDriver {
                                 state.merge_branch(branch_doc_handle);
                             },                        
 
-                            InputEvent::SaveFiles { branch_doc_handle, files, heads} => {
-                                state.save_files(branch_doc_handle, files, heads);                                                           
-                            }
-
                             InputEvent::StartShutdown => {
                                 println!("rust: shutting down");
 
@@ -453,107 +440,6 @@ impl DriverState {
             commit_with_attribution_and_timestamp(tx, &self.user_name);
         });
   
-    }
-
-    
-    fn save_files(
-        &mut self,
-        branch_doc_handle: DocHandle,
-        files: Vec<(String, StringOrPackedByteArray)>,
-        heads: Option<Vec<ChangeHash>>,
-    ) {    
-        let binary_entries: Vec<(String, DocHandle)> = files.iter().filter_map(|(path, content)| {
-            if let StringOrPackedByteArray::Binary(content) = content {
-                let binary_doc_handle = self.repo_handle.new_document();
-                binary_doc_handle.with_doc_mut(|d| {
-                    let mut tx = d.transaction();
-                    let _ = tx.put(ROOT, "content", content.clone());
-                    commit_with_attribution_and_timestamp(tx, &self.user_name);
-                });
-
-                println!("create binary doc: {:?} size: {:?}", path, content.len());
-
-                self.add_binary_doc_handle(path, &binary_doc_handle);
-
-                Some((path.clone(), binary_doc_handle))
-            } else {
-                None
-            }
-        }).collect();
-
-        let text_entries: Vec<(String, &String)> = files.iter().filter_map(|(path, content)| {
-            if let StringOrPackedByteArray::String(content) = content {
-                Some((path.clone(), content))
-            } else {
-                None
-            }
-        }).collect();
-
-        branch_doc_handle.with_doc_mut(|d| {
-            let mut tx = match heads {
-                Some(heads) => d.transaction_at(
-                    PatchLog::inactive(TextRepresentation::String(
-                        TextEncoding::Utf8CodeUnit,
-                    )),
-                    &heads,
-                ),
-                None => d.transaction(),
-            };
-
-            let files = tx.get_obj_id(ROOT, "files").unwrap();
-
-
-            // write text entries to doc
-            for (path, content) in text_entries {
-
-                // get existing file url or create new one
-                let file_entry = match tx.get(&files, &path) {
-                    Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => {
-                        file_entry
-                    }
-                    _ => tx.put_object(&files, &path, ObjType::Map).unwrap(),
-                };
-
-                 // delete url in file entry if it previously had one
-                 if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
-                    let _ = tx.delete(&file_entry, "url");
-                }
-                // else if the path is tres or tscn, delete the content
-                if path.ends_with(".tscn") || path.ends_with(".tres") {
-                    
-                    let res = godot_scene::parse(&content);
-
-                    match res {
-                        Ok(scene) => {
-                            scene.reconcile(&mut tx, path);
-                        }
-                        Err(e) => {
-                            panic!("error parsing godot scene: {:?}", e);
-                        }
-                    }
-                } else {
-                    // either get existing text or create new text
-                    let content_key = match tx.get(&file_entry, "content") {
-                        Ok(Some((automerge::Value::Object(ObjType::Text), content))) => content,
-                        _ => tx
-                            .put_object(&file_entry, "content", ObjType::Text)
-                            .unwrap(),
-                    };
-                    let _ = tx.update_text(&content_key, &content);
-                }
-            }
-
-            for (path, binary_doc_handle) in binary_entries {
-                let file_entry = tx.put_object(&files, &path, ObjType::Map);
-                let _ = tx.put(
-                    file_entry.unwrap(),
-                    "url",
-                    format!("automerge:{}", &binary_doc_handle.document_id()),
-                );
-            }
-
-            commit_with_attribution_and_timestamp(tx, &self.user_name);
-        });
     }
 
     fn merge_branch(&mut self, branch_doc_handle: DocHandle)  {    

@@ -114,7 +114,6 @@ func init_godot_project():
 		sync_patchwork_to_godot()
 
 	godot_project.connect("files_changed", func():
-		print("files changed!!!!")
 		sync_patchwork_to_godot()
 	)
 	godot_project.checked_out_branch.connect(_on_checked_out_branch)
@@ -174,22 +173,14 @@ func _do_pw_to_godot_sync_element(i: int, files_in_patchwork: PackedStringArray)
 func do_pw_to_godot_sync_task():
 	print("performing patchwork to godot sync in parallel...")
 
-	var files_in_godot = get_relevant_godot_files()
-	var files_in_patchwork = godot_project.list_all_files()
+	var changed_files = godot_project.get_changed_files(last_synced_heads);
 
 	print("sync patchwork -> godot {")
-	for path in files_in_patchwork:
+	for path in changed_files:
 		print("  ", path)
 	print("}")
 
-	# todo: do this async + reload	
-	# delete gd and tscn files that are not in checked out patchwork files
-	for path in files_in_godot:
-		if !files_in_patchwork.has(path):
-			print("  delete file: ", path)
-			file_system.delete_file(path)
-
-	var group_id = WorkerThreadPool.add_group_task(self._do_pw_to_godot_sync_element.bind(files_in_patchwork), files_in_patchwork.size())
+	var group_id = WorkerThreadPool.add_group_task(self._do_pw_to_godot_sync_element.bind(changed_files), changed_files.size())
 	WorkerThreadPool.wait_for_group_task_completion(group_id)
 
 	print("end patchwork to godot sync")
@@ -209,7 +200,6 @@ func sync_patchwork_to_godot():
 	# only sync once the user has saved all files
 	print("sync_patchwork_to_godot is called")
 
-	# todo: add unsaved files check back
 	if PatchworkEditor.unsaved_files_open():
 		print("unsaved files open, not syncing")
 		files_to_reload_mutex.lock()
