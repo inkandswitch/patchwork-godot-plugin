@@ -10,4 +10,5 @@ mod godot_project;
 mod godot_project_driver;
 mod godot_scene;
 mod patches;
+mod storage_utils;
 mod utils;

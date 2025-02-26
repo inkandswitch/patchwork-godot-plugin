@@ -15,6 +15,7 @@ use godot::prelude::*;
 use crate::godot_project_driver::{BranchState, DocHandleType};
 use crate::godot_scene::{self, PackedGodotScene};
 use crate::patches::get_changed_files;
+use crate::storage_utils::{InMemoryStorage, SimpleStorage};
 use crate::utils::{
     array_to_heads, commit_with_attribution_and_timestamp, heads_to_array, parse_automerge_url,
     print_branch_state,
@@ -134,8 +135,8 @@ impl GodotProject {
             Err(_) => None,
         };
 
-        let storage = FsStorage::open("/tmp/automerge-godot-data").unwrap();
-        let repo = Repo::new(None, Box::new(storage));
+        // let storage = FsStorage::open("/tmp/automerge-godot-data").unwrap();
+        let repo = Repo::new(None, Box::new(InMemoryStorage::default()));
         let repo_handle = repo.run();
 
         let driver = GodotProjectDriver::create(repo_handle.clone());
