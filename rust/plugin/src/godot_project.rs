@@ -1,6 +1,6 @@
 use ::safer_ffi::prelude::*;
 use std::collections::HashSet;
-use std::env::var;
+use std::env::{join_paths, var};
 use std::{
     collections::HashMap,
     future::Future,
@@ -27,9 +27,11 @@ use godot::{obj, prelude::*};
 use std::ffi::c_void;
 use std::ops::Deref;
 use std::os::raw::c_char;
+use godot::classes::notify::NodeNotification::PATH_RENAMED;
 use tokio::{net::TcpStream, runtime::Runtime};
 
 use crate::godot_project_driver::{BranchState, DocHandleType};
+use crate::godot_scene::{self, PackedGodotScene};
 use crate::utils::{parse_automerge_url, print_branch_state};
 use crate::{
     doc_utils::SimpleDocReader,
@@ -80,6 +82,18 @@ enum SyncEvent {
     },
     CheckedOutBranch {
         doc_id: DocumentId,
+    },
+}
+
+enum FileUpdate {
+    Patch {
+        path: String,
+        patch: automerge::Patch,
+        scene: PackedGodotScene,
+    },
+    Reload {
+        path: String,
+        content: String,
     },
 }
 
@@ -757,6 +771,7 @@ impl GodotProject {
                                         .to_variant()],
                                 );
                             } else {
+                                let file_changes = vec![];
                                 branch_state.doc_handle.with_doc(|d| {
                                     let heads = d.get_heads();
                                     let diff = d.diff(
@@ -764,12 +779,48 @@ impl GodotProject {
                                         &heads,
                                         TextRepresentation::String(TextEncoding::Utf8CodeUnit),
                                     );
+                                    // iterate over the patches in diff
+                                    for patch in diff {
+                                        // if path >= 3 and path[2] is "structured_content", then we have a file change
+                                        if patch.path.len() >= 3 {
+                                            if let Some((_, automerge::Prop::Map(prop_or_attr))) = patch.path.get(2) {
+                                                if prop_or_attr == "structured_content" {
+                                                    let path = patch.path.get(1).unwrap().1;
+                                                    let patch = patch.clone();
+                                                    // files -> path -> structured_contentct
+                                                    let scene = d.get_obj_id(ROOT, "files").and_then(|files| {
+                                                        d.get_obj_id(files, path).and_then(|file| {
+                                                            d.get(file, "structured_content").map(|scene| scene)
+                                                        })
+                                                    });
+                                                    if let Some(scene) = scene {
+                                                        file_changes.push(
+                                                            FileUpdate::Patch {
+                                                                path: path.to_string(),
+                                                                patch,
+                                                                scene
+                                                            });
+                                                    }
+                                                } else if prop_or_attr == "content" {
+                                                    let path = patch.path.get(1).unwrap().1;
+                                                    let content = d.get_string(&patch.obj, "content").unwrap();
+                                                    file_changes.push(FileUpdate::Reload {
+                                                        path: path.to_string(),
+                                                        content
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
 
                                     println!("rust: PATCHES: {:?}", diff);
                                 });
 
                                 println!("rust: TRIGGER files changed");
-                                self.base_mut().emit_signal("files_changed", &[]);
+                                let patches = self.get_changes_patch(file_changes);
+                                let vec_variant = patches.iter().map(|d| d.to_variant()).collect::<Vec<Variant>>();
+                                self.base_mut().emit_signal("files_changed", vec_variant.as_slice());
+                                
                             }
                         }
                     }
@@ -789,6 +840,97 @@ impl GodotProject {
                 }
             }
         }
+    }
+
+    fn get_changes_patch(&mut self, updates: Vec<FileUpdate>) -> Vec<Dictionary> {
+        let mut patches = vec![];
+        for file_update in updates {
+            match file_update {
+                FileUpdate::Patch { path, patch, scene } => {
+                    match patch.action {
+                        // handle update node
+                        automerge::PatchAction::PutMap {
+                            key,
+                            value,
+                            conflict: _,
+                        } => match (patch.path.get(0), patch.path.get(1), patch.path.get(2)) {
+                            (
+                                Some((_, automerge::Prop::Map(maybe_nodes))),
+                                Some((_, automerge::Prop::Map(node_path))),
+                                Some((_, automerge::Prop::Map(prop_or_attr))),
+                            ) => {
+                                if maybe_nodes == "nodes" {
+                                    if let automerge::Value::Scalar(v) = value.0 {
+                                        if let automerge::ScalarValue::Str(smol_str) = v.as_ref() {
+                                            let string_value = smol_str.to_string();
+
+                                            let mut dict = dict! {
+                                                "file_path": path,
+                                                "node_path": node_path.to_variant(),
+                                                "type": if prop_or_attr == "properties" {
+                                                    "property_changed"
+                                                } else {
+                                                    "attribute_changed"
+                                                },
+                                                "key": key,
+                                                "value": string_value,
+                                            };
+
+                                            // Look up node in scene and get instance / type attribute if it exists
+                                            if let Some(node) =
+                                                godot_scene::get_node_by_path(&scene, node_path)
+                                            {
+                                                let attributes =
+                                                    godot_scene::get_node_attributes(&node);
+                                                if let Some(instance) = attributes.get("instance") {
+                                                    let _ = dict
+                                                        .insert("instance_path", instance.clone());
+                                                } else if let Some(type_val) =
+                                                    attributes.get("type")
+                                                {
+                                                    let _ = dict
+                                                        .insert("instance_type", type_val.clone());
+                                                }
+                                            }
+                                            patches.push(dict);
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        },
+
+                        // handle delete node
+                        automerge::PatchAction::DeleteMap { key: node_path } => {
+                            if patch.path.len() != 1 {
+                                continue;
+                            }
+                            match patch.path.get(0) {
+                                Some((_, automerge::Prop::Map(key))) => {
+                                    if key == "nodes" {
+                                        patches.push(dict! {
+                                            "file_path": path,
+                                            "node_path": node_path.to_variant(),
+                                            "type": "node_deleted",
+                                        });
+                                    }
+                                }
+                                _ => {}
+                            };
+                        }
+                        _ => {}
+                    }
+                },
+                FileUpdate::Reload { path, content } => {
+                    patches.push(dict! {
+                        "file_path": path,
+                        "type": "file_reloaded",
+                        "content": content,
+                    });
+                }
+            }
+        }
+        patches
     }
 
     // Helper functions
