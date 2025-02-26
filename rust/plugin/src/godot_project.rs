@@ -779,15 +779,17 @@ impl GodotProject {
                                         &heads,
                                         TextRepresentation::String(TextEncoding::Utf8CodeUnit),
                                     );
+                                    
                                     // iterate over the patches in diff
                                     for patch in diff {
+                                        // TODO: move this to a seperate function
                                         // if path >= 3 and path[2] is "structured_content", then we have a file change
                                         if patch.path.len() >= 3 {
                                             if let Some((_, automerge::Prop::Map(prop_or_attr))) = patch.path.get(2) {
                                                 if prop_or_attr == "structured_content" {
                                                     let path = patch.path.get(1).unwrap().1;
                                                     let patch = patch.clone();
-                                                    // files -> path -> structured_contentct
+                                                    // files -> path -> structured_content
                                                     let scene = d.get_obj_id(ROOT, "files").and_then(|files| {
                                                         d.get_obj_id(files, path).and_then(|file| {
                                                             d.get(file, "structured_content").map(|scene| scene)
@@ -819,6 +821,7 @@ impl GodotProject {
                                 println!("rust: TRIGGER files changed");
                                 let patches = self.get_changes_patch(file_changes);
                                 let vec_variant = patches.iter().map(|d| d.to_variant()).collect::<Vec<Variant>>();
+                                // TODO:  make this return only a file_list, make the plugin get the changes via other functions
                                 self.base_mut().emit_signal("files_changed", vec_variant.as_slice());
                                 
                             }
