@@ -177,10 +177,6 @@ func do_pw_to_godot_sync_task():
 	var files_in_godot = get_relevant_godot_files()
 	var files_in_patchwork = godot_project.list_all_files()
 
-	# skip if there are no files
-	if files_in_patchwork.size() == 0:
-		return
-
 	print("sync patchwork -> godot {")
 	for path in files_in_patchwork:
 		print("  ", path)
@@ -263,8 +259,10 @@ func _exit_tree() -> void:
 	if sidebar:
 		remove_control_from_docks(sidebar)
 
-	if godot_project:
-		godot_project.stop();
+	if is_instance_valid(godot_project):
+		pass
+		# panicing on shutdown, so skipping for now
+		# godot_project.shutdown();
 
 	if file_system:
 		file_system.stop()
