@@ -1,38 +1,19 @@
 use ::safer_ffi::prelude::*;
-use std::collections::HashSet;
-use std::env::{join_paths, var};
-use std::{
-    collections::HashMap,
-    future::Future,
-    str::FromStr,
-    sync::{
-        mpsc::{Receiver, Sender},
-        Arc, Mutex,
-    },
-};
+use autosurgeon::{Hydrate, Reconcile};
+use std::{collections::HashMap, str::FromStr};
 
 use automerge::{
-    patches::TextRepresentation, transaction::Transactable, Automerge, Change, ChangeHash, ObjType,
-    PatchLog, ReadDoc, TextEncoding, ROOT,
+    patches::TextRepresentation, transaction::Transactable, ChangeHash, ObjType, ReadDoc,
+    TextEncoding, ROOT,
 };
-use automerge_repo::{tokio::FsStorage, ConnDirection, DocHandle, DocumentId, Repo, RepoHandle};
-use autosurgeon::{bytes, hydrate, reconcile, Hydrate, Reconcile};
-use futures::{
-    channel::mpsc::{UnboundedReceiver, UnboundedSender},
-    executor::block_on,
-    FutureExt, StreamExt,
-};
-use godot::sys::interface_fn;
-use godot::{obj, prelude::*};
-use std::ffi::c_void;
-use std::ops::Deref;
-use std::os::raw::c_char;
-use godot::classes::notify::NodeNotification::PATH_RENAMED;
-use tokio::{net::TcpStream, runtime::Runtime};
+use automerge_repo::{DocHandle, DocumentId};
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
+use godot::prelude::*;
 
 use crate::godot_project_driver::{BranchState, DocHandleType};
-use crate::godot_scene::{self, PackedGodotScene};
-use crate::utils::{parse_automerge_url, print_branch_state};
+use crate::godot_scene::PackedGodotScene;
+use crate::patches::get_changed_files;
+use crate::utils::{array_to_heads, parse_automerge_url, print_branch_state};
 use crate::{
     doc_utils::SimpleDocReader,
     godot_project_driver::{GodotProjectDriver, InputEvent, OutputEvent},
@@ -82,18 +63,6 @@ enum SyncEvent {
     },
     CheckedOutBranch {
         doc_id: DocumentId,
-    },
-}
-
-enum FileUpdate {
-    Patch {
-        path: String,
-        patch: automerge::Patch,
-        scene: PackedGodotScene,
-    },
-    Reload {
-        path: String,
-        content: String,
     },
 }
 
@@ -299,16 +268,30 @@ impl GodotProject {
     }
 
     #[func]
-    fn get_changed_files(&self) -> PackedStringArray {
+    fn get_changed_files(&self, heads: PackedStringArray) -> PackedStringArray {
+        let heads = array_to_heads(heads);
+
         let checked_out_branch_state = match &self.get_checked_out_branch_state() {
             Some(branch_state) => branch_state.clone(),
             None => return PackedStringArray::new(),
         };
 
-        // ignore main, doesn't have changed files
-        if checked_out_branch_state.is_main {
-            return PackedStringArray::new();
-        }
+        let patches = checked_out_branch_state.doc_handle.with_doc(|d| {
+            d.diff(
+                &heads,
+                &checked_out_branch_state.synced_heads,
+                TextRepresentation::String(TextEncoding::Utf8CodeUnit),
+            )
+        });
+        get_changed_files(patches)
+    }
+
+    #[func]
+    fn get_changed_files_on_current_branch(&self) -> PackedStringArray {
+        let checked_out_branch_state = match &self.get_checked_out_branch_state() {
+            Some(branch_state) => branch_state.clone(),
+            None => return PackedStringArray::new(),
+        };
 
         let patches = checked_out_branch_state.doc_handle.with_doc(|d| {
             d.diff(
@@ -317,39 +300,7 @@ impl GodotProject {
                 TextRepresentation::String(TextEncoding::Utf8CodeUnit),
             )
         });
-
-        let mut changed_files = HashSet::new();
-
-        // log all patches
-        for patch in patches.clone() {
-            let first_key = match patch.path.get(0) {
-                Some((_, prop)) => match prop {
-                    automerge::Prop::Map(string) => string,
-                    _ => continue,
-                },
-                _ => continue,
-            };
-
-            // get second key
-            let second_key = match patch.path.get(1) {
-                Some((_, prop)) => match prop {
-                    automerge::Prop::Map(string) => string,
-                    _ => continue,
-                },
-                _ => continue,
-            };
-
-            if first_key == "files" {
-                changed_files.insert(second_key.to_string());
-            }
-
-            println!("changed files: {:?}", changed_files);
-        }
-
-        return changed_files
-            .iter()
-            .map(|s| GString::from(s))
-            .collect::<PackedStringArray>();
+        get_changed_files(patches)
     }
 
     #[func]
@@ -379,11 +330,7 @@ impl GodotProject {
         files: Dictionary, /*  Record<String, Variant> */
         heads: PackedStringArray,
     ) {
-        let heads: Vec<ChangeHash> = heads
-            .to_vec()
-            .iter()
-            .filter_map(|h| ChangeHash::from_str(h.to_string().as_str()).ok())
-            .collect();
+        let heads = array_to_heads(heads);
 
         match &self.get_checked_out_branch_state() {
             Some(branch_state) => {
@@ -771,59 +718,7 @@ impl GodotProject {
                                         .to_variant()],
                                 );
                             } else {
-                                let file_changes = vec![];
-                                branch_state.doc_handle.with_doc(|d| {
-                                    let heads = d.get_heads();
-                                    let diff = d.diff(
-                                        &previous_heads,
-                                        &heads,
-                                        TextRepresentation::String(TextEncoding::Utf8CodeUnit),
-                                    );
-                                    
-                                    // iterate over the patches in diff
-                                    for patch in diff {
-                                        // TODO: move this to a seperate function
-                                        // if path >= 3 and path[2] is "structured_content", then we have a file change
-                                        if patch.path.len() >= 3 {
-                                            if let Some((_, automerge::Prop::Map(prop_or_attr))) = patch.path.get(2) {
-                                                if prop_or_attr == "structured_content" {
-                                                    let path = patch.path.get(1).unwrap().1;
-                                                    let patch = patch.clone();
-                                                    // files -> path -> structured_content
-                                                    let scene = d.get_obj_id(ROOT, "files").and_then(|files| {
-                                                        d.get_obj_id(files, path).and_then(|file| {
-                                                            d.get(file, "structured_content").map(|scene| scene)
-                                                        })
-                                                    });
-                                                    if let Some(scene) = scene {
-                                                        file_changes.push(
-                                                            FileUpdate::Patch {
-                                                                path: path.to_string(),
-                                                                patch,
-                                                                scene
-                                                            });
-                                                    }
-                                                } else if prop_or_attr == "content" {
-                                                    let path = patch.path.get(1).unwrap().1;
-                                                    let content = d.get_string(&patch.obj, "content").unwrap();
-                                                    file_changes.push(FileUpdate::Reload {
-                                                        path: path.to_string(),
-                                                        content
-                                                    });
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    println!("rust: PATCHES: {:?}", diff);
-                                });
-
-                                println!("rust: TRIGGER files changed");
-                                let patches = self.get_changes_patch(file_changes);
-                                let vec_variant = patches.iter().map(|d| d.to_variant()).collect::<Vec<Variant>>();
-                                // TODO:  make this return only a file_list, make the plugin get the changes via other functions
-                                self.base_mut().emit_signal("files_changed", vec_variant.as_slice());
-                                
+                                self.base_mut().emit_signal("files_changed", &[]);
                             }
                         }
                     }
@@ -845,97 +740,6 @@ impl GodotProject {
         }
     }
 
-    fn get_changes_patch(&mut self, updates: Vec<FileUpdate>) -> Vec<Dictionary> {
-        let mut patches = vec![];
-        for file_update in updates {
-            match file_update {
-                FileUpdate::Patch { path, patch, scene } => {
-                    match patch.action {
-                        // handle update node
-                        automerge::PatchAction::PutMap {
-                            key,
-                            value,
-                            conflict: _,
-                        } => match (patch.path.get(0), patch.path.get(1), patch.path.get(2)) {
-                            (
-                                Some((_, automerge::Prop::Map(maybe_nodes))),
-                                Some((_, automerge::Prop::Map(node_path))),
-                                Some((_, automerge::Prop::Map(prop_or_attr))),
-                            ) => {
-                                if maybe_nodes == "nodes" {
-                                    if let automerge::Value::Scalar(v) = value.0 {
-                                        if let automerge::ScalarValue::Str(smol_str) = v.as_ref() {
-                                            let string_value = smol_str.to_string();
-
-                                            let mut dict = dict! {
-                                                "file_path": path,
-                                                "node_path": node_path.to_variant(),
-                                                "type": if prop_or_attr == "properties" {
-                                                    "property_changed"
-                                                } else {
-                                                    "attribute_changed"
-                                                },
-                                                "key": key,
-                                                "value": string_value,
-                                            };
-
-                                            // Look up node in scene and get instance / type attribute if it exists
-                                            if let Some(node) =
-                                                godot_scene::get_node_by_path(&scene, node_path)
-                                            {
-                                                let attributes =
-                                                    godot_scene::get_node_attributes(&node);
-                                                if let Some(instance) = attributes.get("instance") {
-                                                    let _ = dict
-                                                        .insert("instance_path", instance.clone());
-                                                } else if let Some(type_val) =
-                                                    attributes.get("type")
-                                                {
-                                                    let _ = dict
-                                                        .insert("instance_type", type_val.clone());
-                                                }
-                                            }
-                                            patches.push(dict);
-                                        }
-                                    }
-                                }
-                            }
-                            _ => {}
-                        },
-
-                        // handle delete node
-                        automerge::PatchAction::DeleteMap { key: node_path } => {
-                            if patch.path.len() != 1 {
-                                continue;
-                            }
-                            match patch.path.get(0) {
-                                Some((_, automerge::Prop::Map(key))) => {
-                                    if key == "nodes" {
-                                        patches.push(dict! {
-                                            "file_path": path,
-                                            "node_path": node_path.to_variant(),
-                                            "type": "node_deleted",
-                                        });
-                                    }
-                                }
-                                _ => {}
-                            };
-                        }
-                        _ => {}
-                    }
-                },
-                FileUpdate::Reload { path, content } => {
-                    patches.push(dict! {
-                        "file_path": path,
-                        "type": "file_reloaded",
-                        "content": content,
-                    });
-                }
-            }
-        }
-        patches
-    }
-
     // Helper functions
 
     fn get_checked_out_branch_state(&self) -> Option<BranchState> {
@@ -952,50 +756,4 @@ impl GodotProject {
             }
         }
     }
-}
-
-fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = Vec<automerge::Patch>> + Send {
-    futures::stream::unfold(handle, |doc_handle| async {
-        let heads_before = doc_handle.with_doc(|d| d.get_heads());
-        let _ = doc_handle.changed().await;
-        let heads_after = doc_handle.with_doc(|d| d.get_heads());
-        let diff = doc_handle.with_doc(|d| {
-            d.diff(
-                &heads_before,
-                &heads_after,
-                TextRepresentation::String(TextEncoding::Utf8CodeUnit),
-            )
-        });
-
-        Some((diff, doc_handle))
-    })
-}
-
-pub(crate) fn is_branch_doc(branch_doc_handle: &DocHandle) -> bool {
-    branch_doc_handle.with_doc(|d| match d.get_obj_id(ROOT, "files") {
-        Some(_) => true,
-        None => false,
-    })
-}
-
-pub(crate) fn vec_string_to_packed_string_array(vec: &Vec<String>) -> PackedStringArray {
-    vec.iter()
-        .map(|s| GString::from(s))
-        .collect::<PackedStringArray>()
-}
-
-pub(crate) fn packed_string_array_to_vec_string(array: &PackedStringArray) -> Vec<String> {
-    array.to_vec().iter().map(|s| String::from(s)).collect()
-}
-
-fn branches_to_gd(branches: &HashMap<String, Branch>) -> Array<Dictionary> {
-    branches
-        .iter()
-        .map(|(_, branch)| {
-            dict! {
-                "name": branch.name.clone(),
-                "id": branch.id.clone(),
-            }
-        })
-        .collect::<Array<Dictionary>>()
 }

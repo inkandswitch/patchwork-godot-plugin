@@ -7,9 +7,10 @@ use std::{
 use crate::{doc_utils::SimpleDocReader, godot_project_driver::BranchState};
 use automerge::{
     transaction::{CommitOptions, Transaction},
-    ReadDoc, ROOT,
+    ChangeHash, ReadDoc, ROOT,
 };
 use automerge_repo::{DocHandle, DocumentId, RepoHandle};
+use godot::builtin::PackedStringArray;
 
 pub(crate) fn get_linked_docs_of_branch(
     branch_doc_handle: &DocHandle,
@@ -107,4 +108,12 @@ pub(crate) fn print_branch_state(message: &str, branch_state: &BranchState) {
         "rust: {:?}: {:?} {:?} {:?}",
         message, branch_state.name, branch_state.linked_doc_ids, branch_state.synced_heads
     );
+}
+
+pub(crate) fn array_to_heads(packed_string_array: PackedStringArray) -> Vec<ChangeHash> {
+    packed_string_array
+        .to_vec()
+        .iter()
+        .map(|h| ChangeHash::from_str(h.to_string().as_str()).unwrap())
+        .collect()
 }

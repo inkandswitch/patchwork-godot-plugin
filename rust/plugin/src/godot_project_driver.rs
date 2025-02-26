@@ -1,7 +1,6 @@
 use automerge_repo::RepoError;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, Stream};
-use godot::builtin::PackedByteArray;
 use ::safer_ffi::prelude::*;
 use std::collections::HashSet;
 use std::future::Future;

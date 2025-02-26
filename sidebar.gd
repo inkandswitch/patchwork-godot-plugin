@@ -251,7 +251,7 @@ func update_ui() -> void:
 
 	changed_files_container.visible = !checked_out_branch.is_main
 
-	var changed_files = godot_project.get_changed_files();
+	var changed_files = godot_project.get_changed_files_on_current_branch();
 
 	changed_files_list.clear()
 
