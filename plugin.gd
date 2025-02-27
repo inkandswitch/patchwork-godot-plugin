@@ -155,9 +155,6 @@ func _do_pw_to_godot_sync_element(i: int, files_in_patchwork: PackedStringArray)
 
 	if typeof(gp_content) == TYPE_NIL:
 		printerr("patchwork missing file content even though path exists: ", path)
-		files_to_reload_mutex.lock()
-		deferred_pw_to_godot_sync = true
-		files_to_reload_mutex.unlock()
 		return
 
 	elif fs_content != null and typeof(fs_content) != typeof(gp_content):
