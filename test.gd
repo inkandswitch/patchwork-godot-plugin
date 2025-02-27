@@ -12,7 +12,7 @@ func _process(_delta: float) -> void:
 func _enter_tree() -> void:
     # var project_doc_id = "Er2op2b6hHpwFwDdzEw5FcizoQe"
 
-    godot_project = GodotProject.create("")
+    godot_project = GodotProject.create("", "")
 
     print("do stuff");
 

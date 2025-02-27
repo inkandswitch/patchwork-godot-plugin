@@ -14,7 +14,7 @@ use godot::prelude::*;
 
 use crate::godot_project_driver::{BranchState, DocHandleType};
 use crate::godot_scene::{self, PackedGodotScene};
-use crate::patches::get_changed_files;
+use crate::patches::{get_changed_files, get_changed_files_vec};
 use crate::storage_utils::{InMemoryStorage, SimpleStorage};
 use crate::utils::{
     array_to_heads, commit_with_attribution_and_timestamp, heads_to_array, parse_automerge_url,
@@ -223,6 +223,62 @@ impl GodotProject {
             .collect::<PackedStringArray>()
     }
 
+    fn _get_file_at(&self, path: String, heads: Option<Vec<ChangeHash>>) -> Option<StringOrPackedByteArray> {
+        let branch_state = self.get_checked_out_branch_state();
+        if branch_state.is_none() {
+            return None;
+        }
+        let branch_state = branch_state.unwrap();
+        let heads = match heads {
+            Some(heads) => heads,
+            None => branch_state.synced_heads.clone()
+        };
+        let doc = branch_state.doc_handle.with_doc(|d| d.clone());
+
+
+        let files = doc.get_at(ROOT, "files", &heads).unwrap().unwrap().1;
+        // does the file exist?
+        let file_entry = match doc.get_at(files, &path, &heads) {
+            Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
+            _ => return None,
+        };
+
+        // try to read file as text
+        match doc.get_at(&file_entry, "content", &heads) {
+            Ok(Some((automerge::Value::Object(ObjType::Text), content))) => {
+                match doc.text_at(content, &heads) {
+                    Ok(text) => return Some(StringOrPackedByteArray::String(text.to_string())),
+                    Err(_) => {}
+                }
+            }
+            _ => {}
+        }
+
+        // ... otherwise try to read as linked binary doc
+        doc.get_string_at(&file_entry, "url", &heads)
+            .and_then(|url| parse_automerge_url(&url))
+            .and_then(|doc_id| self.doc_handles.get(&doc_id))
+            .and_then(|doc_handle| {
+                doc_handle.with_doc(|d| match d.get(ROOT, "content") {
+                    Ok(Some((value, _))) if value.is_bytes() => {
+                        Some(StringOrPackedByteArray::Binary(value.into_bytes().unwrap()))
+                    }
+                    Ok(Some((value, _))) if value.is_str() => Some(
+                        StringOrPackedByteArray::String(value.into_string().unwrap()),
+                    ),
+                    _ => {
+                        println!(
+                            "failed to read binary doc {:?} {:?} {:?}",
+                            path,
+                            doc_handle.document_id(),
+                            doc_handle.with_doc(|d| d.get_heads())
+                        );
+                        None
+                    }
+                })
+            })
+    }
+
     fn _get_file(&self, path: String) -> Option<StringOrPackedByteArray> {
         let doc = match &self.get_checked_out_branch_state() {
             Some(branch_state) => branch_state.doc_handle.with_doc(|d| d.clone()),
@@ -284,22 +340,124 @@ impl GodotProject {
 
     #[func]
     fn get_changed_files(&self, heads: PackedStringArray) -> PackedStringArray {
+        self.get_changed_files_between(heads, PackedStringArray::new())
+    }
+
+    #[func]
+    fn get_changed_files_between(&self, heads: PackedStringArray, curr_heads: PackedStringArray) -> PackedStringArray {
         let heads = array_to_heads(heads);
+        // if curr_heads is empty, we're comparing against the current heads
 
         let checked_out_branch_state = match &self.get_checked_out_branch_state() {
             Some(branch_state) => branch_state.clone(),
             None => return PackedStringArray::new(),
         };
 
+        let curr_heads =  if curr_heads.len() == 0 {
+            checked_out_branch_state.synced_heads.clone()
+        } else {
+            array_to_heads(curr_heads)
+        };
+
+
         let patches = checked_out_branch_state.doc_handle.with_doc(|d| {
             d.diff(
                 &heads,
-                &checked_out_branch_state.synced_heads,
+                &curr_heads,
                 TextRepresentation::String(TextEncoding::Utf8CodeUnit),
             )
         });
         get_changed_files(patches)
     }
+
+
+    #[func]
+    fn get_changed_file_content_between(&self, old_heads: PackedStringArray, curr_heads: PackedStringArray) -> Dictionary {
+        // dict looks like:
+        // {
+        //     files: [
+        //         {
+        //             path: "path/to/file",
+        //             change: "modified",
+        //             old_content: "old content",
+        //             new_content: "new content"
+        //         },
+        //         {
+        //             path: "path/to/another/file",
+        //             change: "added",
+        //             old_content: null,
+        //             new_content: "new content"
+        //         },
+        //         {
+        //             path: "path/to/another/file",
+        //             change: "deleted",
+        //             old_content: "old content",
+        //             new_content: null
+        //         }
+        //     ]
+        // }
+        let heads = array_to_heads(old_heads);
+        // if curr_heads is empty, we're comparing against the current heads
+
+        let checked_out_branch_state = match &self.get_checked_out_branch_state() {
+            Some(branch_state) => branch_state.clone(),
+            None => return Dictionary::new(),
+        };
+
+        let curr_heads =  if curr_heads.len() == 0 {
+            checked_out_branch_state.synced_heads.clone()
+        } else {
+            array_to_heads(curr_heads)
+        };
+
+
+        let patches = checked_out_branch_state.doc_handle.with_doc(|d| {
+            d.diff(
+                &heads,
+                &curr_heads,
+                TextRepresentation::String(TextEncoding::Utf8CodeUnit),
+            )
+        });
+        let changed_files = get_changed_files_vec(patches);
+        // get the file entry at the old_heads, then the current heads
+        let mut changed_files_dict = Dictionary::new();
+        let mut changed_files_dict_files_array = Array::new();
+        for file in changed_files {
+            let file_entry = match self._get_file_at(file.clone(), Some(heads.clone())) {
+                Some(StringOrPackedByteArray::String(s)) => GString::from(s).to_variant(),
+                Some(StringOrPackedByteArray::Binary(bytes)) => {
+                    PackedByteArray::from(bytes).to_variant()
+                }
+                None => Variant::nil(),
+            };
+            let file_entry_current = match self._get_file_at(file.clone(), Some(curr_heads.clone())) {
+                Some(StringOrPackedByteArray::String(s)) => GString::from(s).to_variant(),
+                Some(StringOrPackedByteArray::Binary(bytes)) => {
+                    PackedByteArray::from(bytes).to_variant()
+                }
+                None => Variant::nil(),
+            };
+
+            let change_type = if file_entry.is_nil() {
+                "added"
+            } else if file_entry_current.is_nil() {
+                "deleted"
+            } else {
+                "modified"
+            };
+            changed_files_dict_files_array.push(&dict! {
+                "path": file,
+                "change": change_type,
+                "old_content": file_entry,
+                "new_content": file_entry_current,
+            })
+        }
+        let _ = changed_files_dict.insert("files", changed_files_dict_files_array);
+        // iterate over the changed_files, find 
+
+        changed_files_dict
+    }
+
 
     #[func]
     fn get_changed_files_on_current_branch(&self) -> PackedStringArray {

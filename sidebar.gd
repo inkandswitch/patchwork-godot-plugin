@@ -12,10 +12,12 @@ var godot_project: GodotProject
 @onready var changed_files_list: ItemList = %ChangedFilesList
 @onready var changed_files_container: Node = %ChangedFilesContainer
 @onready var user_button: Button = %UserButton
+@onready var inspector_container: Control = %InspectorContainer
 
 var branches = []
 var plugin: EditorPlugin
 var config: PatchworkConfig
+var inspector: ScrollContainer = null
 const CREATE_BRANCH_IDX = 1
 const MERGE_BRANCH_IDX = 2
 
@@ -48,6 +50,19 @@ func _ready() -> void:
 	if plugin:
 		plugin.connect("resource_saved", self._on_resource_saved)
 		plugin.connect("scene_saved", self._on_scene_saved)
+		print("INSPECTOR!!!!")
+		if not inspector:
+			inspector = PatchworkEditor.get_inspector()
+		if inspector == null:
+			print("No inspector found!")
+		if inspector.get_parent() == null:
+			inspector_container.add_child(inspector)
+		elif inspector.get_parent() != inspector_container:
+			inspector.get_parent().remove_child(inspector)
+			inspector_container.add_child(inspector)
+		inspector.reset_size()
+		inspector.show()
+
 	
 	if godot_project:
 		godot_project.connect("branches_changed", self._update_ui_on_branches_changed);
@@ -55,6 +70,7 @@ func _ready() -> void:
 	
 	var popup = menu_button.get_popup()
 	popup.id_pressed.connect(_on_menu_button_id_pressed)
+	PatchworkEditor.show_fake_diff()
 
 	user_button.pressed.connect(_on_user_button_pressed)
 

@@ -6,6 +6,8 @@ var config: PatchworkConfig
 var file_system: FileSystem
 var sidebar
 
+const TEMP_DIR = "user://tmp"
+
 var last_synced_heads: PackedStringArray
 # Array of [<path>, <content>]
 var file_content_to_reload: Array = []
@@ -202,7 +204,7 @@ func sync_patchwork_to_godot():
 	var deferred = false
 	# todo: add unsaved files check back
 	if PatchworkEditor.unsaved_files_open():
-	 	print("unsaved files open, not syncing")
+		print("unsaved files open, not syncing")
 		deferred = true
 	if current_pw_to_godot_sync_task_id != -1:
 		print("sync already in progress, not syncing")
@@ -261,3 +263,42 @@ func _exit_tree() -> void:
 
 	if file_system:
 		file_system.stop()
+
+func show_diff(hash1, hash2):
+	# TODO: handle dependencies of these files
+	var diff_dict = godot_project.get_changed_file_content_between([hash1], [hash2])
+	var files_arr = diff_dict["files"]
+	if files_arr.size() == 0:
+		print("No changes between %s and %s" % [hash1, hash2])
+		return
+	print("Changes between %s and %s:" % [hash1, hash2])
+	var new_dict = {}
+	var new_files = []
+	for file: Dictionary in files_arr:
+		var path = file["path"]
+		var change = file["change"]
+		var old_content = file["old_content"]
+		var new_content = file["new_content"]
+		# for all the files in the dict, save as tmp files
+
+		print("File: %s" % path)
+		print("Change: %s" % change)
+		var old_path = TEMP_DIR.path_join(path.trim_prefix("res://")) + "_old"
+		var new_path = TEMP_DIR.path_join(path.trim_prefix("res://")) + "_new"
+		if change == "added":
+			old_path = null
+			print("New content: %s" % new_content)
+		if change == "deleted":
+			new_path = null
+		if old_path:
+			file_system.save_file(old_path, old_content)
+		if new_path:
+			file_system.save_file(new_path, new_content)
+		new_files.append({
+			"path": path,
+			"change": change,
+			"old_content": old_content,
+			"new_content": new_content
+		})
+	new_dict["files"] = new_files
+	PatchworkEditor.show_diff(new_dict)

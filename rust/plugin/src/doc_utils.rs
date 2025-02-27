@@ -1,4 +1,4 @@
-use automerge::{transaction::Transaction, Automerge, ObjId, Prop, ReadDoc, Value};
+use automerge::{transaction::Transaction, Automerge, ChangeHash, ObjId, Prop, ReadDoc, Value};
 use godot::builtin::Variant;
 
 pub trait SimpleDocReader {
@@ -11,6 +11,8 @@ pub trait SimpleDocReader {
     fn get_string<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<String>;
 
     fn get_obj_id<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<ObjId>;
+
+    fn get_string_at<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P, heads: &[automerge::ChangeHash]) -> Option<String>;
 
     fn get_variant<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<Variant>;
 }
@@ -69,6 +71,17 @@ impl SimpleDocReader for Automerge {
         }
     }
 
+    fn get_string_at<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P, heads: &[ChangeHash]) -> Option<String> {
+        match self.get_at(obj, prop, &heads) {
+            Ok(Some((Value::Scalar(cow), _))) => match cow.into_owned() {
+                automerge::ScalarValue::Str(smol_str) => Some(smol_str.to_string()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+
     fn get_obj_id<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<ObjId> {
         match self.get(obj, prop) {
             Ok(Some((Value::Object(_), obj_id))) => Some(obj_id),
@@ -78,6 +91,17 @@ impl SimpleDocReader for Automerge {
 }
 
 impl SimpleDocReader for Transaction<'_> {
+
+    fn get_string_at<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P, heads: &[ChangeHash]) -> Option<String> {
+        match self.get_at(obj, prop, &heads) {
+            Ok(Some((Value::Scalar(cow), _))) => match cow.into_owned() {
+                automerge::ScalarValue::Str(smol_str) => Some(smol_str.to_string()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     fn get_bytes<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<Vec<u8>> {
         match self.get(obj, prop) {
             Ok(Some((Value::Scalar(cow), _))) => match cow.into_owned() {
