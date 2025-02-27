@@ -26,10 +26,6 @@ func init(plugin: EditorPlugin, godot_project: GodotProject, config: PatchworkCo
 	self.godot_project = godot_project
 	self.plugin = plugin
 	self.config = config
-func _on_resource_saved(path):
-	print("Resource saved: %s" % [path])
-func _on_scene_saved(path):
-	print("Scene saved: %s" % [path])
 	
 func _update_ui_on_branches_changed(branches: Array):
 	print("Branches changed, updating UI", branches)
@@ -52,8 +48,6 @@ func _ready() -> void:
 	# to paper over this we check if plugin and godot_project are set
 
 	if plugin:
-		plugin.connect("resource_saved", self._on_resource_saved)
-		plugin.connect("scene_saved", self._on_scene_saved)
 		print("INSPECTOR!!!!")
 		if not inspector:
 			inspector = PatchworkEditor.get_inspector()

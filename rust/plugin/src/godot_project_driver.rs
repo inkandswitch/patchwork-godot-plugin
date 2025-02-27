@@ -4,13 +4,14 @@ use futures::{FutureExt, Stream};
 use ::safer_ffi::prelude::*;
 use std::collections::HashSet;
 use std::future::Future;
+use std::panic::panic_any;
 use std::pin::Pin;
 use std::{
     collections::HashMap,
     str::FromStr,
 };
 
-use crate::utils::{commit_with_attribution_and_timestamp, print_branch_state};
+use crate::utils::{commit_with_attribution_and_timestamp, print_branch_state, print_doc};
 use crate::{godot_project::{BranchesMetadataDoc, GodotProjectDoc, StringOrPackedByteArray}, godot_scene, utils::get_linked_docs_of_branch};
 use automerge::{
     patches::TextRepresentation, transaction::Transactable, ChangeHash, ObjType,
@@ -537,13 +538,13 @@ impl DriverState {
                     }
                 } else { */
                     // either get existing text or create new text
-                    let content_key = match tx.get(&file_entry, "content") {
+                    /*let content_key = match tx.get(&file_entry, "content") {
                         Ok(Some((automerge::Value::Object(ObjType::Text), content))) => content,
                         _ => tx
                             .put_object(&file_entry, "content", ObjType::Text)
                             .unwrap(),
-                    };
-                    let _ = tx.update_text(&content_key, &content);
+                    };*/
+                    let _ = tx.put(&file_entry, "content", content);
                 /* } */
             }
 
