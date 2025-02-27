@@ -13,9 +13,9 @@ use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use godot::prelude::*;
 
 use crate::godot_project_driver::{BranchState, DocHandleType};
-use crate::godot_scene::{self, PackedGodotScene};
-use crate::patches::{get_changed_files, get_changed_files_vec};
-use crate::storage_utils::{InMemoryStorage, SimpleStorage};
+use crate::godot_scene::{self};
+use crate::patches::get_changed_files;
+use crate::patches::get_changed_files_vec;
 use crate::utils::{
     array_to_heads, commit_with_attribution_and_timestamp, heads_to_array, parse_automerge_url,
     print_branch_state,
@@ -135,8 +135,8 @@ impl GodotProject {
             Err(_) => None,
         };
 
-        // let storage = FsStorage::open("/tmp/automerge-godot-data").unwrap();
-        let repo = Repo::new(None, Box::new(InMemoryStorage::default()));
+        let storage = FsStorage::open("/tmp/automerge-godot-data").unwrap();
+        let repo = Repo::new(None, Box::new(storage));
         let repo_handle = repo.run();
 
         let driver = GodotProjectDriver::create(repo_handle.clone());
@@ -223,7 +223,11 @@ impl GodotProject {
             .collect::<PackedStringArray>()
     }
 
-    fn _get_file_at(&self, path: String, heads: Option<Vec<ChangeHash>>) -> Option<StringOrPackedByteArray> {
+    fn _get_file_at(
+        &self,
+        path: String,
+        heads: Option<Vec<ChangeHash>>,
+    ) -> Option<StringOrPackedByteArray> {
         let branch_state = self.get_checked_out_branch_state();
         if branch_state.is_none() {
             return None;
@@ -231,10 +235,9 @@ impl GodotProject {
         let branch_state = branch_state.unwrap();
         let heads = match heads {
             Some(heads) => heads,
-            None => branch_state.synced_heads.clone()
+            None => branch_state.synced_heads.clone(),
         };
         let doc = branch_state.doc_handle.with_doc(|d| d.clone());
-
 
         let files = doc.get_at(ROOT, "files", &heads).unwrap().unwrap().1;
         // does the file exist?
@@ -344,7 +347,11 @@ impl GodotProject {
     }
 
     #[func]
-    fn get_changed_files_between(&self, heads: PackedStringArray, curr_heads: PackedStringArray) -> PackedStringArray {
+    fn get_changed_files_between(
+        &self,
+        heads: PackedStringArray,
+        curr_heads: PackedStringArray,
+    ) -> PackedStringArray {
         let heads = array_to_heads(heads);
         // if curr_heads is empty, we're comparing against the current heads
 
@@ -353,12 +360,11 @@ impl GodotProject {
             None => return PackedStringArray::new(),
         };
 
-        let curr_heads =  if curr_heads.len() == 0 {
+        let curr_heads = if curr_heads.len() == 0 {
             checked_out_branch_state.synced_heads.clone()
         } else {
             array_to_heads(curr_heads)
         };
-
 
         let patches = checked_out_branch_state.doc_handle.with_doc(|d| {
             d.diff(
@@ -370,9 +376,12 @@ impl GodotProject {
         get_changed_files(patches)
     }
 
-
     #[func]
-    fn get_changed_file_content_between(&self, old_heads: PackedStringArray, curr_heads: PackedStringArray) -> Dictionary {
+    fn get_changed_file_content_between(
+        &self,
+        old_heads: PackedStringArray,
+        curr_heads: PackedStringArray,
+    ) -> Dictionary {
         // dict looks like:
         // {
         //     files: [
@@ -404,12 +413,11 @@ impl GodotProject {
             None => return Dictionary::new(),
         };
 
-        let curr_heads =  if curr_heads.len() == 0 {
+        let curr_heads = if curr_heads.len() == 0 {
             checked_out_branch_state.synced_heads.clone()
         } else {
             array_to_heads(curr_heads)
         };
-
 
         let patches = checked_out_branch_state.doc_handle.with_doc(|d| {
             d.diff(
@@ -430,7 +438,8 @@ impl GodotProject {
                 }
                 None => Variant::nil(),
             };
-            let file_entry_current = match self._get_file_at(file.clone(), Some(curr_heads.clone())) {
+            let file_entry_current = match self._get_file_at(file.clone(), Some(curr_heads.clone()))
+            {
                 Some(StringOrPackedByteArray::String(s)) => GString::from(s).to_variant(),
                 Some(StringOrPackedByteArray::Binary(bytes)) => {
                     PackedByteArray::from(bytes).to_variant()
@@ -453,11 +462,10 @@ impl GodotProject {
             })
         }
         let _ = changed_files_dict.insert("files", changed_files_dict_files_array);
-        // iterate over the changed_files, find 
+        // iterate over the changed_files, find
 
         changed_files_dict
     }
-
 
     #[func]
     fn get_changed_files_on_current_branch(&self) -> PackedStringArray {

@@ -919,7 +919,6 @@ dependencies = [
  "cbindgen",
  "futures",
  "godot",
- "parking_lot",
  "safer-ffi",
  "serde_json",
  "tokio",
