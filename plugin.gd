@@ -104,13 +104,14 @@ func sync_patchwork_to_godot():
 
 	for path in files_in_patchwork:
 		var patchwork_content = godot_project.get_file(path)
-		var fs_content = file_system.get_file(path)
 
 		if typeof(patchwork_content) == TYPE_NIL:
 			printerr("patchwork missing file content even though path exists: ", path)
 			continue
 
-		elif fs_content != null and typeof(fs_content) != typeof(patchwork_content):
+		var fs_content = file_system.get_file(path)
+		
+		if fs_content != null and typeof(fs_content) != typeof(patchwork_content):
 			# log if current content is not the same type as content
 			printerr("different types at ", path, ": ", typeof(fs_content), " vs ", typeof(patchwork_content))
 			continue

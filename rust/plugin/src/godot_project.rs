@@ -14,7 +14,7 @@ use godot::prelude::*;
 use crate::godot_project_driver::{BranchState, DocHandleType};
 use crate::patches::get_changed_files;
 use crate::patches::get_changed_files_vec;
-use crate::utils::{array_to_heads, parse_automerge_url, print_branch_state};
+use crate::utils::{array_to_heads, parse_automerge_url};
 use crate::{
     doc_utils::SimpleDocReader,
     godot_project_driver::{GodotProjectDriver, InputEvent, OutputEvent},
@@ -284,15 +284,18 @@ impl GodotProject {
             _ => return None,
         };
 
-        // try to read file as text
+        // try to read file as text or as string
         match doc.get(&file_entry, "content") {
             Ok(Some((automerge::Value::Object(ObjType::Text), content))) => {
                 match doc.text(content) {
                     Ok(text) => return Some(StringOrPackedByteArray::String(text.to_string())),
-                    Err(_) => {}
+                    Err(e) => println!("failed to read text file {:?}: {:?}", path, e),
                 }
             }
-            _ => {}
+            _ => match doc.get_string(&file_entry, "content") {
+                Some(s) => return Some(StringOrPackedByteArray::String(s)),
+                _ => {}
+            },
         }
 
         // ... otherwise try to read as linked binary doc
