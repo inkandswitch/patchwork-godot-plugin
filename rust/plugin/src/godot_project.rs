@@ -465,16 +465,17 @@ impl GodotProject {
                             panic!("error parsing godot scene: {:?}", e);
                         }
                     }
-                } else {
-                    // either get existing text or create new text
-                    let content_key = match tx.get(&file_entry, "content") {
-                        Ok(Some((automerge::Value::Object(ObjType::Text), content))) => content,
-                        _ => tx
-                            .put_object(&file_entry, "content", ObjType::Text)
-                            .unwrap(),
-                    };
-                    let _ = tx.update_text(&content_key, &content);
                 }
+                // TODO: this is currently a hack to keep the text content available for everything
+                // either get existing text or create new text
+                let content_key = match tx.get(&file_entry, "content") {
+                    Ok(Some((automerge::Value::Object(ObjType::Text), content))) => content,
+                    _ => tx
+                        .put_object(&file_entry, "content", ObjType::Text)
+                        .unwrap(),
+                };
+                // TODO: we need to do line-by-line diffing here
+                let _ = tx.update_text(&content_key, &content);
             }
 
             for (path, binary_doc_handle) in binary_entries {
