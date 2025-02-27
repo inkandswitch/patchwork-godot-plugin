@@ -70,9 +70,11 @@ pub enum OutputEvent {
         doc_handle: DocHandle,
         doc_handle_type: DocHandleType,
     },
+
     BranchStateChanged {
         branch_state: BranchState,
-    },
+        trigger_reload: bool,
+    },    
 
     CompletedCreateBranch {
         branch_doc_id: DocumentId,
@@ -126,8 +128,10 @@ struct DriverState {
     requesting_branch_docs: FuturesUnordered<Pin<Box<dyn Future<Output = (String, Result<DocHandle, RepoError>)> + Send>>>,
 
     subscribed_doc_ids: HashSet<DocumentId>,
-    all_doc_changes: futures::stream::SelectAll<std::pin::Pin<Box<dyn Stream<Item = SubscriptionMessage> + Send>>>
+    all_doc_changes: futures::stream::SelectAll<std::pin::Pin<Box<dyn Stream<Item = SubscriptionMessage> + Send>>>,
 
+    // heads that the frontend has for each branch doc
+    heads_in_frontend: HashMap<DocumentId, Vec<ChangeHash>>,
 }
 
 pub struct GodotProjectDriver {
@@ -229,6 +233,7 @@ impl GodotProjectDriver {
                 requesting_branch_docs: FuturesUnordered::new(),
                 subscribed_doc_ids: HashSet::new(),
                 all_doc_changes: futures::stream::SelectAll::new(),
+                heads_in_frontend: HashMap::new(),
             };
 
             state.update_branch_doc_state(state.main_branch_doc_handle.clone());
@@ -454,7 +459,6 @@ impl DriverState {
         });
   
     }
-
     
     fn save_files(
         &mut self,
@@ -554,6 +558,12 @@ impl DriverState {
 
             commit_with_attribution_and_timestamp(tx, &self.user_name);
         });
+
+    
+        // update heads in frontend
+        self.heads_in_frontend.insert(branch_doc_handle.document_id(), branch_doc_handle.with_doc(|d| d.get_heads()));
+
+        println!("rust: save {:?}",self.heads_in_frontend);
     }
 
     fn merge_branch(&mut self, branch_doc_handle: DocHandle)  {    
@@ -629,8 +639,10 @@ impl DriverState {
 
             print_branch_state("branch doc state loaded", &branch_state);
 
+
             self.tx.unbounded_send(OutputEvent::BranchStateChanged {
                 branch_state: branch_state.clone(),
+                trigger_reload: !does_frontend_have_branch_at_heads(&self.heads_in_frontend, &branch_state.doc_handle, &branch_state.synced_heads),
             }).unwrap();            
         }
     }
@@ -658,11 +670,10 @@ impl DriverState {
                         false
                     }                                    
                 }) {
-
-                    print_branch_state("branch doc state loaded", &branch_state);
                     branch_state.synced_heads = branch_state.doc_handle.with_doc(|d| d.get_heads());
                     self.tx.unbounded_send(OutputEvent::BranchStateChanged {
                         branch_state: branch_state.clone(),
+                        trigger_reload: !does_frontend_have_branch_at_heads(&self.heads_in_frontend, &branch_state.doc_handle, &branch_state.synced_heads),
                     }).unwrap();
                 }
             }
@@ -719,4 +730,17 @@ fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = Subscription
             doc_handle,
         ))
     })
+}
+
+
+fn does_frontend_have_branch_at_heads (heads_in_frontend: &HashMap<DocumentId, Vec<ChangeHash>>, branch_doc_handle: &DocHandle, heads: &Vec<ChangeHash>) -> bool {
+
+    println!("rust: does_frontend_have_branch_at_heads {:?}  {:?}", branch_doc_handle.document_id(), heads_in_frontend);
+
+    if let Some(synced_heads) = heads_in_frontend.get(&branch_doc_handle.document_id()) {
+        println!("rust: compare heads {:?} {:?}", synced_heads, heads);
+        synced_heads == heads
+    } else {
+        false
+    }
 }

@@ -139,7 +139,7 @@ func do_sync_godot_to_patchwork():
 
 func sync_godot_to_patchwork():
 	# TODO: this is synchronous for right now because GodotProject doesn't seem to be thread safe currently, getting deadlocks
-	# We need to wait for any pw_to_godot sync to finish before we start syncing in the other direction
+	# We need to wait for any pw_to_godot sync to "finish" before we start syncing in the other direction
 	_try_wait_for_pw_to_godot_sync_task(true)
 	do_sync_godot_to_patchwork()
 	last_synced_heads = godot_project.get_heads()
@@ -163,7 +163,7 @@ func _do_pw_to_godot_sync_element(i: int, files_in_patchwork: PackedStringArray)
 		return
 
 	if gp_content != fs_content:
-		print("  reload file: ", path)
+		print("reload file: ", path)
 		# The reason why we're not simply reloading here is that loading resources gets kinda dicey on anything other than the main thread
 		files_to_reload_mutex.lock()
 		file_content_to_reload.append([path, gp_content])
@@ -183,10 +183,10 @@ func do_pw_to_godot_sync_task():
 
 	# todo: do this async + reload	
 	# delete gd and tscn files that are not in checked out patchwork files
-	for path in files_in_godot:
-		if !files_in_patchwork.has(path):
-			print("  delete file: ", path)
-			file_system.delete_file(path)
+	# for path in files_in_godot:
+	# 	if !files_in_patchwork.has(path):
+	# 		print("  delete file: ", path)
+	# 		file_system.delete_file(path)
 
 	var group_id = WorkerThreadPool.add_group_task(self._do_pw_to_godot_sync_element.bind(files_in_patchwork), files_in_patchwork.size())
 	WorkerThreadPool.wait_for_group_task_completion(group_id)
@@ -246,13 +246,10 @@ func get_relevant_godot_files() -> Array[String]:
 	return ret
 
 func _on_checked_out_branch(checked_out_branch: String):
-	sidebar.update_ui()
 	sync_patchwork_to_godot()
 	sidebar._after_cvs_action()
 	
 func _on_local_file_changed(path: String, content: Variant):
-	print("file changed", path)
-
 	if _is_relevant_file(path):
 		godot_project.save_file_at(path, last_synced_heads, content)
 		last_synced_heads = godot_project.get_heads()

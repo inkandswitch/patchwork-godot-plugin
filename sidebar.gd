@@ -35,6 +35,10 @@ func _update_ui_on_branches_changed(branches: Array):
 	print("Branches changed, updating UI", branches)
 	update_ui()
 
+func _update_ui_on_files_saved():
+	print("Files saved, updating UI")
+	update_ui()
+
 func _update_ui_on_files_changed():
 	print("Files changed, updating UI")
 	update_ui()
@@ -66,6 +70,7 @@ func _ready() -> void:
 	
 	if godot_project:
 		godot_project.connect("branches_changed", self._update_ui_on_branches_changed);
+		godot_project.connect("saved_changes", self._update_ui_on_files_changed);
 		godot_project.connect("files_changed", self._update_ui_on_files_changed);
 	
 	var popup = menu_button.get_popup()
@@ -252,7 +257,6 @@ func update_ui() -> void:
 	history_list.clear()
 
 	print("changes:", history.size())
-
 
 	for change in history:
 		var change_hash = change.hash.substr(0, 7)

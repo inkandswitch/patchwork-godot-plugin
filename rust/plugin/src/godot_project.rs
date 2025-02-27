@@ -1,4 +1,5 @@
 use ::safer_ffi::prelude::*;
+use automerge::op_tree::B;
 use autosurgeon::{Hydrate, Reconcile};
 use std::{collections::HashMap, str::FromStr};
 
@@ -108,6 +109,9 @@ impl GodotProject {
 
     #[signal]
     fn files_changed();
+
+    #[signal]
+    fn saved_changes();
 
     #[signal]
     fn branches_changed(branches: Array<Dictionary>);
@@ -804,7 +808,10 @@ impl GodotProject {
                     self.doc_handles
                         .insert(doc_handle.document_id(), doc_handle.clone());
                 }
-                OutputEvent::BranchStateChanged { branch_state } => {
+                OutputEvent::BranchStateChanged {
+                    branch_state,
+                    trigger_reload,
+                } => {
                     let (is_new_branch, previous_heads) = match self
                         .branch_states
                         .get(&branch_state.doc_handle.document_id())
@@ -828,12 +835,6 @@ impl GodotProject {
 
                         self.base_mut().emit_signal("branches_changed", &[branches]);
                     }
-
-                    print_branch_state("BranchStateChanged", &branch_state);
-                    println!(
-                        "checked_out_branch_state: {:?}",
-                        self.checked_out_branch_state
-                    );
 
                     let mut active_branch_doc_id: Option<DocumentId> = None;
                     let mut checking_out_new_branch = false;
@@ -884,7 +885,13 @@ impl GodotProject {
                                         .to_variant()],
                                 );
                             } else {
-                                self.base_mut().emit_signal("files_changed", &[]);
+                                if trigger_reload {
+                                    println!("rust: TRIGGER files changed: {}", branch_state.name);
+                                    self.base_mut().emit_signal("files_changed", &[]);
+                                } else {
+                                    println!("rust: TRIGGER saved changes: {}", branch_state.name);
+                                    self.base_mut().emit_signal("saved_changes", &[]);
+                                }
                             }
                         }
                     }
