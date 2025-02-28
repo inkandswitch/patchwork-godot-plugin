@@ -230,20 +230,28 @@ impl GodotProject {
 
         let files = doc.get_at(ROOT, "files", &heads).unwrap().unwrap().1;
         // does the file exist?
-        let file_entry = match doc.get_at(files, &path, &heads) {
+        let file_entry = match doc.get_at(&files, &path, &heads) {
             Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
             _ => return None,
         };
-
+        
+        let curr_file_entry = match doc.get(&files, &path) {
+            Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
+            _ => return None,
+        };
         // try to read file as text
-        match doc.get_at(&file_entry, "content", &heads) {
+        let content = doc.get_at(&file_entry, "content", &heads);
+        match content {
             Ok(Some((automerge::Value::Object(ObjType::Text), content))) => {
                 match doc.text_at(content, &heads) {
                     Ok(text) => return Some(StringOrPackedByteArray::String(text.to_string())),
-                    Err(_) => {}
+                    Err(e) => println!("failed to read text file {:?}: {:?}", path, e),
                 }
             }
-            _ => {}
+            _ => match doc.get_string_at(&file_entry, "content", &heads) {
+                Some(s) => return Some(StringOrPackedByteArray::String(s)),
+                _ => {}
+            },
         }
 
         // ... otherwise try to read as linked binary doc
@@ -270,57 +278,9 @@ impl GodotProject {
                 })
             })
     }
-
+// TODO: make this just call _get_file_at(path, None)
     fn _get_file(&self, path: String) -> Option<StringOrPackedByteArray> {
-        let doc = match &self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state.doc_handle.with_doc(|d| d.clone()),
-            _ => return None,
-        };
-
-        let files = doc.get(ROOT, "files").unwrap().unwrap().1;
-        // does the file exist?
-        let file_entry = match doc.get(files, &path) {
-            Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
-            _ => return None,
-        };
-
-        // try to read file as text or as string
-        match doc.get(&file_entry, "content") {
-            Ok(Some((automerge::Value::Object(ObjType::Text), content))) => {
-                match doc.text(content) {
-                    Ok(text) => return Some(StringOrPackedByteArray::String(text.to_string())),
-                    Err(e) => println!("failed to read text file {:?}: {:?}", path, e),
-                }
-            }
-            _ => match doc.get_string(&file_entry, "content") {
-                Some(s) => return Some(StringOrPackedByteArray::String(s)),
-                _ => {}
-            },
-        }
-
-        // ... otherwise try to read as linked binary doc
-        doc.get_string(&file_entry, "url")
-            .and_then(|url| parse_automerge_url(&url))
-            .and_then(|doc_id| self.doc_handles.get(&doc_id))
-            .and_then(|doc_handle| {
-                doc_handle.with_doc(|d| match d.get(ROOT, "content") {
-                    Ok(Some((value, _))) if value.is_bytes() => {
-                        Some(StringOrPackedByteArray::Binary(value.into_bytes().unwrap()))
-                    }
-                    Ok(Some((value, _))) if value.is_str() => Some(
-                        StringOrPackedByteArray::String(value.into_string().unwrap()),
-                    ),
-                    _ => {
-                        println!(
-                            "failed to read binary doc {:?} {:?} {:?}",
-                            path,
-                            doc_handle.document_id(),
-                            doc_handle.with_doc(|d| d.get_heads())
-                        );
-                        None
-                    }
-                })
-            })
+        self._get_file_at(path, None)
     }
     #[func]
     fn get_file(&self, path: String) -> Variant {
