@@ -12,12 +12,15 @@ var godot_project: GodotProject
 @onready var changed_files_list: ItemList = %ChangedFilesList
 @onready var changed_files_container: Node = %ChangedFilesContainer
 @onready var user_button: Button = %UserButton
-@onready var inspector_container: Control = %InspectorContainer
+@onready var inspector: ScrollContainer = %PEEditorInspector
+
+const TEMP_DIR = "user://tmp"
 
 var branches = []
 var plugin: EditorPlugin
 var config: PatchworkConfig
-var inspector: ScrollContainer = null
+var current_inspector_object: FakeInspectorResource
+
 const CREATE_BRANCH_IDX = 1
 const MERGE_BRANCH_IDX = 2
 
@@ -38,6 +41,10 @@ func _update_ui_on_files_saved():
 func _update_ui_on_files_changed():
 	print("Files changed, updating UI")
 	update_ui()
+func _on_resource_saved(path):
+	print("Resource saved: %s" % [path])
+func _on_scene_saved(path):
+	print("Scene saved: %s" % [path])
 
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
@@ -48,19 +55,8 @@ func _ready() -> void:
 	# to paper over this we check if plugin and godot_project are set
 
 	if plugin:
-		print("INSPECTOR!!!!")
-		if not inspector:
-			inspector = PatchworkEditor.get_inspector()
-		if inspector == null:
-			print("No inspector found!")
-		if inspector.get_parent() == null:
-			inspector_container.add_child(inspector)
-		elif inspector.get_parent() != inspector_container:
-			inspector.get_parent().remove_child(inspector)
-			inspector_container.add_child(inspector)
-		inspector.reset_size()
-		inspector.show()
-
+		plugin.connect("resource_saved", self._on_resource_saved)
+		plugin.connect("scene_saved", self._on_scene_saved)
 	
 	if godot_project:
 		godot_project.connect("branches_changed", self._update_ui_on_branches_changed);
@@ -69,8 +65,6 @@ func _ready() -> void:
 	
 	var popup = menu_button.get_popup()
 	popup.id_pressed.connect(_on_menu_button_id_pressed)
-	PatchworkEditor.show_fake_diff()
-
 	user_button.pressed.connect(_on_user_button_pressed)
 
 func _on_branch_picker_item_selected(index: int) -> void:
@@ -305,3 +299,58 @@ func human_readable_timestamp(timestamp: int) -> String:
 		return str(int(diff / 2592000)) + " months ago"
 	else:
 		return str(int(diff / 31536000)) + " years ago"
+
+
+func _on_diff_button_pressed() -> void:
+	var change: Array[Dictionary] =  godot_project.get_changes()
+	if (change.size() < 2):
+		return
+	var current_hash = change[-1].hash
+	var previous_hash = change[-2].hash
+	show_diff(previous_hash, current_hash)
+	
+	
+func show_diff(hash1, hash2):
+	# TODO: handle dependencies of these files
+	var diff_dict = godot_project.get_changed_file_content_between(PackedStringArray([hash1]), PackedStringArray([hash2]))
+	var files_arr = diff_dict["files"]
+	if files_arr.size() == 0:
+		print("No changes between %s and %s" % [hash1, hash2])
+		return
+	print("Changes between %s and %s:" % [hash1, hash2])
+	var new_dict = {}
+	var new_files = []
+	for file: Dictionary in files_arr:
+		var path = file["path"]
+		var change = file["change"]
+		var old_content = file["old_content"]
+		var new_content = file["new_content"]
+		# for all the files in the dict, save as tmp files
+
+		print("File: %s" % path)
+		print("Change: %s" % change)
+		var old_path = TEMP_DIR.path_join(path.trim_prefix("res://")).get_basename() + "_old." + path.get_extension()
+		var new_path = TEMP_DIR.path_join(path.trim_prefix("res://")).get_basename() + "_new." + path.get_extension()
+		print("Old path: %s" % old_path)
+		print("New path: %s" % new_path)
+		if change == "added":
+			old_path = null
+		if change == "deleted":
+			new_path = null
+		if old_path:
+			plugin.file_system.save_file(old_path, old_content)
+		if new_path:
+			plugin.file_system.save_file(new_path, new_content)
+		new_files.append({
+			"path": path,
+			"change": change,
+			"old_content": old_path,
+			"new_content": new_path
+		})
+	new_dict["files"] = new_files
+	var display_diff = PatchworkEditor.get_diff(new_dict)
+	current_inspector_object = FakeInspectorResource.new()
+	current_inspector_object.recording_properties = true
+	for file in display_diff.keys():
+		current_inspector_object.add_file_diff(file, display_diff[file])
+	inspector.edit_object = current_inspector_object

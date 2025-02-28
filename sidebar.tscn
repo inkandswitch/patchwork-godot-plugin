@@ -1,8 +1,22 @@
-[gd_scene load_steps=4 format=3 uid="uid://cxyjgsyba1v85"]
+[gd_scene load_steps=6 format=3 uid="uid://cxyjgsyba1v85"]
 
 [ext_resource type="Script" path="res://addons/patchwork/sidebar.gd" id="1_ebh36"]
 [ext_resource type="Texture2D" uid="uid://ymewwqpn0vi4" path="res://addons/patchwork/icons/GuiTabMenuHl.svg" id="2_rfxbe"]
 [ext_resource type="Texture2D" uid="uid://xec6o14n4y2v" path="res://addons/patchwork/icons/person.svg" id="3_m2w8q"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_jo7g5"]
+content_margin_left = 4.0
+content_margin_top = 4.0
+content_margin_right = 4.0
+content_margin_bottom = 5.0
+bg_color = Color(0.1, 0.1, 0.1, 0.6)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+corner_detail = 5
+
+[sub_resource type="PlaceholderMaterial" id="PlaceholderMaterial_ywma1"]
 
 [node name="Patchwork" type="MarginContainer"]
 anchors_preset = 15
@@ -101,7 +115,7 @@ size_flags_vertical = 3
 layout_mode = 2
 metadata/_tab_index = 2
 
-[node name="InspectorContainer" type="Control" parent="VBoxContainer/TabContainer/Diff"]
+[node name="PEEditorInspector" type="PEEditorInspector" parent="VBoxContainer/TabContainer/Diff"]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
@@ -109,6 +123,9 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_jo7g5")
+follow_focus = true
+edit_object = SubResource("PlaceholderMaterial_ywma1")
 
 [node name="ConfirmationDialog" type="ConfirmationDialog" parent="."]
 

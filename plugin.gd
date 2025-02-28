@@ -6,7 +6,6 @@ var config: PatchworkConfig
 var file_system: FileSystem
 var sidebar
 
-const TEMP_DIR = "user://tmp"
 
 var last_synced_heads: PackedStringArray
 # Array of [<path>, <content>]
@@ -45,6 +44,8 @@ func _enter_tree() -> void:
 	sidebar = preload("res://addons/patchwork/sidebar.tscn").instantiate()
 	sidebar.init(self, godot_project, config)
 	add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
+	if sidebar:
+		sidebar._on_diff_button_pressed()
 
 func init_godot_project():
 	print("init_godot_project()")
@@ -88,6 +89,8 @@ func sync_godot_to_patchwork():
 	godot_project.save_files(files_to_save)
 
 	last_synced_heads = godot_project.get_heads()
+	if sidebar:
+		sidebar._on_diff_button_pressed()
 
 func sync_patchwork_to_godot():
 	if PatchworkEditor.unsaved_files_open():
@@ -146,6 +149,8 @@ func sync_patchwork_to_godot():
 			EditorInterface.get_resource_filesystem().reimport_files(files_to_reimport.keys())
 
 	file_system.connect_to_file_system()
+	if sidebar:
+		sidebar._on_diff_button_pressed()
 
 const BANNED_FILES = [".DS_Store", "thumbs.db", "desktop.ini"] # system files that should be ignored
 
@@ -179,8 +184,11 @@ func _on_local_file_changed(path: String, content: Variant):
 
 		godot_project.save_file(path, content)
 		last_synced_heads = godot_project.get_heads()
+		if sidebar:
+			sidebar._on_diff_button_pressed()
 
 func _exit_tree() -> void:
+	print("exit patchwork!!!")
 	if sidebar:
 		remove_control_from_docks(sidebar)
 
@@ -191,41 +199,3 @@ func _exit_tree() -> void:
 	if file_system:
 		file_system.stop()
 
-func show_diff(hash1, hash2):
-	# TODO: handle dependencies of these files
-	var diff_dict = godot_project.get_changed_file_content_between([hash1], [hash2])
-	var files_arr = diff_dict["files"]
-	if files_arr.size() == 0:
-		print("No changes between %s and %s" % [hash1, hash2])
-		return
-	print("Changes between %s and %s:" % [hash1, hash2])
-	var new_dict = {}
-	var new_files = []
-	for file: Dictionary in files_arr:
-		var path = file["path"]
-		var change = file["change"]
-		var old_content = file["old_content"]
-		var new_content = file["new_content"]
-		# for all the files in the dict, save as tmp files
-
-		print("File: %s" % path)
-		print("Change: %s" % change)
-		var old_path = TEMP_DIR.path_join(path.trim_prefix("res://")) + "_old"
-		var new_path = TEMP_DIR.path_join(path.trim_prefix("res://")) + "_new"
-		if change == "added":
-			old_path = null
-			print("New content: %s" % new_content)
-		if change == "deleted":
-			new_path = null
-		if old_path:
-			file_system.save_file(old_path, old_content)
-		if new_path:
-			file_system.save_file(new_path, new_content)
-		new_files.append({
-			"path": path,
-			"change": change,
-			"old_content": old_content,
-			"new_content": new_content
-		})
-	new_dict["files"] = new_files
-	PatchworkEditor.show_diff(new_dict)
