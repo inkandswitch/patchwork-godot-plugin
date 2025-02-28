@@ -4,7 +4,7 @@
 [ext_resource type="Texture2D" uid="uid://ymewwqpn0vi4" path="res://addons/patchwork/icons/GuiTabMenuHl.svg" id="2_rfxbe"]
 [ext_resource type="Texture2D" uid="uid://xec6o14n4y2v" path="res://addons/patchwork/icons/person.svg" id="3_m2w8q"]
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_jo7g5"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_87d8b"]
 content_margin_left = 4.0
 content_margin_top = 4.0
 content_margin_right = 4.0
@@ -64,42 +64,11 @@ theme_override_constants/separation = 16
 [node name="TabContainer" type="TabContainer" parent="VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
-current_tab = 2
-
-[node name="Review" type="TabBar" parent="VBoxContainer/TabContainer"]
-visible = false
-layout_mode = 2
-metadata/_tab_index = 0
-
-[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer/TabContainer/Review"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_constants/margin_left = 8
-theme_override_constants/margin_top = 8
-theme_override_constants/margin_right = 8
-theme_override_constants/margin_bottom = 8
-
-[node name="ChangedFilesContainer" type="VBoxContainer" parent="VBoxContainer/TabContainer/Review/MarginContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="ChangedFiles" type="Label" parent="VBoxContainer/TabContainer/Review/MarginContainer/ChangedFilesContainer"]
-layout_mode = 2
-text = "Changed files"
-
-[node name="ChangedFilesList" type="ItemList" parent="VBoxContainer/TabContainer/Review/MarginContainer/ChangedFilesContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_vertical = 3
+current_tab = 0
 
 [node name="History" type="TabBar" parent="VBoxContainer/TabContainer"]
-visible = false
 layout_mode = 2
-metadata/_tab_index = 1
+metadata/_tab_index = 0
 
 [node name="HistoryList" type="ItemList" parent="VBoxContainer/TabContainer/History"]
 unique_name_in_owner = true
@@ -112,8 +81,9 @@ grow_vertical = 2
 size_flags_vertical = 3
 
 [node name="Diff" type="TabBar" parent="VBoxContainer/TabContainer"]
+visible = false
 layout_mode = 2
-metadata/_tab_index = 2
+metadata/_tab_index = 1
 
 [node name="PEEditorInspector" type="PEEditorInspector" parent="VBoxContainer/TabContainer/Diff"]
 unique_name_in_owner = true
@@ -123,7 +93,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_jo7g5")
+theme_override_styles/panel = SubResource("StyleBoxFlat_87d8b")
 follow_focus = true
 edit_object = SubResource("PlaceholderMaterial_ywma1")
 

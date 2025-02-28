@@ -14,7 +14,7 @@ use godot::prelude::*;
 use crate::godot_project_driver::{BranchState, DocHandleType};
 use crate::patches::get_changed_files;
 use crate::patches::get_changed_files_vec;
-use crate::utils::{array_to_heads, parse_automerge_url};
+use crate::utils::{array_to_heads, heads_to_array, parse_automerge_url};
 use crate::{
     doc_utils::SimpleDocReader,
     godot_project_driver::{GodotProjectDriver, InputEvent, OutputEvent},
@@ -234,7 +234,7 @@ impl GodotProject {
             Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
             _ => return None,
         };
-        
+
         let curr_file_entry = match doc.get(&files, &path) {
             Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
             _ => return None,
@@ -278,7 +278,7 @@ impl GodotProject {
                 })
             })
     }
-// TODO: make this just call _get_file_at(path, None)
+    // TODO: make this just call _get_file_at(path, None)
     fn _get_file(&self, path: String) -> Option<StringOrPackedByteArray> {
         self._get_file_at(path, None)
     }
@@ -623,6 +623,7 @@ impl GodotProject {
                     "name": branch_state.name.clone(),
                     "id": branch_state.doc_handle.document_id().to_string(),
                     "is_main": branch_state.is_main,
+                    "forked_at": heads_to_array(branch_state.forked_at.clone()),
                 }
             })
             .collect()
@@ -635,6 +636,7 @@ impl GodotProject {
                 "name": branch_state.name.clone(),
                 "id": branch_state.doc_handle.document_id().to_string(),
                 "is_main": branch_state.is_main,
+                "forked_at": heads_to_array(branch_state.forked_at.clone()),
             }
             .to_variant(),
             None => Variant::nil(),

@@ -606,8 +606,6 @@ impl DriverState {
             }
         };
 
-        print_branch_state("update_branch_doc_state", &branch_state);
-
         let linked_docs = get_linked_docs_of_branch(&branch_doc_handle);    
 
         // load binary docs if not already loaded

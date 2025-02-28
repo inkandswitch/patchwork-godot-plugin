@@ -9,8 +9,8 @@ var godot_project: GodotProject
 @onready var branch_picker: OptionButton = %BranchPicker
 @onready var menu_button: MenuButton = %MenuButton
 @onready var history_list: ItemList = %HistoryList
-@onready var changed_files_list: ItemList = %ChangedFilesList
-@onready var changed_files_container: Node = %ChangedFilesContainer
+#@onready var changed_files_list: ItemList = %ChangedFilesList
+#@onready var changed_files_container: Node = %ChangedFilesContainer
 @onready var user_button: Button = %UserButton
 @onready var inspector: ScrollContainer = %PEEditorInspector
 
@@ -257,14 +257,16 @@ func update_ui() -> void:
 
 	# update changed files
 
-	changed_files_container.visible = !checked_out_branch.is_main
+	# print("checked_out_branch: ", checked_out_branch)
 
-	var changed_files = godot_project.get_changed_files_on_current_branch();
+	# changed_files_container.visible = !checked_out_branch.is_main
 
-	changed_files_list.clear()
+	# var changed_files = godot_project.get_changed_files_on_current_branch();
 
-	for file in changed_files:
-		changed_files_list.add_item(file)
+	# changed_files_list.clear()
+
+	# for file in changed_files:
+	# 	changed_files_list.add_item(file)
 
 	# update context menu
 
@@ -302,12 +304,25 @@ func human_readable_timestamp(timestamp: int) -> String:
 
 
 func _on_diff_button_pressed() -> void:
-	var change: Array[Dictionary] =  godot_project.get_changes()
+	var checked_out_branch = godot_project.get_checked_out_branch()
+
+	inspector.visible = !checked_out_branch.is_main;
+
+	print("checked_out_branch: ", checked_out_branch)
+
+	if !inspector.visible:
+		return
+
+	var change: Array[Dictionary] = godot_project.get_changes()
 	if (change.size() < 2):
 		return
-	var current_hash = change[-1].hash
-	var previous_hash = change[-2].hash
-	show_diff(previous_hash, current_hash)
+	var current_hash = godot_project.get_heads()
+	var previous_hash = checked_out_branch.forked_at
+
+	print("current_hash: ", current_hash)
+	print("previous_hash: ", previous_hash)
+
+	show_diff(previous_hash[0], current_hash[0])
 	
 	
 func show_diff(hash1, hash2):

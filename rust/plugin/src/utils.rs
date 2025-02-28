@@ -10,7 +10,7 @@ use automerge::{
     ChangeHash, ReadDoc, ROOT,
 };
 use automerge_repo::{DocHandle, DocumentId, RepoHandle};
-use godot::builtin::PackedStringArray;
+use godot::builtin::{Array, GString, PackedStringArray};
 
 pub(crate) fn get_linked_docs_of_branch(
     branch_doc_handle: &DocHandle,
@@ -116,4 +116,11 @@ pub(crate) fn array_to_heads(packed_string_array: PackedStringArray) -> Vec<Chan
         .iter()
         .map(|h| ChangeHash::from_str(h.to_string().as_str()).unwrap())
         .collect()
+}
+
+pub(crate) fn heads_to_array(heads: Vec<ChangeHash>) -> PackedStringArray {
+    heads
+        .iter()
+        .map(|h| GString::from(h.to_string()))
+        .collect::<PackedStringArray>()
 }
