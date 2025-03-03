@@ -81,26 +81,33 @@ pub(crate) fn print_doc(message: &str, doc_handle: &DocHandle) {
     println!("rust: {:?}: {:?}", message, checked_out_doc_json);
 }
 
-pub(crate) fn commit_with_attribution_and_timestamp(tx: Transaction, name: &Option<String>) {
+pub(crate) fn commit_with_attribution_and_timestamp(
+    tx: Transaction,
+    name: &Option<String>,
+    branch: &Option<String>,
+) {
     let timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
         .as_millis() as i64;
 
-    match name {
-        Some(name) => {
-            tx.commit_with(
-                CommitOptions::default()
-                    .with_message(name)
-                    .with_time(timestamp),
-            );
+    let mut message: String = String::new();
 
-            println!("commit with name and timestamp: {:?}", name);
-        }
-        None => {
-            tx.commit_with(CommitOptions::default().with_time(timestamp));
-        }
+    if let Some(name) = name {
+        message = name.clone();
+    } else {
+        message = "anonymous".to_string();
     }
+
+    if let Some(branch) = branch {
+        message = format!("{}@{}", message, branch);
+    }
+
+    tx.commit_with(
+        CommitOptions::default()
+            .with_message(message)
+            .with_time(timestamp),
+    );
 }
 
 pub(crate) fn print_branch_state(message: &str, branch_state: &BranchState) {

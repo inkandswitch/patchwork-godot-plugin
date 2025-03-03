@@ -397,7 +397,7 @@ async fn init_project_doc_handles (repo_handle: &RepoHandle, doc_id: Option<Docu
                         state: HashMap::new(),
                     },
                 );
-                commit_with_attribution_and_timestamp(tx, &user_name);
+                commit_with_attribution_and_timestamp(tx, &user_name, &Some(String::from("main")));
             });
 
             let main_branch_doc_id = main_branch_doc_handle.document_id().to_string();
@@ -424,7 +424,7 @@ async fn init_project_doc_handles (repo_handle: &RepoHandle, doc_id: Option<Docu
                         branches: branches_clone,
                     },
                 );
-                commit_with_attribution_and_timestamp(tx, &user_name);
+                commit_with_attribution_and_timestamp(tx, &user_name, &Some(String::from("main")));
             });
 
             return ProjectDocHandles {
@@ -455,7 +455,7 @@ impl DriverState {
                 .branches
                 .insert(branch.id.clone(), branch);
             let _ = reconcile(&mut tx, branches_metadata);
-            commit_with_attribution_and_timestamp(tx, &self.user_name);
+            commit_with_attribution_and_timestamp(tx, &self.user_name, &Some(name));
         });
   
     }
@@ -466,13 +466,15 @@ impl DriverState {
         files: Vec<(String, StringOrPackedByteArray)>,
         heads: Option<Vec<ChangeHash>>,
     ) {    
+        let branch_doc_state = self.branch_states.get(&branch_doc_handle.document_id()).unwrap().clone();
+
         let binary_entries: Vec<(String, DocHandle)> = files.iter().filter_map(|(path, content)| {
             if let StringOrPackedByteArray::Binary(content) = content {
                 let binary_doc_handle = self.repo_handle.new_document();
                 binary_doc_handle.with_doc_mut(|d| {
                     let mut tx = d.transaction();
                     let _ = tx.put(ROOT, "content", content.clone());
-                    commit_with_attribution_and_timestamp(tx, &self.user_name);
+                    commit_with_attribution_and_timestamp(tx, &self.user_name, &Some(branch_doc_state.name.clone()));
                 });
 
                 println!("create binary doc: {:?} size: {:?}", path, content.len());
@@ -556,7 +558,7 @@ impl DriverState {
                 );
             }
 
-            commit_with_attribution_and_timestamp(tx, &self.user_name);
+            commit_with_attribution_and_timestamp(tx, &self.user_name, &Some(branch_doc_state.name.clone()));
         });
 
     
@@ -567,6 +569,8 @@ impl DriverState {
     }
 
     fn merge_branch(&mut self, branch_doc_handle: DocHandle)  {    
+        let branch_doc_state = self.branch_states.get(&branch_doc_handle.document_id()).unwrap();
+
         branch_doc_handle.with_doc_mut(|branch_doc| {
             self.main_branch_doc_handle.with_doc_mut(|main_doc| {
                 let _ = main_doc.merge(branch_doc);
@@ -583,7 +587,7 @@ impl DriverState {
                 });
 
             let _ = reconcile(&mut tx, branches_metadata);
-            commit_with_attribution_and_timestamp(tx, &self.user_name);
+            commit_with_attribution_and_timestamp(tx, &self.user_name, &Some(branch_doc_state.name.clone()));
         });
     }
 
