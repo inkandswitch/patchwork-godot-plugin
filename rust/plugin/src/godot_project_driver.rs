@@ -624,18 +624,13 @@ impl DriverState {
         // update linked doc ids
         branch_state.linked_doc_ids = linked_docs.values().cloned().collect();
 
+        let missing_binary_doc_ids = get_missing_binary_doc_ids(&branch_state, &self.binary_doc_states);
 
         // check if all linked docs have been loaded
-        if branch_state.linked_doc_ids.iter().all(|doc_id| {                                                                                             
-            if let Some(binary_doc_state) =  self.binary_doc_states.get(doc_id) {
-                binary_doc_state.doc_handle.is_some()
-            } else {
-                false
-            }                                    
-        }) {
+        if missing_binary_doc_ids.is_empty() {
             branch_state.synced_heads = branch_doc_handle.with_doc(|d| d.get_heads());
 
-            print_branch_state("branch doc state loaded", &branch_state);
+            print_branch_state("branch doc state immediately loaded", &branch_state);
 
 
             self.tx.unbounded_send(OutputEvent::BranchStateChanged {
@@ -660,19 +655,20 @@ impl DriverState {
         // check all branch states that link to this doc
         for branch_state in self.branch_states.values_mut() {
             if branch_state.linked_doc_ids.contains(&binary_doc_handle.document_id()) {
+
+                let missing_binary_doc_ids = get_missing_binary_doc_ids(&branch_state, &self.binary_doc_states);
+
                 // check if all linked docs have been loaded
-                if branch_state.linked_doc_ids.iter().all(|doc_id| {                                                                                             
-                    if let Some(binary_doc_state) =  self.binary_doc_states.get(doc_id) {
-                        binary_doc_state.doc_handle.is_some()
-                    } else {
-                        false
-                    }                                    
-                }) {
+                if missing_binary_doc_ids.is_empty() {                                                                                             
                     branch_state.synced_heads = branch_state.doc_handle.with_doc(|d| d.get_heads());
                     self.tx.unbounded_send(OutputEvent::BranchStateChanged {
                         branch_state: branch_state.clone(),
                         trigger_reload: !does_frontend_have_branch_at_heads(&self.heads_in_frontend, &branch_state.doc_handle, &branch_state.synced_heads),
                     }).unwrap();
+
+                    println!("rust: branch state loaded {:?} {:?}", branch_state.doc_handle.document_id(), branch_state.synced_heads);
+                } else {
+                    println!("rust: branch state still missing some binary docs {:?} {:?}", branch_state.doc_handle.document_id(), missing_binary_doc_ids);
                 }
             }
         }
@@ -730,6 +726,15 @@ fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = Subscription
     })
 }
 
+fn get_missing_binary_doc_ids(branch_state: &BranchState, binary_doc_states: &HashMap<DocumentId, BinaryDocState>) -> Vec<DocumentId> {
+    branch_state.linked_doc_ids.iter().filter(|doc_id| {
+        binary_doc_states.get(doc_id)
+        .map_or(true, |binary_doc_state| {
+            binary_doc_state.doc_handle.as_ref()
+            .map_or(true, |handle| handle.with_doc(|d| d.get_heads().is_empty()))
+        })
+    }).cloned().collect::<Vec<_>>()
+}
 
 fn does_frontend_have_branch_at_heads (heads_in_frontend: &HashMap<DocumentId, Vec<ChangeHash>>, branch_doc_handle: &DocHandle, heads: &Vec<ChangeHash>) -> bool {
 
