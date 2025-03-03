@@ -41,8 +41,14 @@ func _update_ui_on_files_saved():
 func _update_ui_on_files_changed():
 	print("Files changed, updating UI")
 	update_ui()
+
+func _update_ui_on_branch_checked_out(branch):
+	print("Branch checked out, updating UI")
+	update_ui()
+
 func _on_resource_saved(path):
 	print("Resource saved: %s" % [path])
+
 func _on_scene_saved(path):
 	print("Scene saved: %s" % [path])
 
@@ -62,7 +68,7 @@ func _ready() -> void:
 		godot_project.connect("branches_changed", self._update_ui_on_branches_changed);
 		godot_project.connect("saved_changes", self._update_ui_on_files_changed);
 		godot_project.connect("files_changed", self._update_ui_on_files_changed);
-	
+		godot_project.connect("checked_out_branch", self._update_ui_on_branch_checked_out);
 	var popup = menu_button.get_popup()
 	popup.id_pressed.connect(_on_menu_button_id_pressed)
 	user_button.pressed.connect(_on_user_button_pressed)
