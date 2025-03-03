@@ -26,7 +26,6 @@ use futures::{
      StreamExt,
 };
 
-// use godot::prelude::*;
 use tokio::{net::TcpStream, runtime::Runtime};
 
 use crate::{doc_utils::SimpleDocReader, godot_project::Branch};
@@ -141,7 +140,7 @@ pub struct GodotProjectDriver {
 }
 
 impl GodotProjectDriver {
-    pub fn create() -> Self {
+    pub fn create(storage_folder_path: String) -> Self {
         let runtime: Runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -149,7 +148,7 @@ impl GodotProjectDriver {
 
         let _guard = runtime.enter();
 
-        let storage = FsStorage::open("/tmp/automerge-godot-data").unwrap();
+        let storage = FsStorage::open(storage_folder_path).unwrap();
         let repo = Repo::new(None, Box::new(storage));
         let repo_handle = repo.run();
 

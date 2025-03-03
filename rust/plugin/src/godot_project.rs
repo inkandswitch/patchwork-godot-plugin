@@ -122,7 +122,11 @@ impl GodotProject {
     #[func]
     // hack: pass in empty string to create a new doc
     // godot rust doens't seem to support Option args
-    fn create(maybe_branches_metadata_doc_id: String, maybe_user_name: String) -> Gd<Self> {
+    fn create(
+        storage_folder_path: String,
+        maybe_branches_metadata_doc_id: String,
+        maybe_user_name: String,
+    ) -> Gd<Self> {
         let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
         let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
 
@@ -131,7 +135,7 @@ impl GodotProject {
             Err(e) => None,
         };
 
-        let driver = GodotProjectDriver::create();
+        let driver = GodotProjectDriver::create(storage_folder_path);
 
         driver.spawn(
             driver_input_rx,

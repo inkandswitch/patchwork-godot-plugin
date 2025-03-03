@@ -6,7 +6,6 @@ var config: PatchworkConfig
 var file_system: FileSystem
 var sidebar
 
-
 var last_synced_heads: PackedStringArray
 # Array of [<path>, <content>]
 var file_content_to_reload: Array = []
@@ -48,11 +47,13 @@ func _enter_tree() -> void:
 		sidebar._on_diff_button_pressed()
 
 func init_godot_project():
+	var storage_folder_path = ProjectSettings.globalize_path("res://.patchwork")
+
 	print("init_godot_project()")
 	var project_doc_id = config.get_project_value("project_doc_id", "")
 	var user_name = config.get_user_value("user_name", "")
 
-	godot_project = GodotProject.create(project_doc_id, user_name)
+	godot_project = GodotProject.create(storage_folder_path, project_doc_id, user_name)
 
 	if godot_project == null:
 		print("Failed to create GodotProject instance.")
@@ -155,8 +156,6 @@ func sync_patchwork_to_godot():
 const BANNED_FILES = [".DS_Store", "thumbs.db", "desktop.ini"] # system files that should be ignored
 
 func _is_relevant_file(path: String) -> bool:
-	if path.trim_prefix("res://").begins_with("target"):
-		return false
 	if path.begins_with("res://patchwork.cfg") or path.begins_with("res://addons/") or path.begins_with("res://target/") or path.begins_with("res://."):
 		return false
 
@@ -198,4 +197,3 @@ func _exit_tree() -> void:
 
 	if file_system:
 		file_system.stop()
-
