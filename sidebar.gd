@@ -75,6 +75,12 @@ func _ready() -> void:
 
 func _on_branch_picker_item_selected(index: int) -> void:
 	var selected_branch = branches[index]
+
+	# reset selection in branch picker in case checkout_branch fails
+	# once branch is actually checked out, the branch picker will update
+	update_ui()
+
+	print("picked in branch picker: ", index, " ", selected_branch)
 	checkout_branch(selected_branch.id)
 
 static var void_func = func(): return
