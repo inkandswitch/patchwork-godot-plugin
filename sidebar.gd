@@ -130,9 +130,15 @@ var current_cvs_action = []
 func ensure_user_has_no_unsaved_files(message: String, callback: Callable):
 	if PatchworkEditor.unsaved_files_open():
 		popup_box(self, $ConfirmationDialog, message, "Unsaved Files", func():
-			EditorInterface.save_all_scenes();
-			plugin.sync_godot_to_patchwork();
-			callback.call()
+			pass
+			# todo: fix auto save 
+			# right now this either crashes the editor or leads to invalid branch switch 
+			# where the checked out branch and the loaded scene don't match so I'm disabling
+			# this for now. The check still runs but you have to save manually which is a bit annoying
+			# 
+			# EditorInterface.save_all_scenes();
+			# plugin.sync_godot_to_patchwork();
+			# callback.call()
 		)
 	else:
 		callback.call()
