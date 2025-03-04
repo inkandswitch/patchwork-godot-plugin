@@ -524,9 +524,17 @@ impl DriverState {
                  if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
                     let _ = tx.delete(&file_entry, "url");
                 }
-                // else if the path is tres or tscn, delete the content
-                /*if path.ends_with(".tscn") || path.ends_with(".tres") {
-                    
+
+                // replace text content
+
+                let _ = tx.put(&file_entry, "content", content);
+
+                // special handling for scene files
+
+                // right now we store the content of scene files both as text and as structured data
+                // eventually we should only store the structured data and derive the text from that
+
+                if path.ends_with(".tscn") || path.ends_with(".tres") {                
                     let res = godot_scene::parse(&content);
 
                     match res {
@@ -537,16 +545,7 @@ impl DriverState {
                             panic!("error parsing godot scene: {:?}", e);
                         }
                     }
-                } else { */
-                    // either get existing text or create new text
-                    /*let content_key = match tx.get(&file_entry, "content") {
-                        Ok(Some((automerge::Value::Object(ObjType::Text), content))) => content,
-                        _ => tx
-                            .put_object(&file_entry, "content", ObjType::Text)
-                            .unwrap(),
-                    };*/
-                    let _ = tx.put(&file_entry, "content", content);
-                /* } */
+                } 
             }
 
             for (path, binary_doc_handle) in binary_entries {
