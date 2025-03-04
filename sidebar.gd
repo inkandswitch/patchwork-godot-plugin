@@ -338,9 +338,9 @@ func show_diff(hash1, hash2):
 	var diff_dict = godot_project.get_changed_file_content_between(PackedStringArray([hash1]), PackedStringArray([hash2]))
 	var files_arr = diff_dict["files"]
 	if files_arr.size() == 0:
-		print("No changes between %s and %s" % [hash1, hash2])
+		#print("No changes between %s and %s" % [hash1, hash2])
 		return
-	print("Changes between %s and %s:" % [hash1, hash2])
+	# print("Changes between %s and %s:" % [hash1, hash2])
 	var new_dict = {}
 	var new_files = []
 	for file: Dictionary in files_arr:
@@ -354,8 +354,8 @@ func show_diff(hash1, hash2):
 		print("Change: %s" % change)
 		var old_path = TEMP_DIR.path_join(path.trim_prefix("res://")).get_basename() + "_old." + path.get_extension()
 		var new_path = TEMP_DIR.path_join(path.trim_prefix("res://")).get_basename() + "_new." + path.get_extension()
-		print("Old path: %s" % old_path)
-		print("New path: %s" % new_path)
+		# print("Old path: %s" % old_path)
+		#	print("New path: %s" % new_path)
 		if change == "added":
 			old_path = null
 		if change == "deleted":

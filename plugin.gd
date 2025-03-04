@@ -146,8 +146,8 @@ func sync_patchwork_to_godot():
 			# reload scene files to update references
 			EditorInterface.reload_scene_from_path(path)
 
-		if files_to_reimport.size() > 0:
-			EditorInterface.get_resource_filesystem().reimport_files(files_to_reimport.keys())
+	if files_to_reimport.size() > 0:
+		EditorInterface.get_resource_filesystem().reimport_files(files_to_reimport.keys())
 
 	file_system.connect_to_file_system()
 	if sidebar:
