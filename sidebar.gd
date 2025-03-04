@@ -189,7 +189,9 @@ func merge_current_branch():
 
 	var message = "You have unsaved files open. Do you want to save them before merging?"
 	ensure_user_has_no_unsaved_files(message, func():
-		godot_project.merge_branch(checked_out_branch.id)
+		popup_box(self, $ConfirmationDialog, "Are you sure you want to merge \"%s\" into main ?" % [checked_out_branch.name], "Merge Branch", func():
+			godot_project.merge_branch(checked_out_branch.id)
+		)
 	)
 
 func _on_user_button_pressed():
