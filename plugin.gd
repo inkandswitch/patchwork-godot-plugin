@@ -172,8 +172,8 @@ func get_relevant_godot_files() -> Array[String]:
 	return ret
 
 func _on_checked_out_branch(checked_out_branch: String):
+	print('checked out branch: !!! ', checked_out_branch)
 	sync_patchwork_to_godot()
-	sidebar._after_cvs_action()
 	
 func _on_local_file_changed(path: String, content: Variant):
 	if _is_relevant_file(path):

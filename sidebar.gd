@@ -104,91 +104,93 @@ static func popup_box(parent_window: Node, dialog: AcceptDialog, message: String
 var current_cvs_action = []
 
 # This should be called before any patchwork source control action (e.g. checkout, merge, etc.)
-func _before_cvs_action(cvs_action: String):
-	print("Saving all scenes before CVS action %s" % [cvs_action])
-	plugin.file_system.disconnect_from_file_system()
-	EditorInterface.save_all_scenes();
-	current_cvs_action.append(cvs_action)
-	PatchworkEditor.progress_add_task(cvs_action, cvs_action, 10, false)
-	plugin.sync_godot_to_patchwork()
-	plugin.file_system.connect_to_file_system()
-	print("All scenes saved!")
+# func _before_cvs_action(cvs_action: String):
+# 	print("Saving all scenes before CVS action %s" % [cvs_action])
+# 	plugin.file_system.disconnect_from_file_system()
+# 	EditorInterface.save_all_scenes();
+# 	current_cvs_action.append(cvs_action)
+# 	PatchworkEditor.progress_add_task(cvs_action, cvs_action, 10, false)
+# 	plugin.sync_godot_to_patchwork()
+# 	plugin.file_system.connect_to_file_system()
+# 	print("All scenes saved!")
 
-func _after_cvs_action():
-	if not current_cvs_action.is_empty():
-		for i in range(current_cvs_action.size()):
-			PatchworkEditor.progress_end_task(current_cvs_action[i])
-		current_cvs_action = []
+# func _after_cvs_action():
+# 	if not current_cvs_action.is_empty():
+# 		for i in range(current_cvs_action.size()):
+# 			PatchworkEditor.progress_end_task(current_cvs_action[i])
+# 		current_cvs_action = []
 
-func _merge_branch():
-	godot_project.merge_branch(godot_project.get_checked_out_branch().id)
 
-func merge_branch():
-	_before_cvs_action("Merging branch")
-	_merge_branch()
+func ensure_user_has_no_unsaved_files(message: String, callback: Callable):
+	if PatchworkEditor.unsaved_files_open():
+		popup_box(self, $ConfirmationDialog, message, "Unsaved Files", func():
+			EditorInterface.save_all_scenes();
+			plugin.sync_godot_to_patchwork();
+			callback.call()
+		)
+	else:
+		callback.call()
+
 
 func _on_menu_button_id_pressed(id: int) -> void:
 	match id:
 		CREATE_BRANCH_IDX:
-			if PatchworkEditor.unsaved_files_open():
-				popup_box(self, $ConfirmationDialog, "You have unsaved files open. Do you want to save them before creating a new branch?", "Unsaved Files", self._on_create_new_branch)
-			else:
-				_on_create_new_branch()
+			create_new_branch()
 
 		MERGE_BRANCH_IDX:
-			var checked_out_branch = godot_project.get_checked_out_branch()
-
-			# check if we're on the main branch or not
-			if checked_out_branch.is_main:
-				popup_box(self, $ErrorDialog, "Can't merge the main branch!", "Error")
-				return
-		
-			if PatchworkEditor.unsaved_files_open():
-				popup_box(self, $ConfirmationDialog, "You have unsaved files open. Do you want to save them before merging?", "Unsaved Files", self.merge_branch)
-			else:
-				merge_branch()
-			pass
-
-func _checkout_branch(branch_id: String) -> void:
-	_before_cvs_action("Checking out branch")
-	godot_project.checkout_branch(branch_id)
+			merge_current_branch()
 
 func checkout_branch(branch_id: String) -> void:
-	if PatchworkEditor.unsaved_files_open():
-		popup_box(self, $ConfirmationDialog, "You have unsaved files open. Do you want to save them before checking out?", "Unsaved Files", self._checkout_branch.bind(branch_id))
-		return
-	_checkout_branch(branch_id)
+	var message = "You have unsaved files open. Do you want to save them before checking out?"
 
-func _on_create_new_branch() -> void:
-	var dialog = ConfirmationDialog.new()
-	dialog.title = "Create New Branch"
-	
-	var line_edit = LineEdit.new()
-	line_edit.placeholder_text = "Branch name"
-	dialog.add_child(line_edit)
-	
-	# Position line edit in dialog
-	line_edit.position = Vector2(8, 8)
-	line_edit.size = Vector2(200, 30)
-	
-	# Make dialog big enough for line edit
-	dialog.size = Vector2(220, 100)
-	
-	dialog.get_ok_button().text = "Create"
-	dialog.canceled.connect(func(): dialog.queue_free())
-	
-	dialog.confirmed.connect(func():
-		if line_edit.text.strip_edges() != "":
-			_before_cvs_action("Creating new branch")
-			var new_branch_name = line_edit.text.strip_edges()
-			godot_project.create_branch(new_branch_name)
-		
-		dialog.queue_free()
+	ensure_user_has_no_unsaved_files(message, func():
+		godot_project.checkout_branch(branch_id)
 	)
-	
-	
-	add_child(dialog)
-	dialog.popup_centered()
+
+func create_new_branch() -> void:
+	var message = "You have unsaved files open. Do you want to save them before creating a new branch?"
+
+	ensure_user_has_no_unsaved_files(message, func():
+		var dialog = ConfirmationDialog.new()
+		dialog.title = "Create New Branch"
+		
+		var line_edit = LineEdit.new()
+		line_edit.placeholder_text = "Branch name"
+		dialog.add_child(line_edit)
+		
+		# Position line edit in dialog
+		line_edit.position = Vector2(8, 8)
+		line_edit.size = Vector2(200, 30)
+		
+		# Make dialog big enough for line edit
+		dialog.size = Vector2(220, 100)
+		
+		dialog.get_ok_button().text = "Create"
+		dialog.canceled.connect(func(): dialog.queue_free())
+		
+		dialog.confirmed.connect(func():
+			if line_edit.text.strip_edges() != "":
+				var new_branch_name = line_edit.text.strip_edges()
+				godot_project.create_branch(new_branch_name)
+			
+			dialog.queue_free()
+		)
+
+		add_child(dialog)
+		dialog.popup_centered()
+	)
+
+func merge_current_branch():
+	var checked_out_branch = godot_project.get_checked_out_branch()
+
+	if checked_out_branch.is_main:
+		popup_box(self, $ErrorDialog, "Can't merge the main branch!", "Error")
+		return
+
+	var message = "You have unsaved files open. Do you want to save them before merging?"
+	ensure_user_has_no_unsaved_files(message, func():
+		godot_project.merge_branch(checked_out_branch.id)
+	)
 
 func _on_user_button_pressed():
 	var dialog = ConfirmationDialog.new()
