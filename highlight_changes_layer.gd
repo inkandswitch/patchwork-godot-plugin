@@ -19,19 +19,19 @@ func _draw():
 	# draw changed shapes
 	var coins = root.find_children("Coin")
 	for coin in coins:
-		draw_rect(_get_node_bounding_box(coin), Color(0, 1, 0, 0.2), true)
-
-	coins = root.find_children("Coin2")
-	for coin in coins:
-		draw_rect(_get_node_bounding_box(coin), Color(0, 1, 0, 0.2), true)
-
-	coins = root.find_children("Enemy")
-	for coin in coins:
-		draw_rect(_get_node_bounding_box(coin), Color(0, 1, 0, 0.2), true)
+		draw_rect(_get_node_bounding_box(coin), Color(0.4, 0.96, 0.34, 0.75), true)
 
 
 static func highlight_changes(root: Node):
-	var diff_layer = root.get_node_or_null("PatchworkHighlightChangesLayer")
+	var highlight_changes_layer_container = root.get_node_or_null("PatchworkHighlightChangesLayerContainer")
+
+	if highlight_changes_layer_container == null:
+		highlight_changes_layer_container = CanvasLayer.new()
+		highlight_changes_layer_container.name = "PatchworkHighlightChangesLayerContainer"
+		highlight_changes_layer_container.layer = 1025
+		root.add_child(highlight_changes_layer_container)
+
+	var diff_layer = highlight_changes_layer_container.get_node_or_null("PatchworkHighlightChangesLayer")
 
 	var bounding_box = _get_node_bounding_box(root)
 
@@ -39,8 +39,7 @@ static func highlight_changes(root: Node):
 		diff_layer = HighlightChangesLayer.new()
 		diff_layer.name = "PatchworkHighlightChangesLayer"
 		diff_layer.root = root
-		diff_layer.z_index = 999999999
-		root.add_child(diff_layer)
+		highlight_changes_layer_container.add_child(diff_layer)
 
 	diff_layer.overlay_position = bounding_box.position - Vector2(bounding_box.size.x, 0)
 	diff_layer.overlay_size = bounding_box.size * 3
