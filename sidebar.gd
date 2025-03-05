@@ -20,6 +20,7 @@ var branches = []
 var plugin: EditorPlugin
 var config: PatchworkConfig
 var current_inspector_object: FakeInspectorResource
+var queued_calls = []
 
 const CREATE_BRANCH_IDX = 1
 const MERGE_BRANCH_IDX = 2
@@ -109,39 +110,46 @@ static func popup_box(parent_window: Node, dialog: AcceptDialog, message: String
 
 var current_cvs_action = []
 
-# This should be called before any patchwork source control action (e.g. checkout, merge, etc.)
-# func _before_cvs_action(cvs_action: String):
-# 	print("Saving all scenes before CVS action %s" % [cvs_action])
-# 	plugin.file_system.disconnect_from_file_system()
-# 	EditorInterface.save_all_scenes();
-# 	current_cvs_action.append(cvs_action)
-# 	PatchworkEditor.progress_add_task(cvs_action, cvs_action, 10, false)
-# 	plugin.sync_godot_to_patchwork()
-# 	plugin.file_system.connect_to_file_system()
-# 	print("All scenes saved!")
+func add_call_to_queue(call: Callable):
+	queued_calls.append(call)
 
-# func _after_cvs_action():
-# 	if not current_cvs_action.is_empty():
-# 		for i in range(current_cvs_action.size()):
-# 			PatchworkEditor.progress_end_task(current_cvs_action[i])
-# 		current_cvs_action = []
+func _before_cvs_action_after_save(cvs_action: String, callback: Callable, save: bool):
+	PatchworkEditor.progress_add_task(cvs_action, cvs_action, 10, false)
+	current_cvs_action.append(cvs_action)
+	if save:
+		plugin.sync_godot_to_patchwork()
+		plugin.file_system.connect_to_file_system()
+	print("*** All scenes saved!")
+	add_call_to_queue(callback)
 
 
-func ensure_user_has_no_unsaved_files(message: String, callback: Callable):
+func _before_cvs_action(cvs_action: String, callback: Callable, save: bool):
+	if not save:
+		_before_cvs_action_after_save(cvs_action, callback, save)
+		return
+	print("*** Saving all scenes before CVS action %s" % [cvs_action])
+	plugin.file_system.disconnect_from_file_system()
+	EditorInterface.save_all_scenes();
+	add_call_to_queue(self._before_cvs_action_after_save.bind(cvs_action, callback, save))
+
+
+func _after_cvs_action():
+	if not current_cvs_action.is_empty():
+		for i in range(current_cvs_action.size()):
+			pass
+			PatchworkEditor.progress_end_task(current_cvs_action[i])
+		current_cvs_action = []
+
+
+func ensure_user_has_no_unsaved_files(action: String, callback: Callable):
+	var message = "You have unsaved files open. Do you want to save them before " + action + "?"
 	if PatchworkEditor.unsaved_files_open():
 		popup_box(self, $ConfirmationDialog, message, "Unsaved Files", func():
-			pass
-			# todo: fix auto save 
-			# right now this either crashes the editor or leads to invalid branch switch 
-			# where the checked out branch and the loaded scene don't match so I'm disabling
-			# this for now. The check still runs but you have to save manually which is a bit annoying
-			# 
-			# EditorInterface.save_all_scenes();
-			# plugin.sync_godot_to_patchwork();
-			# callback.call()
+			$ConfirmationDialog.hide()
+			add_call_to_queue(self._before_cvs_action.bind(action, callback, true))
 		)
 	else:
-		callback.call()
+		_before_cvs_action(action, callback, false)
 
 
 func _on_menu_button_id_pressed(id: int) -> void:
@@ -153,14 +161,15 @@ func _on_menu_button_id_pressed(id: int) -> void:
 			merge_current_branch()
 
 func checkout_branch(branch_id: String) -> void:
-	var message = "You have unsaved files open. Do you want to save them before checking out?"
+	var message = "checking out"
 
 	ensure_user_has_no_unsaved_files(message, func():
 		godot_project.checkout_branch(branch_id)
+		add_call_to_queue(self._after_cvs_action)
 	)
 
 func create_new_branch() -> void:
-	var message = "You have unsaved files open. Do you want to save them before creating a new branch?"
+	var message = "creating a new branch"
 
 	ensure_user_has_no_unsaved_files(message, func():
 		var dialog = ConfirmationDialog.new()
@@ -184,7 +193,7 @@ func create_new_branch() -> void:
 			if line_edit.text.strip_edges() != "":
 				var new_branch_name = line_edit.text.strip_edges()
 				godot_project.create_branch(new_branch_name)
-			
+			add_call_to_queue(self._after_cvs_action)
 			dialog.queue_free()
 		)
 
@@ -198,11 +207,11 @@ func merge_current_branch():
 	if checked_out_branch.is_main:
 		popup_box(self, $ErrorDialog, "Can't merge the main branch!", "Error")
 		return
-
-	var message = "You have unsaved files open. Do you want to save them before merging?"
-	ensure_user_has_no_unsaved_files(message, func():
+	var action = "merging"
+	ensure_user_has_no_unsaved_files(action, func():
 		popup_box(self, $ConfirmationDialog, "Are you sure you want to merge \"%s\" into main ?" % [checked_out_branch.name], "Merge Branch", func():
 			godot_project.merge_branch(checked_out_branch.id)
+			add_call_to_queue(self._after_cvs_action)
 		)
 	)
 
@@ -391,3 +400,15 @@ func show_diff(hash1, hash2):
 	for file in display_diff.keys():
 		current_inspector_object.add_file_diff(file, display_diff[file])
 	inspector.edit_object = current_inspector_object
+
+func _process(delta: float) -> void:
+	if queued_calls.size() == 0:
+		return
+	var calls = []
+	calls.append_array(queued_calls)
+	queued_calls.clear()
+	for call in calls:
+		if call.is_valid():
+			call.call()
+		else:
+			print("Invalid call: ", call)
