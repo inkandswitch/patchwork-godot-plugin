@@ -81,6 +81,22 @@ func _on_branch_picker_item_selected(index: int) -> void:
 	# once branch is actually checked out, the branch picker will update
 	update_ui()
 
+	if selected_branch.is_not_loaded:
+		# Show warning dialog that branch is not synced correctly
+		var dialog = AcceptDialog.new()
+		dialog.title = "Branch Not Available"
+		dialog.dialog_text = "Can't checkout branch because it is not synced yet"
+		dialog.get_ok_button().text = "OK"
+		dialog.canceled.connect(func(): dialog.queue_free())
+		dialog.confirmed.connect(func(): dialog.queue_free())
+		
+		add_child(dialog)
+		dialog.popup_centered()
+		
+		# Return early to prevent checkout attempt
+		return
+
+
 	print("picked in branch picker: ", index, " ", selected_branch)
 	checkout_branch(selected_branch.id)
 
@@ -109,7 +125,6 @@ static func popup_box(parent_window: Node, dialog: AcceptDialog, message: String
 	dialog.popup_centered()
 
 var current_cvs_action = []
-
 
 # The reason we are queueing calls is because we need to wait for the editor to finish performing certain actions before we can manipulate gui elements
 # We were getting crashes and weird behavior when trying to do everything synchronously
@@ -272,6 +287,11 @@ func update_ui() -> void:
 		var branch = branches[i]
 		branch_picker.add_item(branch.name, i)
 		branch_picker.set_item_metadata(i, branch.id)
+
+		# this should not happen, but right now the sync is not working correctly so we need to surface this in the interface
+		if branch.is_not_loaded:
+			branch_picker.set_item_icon(i, load("res://addons/patchwork/icons/warning.svg"))
+
 		if checked_out_branch && branch.id == checked_out_branch.id:
 			branch_picker.select(i)
 
