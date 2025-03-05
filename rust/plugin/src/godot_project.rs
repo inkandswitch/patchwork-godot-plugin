@@ -53,20 +53,6 @@ pub struct Branch {
     pub forked_at: Vec<String>,
 }
 
-#[derive(Clone)]
-enum SyncEvent {
-    NewDoc {
-        doc_id: DocumentId,
-        doc_handle: DocHandle,
-    },
-    DocChanged {
-        doc_id: DocumentId,
-    },
-    CheckedOutBranch {
-        doc_id: DocumentId,
-    },
-}
-
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
 pub enum StringOrPackedByteArray {
     String(String),
@@ -120,17 +106,16 @@ impl GodotProject {
     fn shutdown_completed();
 
     #[func]
-    // hack: pass in empty string to create a new doc
-    // godot rust doens't seem to support Option args
     fn create(
         storage_folder_path: String,
-        maybe_branches_metadata_doc_id: String,
+        branches_metadata_doc_id: String, // empty string to create a new project
+        checked_out_branch_doc_id: String, // empty string to check out the main branch of the newly created project
         maybe_user_name: String,
     ) -> Gd<Self> {
         let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
         let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
 
-        let branches_metadata_doc_id = match DocumentId::from_str(&maybe_branches_metadata_doc_id) {
+        let branches_metadata_doc_id = match DocumentId::from_str(&branches_metadata_doc_id) {
             Ok(doc_id) => Some(doc_id),
             Err(e) => None,
         };
@@ -148,11 +133,21 @@ impl GodotProject {
             },
         );
 
+        let checked_out_branch_state = match DocumentId::from_str(&checked_out_branch_doc_id) {
+            Ok(doc_id) => CheckedOutBranchState::CheckingOut(doc_id),
+            Err(_) => CheckedOutBranchState::NothingCheckedOut,
+        };
+
+        println!(
+            "initial checked out branch state: {:?}",
+            checked_out_branch_state
+        );
+
         Gd::from_init_fn(|base| Self {
             base,
             doc_handles: HashMap::new(),
             branch_states: HashMap::new(),
-            checked_out_branch_state: CheckedOutBranchState::NothingCheckedOut,
+            checked_out_branch_state,
             project_doc_id: None,
             driver,
             driver_input_tx,
@@ -786,16 +781,6 @@ impl GodotProject {
                     branch_state,
                     trigger_reload,
                 } => {
-                    let (is_new_branch, previous_heads) = match self
-                        .branch_states
-                        .get(&branch_state.doc_handle.document_id())
-                    {
-                        Some(previous_branch_state) => {
-                            (false, previous_branch_state.synced_heads.clone())
-                        }
-                        None => (true, vec![]),
-                    };
-
                     self.branch_states
                         .insert(branch_state.doc_handle.document_id(), branch_state.clone());
 

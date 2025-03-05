@@ -55,15 +55,18 @@ func init_godot_project():
 
 	print("init_godot_project()")
 	var project_doc_id = config.get_project_value("project_doc_id", "")
+	var checked_out_branch_doc_id = config.get_project_value("checked_out_branch_doc_id", "")
 	var user_name = config.get_user_value("user_name", "")
 
-	godot_project = GodotProject.create(storage_folder_path, project_doc_id, user_name)
+	godot_project = GodotProject.create(storage_folder_path, project_doc_id, checked_out_branch_doc_id, user_name)
 
 	if godot_project == null:
 		print("Failed to create GodotProject instance.")
 		return
 
 	await godot_project.checked_out_branch
+
+	config.set_project_value("checked_out_branch_doc_id", godot_project.get_checked_out_branch().id)
 
 	print("*** Patchwork Godot Project initialized! ***")
 	if !project_doc_id:
@@ -176,7 +179,7 @@ func get_relevant_godot_files() -> Array[String]:
 	return ret
 
 func _on_checked_out_branch(checked_out_branch: String):
-	print('checked out branch: !!! ', checked_out_branch)
+	config.set_project_value("checked_out_branch_doc_id", checked_out_branch)
 	sync_patchwork_to_godot()
 	
 func _on_local_file_changed(path: String, content: Variant):

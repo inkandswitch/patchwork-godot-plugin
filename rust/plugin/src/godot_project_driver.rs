@@ -161,14 +161,14 @@ impl GodotProjectDriver {
         &self,
         rx: UnboundedReceiver<InputEvent>,
         tx: UnboundedSender<OutputEvent>,
-        maybe_branches_metadata_doc_id: Option<DocumentId>,
+        branches_metadata_doc_id: Option<DocumentId>,
         user_name: Option<String>,
     ) {
         // Spawn connection task
         self.spawn_connection_task();
 
         // Spawn sync task for all doc handles
-        self.spawn_driver_task(rx, tx, maybe_branches_metadata_doc_id, &user_name);
+        self.spawn_driver_task(rx, tx, branches_metadata_doc_id, &user_name);
     }
 
     fn spawn_connection_task(&self) {
@@ -214,7 +214,7 @@ impl GodotProjectDriver {
 
         self.runtime.spawn(async move {
             // destructure project doc handles
-            let ProjectDocHandles { branches_metadata_doc_handle, main_branch_doc_handle } = init_project_doc_handles(&repo_handle, branches_metadata_doc_id, &user_name).await;
+            let ProjectDocHandles { branches_metadata_doc_handle, main_branch_doc_handle } = init_project_doc_handles(&repo_handle, &branches_metadata_doc_id, &user_name).await;
 
             tx.unbounded_send(OutputEvent::Initialized { project_doc_id: branches_metadata_doc_handle.document_id() }).unwrap();
 
@@ -353,8 +353,8 @@ struct ProjectDocHandles {
     main_branch_doc_handle: DocHandle,
 }
 
-async fn init_project_doc_handles (repo_handle: &RepoHandle, doc_id: Option<DocumentId>, user_name: &Option<String>) -> ProjectDocHandles  {
-    match doc_id {
+async fn init_project_doc_handles (repo_handle: &RepoHandle, branches_metadata_doc_id: &Option<DocumentId>, user_name: &Option<String>) -> ProjectDocHandles  {
+    match branches_metadata_doc_id {
 
         // load existing project
 
@@ -652,7 +652,7 @@ impl DriverState {
 
         let _ = &self.tx.unbounded_send(OutputEvent::NewDocHandle { doc_handle: binary_doc_handle.clone(), doc_handle_type: DocHandleType::Binary }).unwrap();
         
-        println!("add_binary_doc_handle {:?} {:?}", path, binary_doc_handle.document_id());
+        // println!("add_binary_doc_handle {:?} {:?}", path, binary_doc_handle.document_id());
 
         // check all branch states that link to this doc
         for branch_state in self.branch_states.values_mut() {
@@ -668,9 +668,9 @@ impl DriverState {
                         trigger_reload: !does_frontend_have_branch_at_heads(&self.heads_in_frontend, &branch_state.doc_handle, &branch_state.synced_heads),
                     }).unwrap();
 
-                    println!("rust: branch state loaded {:?} {:?}", branch_state.doc_handle.document_id(), branch_state.synced_heads);
+                    // println!("rust: branch state loaded {:?} {:?}", branch_state.doc_handle.document_id(), branch_state.synced_heads);
                 } else {
-                    println!("rust: branch state still missing some binary docs {:?} {:?}", branch_state.doc_handle.document_id(), missing_binary_doc_ids);
+                    //println!("rust: branch state still missing some binary docs {:?} {:?}", branch_state.doc_handle.document_id(), missing_binary_doc_ids);
                 }
             }
         }
