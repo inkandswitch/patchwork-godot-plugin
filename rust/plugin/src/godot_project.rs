@@ -799,16 +799,14 @@ impl GodotProject {
                     self.branch_states
                         .insert(branch_state.doc_handle.document_id(), branch_state.clone());
 
-                    if is_new_branch {
-                        let branches = self
-                            .get_branches()
-                            .iter_shared()
-                            .map(|branch| branch.to_variant())
-                            .collect::<Array<Variant>>()
-                            .to_variant();
+                    let branches = self
+                        .get_branches()
+                        .iter_shared()
+                        .map(|branch| branch.to_variant())
+                        .collect::<Array<Variant>>()
+                        .to_variant();
 
-                        self.base_mut().emit_signal("branches_changed", &[branches]);
-                    }
+                    self.base_mut().emit_signal("branches_changed", &[branches]);
 
                     let mut active_branch_doc_id: Option<DocumentId> = None;
                     let mut checking_out_new_branch = false;

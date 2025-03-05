@@ -4,7 +4,6 @@ use futures::{FutureExt, Stream};
 use ::safer_ffi::prelude::*;
 use std::collections::HashSet;
 use std::future::Future;
-use std::panic::panic_any;
 use std::pin::Pin;
 use std::{
     collections::HashMap,
