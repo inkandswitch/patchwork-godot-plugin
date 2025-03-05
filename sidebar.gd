@@ -150,7 +150,8 @@ func ensure_user_has_no_unsaved_files(action: String, callback: Callable):
 	if PatchworkEditor.unsaved_files_open():
 		popup_box(self, $ConfirmationDialog, message, "Unsaved Files", func():
 			$ConfirmationDialog.hide()
-			add_call_to_queue(self._before_cvs_action.bind(action, callback, true))
+			# todo: auto save is crashing godot so I'm disabling it for now
+			# add_call_to_queue(self._before_cvs_action.bind(action, callback, true))
 		)
 	else:
 		_before_cvs_action(action, callback, false)
