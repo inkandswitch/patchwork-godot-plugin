@@ -110,6 +110,10 @@ static func popup_box(parent_window: Node, dialog: AcceptDialog, message: String
 
 var current_cvs_action = []
 
+
+# The reason we are queueing calls is because we need to wait for the editor to finish performing certain actions before we can manipulate gui elements
+# We were getting crashes and weird behavior when trying to do everything synchronously
+# Basically, if we need to do something that would induce the editor to perform actions, we need to queue it
 func add_call_to_queue(call: Callable):
 	queued_calls.append(call)
 
