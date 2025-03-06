@@ -4,7 +4,7 @@
 [ext_resource type="Texture2D" uid="uid://ymewwqpn0vi4" path="res://addons/patchwork/icons/GuiTabMenuHl.svg" id="2_rfxbe"]
 [ext_resource type="Texture2D" uid="uid://xec6o14n4y2v" path="res://addons/patchwork/icons/person.svg" id="3_m2w8q"]
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_lug7k"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_qa0kf"]
 content_margin_left = 4.0
 content_margin_top = 4.0
 content_margin_right = 4.0
@@ -118,7 +118,7 @@ theme_override_constants/separation = 16
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_styles/panel = SubResource("StyleBoxFlat_lug7k")
+theme_override_styles/panel = SubResource("StyleBoxFlat_qa0kf")
 follow_focus = true
 edit_object = SubResource("PlaceholderMaterial_ywma1")
 

@@ -282,14 +282,17 @@ func update_ui() -> void:
 	if not godot_project:
 		return
 
+
+	var checked_out_branch = godot_project.get_checked_out_branch()
+
 	self.branches = godot_project.get_branches()
 
 	# highlight chanages
+
 	var edited_root = EditorInterface.get_edited_scene_root()
 
-
 	if edited_root:
-		if highlight_changes_checkbox.is_pressed():
+		if highlight_changes_checkbox.is_pressed() && !checked_out_branch.is_main:
 				var edited_scene_file_path = edited_root.scene_file_path
 				var changed_node_paths = godot_project.get_changed_nodes(edited_scene_file_path)
 
@@ -303,8 +306,6 @@ func update_ui() -> void:
 	# update branch picker
 
 	branch_picker.clear()
-	var checked_out_branch = godot_project.get_checked_out_branch()
-
 	print("UI: checked out branch: ", checked_out_branch)
 
 	for i in range(branches.size()):

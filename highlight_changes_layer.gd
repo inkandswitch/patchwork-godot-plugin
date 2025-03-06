@@ -29,7 +29,7 @@ func _ready():
 
 	# Set default shader parameters
 	shader_material.set_shader_parameter("fill_color", Color(77.0 / 255.0, 77.0 / 255.0, 77.0 / 255.0, 0.85))
-	shader_material.set_shader_parameter("highlight_color", Color(0.0, 0.0, 0.0, 0.0))
+	shader_material.set_shader_parameter("highlight_color", Color(0.0, 1.0, 0.0, 1.0))
 
 
 func update_overlay(changed_node_paths: Array):
