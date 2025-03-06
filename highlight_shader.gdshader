@@ -1,10 +1,10 @@
 shader_type canvas_item;
 
 // Fill color for the background
-uniform vec4 fill_color : source_color = vec4(1.0, 0.0, 0.0, 1.0);
+uniform vec4 fill_color : source_color = vec4(0.5, 0.0, 0.0, 0.5);
 
 // Maximum number of rectangles we can handle
-const int MAX_RECTANGLES = 10;
+const int MAX_RECTANGLES = 2500;
 
 // Array of rectangles (x, y, width, height)
 uniform vec4 rectangles[MAX_RECTANGLES];
@@ -27,20 +27,20 @@ void fragment() {
     // Check if the current pixel is inside any of the rectangles
     bool inside_any_rectangle = false;
     
-    for (int i = 0; i < MAX_RECTANGLES; i++) {
+    for (int i = 0; i < rectangle_count; i++) {
         // Only process active rectangles
         if (i >= rectangle_count) {
             break;
         }
         
         // If the point is inside this rectangle, mark it and break
-        if (point_in_rectangle(UV * vec2(textureSize(TEXTURE, 0)), rectangles[i])) {
+        if (point_in_rectangle(UV, rectangles[i])) {
             inside_any_rectangle = true;
             break;
         }
     }
-    
-    if (UV.x < 0.5 && UV.x > 0.2) {
+
+    if (inside_any_rectangle) {
         color = vec4(0.0, 0.0, 0.0, 0.0);
     }
     
