@@ -1,7 +1,8 @@
 shader_type canvas_item;
 
 // Fill color for the background
-uniform vec4 fill_color : source_color = vec4(0.5, 0.0, 0.0, 0.5);
+uniform vec4 fill_color : source_color = vec4(0.0, 0.0, 0.0, 0.0);
+uniform vec4 highlight_color : source_color = vec4(0.0, 0.0, 0.0, 0.0);
 
 // Maximum number of rectangles we can handle
 const int MAX_RECTANGLES = 2500;
@@ -41,7 +42,7 @@ void fragment() {
     }
 
     if (inside_any_rectangle) {
-        color = vec4(0.0, 0.0, 0.0, 0.0);
+        color = highlight_color;
     }
     
     COLOR = color;

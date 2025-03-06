@@ -5,6 +5,8 @@ extends Node2D
 var overlay_size: Vector2
 var overlay_position: Vector2
 var scene_node: Node
+var color_rect: ColorRect
+var shader_material: ShaderMaterial
 
 func _ready():
 	# Ensure we're visible in the editor
@@ -12,46 +14,57 @@ func _ready():
 		set_process(true)
 		set_notify_transform(true)
 
-		var rect = ColorRect.new()
-		
-		# Make sure it has a size
-		rect.size = Vector2(1024, 600) # Or whatever size you need
-		
-		# Create and assign the shader material
-		var shader_material = ShaderMaterial.new()
-		var shader = load("res://path_to_your_shader.gdshader")
-		shader_material.shader = shader
-		
-		# Set shader parameters
-		shader_material.set_shader_parameter("fill_color", Color(1.0, 0.0, 0.0, 1.0))
-		# Define rectangles
-		var rects = [
-				Vector4(100, 100, 200, 150),
-				Vector4(400, 300, 100, 100)
-		]
-		# Set rectangles in shader
-		for i in range(rects.size()):
-				shader_material.set_shader_parameter("rectangles[" + str(i) + "]", rects[i])
-		shader_material.set_shader_parameter("rectangle_count", rects.size())
-		
-		# Apply the material to the ColorRect
-		rect.material = shader_material
+	color_rect = ColorRect.new()
+	color_rect.position = Vector2(0, 0)
+	color_rect.color = Color(1.0, 0.0, 0.0, 0.75)
+	color_rect.size = Vector2(1000, 1000)
+	color_rect.name = "PatchworkColorRect"
+	add_child(color_rect)
 
-
-func _draw():
-	pass
-	# # draw overlay to make everything apear grayed out
-	# draw_rect(Rect2(overlay_position, overlay_size), Color(77.0 / 255.0, 77.0 / 255.0, 77.0 / 255.0, 0.75), true)
-
-	# var bounding_boxes = []
-
-	# # draw changed shapes
-	# var coins = scene_node.find_children("Coin")
-	# for coin in coins:
-	# 	bounding_boxes.append(_get_node_bounding_box(coin))
-
-	# Set background color (red in this example)
+	update_overlay()
 	
+	# Create and assign the shader material
+	shader_material = ShaderMaterial.new()
+	var shader = load("res://addons/patchwork/highlight_shader.gdshader")
+	shader_material.shader = shader
+	color_rect.material = shader_material
+
+	# Set default shader parameters
+	shader_material.set_shader_parameter("fill_color", Color(77.0 / 255.0, 77.0 / 255.0, 77.0 / 255.0, 0.8))
+	shader_material.set_shader_parameter("highlight_color", Color(0.1, 0.6, 0.1, 0.5))
+
+
+func update_overlay():
+	color_rect.size = overlay_size
+	color_rect.global_position = overlay_position
+
+	# Find nodes to highlight
+	var bounding_boxes = []
+	var coins = scene_node.find_children("Coin")
+	for coin in coins:
+		var box = _get_node_bounding_box(coin)
+		if box != null:
+			bounding_boxes.append(box)
+	
+	# Convert bounding boxes to normalized coordinates and pass to shader
+	var normalized_rects = []
+	for box in bounding_boxes:
+		# Convert to coordinates relative to our overlay
+		var rel_pos = box.position - overlay_position
+		
+		# Normalize coordinates to 0-1 range
+		var normalized_rect = Vector4(
+			rel_pos.x / overlay_size.x,
+			rel_pos.y / overlay_size.y,
+			box.size.x / overlay_size.x,
+			box.size.y / overlay_size.y
+		)
+		
+		normalized_rects.append(normalized_rect)
+
+	shader_material.set_shader_parameter("rectangles", normalized_rects)
+	shader_material.set_shader_parameter("rectangle_count", normalized_rects.size())
+
 
 static func highlight_changes(root: Node):
 	var highlight_changes_layer_container = root.get_node_or_null("PatchworkHighlightChangesLayerContainer")
@@ -63,7 +76,6 @@ static func highlight_changes(root: Node):
 		root.add_child(highlight_changes_layer_container)
 
 	var diff_layer = highlight_changes_layer_container.get_node_or_null("PatchworkHighlightChangesLayer")
-
 	var bounding_box = _get_node_bounding_box(root)
 
 	if diff_layer == null:
@@ -72,14 +84,33 @@ static func highlight_changes(root: Node):
 		diff_layer.scene_node = root
 		highlight_changes_layer_container.add_child(diff_layer)
 
-	diff_layer.overlay_position = bounding_box.position - Vector2(bounding_box.size.x, 0)
+	# bounding box calculation doesn't work perfectly for the root node so we scale it by three to make sure we cover the whole scene
 	diff_layer.overlay_size = bounding_box.size * 3
+	diff_layer.overlay_position = Vector2(bounding_box.position.x - bounding_box.size.x, bounding_box.position.y - bounding_box.size.y)
+	diff_layer.update_overlay()
 
+	#
+
+	# var bounding_box = _get_node_bounding_box(root)
+
+	# if diff_layer == null:
+	# 	diff_layer = HighlightChangesLayer.new()
+	# 	diff_layer.name = "PatchworkHighlightChangesLayer"
+	# 	diff_layer.scene_node = root
+	# 	highlight_changes_layer_container.add_child(diff_layer)
+
+
+	# diff_layer.overlay_position = bounding_box.position - Vector2(bounding_box.size.x, 0)
+	# diff_layer.overlay_size = bounding_box.size * 3
+	# diff_layer.update_overlay()
 
 static func _get_node_bounding_box(node: Node):
-	# Initialize with an empty rect
 	var bounding_box
 	
+	# ignore HighlightChangesLayer
+	if node is HighlightChangesLayer:
+		return null
+
 	# Special handling for collision shapes
 	if node is CollisionShape2D:
 		var shape = node.shape
