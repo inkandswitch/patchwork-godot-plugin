@@ -276,6 +276,16 @@ func update_ui() -> void:
 
 	self.branches = godot_project.get_branches()
 
+	# highlight chanages
+	var edited_root = EditorInterface.get_edited_scene_root()
+
+	if edited_root:
+		var edited_scene_file_path = edited_root.scene_file_path
+		var changed_node_paths = godot_project.get_changed_nodes(edited_scene_file_path)
+
+		HighlightChangesLayer.highlight_changes(edited_root, changed_node_paths)
+
+
 	# update branch picker
 
 	branch_picker.clear()

@@ -26,10 +26,6 @@ func add_new_uid(path: String, uid: String):
 		ResourceUID.set_id(id, path)
 		
 func _process(_delta: float) -> void:
-	# get root of current scene
-	var editor_root = get_editor_interface().get_edited_scene_root()
-	if editor_root:
-		HighlightChangesLayer.highlight_changes(editor_root)
 	if godot_project:
 		godot_project.process()
 
@@ -38,17 +34,17 @@ func _enter_tree() -> void:
 	config = PatchworkConfig.new();
 	file_system = FileSystem.new(self)
 
-	# await init_godot_project()
+	await init_godot_project()
 
-	# # listen for file changes once we have initialized the godot project
-	# file_system.connect("file_changed", _on_local_file_changed)
+	# listen for file changes once we have initialized the godot project
+	file_system.connect("file_changed", _on_local_file_changed)
 
-	# # setup patchwork sidebar
-	# sidebar = preload("res://addons/patchwork/sidebar.tscn").instantiate()
-	# sidebar.init(self, godot_project, config)
-	# add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
-	# if sidebar:
-	# 	sidebar._on_diff_button_pressed()
+	# setup patchwork sidebar
+	sidebar = preload("res://addons/patchwork/sidebar.tscn").instantiate()
+	sidebar.init(self, godot_project, config)
+	add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
+	if sidebar:
+		sidebar._on_diff_button_pressed()
 
 func init_godot_project():
 	var storage_folder_path = ProjectSettings.globalize_path("res://.patchwork")

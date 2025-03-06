@@ -20,8 +20,6 @@ func _ready():
 	color_rect.size = Vector2(1000, 1000)
 	color_rect.name = "PatchworkColorRect"
 	add_child(color_rect)
-
-	update_overlay()
 	
 	# Create and assign the shader material
 	shader_material = ShaderMaterial.new()
@@ -30,22 +28,23 @@ func _ready():
 	color_rect.material = shader_material
 
 	# Set default shader parameters
-	shader_material.set_shader_parameter("fill_color", Color(77.0 / 255.0, 77.0 / 255.0, 77.0 / 255.0, 0.8))
-	shader_material.set_shader_parameter("highlight_color", Color(0.1, 0.6, 0.1, 0.5))
+	shader_material.set_shader_parameter("fill_color", Color(77.0 / 255.0, 77.0 / 255.0, 77.0 / 255.0, 0.85))
+	shader_material.set_shader_parameter("highlight_color", Color(0.0, 0.0, 0.0, 0.0))
 
 
-func update_overlay():
+func update_overlay(changed_node_paths: Array):
 	color_rect.size = overlay_size
 	color_rect.global_position = overlay_position
 
 	# Find nodes to highlight
 	var bounding_boxes = []
-	var coins = scene_node.find_children("Coin")
-	for coin in coins:
-		var box = _get_node_bounding_box(coin)
+
+	for changed_node_path in changed_node_paths:
+		var changed_node = scene_node.get_node_or_null(changed_node_path)
+		var box = _get_node_bounding_box(changed_node)
 		if box != null:
 			bounding_boxes.append(box)
-	
+
 	# Convert bounding boxes to normalized coordinates and pass to shader
 	var normalized_rects = []
 	for box in bounding_boxes:
@@ -66,7 +65,7 @@ func update_overlay():
 	shader_material.set_shader_parameter("rectangle_count", normalized_rects.size())
 
 
-static func highlight_changes(root: Node):
+static func highlight_changes(root: Node, changed_node_paths: Array):
 	var highlight_changes_layer_container = root.get_node_or_null("PatchworkHighlightChangesLayerContainer")
 
 	if highlight_changes_layer_container == null:
@@ -87,7 +86,7 @@ static func highlight_changes(root: Node):
 	# bounding box calculation doesn't work perfectly for the root node so we scale it by three to make sure we cover the whole scene
 	diff_layer.overlay_size = bounding_box.size * 3
 	diff_layer.overlay_position = Vector2(bounding_box.position.x - bounding_box.size.x, bounding_box.position.y - bounding_box.size.y)
-	diff_layer.update_overlay()
+	diff_layer.update_overlay(changed_node_paths)
 
 	#
 
