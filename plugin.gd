@@ -26,10 +26,6 @@ func add_new_uid(path: String, uid: String):
 		ResourceUID.set_id(id, path)
 		
 func _process(_delta: float) -> void:
-	# get root of current scene
-	var editor_root = get_editor_interface().get_edited_scene_root()
-	# if editor_root:
-	#	HighlightChangesLayer.highlight_changes(editor_root)
 	if godot_project:
 		godot_project.process()
 

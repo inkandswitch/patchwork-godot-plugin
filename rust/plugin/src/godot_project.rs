@@ -1,6 +1,9 @@
 use ::safer_ffi::prelude::*;
 use automerge::op_tree::B;
+use automerge::{ObjId, Patch, PatchAction, Prop};
 use autosurgeon::{Hydrate, Reconcile};
+use futures::io::empty;
+use std::collections::HashSet;
 use std::{collections::HashMap, str::FromStr};
 
 use automerge::{
@@ -290,6 +293,51 @@ impl GodotProject {
             }
             None => Variant::nil(),
         }
+    }
+
+    #[func]
+    fn get_changed_nodes(&self, path: String) -> PackedStringArray {
+        let checked_out_branch_state = match self.get_checked_out_branch_state() {
+            Some(branch_state) => branch_state,
+            None => return PackedStringArray::new(),
+        };
+
+        let heads = checked_out_branch_state.forked_at.clone();
+        let curr_heads = checked_out_branch_state
+            .doc_handle
+            .with_doc(|d| d.get_heads());
+
+        let patches = checked_out_branch_state.doc_handle.with_doc(|d| {
+            d.diff(
+                &heads,
+                &curr_heads,
+                TextRepresentation::String(TextEncoding::Utf8CodeUnit),
+            )
+        });
+
+        let path = Vec::from([
+            Prop::Map(String::from("files")),
+            Prop::Map(String::from(path)),
+            Prop::Map(String::from("structured_content")),
+            Prop::Map(String::from("nodes")),
+        ]);
+
+        let mut changed_nodes: HashSet<String> = HashSet::new();
+
+        for patch in patches {
+            match_path(&path, &patch)
+                .and_then(|path_with_action| path_with_action.path.first().cloned())
+                .inspect(|(_, prop)| {
+                    if let Prop::Map(node_path) = prop {
+                        changed_nodes.insert(node_path.clone());
+                    }
+                });
+        }
+
+        changed_nodes
+            .into_iter()
+            .map(|s| GString::from(s))
+            .collect()
     }
 
     #[func]
@@ -886,4 +934,31 @@ impl GodotProject {
             }
         }
     }
+}
+
+#[derive(Debug, Clone)]
+struct PathWithAction {
+    path: Vec<(ObjId, Prop)>,
+    action: PatchAction,
+}
+
+fn match_path(path: &Vec<Prop>, patch: &Patch) -> Option<PathWithAction> {
+    let mut remaining_path = patch.path.clone();
+
+    for prop in path.iter() {
+        if remaining_path.len() == 0 {
+            return None;
+        }
+
+        let (_, part_prop) = remaining_path.remove(0);
+
+        if part_prop != *prop {
+            return None;
+        }
+    }
+
+    Some(PathWithAction {
+        path: remaining_path,
+        action: patch.action.clone(),
+    })
 }
