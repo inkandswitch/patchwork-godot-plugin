@@ -88,20 +88,15 @@ static func highlight_changes(root: Node, changed_node_paths: Array):
 	diff_layer.overlay_position = Vector2(bounding_box.position.x - bounding_box.size.x, bounding_box.position.y - bounding_box.size.y)
 	diff_layer.update_overlay(changed_node_paths)
 
-	#
 
-	# var bounding_box = _get_node_bounding_box(root)
+static func remove_highlight(root: Node):
+	var highlight_changes_layer_container = root.get_node_or_null("PatchworkHighlightChangesLayerContainer")
 
-	# if diff_layer == null:
-	# 	diff_layer = HighlightChangesLayer.new()
-	# 	diff_layer.name = "PatchworkHighlightChangesLayer"
-	# 	diff_layer.scene_node = root
-	# 	highlight_changes_layer_container.add_child(diff_layer)
+	if highlight_changes_layer_container:
+		print("removing highlight")
+		root.remove_child(highlight_changes_layer_container)
+		highlight_changes_layer_container.queue_free()
 
-
-	# diff_layer.overlay_position = bounding_box.position - Vector2(bounding_box.size.x, 0)
-	# diff_layer.overlay_size = bounding_box.size * 3
-	# diff_layer.update_overlay()
 
 static func _get_node_bounding_box(node: Node):
 	var bounding_box

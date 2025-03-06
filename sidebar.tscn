@@ -4,7 +4,7 @@
 [ext_resource type="Texture2D" uid="uid://ymewwqpn0vi4" path="res://addons/patchwork/icons/GuiTabMenuHl.svg" id="2_rfxbe"]
 [ext_resource type="Texture2D" uid="uid://xec6o14n4y2v" path="res://addons/patchwork/icons/person.svg" id="3_m2w8q"]
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_87d8b"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_lug7k"]
 content_margin_left = 4.0
 content_margin_top = 4.0
 content_margin_right = 4.0
@@ -70,14 +70,21 @@ current_tab = 0
 layout_mode = 2
 metadata/_tab_index = 0
 
-[node name="HistoryList" type="ItemList" parent="VBoxContainer/TabContainer/History"]
-unique_name_in_owner = true
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/TabContainer/History"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+
+[node name="HSeparator2" type="HSeparator" parent="VBoxContainer/TabContainer/History/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="HistoryList" type="ItemList" parent="VBoxContainer/TabContainer/History/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
 size_flags_vertical = 3
 
 [node name="Diff" type="TabBar" parent="VBoxContainer/TabContainer"]
@@ -85,15 +92,33 @@ visible = false
 layout_mode = 2
 metadata/_tab_index = 1
 
-[node name="PEEditorInspector" type="PEEditorInspector" parent="VBoxContainer/TabContainer/Diff"]
-unique_name_in_owner = true
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/TabContainer/Diff"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_87d8b")
+theme_override_constants/separation = 8
+
+[node name="HSeparator2" type="HSeparator" parent="VBoxContainer/TabContainer/Diff/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="HighlightChangesCheckbox" type="CheckBox" parent="VBoxContainer/TabContainer/Diff/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Highlight changes"
+
+[node name="HSeparator" type="HSeparator" parent="VBoxContainer/TabContainer/Diff/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="PEEditorInspector" type="PEEditorInspector" parent="VBoxContainer/TabContainer/Diff/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_lug7k")
 follow_focus = true
 edit_object = SubResource("PlaceholderMaterial_ywma1")
 

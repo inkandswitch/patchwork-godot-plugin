@@ -9,10 +9,9 @@ var godot_project: GodotProject
 @onready var branch_picker: OptionButton = %BranchPicker
 @onready var menu_button: MenuButton = %MenuButton
 @onready var history_list: ItemList = %HistoryList
-#@onready var changed_files_list: ItemList = %ChangedFilesList
-#@onready var changed_files_container: Node = %ChangedFilesContainer
 @onready var user_button: Button = %UserButton
 @onready var inspector: ScrollContainer = %PEEditorInspector
+@onready var highlight_changes_checkbox: CheckBox = %HighlightChangesCheckbox
 
 const TEMP_DIR = "user://tmp"
 
@@ -55,7 +54,6 @@ func _on_scene_saved(path):
 
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
-	branch_picker.item_selected.connect(_on_branch_picker_item_selected)
 	update_ui()
 
 	# @Paul: I think somewhere besides the plugin sidebar gets instantiated. Is this something godot does?
@@ -70,9 +68,57 @@ func _ready() -> void:
 		godot_project.connect("saved_changes", self._update_ui_on_files_changed);
 		godot_project.connect("files_changed", self._update_ui_on_files_changed);
 		godot_project.connect("checked_out_branch", self._update_ui_on_branch_checked_out);
+		
 	var popup = menu_button.get_popup()
 	popup.id_pressed.connect(_on_menu_button_id_pressed)
 	user_button.pressed.connect(_on_user_button_pressed)
+	branch_picker.item_selected.connect(_on_branch_picker_item_selected)
+	highlight_changes_checkbox.toggled.connect(_on_highlight_changes_checkbox_toggled)
+
+
+func _on_menu_button_id_pressed(id: int) -> void:
+	match id:
+		CREATE_BRANCH_IDX:
+			create_new_branch()
+
+		MERGE_BRANCH_IDX:
+			merge_current_branch()
+
+
+func _on_user_button_pressed():
+	var dialog = ConfirmationDialog.new()
+	dialog.title = "Set User Name"
+	
+	var line_edit = LineEdit.new()
+	line_edit.placeholder_text = "User name"
+	line_edit.text = config.get_user_value("user_name", "")
+	dialog.add_child(line_edit)
+	
+	# Position line edit in dialog
+	line_edit.position = Vector2(8, 8)
+	line_edit.size = Vector2(200, 30)
+	
+	# Make dialog big enough for line edit
+	dialog.size = Vector2(220, 100)
+	
+	dialog.get_ok_button().text = "Save"
+	dialog.canceled.connect(func(): dialog.queue_free())
+	
+	dialog.confirmed.connect(func():
+		if line_edit.text.strip_edges() != "":
+			var new_user_name = line_edit.text.strip_edges()
+
+			print(new_user_name)
+			config.set_user_value("user_name", new_user_name)
+			godot_project.set_user_name(new_user_name)
+
+		update_ui()
+		dialog.queue_free()
+	)
+	
+	add_child(dialog)
+	dialog.popup_centered()
+
 
 func _on_branch_picker_item_selected(index: int) -> void:
 	var selected_branch = branches[index]
@@ -99,6 +145,10 @@ func _on_branch_picker_item_selected(index: int) -> void:
 
 	print("picked in branch picker: ", index, " ", selected_branch)
 	checkout_branch(selected_branch.id)
+
+
+func _on_highlight_changes_checkbox_toggled(pressed: bool) -> void:
+	update_ui()
 
 static var void_func = func(): return
 static func popup_box(parent_window: Node, dialog: AcceptDialog, message: String, box_title: String, confirm_func: Callable = void_func, cancel_func: Callable = void_func):
@@ -172,14 +222,6 @@ func ensure_user_has_no_unsaved_files(action: String, callback: Callable):
 		_before_cvs_action(action, callback, false)
 
 
-func _on_menu_button_id_pressed(id: int) -> void:
-	match id:
-		CREATE_BRANCH_IDX:
-			create_new_branch()
-
-		MERGE_BRANCH_IDX:
-			merge_current_branch()
-
 func checkout_branch(branch_id: String) -> void:
 	var message = "checking out"
 
@@ -235,40 +277,6 @@ func merge_current_branch():
 		)
 	)
 
-func _on_user_button_pressed():
-	var dialog = ConfirmationDialog.new()
-	dialog.title = "Set User Name"
-	
-	var line_edit = LineEdit.new()
-	line_edit.placeholder_text = "User name"
-	line_edit.text = config.get_user_value("user_name", "")
-	dialog.add_child(line_edit)
-	
-	# Position line edit in dialog
-	line_edit.position = Vector2(8, 8)
-	line_edit.size = Vector2(200, 30)
-	
-	# Make dialog big enough for line edit
-	dialog.size = Vector2(220, 100)
-	
-	dialog.get_ok_button().text = "Save"
-	dialog.canceled.connect(func(): dialog.queue_free())
-	
-	dialog.confirmed.connect(func():
-		if line_edit.text.strip_edges() != "":
-			var new_user_name = line_edit.text.strip_edges()
-
-			print(new_user_name)
-			config.set_user_value("user_name", new_user_name)
-			godot_project.set_user_name(new_user_name)
-
-		update_ui()
-		dialog.queue_free()
-	)
-	
-	add_child(dialog)
-	dialog.popup_centered()
-
 
 func update_ui() -> void:
 	if not godot_project:
@@ -279,11 +287,17 @@ func update_ui() -> void:
 	# highlight chanages
 	var edited_root = EditorInterface.get_edited_scene_root()
 
-	if edited_root:
-		var edited_scene_file_path = edited_root.scene_file_path
-		var changed_node_paths = godot_project.get_changed_nodes(edited_scene_file_path)
 
-		HighlightChangesLayer.highlight_changes(edited_root, changed_node_paths)
+	if edited_root:
+		if highlight_changes_checkbox.is_pressed():
+				var edited_scene_file_path = edited_root.scene_file_path
+				var changed_node_paths = godot_project.get_changed_nodes(edited_scene_file_path)
+
+				print("adding highlight")
+				HighlightChangesLayer.highlight_changes(edited_root, changed_node_paths)
+		else:
+			print("removing highlight")
+			HighlightChangesLayer.remove_highlight(edited_root)
 
 
 	# update branch picker
@@ -319,20 +333,6 @@ func update_ui() -> void:
 
 
 		history_list.add_item(change_hash + " - " + change_author + " - " + change_timestamp)
-
-
-	# update changed files
-
-	# print("checked_out_branch: ", checked_out_branch)
-
-	# changed_files_container.visible = !checked_out_branch.is_main
-
-	# var changed_files = godot_project.get_changed_files_on_current_branch();
-
-	# changed_files_list.clear()
-
-	# for file in changed_files:
-	# 	changed_files_list.add_item(file)
 
 	# update context menu
 
