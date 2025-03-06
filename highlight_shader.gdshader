@@ -14,10 +14,10 @@ uniform vec4 rectangles[MAX_RECTANGLES];
 uniform int rectangle_count = 0;
 
 // Maximum distance for the opacity transition
-uniform float max_distance = 0.0075;
+uniform float max_distance = 0.0025;
 
 // Sharpness factor for the gradient (higher = sharper)
-uniform float sharpness = 3.0;
+uniform float sharpness = 2.0;
 
 bool point_in_rectangle(vec2 point, vec4 rect) {
     // rect format: (x, y, width, height)
