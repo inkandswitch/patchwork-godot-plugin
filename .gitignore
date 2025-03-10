@@ -333,3 +333,6 @@ external/*
 
 .idea/
 cmake-build-*/
+*.dylib
+*.so
+*.dll
