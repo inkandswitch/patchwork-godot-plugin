@@ -10,7 +10,7 @@ on:
         - "!.github/**"
         - "!.vscode/**"
         - ".github/actions/**"
-        - ".github/workflows/all_builds.yml"
+        - ".github/workflows/**"
     pull_request:
       paths:
         - "**"
@@ -20,7 +20,7 @@ on:
         - "!.github/**"
         - "!.vscode/**"
         - ".github/actions/**"
-        - ".github/workflows/all_builds.yml"
+        - ".github/workflows/**"
 
 concurrency:
   group: ${{ github.ref }}
