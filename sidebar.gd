@@ -194,7 +194,7 @@ func _before_cvs_action_after_save(cvs_action: String, callback: Callable, save:
 
 func _before_cvs_action(cvs_action: String, callback: Callable, save: bool):
 	if not save:
-		_before_cvs_action_after_save(cvs_action, callback, save)
+		add_call_to_queue(self._before_cvs_action_after_save.bind(cvs_action, callback, save))
 		return
 	print("*** Saving all scenes before CVS action %s" % [cvs_action])
 	plugin.file_system.disconnect_from_file_system()
@@ -210,57 +210,82 @@ func _after_cvs_action():
 		current_cvs_action = []
 
 
-func ensure_user_has_no_unsaved_files(action: String, callback: Callable):
-	var message = "You have unsaved files open. Do you want to save them before " + action + "?"
+func ensure_user_has_no_unsaved_files(message: String, callback: Callable):
+	# todo: add back auto save
 	if PatchworkEditor.unsaved_files_open():
-		popup_box(self, $ConfirmationDialog, message, "Unsaved Files", func():
-			$ConfirmationDialog.hide()
-			# todo: auto save is crashing godot so I'm disabling it for now
-			# add_call_to_queue(self._before_cvs_action.bind(action, callback, true))
+		var dialog = AcceptDialog.new()
+		dialog.title = "Unsaved Files"
+		dialog.dialog_text = message
+		dialog.get_ok_button().text = "OK"
+		
+		dialog.confirmed.connect(func():
+			dialog.queue_free()
 		)
+		
+		add_child(dialog)
+		dialog.popup_centered()
+		return
+
 	else:
-		_before_cvs_action(action, callback, false)
+		callback.call()
 
 
 func checkout_branch(branch_id: String) -> void:
-	var message = "checking out"
-
-	ensure_user_has_no_unsaved_files(message, func():
-		godot_project.checkout_branch(branch_id)
-		add_call_to_queue(self._after_cvs_action)
+	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before checking out another branch.", func():
+		_before_cvs_action("checking out", func():
+			godot_project.checkout_branch(branch_id)
+			add_call_to_queue(self._after_cvs_action)
+		, false)
 	)
 
 func create_new_branch() -> void:
 	var message = "creating a new branch"
 
-	ensure_user_has_no_unsaved_files(message, func():
+	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before creating a new branch.", func():
 		var dialog = ConfirmationDialog.new()
 		dialog.title = "Create New Branch"
 		
-		var line_edit = LineEdit.new()
-		line_edit.placeholder_text = "Branch name"
-		dialog.add_child(line_edit)
+		var branch_name_input = LineEdit.new()
+		branch_name_input.placeholder_text = "Branch name"
+		dialog.add_child(branch_name_input)
 		
 		# Position line edit in dialog
-		line_edit.position = Vector2(8, 8)
-		line_edit.size = Vector2(200, 30)
+		branch_name_input.position = Vector2(8, 8)
+		branch_name_input.size = Vector2(200, 30)
 		
 		# Make dialog big enough for line edit
 		dialog.size = Vector2(220, 100)
-		
+	
+
+		# Disable create button if title is empty
+		dialog.get_ok_button().disabled = true
+		branch_name_input.text_changed.connect(func(new_text: String):
+			if new_text.strip_edges() == "":
+				dialog.get_ok_button().disabled = true
+			else:
+				dialog.get_ok_button().disabled = false
+		)
+
 		dialog.get_ok_button().text = "Create"
-		dialog.canceled.connect(func(): dialog.queue_free())
 		
+		dialog.canceled.connect(func(): dialog.queue_free())
+
 		dialog.confirmed.connect(func():
-			if line_edit.text.strip_edges() != "":
-				var new_branch_name = line_edit.text.strip_edges()
-				godot_project.create_branch(new_branch_name)
-			add_call_to_queue(self._after_cvs_action)
+			var new_branch_name = branch_name_input.text.strip_edges()
 			dialog.queue_free()
+
+			_before_cvs_action("creating a new branch", func():
+				godot_project.create_branch(new_branch_name)
+				add_call_to_queue(self._after_cvs_action)
+			, false)
 		)
 
 		add_child(dialog)
+
 		dialog.popup_centered()
+
+		# focus on the branch name input
+		branch_name_input.grab_focus()
 	)
 
 func merge_current_branch():
@@ -269,11 +294,12 @@ func merge_current_branch():
 	if checked_out_branch.is_main:
 		popup_box(self, $ErrorDialog, "Can't merge the main branch!", "Error")
 		return
-	var action = "merging"
-	ensure_user_has_no_unsaved_files(action, func():
+	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before merging.", func():
 		popup_box(self, $ConfirmationDialog, "Are you sure you want to merge \"%s\" into main ?" % [checked_out_branch.name], "Merge Branch", func():
-			godot_project.merge_branch(checked_out_branch.id)
-			add_call_to_queue(self._after_cvs_action)
+			_before_cvs_action("merging", func():
+				godot_project.merge_branch(checked_out_branch.id)
+				add_call_to_queue(self._after_cvs_action)
+			, false)
 		)
 	)
 
