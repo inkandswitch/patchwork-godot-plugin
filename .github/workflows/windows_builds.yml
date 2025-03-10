@@ -5,7 +5,7 @@ on:
 jobs:
   build-windows:
     runs-on: "windows-latest"
-    name: ${{ matrix.dimensions.short }} ${{ matrix.precision }} ${{ matrix.features.name }} ${{ matrix.arch }}
+    name: Windows ${{ matrix.arch }}
     strategy:
       fail-fast: false
       matrix:
@@ -16,37 +16,29 @@ jobs:
         features: [{"feature":"simd-stable,serde-serialize,experimental-threads", "name": "simd-parallel"}, {"feature":"enhanced-determinism,serde-serialize,experimental-threads", "name": "enhanced-determinism"}]
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: blazium-engine/setup-blazium@master
-        name: 🤖 Setup Blazium
-        with:
-          version: 0.1.184-nightly
-      - name: 🔬 Verify Setup
-        run: |
-          Blazium --version
-          echo "GODOT4_BIN=$BLAZIUM_EDITOR" >> $GITHUB_ENV
       - name: Build
-        uses: ./.github/actions/build
+        uses: ./.github/actions/build-plugin
         with:
           arch: ${{ matrix.arch }}
-          features: ${{ matrix.features.feature }},${{ matrix.precision }}-${{ matrix.dimensions.feature }}
+          # features: ${{ matrix.features.feature }},${{ matrix.precision }}-${{ matrix.dimensions.feature }}
       - name: Copy to bin
         shell: sh
         run: |
-          ls target/release
-          mv target/release/godot_rapier.dll bin${{ matrix.dimensions.short }}/addons/godot-rapier${{ matrix.dimensions.short }}/bin/libgodot_rapier.windows.${{ matrix.arch }}.dll
-          mv target/release/godot_rapier.lib bin${{ matrix.dimensions.short }}/addons/godot-rapier${{ matrix.dimensions.short }}/bin/libgodot_rapier.windows.${{ matrix.arch }}.a
+          ls rust/plugin/target/release
+          mkdir -p rust/plugin/windows
+          mv rust/plugin/target/release/patchwork_rust_core.dll rust/plugin/windows/patchwork_rust_core.windows.${{ matrix.arch }}.dll
+          mv rust/plugin/target/release/patchwork_rust_core.lib rust/plugin/windows/patchwork_rust_core.windows.${{ matrix.arch }}.lib
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: godot-rapier-${{ matrix.dimensions.short }}-${{ matrix.precision }}-${{ matrix.features.name }}-${{ matrix.arch }}
+          name: patchwork-godot-dylib-windows-${{ matrix.arch }}
           path: |
-            bin${{ matrix.dimensions.short }}/**/*.dll
+            rust/plugin/windows/*.dll
           if-no-files-found: error
       - name: Upload Static
         uses: actions/upload-artifact@v4
         with:
-          name: static-rapier-${{ matrix.dimensions.short }}-${{ matrix.precision }}-${{ matrix.features.name }}-${{ matrix.arch }}
+          name: patchwork-godot-static-windows-${{ matrix.arch }}
           path: |
-            bin${{ matrix.dimensions.short }}/**/*.a
+            rust/plugin/windows/*.lib
           if-no-files-found: error

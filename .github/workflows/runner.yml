@@ -1,0 +1,41 @@
+# This workflow runs all the rest of the workflows
+name: 🔗 Builds
+on:
+    push:
+      paths:
+        - "**"
+        - "!**.md"
+        - "!LICENSE"
+        - "!.scripts/clang_format.sh"
+        - "!.github/**"
+        - "!.vscode/**"
+        - ".github/actions/**"
+        - ".github/workflows/all_builds.yml"
+    pull_request:
+      paths:
+        - "**"
+        - "!**.md"
+        - "!LICENSE"
+        - "!.scripts/clang_format.sh"
+        - "!.github/**"
+        - "!.vscode/**"
+        - ".github/actions/**"
+        - ".github/workflows/all_builds.yml"
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  editor-builds:
+    name: 📝 Editor All Platforms
+    uses: ./.github/workflows/all_editor_builds.yml
+  macos-plugin-builds:
+    name: 🍎 macOS
+    uses: ./.github/workflows/macos_builds.yml
+  windows-plugin-builds:
+    name: 🏁 Windows
+    uses: ./.github/workflows/windows_builds.yml
+  linux-plugin-builds:
+    name: 🐧 Linux
+    uses: ./.github/workflows/linux_builds.yml
