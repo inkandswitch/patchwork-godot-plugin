@@ -398,6 +398,9 @@ func human_readable_timestamp(timestamp: int) -> String:
 		return str(int(diff / 31536000)) + " years ago"
 
 
+var prev_heads_before
+var prev_heads_after
+
 func update_properties_diff() -> void:
 	var checked_out_branch = godot_project.get_checked_out_branch()
 
@@ -411,13 +414,19 @@ func update_properties_diff() -> void:
 	var change: Array[Dictionary] = godot_project.get_changes()
 	if (change.size() < 2):
 		return
-	var current_hash = godot_project.get_heads()
-	var previous_hash = checked_out_branch.forked_at
+	
 
-	print("current_hash: ", current_hash)
-	print("previous_hash: ", previous_hash)
+	var heads_before = checked_out_branch.forked_at
+	var heads_after = godot_project.get_heads()
 
-	show_diff(previous_hash, current_hash)
+
+	if (prev_heads_before == heads_before && prev_heads_after == heads_after):
+		return
+
+	prev_heads_before = heads_before
+	prev_heads_after = heads_after
+
+	show_diff(heads_before, heads_after)
 
 	_cleanup_inspector(inspector)
 	
@@ -435,9 +444,9 @@ func _cleanup_inspector(node: Node) -> void:
 	for child in node.get_children():
 		_cleanup_inspector(child)
 
-func show_diff(hash1, hash2):
+func show_diff(heads_before, heads_after):
 	# TODO: handle dependencies of these files
-	var diff_dict = godot_project.get_changed_file_content_between(PackedStringArray(hash1), PackedStringArray(hash2))
+	var diff_dict = godot_project.get_changed_file_content_between(PackedStringArray(heads_before), PackedStringArray(heads_after))
 	var files_arr = diff_dict["files"]
 	if files_arr.size() == 0:
 		#print("No changes between %s and %s" % [hash1, hash2])
