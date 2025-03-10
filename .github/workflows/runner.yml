@@ -33,9 +33,54 @@ jobs:
   macos-plugin-builds:
     name: 🍎 macOS
     uses: ./.github/workflows/macos_builds.yml
+    secrets: inherit
+
   windows-plugin-builds:
     name: 🏁 Windows
     uses: ./.github/workflows/windows_builds.yml
   linux-plugin-builds:
     name: 🐧 Linux
     uses: ./.github/workflows/linux_builds.yml
+
+  merge-plugin-builds:
+    runs-on: ubuntu-latest
+    name: Merge
+    needs: [macos-plugin-builds, windows-plugin-builds, linux-plugin-builds]
+    steps:
+      # checkout
+      - uses: actions/checkout@v4
+        with:
+          path: ws/addons
+
+      # just download the artifacts from the macos, windows and linux plugin builds
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: patchwork-godot-*-linux-*
+          path: ws/addons/patchwork-godot-plugin/rust/plugin/linux
+      - name: Download MacOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: patchwork-godot-*-macos-*
+          path: s/addons/patchwork-godot-plugin/rust/plugin/macos/libpatchwork_rust_core.macos.framework
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: patchwork-godot-*-windows-*
+          path: ws/addons/patchwork-godot-plugin/rust/plugin/windows
+      - name: Wut
+        run: |
+          ls -la ws/addons/patchwork-godot-plugin/rust/plugin/linux
+          ls -la ws/addons/patchwork-godot-plugin/rust/plugin/macos/libpatchwork_rust_core.macos.framework
+          ls -la ws/addons/patchwork-godot-plugin/rust/plugin/windows
+      - name: zip
+      # add the entire "addons" folder to the artifacts
+        run: |
+          cd ws
+          zip -r9 patchwork-godot-plugin.zip addons
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          path: ws/patchwork-godot-plugin.zip
+          name: patchwork-godot-plugin
+          
