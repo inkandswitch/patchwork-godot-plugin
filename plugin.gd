@@ -43,8 +43,6 @@ func _enter_tree() -> void:
 	sidebar = preload("res://addons/patchwork/sidebar.tscn").instantiate()
 	sidebar.init(self, godot_project, config)
 	add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
-	if sidebar:
-		sidebar._on_diff_button_pressed()
 
 func init_godot_project():
 	var storage_folder_path = ProjectSettings.globalize_path("res://.patchwork")
@@ -93,8 +91,6 @@ func sync_godot_to_patchwork():
 	godot_project.save_files(files_to_save)
 
 	last_synced_heads = godot_project.get_heads()
-	if sidebar:
-		sidebar._on_diff_button_pressed()
 
 func sync_patchwork_to_godot():
 	if PatchworkEditor.unsaved_files_open():
@@ -153,8 +149,6 @@ func sync_patchwork_to_godot():
 		EditorInterface.get_resource_filesystem().reimport_files(files_to_reimport.keys())
 
 	file_system.connect_to_file_system()
-	if sidebar:
-		sidebar._on_diff_button_pressed()
 
 const BANNED_FILES = [".DS_Store", "thumbs.db", "desktop.ini"] # system files that should be ignored
 
@@ -186,8 +180,6 @@ func _on_local_file_changed(path: String, content: Variant):
 
 		godot_project.save_file(path, content)
 		last_synced_heads = godot_project.get_heads()
-		if sidebar:
-			sidebar._on_diff_button_pressed()
 
 func _exit_tree() -> void:
 	print("exit patchwork!!!")

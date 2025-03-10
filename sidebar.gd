@@ -376,6 +376,9 @@ func update_ui() -> void:
 
 	user_button.text = user_name
 
+	# update properties diff
+	update_properties_diff()
+
 func human_readable_timestamp(timestamp: int) -> String:
 	var now = Time.get_unix_time_from_system() * 1000 # Convert to ms
 	var diff = (now - timestamp) / 1000 # Convert diff to seconds
@@ -396,7 +399,7 @@ func human_readable_timestamp(timestamp: int) -> String:
 		return str(int(diff / 31536000)) + " years ago"
 
 
-func _on_diff_button_pressed() -> void:
+func update_properties_diff() -> void:
 	var checked_out_branch = godot_project.get_checked_out_branch()
 
 	inspector.visible = !checked_out_branch.is_main;
