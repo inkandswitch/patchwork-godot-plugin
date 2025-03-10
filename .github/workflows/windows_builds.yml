@@ -16,6 +16,7 @@ jobs:
         features: [{"feature":"simd-stable,serde-serialize,experimental-threads", "name": "simd-parallel"}, {"feature":"enhanced-determinism,serde-serialize,experimental-threads", "name": "enhanced-determinism"}]
 
     steps:
+      - uses: actions/checkout@v4
       - name: Build
         uses: ./.github/actions/build-plugin
         with:

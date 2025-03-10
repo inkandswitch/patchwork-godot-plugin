@@ -30,7 +30,9 @@ runs:
     - name: Build
       shell: sh
       run: |
+        cd rust/plugin
         cargo build --target=${{ inputs.arch }} --release  ${{ inputs.extra_flags}}
+        cd ../..
     - name: Copy to release
       shell: sh
       run: |
@@ -44,7 +46,9 @@ runs:
       run: |
         mkdir -p rust/plugin/target/release
         rustup target add aarch64-apple-darwin
+        cd rust/plugin
         cargo build --target=aarch64-apple-darwin --release
+        cd ../..
         lipo -create -output rust/plugin/target/release/libpatchwork_rust_core.dylib rust/plugin/target/aarch64-apple-darwin/release/libpatchwork_rust_core.dylib rust/plugin/target/x86_64-apple-darwin/release/libpatchwork_rust_core.dylib
     - name: Move Static Libs macOS
       shell: sh
