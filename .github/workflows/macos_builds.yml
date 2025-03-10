@@ -13,8 +13,6 @@ jobs:
       fail-fast: false
       matrix:
         arch:  ["x86_64-apple-darwin"]
-        # precision: [single] #, double]
-        # features: [{"feature":"simd-stable,serde-serialize,experimental-threads", "name": "simd-parallel"}, {"feature":"enhanced-determinism,serde-serialize,experimental-threads", "name": "enhanced-determinism"}]
 
     steps:
       - uses: actions/checkout@v4
@@ -53,8 +51,8 @@ jobs:
         with:
           name: patchwork-godot-dylib-${{ matrix.arch}}
           path: |
-            bin/**/*.dylib
-            bin/**/CodeResources
+            rust/plugin/macos/**/*.dylib
+            rust/plugin/macos/**/CodeResources
           if-no-files-found: error
 
       - name: Upload Static
@@ -62,5 +60,5 @@ jobs:
         with:
           name: patchwork-godot-static-linux-${{ matrix.arch}}
           path: |
-            bin/**/*.a
+            rust/plugin/macos/**/*.a
           if-no-files-found: error
