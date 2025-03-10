@@ -308,7 +308,6 @@ func update_ui() -> void:
 	if not godot_project:
 		return
 
-
 	var checked_out_branch = godot_project.get_checked_out_branch()
 
 	self.branches = godot_project.get_branches()
@@ -418,12 +417,12 @@ func update_properties_diff() -> void:
 	print("current_hash: ", current_hash)
 	print("previous_hash: ", previous_hash)
 
-	show_diff(previous_hash[0], current_hash[0])
+	show_diff(previous_hash, current_hash)
 	
 	
 func show_diff(hash1, hash2):
 	# TODO: handle dependencies of these files
-	var diff_dict = godot_project.get_changed_file_content_between(PackedStringArray([hash1]), PackedStringArray([hash2]))
+	var diff_dict = godot_project.get_changed_file_content_between(PackedStringArray(hash1), PackedStringArray(hash2))
 	var files_arr = diff_dict["files"]
 	if files_arr.size() == 0:
 		#print("No changes between %s and %s" % [hash1, hash2])
