@@ -1,0 +1,156 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "shell",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"command": "scons",
+			"label": "Build: editor dev_build",
+			"windows": {
+				// optional, uncomment if it has difficulty finding Visual Studio
+				// "options": {
+				// 	"shell": {
+				// 		"executable": "cmd.exe",
+				// 		"args": [
+				// 			"/d",
+				// 			"/c",
+				// 			"\"\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat\" amd64\"",
+				// 			"&"
+				// 		]
+				// 	}
+				// }
+			},
+			"args": [
+				"dev_build=yes",
+				"target=editor",
+				"compiledb=yes",
+				"deprecated=yes",
+				"minizip=yes",
+				"tests=yes"
+			],
+		},
+		{
+			"type": "shell",
+			"group": {
+				"kind": "build",
+				"isDefault": false
+			},
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"command": "scons",
+			"label": "Build: editor dev_build with sanitizers",
+			"args": [
+				"dev_build=yes",
+				"target=editor",
+				"compiledb=yes",
+				"deprecated=yes",
+				"minizip=yes",
+				"tests=yes",
+				"use_asan=yes"
+			],
+		},
+		{
+			"type": "shell",
+			"group": "build",
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"command": "scons",
+			"label": "Build: editor optimized",
+			"args": [
+				"dev_build=no",
+				"debug_symbols=no",
+				"target=editor",
+				"deprecated=yes",
+				"minizip=yes"
+			],
+		},
+		{
+			"type": "shell",
+			"group": "build",
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"label": "Build: template_debug arm64",
+			"linux": {
+				"command": "scons arch=arm64 platform=linuxbsd target=template_debug module_text_server_fb_enabled=yes minizip=yes debug_symbols=yes deprecated=yes optimize=size use_lto=yes use_volk=no no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no",
+			},
+			"osx": {
+				"command": "scons arch=arm64 platform=macos target=template_debug optimize=size use_lto=yes use_volk=no module_text_server_fb_enabled=yes minizip=yes debug_symbols=yes deprecated=yes no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no",
+			},
+			"windows": {
+				"command": "scons arch=arm64 platform=windows target=template_debug module_text_server_fb_enabled=yes minizip=yes deprecated=yes no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no",
+			},
+		},
+		{
+			"type": "shell",
+			"group": "build",
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"label": "Build: template_debug x86_64",
+			"linux": {
+				"command": "scons arch=x86_64 platform=linuxbsd target=template_debug module_text_server_fb_enabled=yes minizip=yes debug_symbols=yes deprecated=yes optimize=size use_lto=yes use_volk=no no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no",
+			},
+			"osx": {
+				"command": "scons arch=x86_64 platform=macos target=template_debug optimize=size use_lto=yes use_volk=no module_text_server_fb_enabled=yes minizip=yes debug_symbols=yes deprecated=yes no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no",
+			},
+			"windows": {
+				"command": "scons arch=x86_64 platform=windows target=template_debug module_text_server_fb_enabled=yes minizip=yes deprecated=yes no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no",
+			},
+		},
+		{
+			"type": "shell",
+			"group": "build",
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"label": "Build: template_release arm64",
+			"linux": {
+				"command": "scons arch=arm64 platform=linuxbsd target=template_release module_text_server_fb_enabled=yes minizip=yes debug_symbols=yes deprecated=yes optimize=size use_lto=yes use_volk=no no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no",
+			},
+			"osx": {
+				"command": "scons arch=arm64 platform=macos target=template_release optimize=size use_lto=yes use_volk=no module_text_server_fb_enabled=yes minizip=yes debug_symbols=yes deprecated=yes no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no",
+			},
+			"windows": {
+				"command": "scons arch=arm64 platform=windows target=template_release module_text_server_fb_enabled=yes minizip=yes deprecated=yes no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no",
+				// Optional, uncomment if it has trouble finding it
+				// "options": {
+				// 	"shell": {
+				// 		"executable": "cmd.exe",
+				// 		"args": [
+				// 			"/d",
+				// 			"/c",
+				// 			"\"\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat\" amd64\"",
+				// 			"&"
+				// 		]
+				// 	}
+				// }
+			},
+		},
+		{
+			"type": "shell",
+			"group": "build",
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"label": "Build: template_release x86_64",
+			"linux": {
+				"command": "scons arch=x86_64 platform=linuxbsd target=template_release module_text_server_fb_enabled=yes minizip=yes debug_symbols=yes deprecated=yes optimize=size use_lto=yes use_volk=no no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no",
+			},
+			"osx": {
+				"command": "scons arch=x86_64 platform=macos target=template_release optimize=size use_lto=yes use_volk=no module_text_server_fb_enabled=yes minizip=yes debug_symbols=yes deprecated=yes no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no",
+			},
+			"windows": {
+				"command": "scons arch=x86_64 platform=windows target=template_release module_text_server_fb_enabled=yes minizip=yes deprecated=yes no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no",
+			},
+		},
+	]
+}
