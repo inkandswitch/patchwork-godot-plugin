@@ -56,18 +56,21 @@ jobs:
       - name: Download Linux artifacts
         uses: actions/download-artifact@v4
         with:
-          name: patchwork-godot-*-linux-*
+          pattern: patchwork-godot-*-linux-*
           path: ws/addons/patchwork-godot-plugin/rust/plugin/linux
+          merge-multiple: true
       - name: Download MacOS artifacts
         uses: actions/download-artifact@v4
         with:
-          name: patchwork-godot-*-macos-*
-          path: s/addons/patchwork-godot-plugin/rust/plugin/macos/libpatchwork_rust_core.macos.framework
+          pattern: patchwork-godot-*-macos-*
+          path: ws/addons/patchwork-godot-plugin/rust/plugin/macos/libpatchwork_rust_core.macos.framework
+          merge-multiple: true
       - name: Download Windows artifacts
         uses: actions/download-artifact@v4
         with:
-          name: patchwork-godot-*-windows-*
+          pattern: patchwork-godot-*-windows-*
           path: ws/addons/patchwork-godot-plugin/rust/plugin/windows
+          merge-multiple: true
       - name: Wut
         run: |
           ls -la ws/addons/patchwork-godot-plugin/rust/plugin/linux
