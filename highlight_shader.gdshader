@@ -2,13 +2,15 @@ shader_type canvas_item;
 
 // Fill color for the background
 uniform vec4 fill_color : source_color = vec4(0.0, 0.0, 0.0, 0.0);
-uniform vec4 highlight_color : source_color = vec4(0.0, 0.0, 0.0, 0.0);
 
 // Maximum number of rectangles we can handle
-const int MAX_RECTANGLES = 2500;
+const int MAX_RECTANGLES = 1250;
 
 // Array of rectangles (x, y, width, height)
 uniform vec4 rectangles[MAX_RECTANGLES];
+
+// Array of colors for each rectangle
+uniform vec4 rectangles_color[MAX_RECTANGLES];
 
 // Number of active rectangles
 uniform int rectangle_count = 0;
@@ -50,14 +52,21 @@ void fragment() {
 
     // Track the minimum distance to any rectangle
     float min_distance = max_distance;
+    
+    // Track the index of the closest rectangle
+    int closest_rect_index = -1;
 
     for (int i = 0; i < rectangle_count; i++) {
         // Calculate distance to this rectangle
         float dist = distance_to_rectangle(UV, rectangles[i]);
-        min_distance = min(min_distance, dist);
+        
+        if (dist < min_distance) {
+            min_distance = dist;
+            closest_rect_index = i;
+        }
     }
 
-    if (min_distance < max_distance) {
+    if (closest_rect_index >= 0 && min_distance < max_distance) {
         // Calculate opacity based on distance
         // The closer to the rectangle, the more transparent
         float opacity_factor = min_distance / max_distance;
@@ -65,9 +74,9 @@ void fragment() {
         // Apply sharpness curve to the opacity transition
         opacity_factor = pow(opacity_factor, sharpness);
 
-        // Create a version of highlight_color with opacity based on distance
-        vec4 adjusted_highlight = highlight_color;
-        adjusted_highlight.a = highlight_color.a * opacity_factor;
+        // Create a version of the closest rectangle's color with opacity based on distance
+        vec4 adjusted_highlight = rectangles_color[closest_rect_index];
+        adjusted_highlight.a = adjusted_highlight.a * opacity_factor;
 
         // Mix between adjusted highlight color and fill color
         color = mix(adjusted_highlight, fill_color, opacity_factor);

@@ -296,10 +296,10 @@ impl GodotProject {
     }
 
     #[func]
-    fn get_changed_nodes(&self, path: String) -> PackedStringArray {
+    fn get_node_changes(&self, path: String) -> Array<Variant> {
         let checked_out_branch_state = match self.get_checked_out_branch_state() {
             Some(branch_state) => branch_state,
-            None => return PackedStringArray::new(),
+            None => return Array::new(),
         };
 
         let heads = checked_out_branch_state.forked_at.clone();
@@ -323,21 +323,55 @@ impl GodotProject {
         ]);
 
         let mut changed_nodes: HashSet<String> = HashSet::new();
+        let mut added_nodes: HashSet<String> = HashSet::new();
 
         for patch in patches {
-            match_path(&path, &patch)
-                .and_then(|path_with_action| path_with_action.path.first().cloned())
-                .inspect(|(_, prop)| {
-                    if let Prop::Map(node_path) = prop {
+            match_path(&path, &patch).inspect(|PathWithAction { path, action }| {
+                match path.first() {
+                    Some((_, Prop::Map(node_path))) => {
                         changed_nodes.insert(node_path.clone());
                     }
-                });
+                    None => {
+                        if let PatchAction::PutMap {
+                            key,
+                            value: _,
+                            conflict: _,
+                        } = action
+                        {
+                            added_nodes.insert(key.clone());
+                        }
+                    }
+                    _ => {}
+                }
+            });
         }
 
-        changed_nodes
-            .into_iter()
-            .map(|s| GString::from(s))
-            .collect()
+        let mut result: Array<Variant> = Array::new();
+
+        for node_path in changed_nodes {
+            // we need to filter out added nodes because they are already in the added_nodes array
+            if !added_nodes.contains(&node_path) {
+                result.push(
+                    &dict! {
+                        "node_path": node_path,
+                        "type": "changed"
+                    }
+                    .to_variant(),
+                );
+            }
+        }
+
+        for node_path in added_nodes {
+            result.push(
+                &dict! {
+                    "node_path": node_path,
+                    "type": "added"
+                }
+                .to_variant(),
+            );
+        }
+
+        result
     }
 
     #[func]

@@ -319,10 +319,10 @@ func update_ui() -> void:
 	if edited_root:
 		if highlight_changes_checkbox.is_pressed() && !checked_out_branch.is_main:
 				var edited_scene_file_path = edited_root.scene_file_path
-				var changed_node_paths = godot_project.get_changed_nodes(edited_scene_file_path)
+				var node_changes = godot_project.get_node_changes(edited_scene_file_path)
 
 				print("adding highlight")
-				HighlightChangesLayer.highlight_changes(edited_root, changed_node_paths)
+				HighlightChangesLayer.highlight_changes(edited_root, node_changes)
 		else:
 			print("removing highlight")
 			HighlightChangesLayer.remove_highlight(edited_root)
