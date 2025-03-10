@@ -27,7 +27,7 @@ env:
   GODOT_BASE_BRANCH: master
   # Change the README too
   GODOT_MAIN_SYNC_REF: 4.3
-  SCONSFLAGS: verbose=yes warnings=all werror=no module_text_server_fb_enabled=yes minizip=yes deprecated=yes
+  SCONSFLAGS: verbose=yes warnings=all werror=no module_text_server_fb_enabled=yes minizip=yes deprecated=yes debug_symbols=no
   SCONSFLAGS_TEMPLATE: no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no
   SCONS_CACHE_MSVC_CONFIG: true
 
@@ -126,17 +126,17 @@ jobs:
         uses: ./.github/actions/godot-build
         if: matrix.platform == 'macos' && matrix.target == 'editor'
         with:
-          sconsflags: arch=arm64 ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }}
+          sconsflags: arch=arm64 ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }} generate_bundle=yes
           platform: ${{ matrix.platform }}
           target: editor
           tests: false
           scons-cache-limit: 4096
 
-      - name: create universal macos editor
+      - name: cleanup macos
         if: matrix.platform == 'macos' && matrix.target == 'editor'
         shell: bash
+        # lipo -create ./bin/godot.macos.${{ matrix.target }}.x86_64 ./bin/godot.macos.${{ matrix.target }}.arm64 -output ./bin/godot.macos.${{ matrix.target }}.universal
         run: |
-          lipo -create ./bin/godot.macos.${{ matrix.target }}.x86_64 ./bin/godot.macos.${{ matrix.target }}.arm64 -output ./bin/godot.macos.${{ matrix.target }}.universal
           rm ./bin/godot.macos.${{ matrix.target }}.x86_64 ./bin/godot.macos.${{ matrix.target }}.arm64
           strip bin/godot.*
           chmod +x bin/godot.*
@@ -148,24 +148,22 @@ jobs:
           cache-name: ${{ matrix.id }}-${{ matrix.target }}
         continue-on-error: true
 
-      - name: Prepare template artifact
+      - name: Prepare artifact
         uses: ./.github/actions/godot-prepare-artifact
 
-      # - name: Make macOS template
-      #   if: matrix.platform == 'macos' && matrix.target == 'template_release'
-      #   run: |
-      #     cp -R "misc/dist/macos_tools.app" "bin/"
-      #     mkdir -p "bin/macos_tools.app/Contents/MacOS"
-      #     lipo -create bin/godot.macos.template_release.x86_64 bin/godot.macos.template_release.arm64 -output bin/godot.macos.template_release.universal
-      #     cp "bin/godot.macos.e.universal" "bin/macos_tools.app/Contents/MacOS/godot_macos_debug.universal"
-      #     cp "bin/godot.macos.template_release.universal" "bin/macos_tools.app/Contents/MacOS/godot_macos_release.universal"
-      #     cd bin/
-      #     zip -r9 "macos.zip" "macos_tools.app/"
-      #     rm -f godot.macos.template_release.universal
-      #     rm -f godot.macos.template_release.x86_64
-      #     rm -f godot.macos.template_release.arm64
-      #     rm -rf "macos_tools.app/"
-      #     cd ..
+      # - name: Mac Sign
+      #   if: matrix.platform == 'macos' && matrix.target == 'editor'
+      #   uses: ./.github/actions/macos-sign
+      #   with:
+      #     FRAMEWORK_PATH: ${{ github.workspace }}/bin/godot_macos_editor.app
+      #     SIGN_FLAGS: "--deep --force --options=runtime --entitlements ${{ github.workspace }}/misc/dist/macos/editor.entitlements"
+      #     APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
+      #     APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+      #     APPLE_DEV_PASSWORD: ${{ secrets.APPLE_DEV_PASSWORD }}
+      #     APPLE_DEV_ID: ${{ secrets.APPLE_DEV_ID }}
+      #     APPLE_DEV_TEAM_ID: ${{ secrets.APPLE_DEV_TEAM_ID }}
+      #     APPLE_DEV_APP_ID: ${{ secrets.APPLE_DEV_APP_ID }}
+
 
       - uses: actions/upload-artifact@v4
         if: matrix.id != 'linux-sanitizers'
