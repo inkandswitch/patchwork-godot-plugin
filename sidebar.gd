@@ -418,8 +418,23 @@ func update_properties_diff() -> void:
 	print("previous_hash: ", previous_hash)
 
 	show_diff(previous_hash, current_hash)
+
+	_cleanup_inspector(inspector)
 	
-	
+
+# hides the extra nodes in the inspector that we don't want to show
+# this happens because we just use the existing inspector to show the diff
+func _cleanup_inspector(node: Node) -> void:
+	var tooltip_text = node.get("tooltip_text")
+
+	if (tooltip_text == "." || tooltip_text == "Resource"):
+		node.visible = false
+		return
+
+
+	for child in node.get_children():
+		_cleanup_inspector(child)
+
 func show_diff(hash1, hash2):
 	# TODO: handle dependencies of these files
 	var diff_dict = godot_project.get_changed_file_content_between(PackedStringArray(hash1), PackedStringArray(hash2))
