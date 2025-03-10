@@ -1,6 +1,6 @@
 [gd_scene load_steps=6 format=3 uid="uid://cxyjgsyba1v85"]
 
-[ext_resource type="Script" path="res://addons/patchwork/sidebar.gd" id="1_ebh36"]
+[ext_resource type="Script" path="res://addons/patchwork/gdscript/sidebar.gd" id="1_ebh36"]
 [ext_resource type="Texture2D" uid="uid://ymewwqpn0vi4" path="res://addons/patchwork/icons/GuiTabMenuHl.svg" id="2_rfxbe"]
 [ext_resource type="Texture2D" uid="uid://xec6o14n4y2v" path="res://addons/patchwork/icons/person.svg" id="3_m2w8q"]
 
