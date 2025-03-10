@@ -8,64 +8,59 @@ env:
 jobs:
   macos:
     runs-on: "macos-latest"
-    name: ${{ matrix.dimensions.short }} ${{ matrix.precision }} ${{ matrix.features.name }} ${{ matrix.arch }}
+    name:  ${{ matrix.arch }}
     strategy:
       fail-fast: false
       matrix:
         arch:  ["x86_64-apple-darwin"]
-        precision: [single] #, double]
-        dimensions: [{"feature": "dim2", "short": "2d"}, {"feature": "dim3", "short": "3d"}]
-        features: [{"feature":"simd-stable,serde-serialize,experimental-threads", "name": "simd-parallel"}, {"feature":"enhanced-determinism,serde-serialize,experimental-threads", "name": "enhanced-determinism"}]
+        # precision: [single] #, double]
+        # features: [{"feature":"simd-stable,serde-serialize,experimental-threads", "name": "simd-parallel"}, {"feature":"enhanced-determinism,serde-serialize,experimental-threads", "name": "enhanced-determinism"}]
 
     steps:
       - uses: actions/checkout@v4
-      - uses: blazium-engine/setup-blazium@master
-        name: 🤖 Setup Blazium
-        with:
-          version: 0.1.184-nightly
-      - name: 🔬 Verify Setup
-        run: |
-          Blazium --version
-          echo "GODOT4_BIN=$BLAZIUM_EDITOR" >> $GITHUB_ENV
       - name: Build
-        uses: ./.github/actions/build
+        uses: ./.github/actions/build-plugin
         with:
           arch: ${{ matrix.arch }}
-          features: ${{ matrix.features.feature }},${{ matrix.precision }}-${{ matrix.dimensions.feature }}
+          # features: ${{ matrix.features.feature }},${{ matrix.precision }}-${{ matrix.dimensions.feature }}
       - name: Copy to bin
         shell: sh
         run: |
-          mv target/release/libgodot_rapier.dylib bin${{ matrix.dimensions.short }}/addons/godot-rapier${{ matrix.dimensions.short }}/bin/libgodot_rapier.macos.framework/libgodot_rapier.macos.dylib
-      - name: Mac Sign
-        uses: ughuuu/godot-cpp-template/.github/actions/sign@add-more-stuff/options-to-build
-        with:
-          FRAMEWORK_PATH: bin${{ matrix.dimensions.short }}/addons/godot-rapier${{ matrix.dimensions.short }}/bin/libgodot_rapier.macos.framework
-          SIGN_FLAGS: "--deep"
-          APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
-          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
-          APPLE_DEV_PASSWORD: ${{ secrets.APPLE_DEV_PASSWORD }}
-          APPLE_DEV_ID: ${{ secrets.APPLE_DEV_ID }}
-          APPLE_DEV_TEAM_ID: ${{ secrets.APPLE_DEV_TEAM_ID }}
-          APPLE_DEV_APP_ID: ${{ secrets.APPLE_DEV_APP_ID }}
+          mkdir -p rust/plugin/macos/libpatchwork_rust_core.macos.framework
+          mv rust/plugin/target/release/libpatchwork_rust_core.dylib rust/plugin/macos/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.dylib
+
+      # TODO: ENABLE THIS!!!
+      # - name: Mac Sign
+      #   uses: ./.github/actions/macos-sign
+      #   with:
+      #     FRAMEWORK_PATH: rust/plugin/libpatchwork_rust_core.macos.framework
+      #     SIGN_FLAGS: "--deep"
+      #     APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
+      #     APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+      #     APPLE_DEV_PASSWORD: ${{ secrets.APPLE_DEV_PASSWORD }}
+      #     APPLE_DEV_ID: ${{ secrets.APPLE_DEV_ID }}
+      #     APPLE_DEV_TEAM_ID: ${{ secrets.APPLE_DEV_TEAM_ID }}
+      #     APPLE_DEV_APP_ID: ${{ secrets.APPLE_DEV_APP_ID }}
         if: github.ref == 'refs/heads/main'
       - name: Copy to bin
         shell: sh
         run: |
-          mv target/release/libgodot_rapier.arm64.a bin${{ matrix.dimensions.short }}/addons/godot-rapier${{ matrix.dimensions.short }}/bin/libgodot_rapier.macos.framework/libgodot_rapier.macos.arm64.a
-          mv target/release/libgodot_rapier.x86_64.a bin${{ matrix.dimensions.short }}/addons/godot-rapier${{ matrix.dimensions.short }}/bin/libgodot_rapier.macos.framework/libgodot_rapier.macos.x86_64.a
+          mkdir -p rust/plugin/macos/libpatchwork_rust_core.macos.framework
+          mv rust/plugin/target/release/libpatchwork_rust_core.arm64.a rust/plugin/macos/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.arm64.a
+          mv rust/plugin/target/release/libpatchwork_rust_core.x86_64.a rust/plugin/macos/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.x86_64.a
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: godot-rapier-${{ matrix.dimensions.short }}-${{ matrix.precision }}-${{ matrix.features.name }}-${{ matrix.arch}}
+          name: patchwork-godot-dylib-${{ matrix.arch}}
           path: |
-            bin${{ matrix.dimensions.short }}/**/*.dylib
-            bin${{ matrix.dimensions.short }}/**/CodeResources
+            bin/**/*.dylib
+            bin/**/CodeResources
           if-no-files-found: error
 
       - name: Upload Static
         uses: actions/upload-artifact@v4
         with:
-          name: static-rapier-${{ matrix.dimensions.short }}-${{ matrix.precision }}-${{ matrix.features.name }}-${{ matrix.arch}}
+          name: patchwork-godot-static-linux-${{ matrix.arch}}
           path: |
-            bin${{ matrix.dimensions.short }}/**/*.a
+            bin/**/*.a
           if-no-files-found: error

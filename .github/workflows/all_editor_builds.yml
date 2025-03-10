@@ -1,25 +1,6 @@
-name: Build Editor and Standalone
+name: Build Editor All Platforms
 on:
-  push:
-    paths:
-      - "**"
-      - "!**.md"
-      - "!LICENSE"
-      - "!.scripts/clang_format.sh"
-      - "!.github/**"
-      - "!.vscode/**"
-      - ".github/actions/**"
-      - ".github/workflows/all_builds.yml"
-  pull_request:
-    paths:
-      - "**"
-      - "!**.md"
-      - "!LICENSE"
-      - "!.scripts/clang_format.sh"
-      - "!.github/**"
-      - "!.vscode/**"
-      - ".github/actions/**"
-      - ".github/workflows/all_builds.yml"
+  workflow_call:
 
 # Global Settings
 # SCONS_CACHE for windows must be set in the build environment
@@ -151,6 +132,7 @@ jobs:
       - name: Prepare artifact
         uses: ./.github/actions/godot-prepare-artifact
 
+      # TODO: Enable this!!!
       # - name: Mac Sign
       #   if: matrix.platform == 'macos' && matrix.target == 'editor'
       #   uses: ./.github/actions/macos-sign
@@ -168,7 +150,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: matrix.id != 'linux-sanitizers'
         with:
-          name: patchwork_editor-${{ matrix.target }}-${{ matrix.platform }}
+          name: patchwork_editor-${{ matrix.platform }}
           path: ${{github.workspace}}/bin/*
           retention-days: 90
 
@@ -239,17 +221,17 @@ jobs:
       - name: Download Linux artifact
         uses: actions/download-artifact@v4
         with:
-          name: patchwork_editor-standalone-linux
+          name: patchwork_editor-linux
           path: artifacts/linux
       - name: Download MacOS artifact
         uses: actions/download-artifact@v4
         with:
-          name: patchwork_editor-standalone-macos
+          name: patchwork_editor-macos
           path: artifacts/macos
       - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
-          name: patchwork_editor-standalone-windows
+          name: patchwork_editor-windows
           path: artifacts/windows
       - name: Zip artifacts
         run: |

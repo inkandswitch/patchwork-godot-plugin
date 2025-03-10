@@ -12,7 +12,7 @@ autolib = true
 
 [lib]
 name = "patchwork_rust_core"
-crate-type = ["dylib"]
+crate-type = ["cdylib", "staticlib"]
 bench = false
 doc = false
 
