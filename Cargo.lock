@@ -107,8 +107,8 @@ dependencies = [
 
 [[package]]
 name = "automerge_repo"
-version = "0.2.0"
-source = "git+https://github.com/nikitalita/automerge-repo-rs?branch=automerge-0.6.0#669d96ccdfa2365aaab82b24fbe72fe55d96869c"
+version = "0.2.1"
+source = "git+https://github.com/automerge/automerge-repo-rs?rev=e1a4f55b0bba6cadcdd20e6ca50e6ae0d487e2dc#e1a4f55b0bba6cadcdd20e6ca50e6ae0d487e2dc"
 dependencies = [
  "automerge",
  "bs58",
@@ -130,9 +130,9 @@ dependencies = [
 
 [[package]]
 name = "autosurgeon"
-version = "0.8.6"
+version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "680a8def5dd4c71ee95cc6529b4a74b4ecd669f45b2203d9e91c3a0cfc6339a1"
+checksum = "bb09e782087199bfbea2848b7dc808a93eaaf9a185d2706a6efabc7e606fcb04"
 dependencies = [
  "automerge",
  "autosurgeon-derive",
@@ -231,6 +231,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f61dac84819c6588b558454b194026eb1f09c293b9036ae9b159e74e73ab6cf9"
 
 [[package]]
+name = "cargo-post"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b7068fc67d8efb0811fce39b516541919820743d3c3d22a80df3b9cb33e6d078"
+dependencies = [
+ "cargo_metadata",
+ "toml 0.5.11",
+]
+
+[[package]]
+name = "cargo_metadata"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "178d62b240c34223f265a4c1e275e37d62da163d421fc8d7f7e3ee340f803c57"
+dependencies = [
+ "error-chain",
+ "semver",
+ "serde",
+ "serde_derive",
+ "serde_json",
+]
+
+[[package]]
 name = "cbindgen"
 version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -246,7 +269,7 @@ dependencies = [
  "serde_json",
  "syn 2.0.98",
  "tempfile",
- "toml",
+ "toml 0.8.20",
 ]
 
 [[package]]
@@ -370,6 +393,15 @@ checksum = "33d852cb9b869c2a9b3df2f71a3074817f01e1844f839a144f5fcef059a4eb5d"
 dependencies = [
  "libc",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "error-chain"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d2f06b9cac1506ece98fe3231e3cc9c4410ec3d5b1f24ae1c8946f0742cdefc"
+dependencies = [
+ "version_check",
 ]
 
 [[package]]
@@ -523,9 +555,8 @@ dependencies = [
 
 [[package]]
 name = "gdextension-api"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af8707eca996b28193b772a4a9a28a97364bb93c97e3c313542e812f2963fb93"
+version = "0.2.2"
+source = "git+https://github.com/godot-rust/godot4-prebuilt?branch=releases#09432b4c2c16f044f0296f96512661ea106003ff"
 
 [[package]]
 name = "generic-array"
@@ -586,9 +617,8 @@ checksum = "779ae4bf7e8421cf91c0b3b64e7e8b40b862fba4d393f59150042de7c4965a94"
 
 [[package]]
 name = "godot"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6985eb6c22a0370c40d67db1f225f62222a2e04966f76d0beb53245e745744fa"
+version = "0.2.4"
+source = "git+https://github.com/godot-rust/gdext?branch=master#da23b37e1f253e1a8ce356fc027df4e5122183a0"
 dependencies = [
  "godot-core",
  "godot-macros",
@@ -596,24 +626,21 @@ dependencies = [
 
 [[package]]
 name = "godot-bindings"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77d85815de344b419513c9854b82c49aad45c7dd9fa4fcc10302aaf6ce6e07c7"
+version = "0.2.4"
+source = "git+https://github.com/godot-rust/gdext?branch=master#da23b37e1f253e1a8ce356fc027df4e5122183a0"
 dependencies = [
  "gdextension-api",
 ]
 
 [[package]]
 name = "godot-cell"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4750f0da2c2286f8a0f1e2b0aeb5adb2178251086119e1a96186c34cd8857ba1"
+version = "0.2.4"
+source = "git+https://github.com/godot-rust/gdext?branch=master#da23b37e1f253e1a8ce356fc027df4e5122183a0"
 
 [[package]]
 name = "godot-codegen"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fd9382da869c3e5f4ba9614f43157bb96f5acf3d1f8341bc25147b7aeebd49a"
+version = "0.2.4"
+source = "git+https://github.com/godot-rust/gdext?branch=master#da23b37e1f253e1a8ce356fc027df4e5122183a0"
 dependencies = [
  "godot-bindings",
  "heck 0.5.0",
@@ -625,9 +652,8 @@ dependencies = [
 
 [[package]]
 name = "godot-core"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7d014ea57227d84955d9db7bba53654e5e9040f3b5a41d6aad370707cad5b7a"
+version = "0.2.4"
+source = "git+https://github.com/godot-rust/gdext?branch=master#da23b37e1f253e1a8ce356fc027df4e5122183a0"
 dependencies = [
  "glam",
  "godot-bindings",
@@ -638,9 +664,8 @@ dependencies = [
 
 [[package]]
 name = "godot-ffi"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a93bc8ea912fc629cc7c6ad889f919e99b4e7f32cd912cc65b9be2a986dc6eb"
+version = "0.2.4"
+source = "git+https://github.com/godot-rust/gdext?branch=master#da23b37e1f253e1a8ce356fc027df4e5122183a0"
 dependencies = [
  "gensym",
  "godot-bindings",
@@ -651,9 +676,8 @@ dependencies = [
 
 [[package]]
 name = "godot-macros"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66b16a49485735010c107030dc2e9fa8701fb3bf45194e34b14d1305ad5a8b4f"
+version = "0.2.4"
+source = "git+https://github.com/godot-rust/gdext?branch=master#da23b37e1f253e1a8ce356fc027df4e5122183a0"
 dependencies = [
  "godot-bindings",
  "proc-macro2",
@@ -924,10 +948,12 @@ dependencies = [
  "automerge",
  "automerge_repo",
  "autosurgeon",
+ "cargo-post",
  "cbindgen",
  "futures",
  "godot",
  "safer-ffi",
+ "serde_json",
  "tokio",
  "tracing-subscriber",
  "tree-sitter",
@@ -1151,6 +1177,22 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "semver"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d7eb9ef2c18661902cc47e535f9bc51b78acd254da71d375c2f6720d9a40403"
+dependencies = [
+ "semver-parser",
+ "serde",
+]
+
+[[package]]
+name = "semver-parser"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
 
 [[package]]
 name = "serde"
@@ -1455,6 +1497,15 @@ dependencies = [
  "futures-sink",
  "pin-project-lite",
  "tokio",
+]
+
+[[package]]
+name = "toml"
+version = "0.5.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4f7f0dd8d50a853a531c426359045b1998f04219d88799810762cd4ad314234"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

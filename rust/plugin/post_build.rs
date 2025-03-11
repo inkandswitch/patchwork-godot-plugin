@@ -10,9 +10,12 @@ use std::process::Command;
 
 fn after_build(){
     // source the .lastbuild file
-    let cwd = env::var("CRATE_MANIFEST_DIR").unwrap();
-    let cwd_path = Path::new(&cwd);
-    let lastbuild = fs::read_to_string(cwd_path.join("target/.lastbuild")).unwrap();
+    let target_dir = env::var("CRATE_TARGET_DIR").unwrap();
+    let crate_dir = env::var("CRATE_MANIFEST_DIR").unwrap();
+    println!("cargo:warning=TARGET_DIR={}", target_dir);
+    println!("cargo:warning=CWD={}", crate_dir);
+    let crate_dir_path = Path::new(&crate_dir);
+    let lastbuild = fs::read_to_string(Path::new(&target_dir).join(".lastbuild")).unwrap();
 
     // is_ok and is 1
     let isCI = env::var("CI").is_ok() && env::var("CI").unwrap() == "1";
@@ -26,7 +29,7 @@ fn after_build(){
     println!("cargo:warning=OUT_DIR={}", out_dir);
     println!("cargo:warning=PROFILE={}", profile);
     println!("cargo:warning=TARGET={}", target);
-    println!("cargo:warning=CWD={}", cwd);
+    println!("cargo:warning=CWD={}", crate_dir);
 
     // arch is x86_64 or arm64 depending on the target
     let arch_macos = if target.contains("x86_64") {
@@ -47,8 +50,8 @@ fn after_build(){
     } else {
         panic!("Unsupported target platform: {}", target);
     };
-    let target_dir = Path::new(&out_dir).parent().unwrap().parent().unwrap().parent().unwrap();
-    let mut target_dirs = vec![target_dir.to_path_buf()];
+    let profile_dir = Path::new(&out_dir).parent().unwrap().parent().unwrap().parent().unwrap();
+    let mut target_dirs = vec![profile_dir.to_path_buf()];
     let mut targets = vec![target];
     // Get the library name and extension based on platform
     let (lib_name, lib_dll_ext, lib_a_ext) = if target.contains("windows") {
@@ -69,10 +72,10 @@ fn after_build(){
     //     targets.push(new_target);
     //     // run cargo post build with all the arguments from the .lastbuild file, including the profile, except change the target to x86_64-apple-darwin
     //     // set the output directory to the target directory + /target triplet
-    //     // target_dir is set to something like "rust/plugin/target/debug"
+    //     // profile_dir is set to something like "rust/plugin/target/debug"
     //     // the new_Dir is gonna be "rust/plugin/target/x86_64-apple-darwin/debug"
     //     // so we need to get a
-    //     let new_dir = target_dir.parent().unwrap().join(new_target).join(profile);
+    //     let new_dir = profile_dir.parent().unwrap().join(new_target).join(profile);
     //     let mut args = vec!["build", "--lib", "--target", new_target];
     //     // check if it's a release build, and if so, add the --release flag
     //     if profile == "release" {
@@ -89,7 +92,7 @@ fn after_build(){
     //     // then just run cargo with those args
     //     let output = Command::new(&cargo_location)
     //         .args(&args)
-    //         .current_dir(cwd)
+    //         .current_dir(crate_dir)
     //         .output()
     //         .unwrap();
     //     println!("cargo:warning=Ran cargo post build with args: {:?}", args);
@@ -110,16 +113,16 @@ fn after_build(){
 
     // for all the target_dirs, copy the library to the platform-specific directory
     let size = target_dirs.len();
-    for (i, target_dir) in target_dirs.iter().enumerate() {
+    for (i, profile_dir) in target_dirs.iter().enumerate() {
         // Construct paths
-        let dll_lib_path = target_dir.join(format!("{}.{}", lib_name, lib_dll_ext));
-        let a_lib_path = target_dir.join(format!("{}.{}", lib_name, lib_a_ext));
+        let dll_lib_path = profile_dir.join(format!("{}.{}", lib_name, lib_dll_ext));
+        let a_lib_path = profile_dir.join(format!("{}.{}", lib_name, lib_a_ext));
 
-        let platform_dir = Path::new(&cwd_path).join(platform_name);
+        let platform_dir = Path::new(&crate_dir_path).join(platform_name);
 
         // Create platform directory if it doesn't exist
         fs::create_dir_all(&platform_dir).unwrap();
-        println!("cargo:warning=target_dir directory {:?}", target_dir);
+        println!("cargo:warning=profile_dir directory {:?}", profile_dir);
         // Copy the library to the platform-specific directory
         println!("cargo:warning=Copying library from {:?} to {:?}", dll_lib_path, platform_dir);
         println!("cargo:warning=Copying library from {:?} to {:?}", a_lib_path, platform_dir);
