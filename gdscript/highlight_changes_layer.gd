@@ -23,7 +23,7 @@ func _ready():
 	
 	# Create and assign the shader material
 	shader_material = ShaderMaterial.new()
-	var shader = load("res://addons/patchwork/highlight_shader.gdshader")
+	var shader = load("res://addons/patchwork/gdscript/highlight_shader.gdshader")
 	shader_material.shader = shader
 	color_rect.material = shader_material
 
@@ -116,14 +116,14 @@ static func _get_node_bounding_box(node: Node):
 		
 		if shape is CircleShape2D:
 			var radius = shape.radius
-			rect = Rect2(- radius, - radius, radius * 2, radius * 2)
+			rect = Rect2(-radius, -radius, radius * 2, radius * 2)
 		elif shape is RectangleShape2D:
 			var extents = shape.extents
-			rect = Rect2(- extents.x, - extents.y, extents.x * 2, extents.y * 2)
+			rect = Rect2(-extents.x, -extents.y, extents.x * 2, extents.y * 2)
 		elif shape is CapsuleShape2D:
 			var radius = shape.radius
 			var height = shape.height
-			rect = Rect2(- radius, - height / 2 - radius, radius * 2, height + radius * 2)
+			rect = Rect2(-radius, -height / 2 - radius, radius * 2, height + radius * 2)
 		
 		# Convert to global coordinates
 		var transform = node.get_global_transform()
