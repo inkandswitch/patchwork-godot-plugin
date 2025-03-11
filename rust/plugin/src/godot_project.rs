@@ -716,6 +716,16 @@ impl GodotProject {
             .collect::<Vec<Dictionary>>();
 
         branches.sort_by(|a, b| {
+            let a_is_main = a.get("is_main").unwrap().to::<bool>();
+            let b_is_main = b.get("is_main").unwrap().to::<bool>();
+
+            if a_is_main && !b_is_main {
+                return std::cmp::Ordering::Less;
+            }
+            if !a_is_main && b_is_main {
+                return std::cmp::Ordering::Greater;
+            }
+
             let name_a = a.get("name").unwrap().to_string().to_lowercase();
             let name_b = b.get("name").unwrap().to_string().to_lowercase();
             name_a.cmp(&name_b)
