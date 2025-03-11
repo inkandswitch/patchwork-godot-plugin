@@ -72,8 +72,8 @@ fn after_build(){
     //     targets.push(new_target);
     //     // run cargo post build with all the arguments from the .lastbuild file, including the profile, except change the target to x86_64-apple-darwin
     //     // set the output directory to the target directory + /target triplet
-    //     // profile_dir is set to something like "rust/plugin/target/debug"
-    //     // the new_Dir is gonna be "rust/plugin/target/x86_64-apple-darwin/debug"
+    //     // profile_dir is set to something like "target/debug"
+    //     // the new_Dir is gonna be "target/x86_64-apple-darwin/debug"
     //     // so we need to get a
     //     let new_dir = profile_dir.parent().unwrap().join(new_target).join(profile);
     //     let mut args = vec!["build", "--lib", "--target", new_target];
