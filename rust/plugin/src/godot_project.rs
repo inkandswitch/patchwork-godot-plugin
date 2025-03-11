@@ -697,7 +697,8 @@ impl GodotProject {
 
     #[func]
     fn get_branches(&self) -> Array<Dictionary> /* { name: String, id: String }[] */ {
-        self.branch_states
+        let mut branches = self
+            .branch_states
             .values()
             .map(|branch_state| {
                 dict! {
@@ -712,7 +713,15 @@ impl GodotProject {
                     "is_not_loaded": branch_state.doc_handle.with_doc(|d| d.get_heads().len() == 0),
                 }
             })
-            .collect()
+            .collect::<Vec<Dictionary>>();
+
+        branches.sort_by(|a, b| {
+            let name_a = a.get("name").unwrap().to_string().to_lowercase();
+            let name_b = b.get("name").unwrap().to_string().to_lowercase();
+            name_a.cmp(&name_b)
+        });
+
+        Array::from_iter(branches)
     }
 
     #[func]
