@@ -1,0 +1,89 @@
+# This workflow runs all the rest of the workflows
+name: 🔗 Builds
+on:
+    push:
+      paths:
+        - "**"
+        - "!**.md"
+        - "!LICENSE"
+        - "!.scripts/clang_format.sh"
+        - "!.github/**"
+        - "!.vscode/**"
+        - ".github/actions/**"
+        - ".github/workflows/**"
+    pull_request:
+      paths:
+        - "**"
+        - "!**.md"
+        - "!LICENSE"
+        - "!.scripts/clang_format.sh"
+        - "!.github/**"
+        - "!.vscode/**"
+        - ".github/actions/**"
+        - ".github/workflows/**"
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  editor-builds:
+    name: 📝 Editor All Platforms
+    uses: ./.github/workflows/all_editor_builds.yml
+  macos-plugin-builds:
+    name: 🍎 macOS
+    uses: ./.github/workflows/macos_builds.yml
+    secrets: inherit
+
+  windows-plugin-builds:
+    name: 🏁 Windows
+    uses: ./.github/workflows/windows_builds.yml
+  linux-plugin-builds:
+    name: 🐧 Linux
+    uses: ./.github/workflows/linux_builds.yml
+
+  merge-plugin-builds:
+    runs-on: ubuntu-latest
+    name: Merge
+    needs: [macos-plugin-builds, windows-plugin-builds, linux-plugin-builds]
+    steps:
+      # checkout
+      - uses: actions/checkout@v4
+        with:
+          path: ws/addons/patchwork
+
+      # just download the artifacts from the macos, windows and linux plugin builds
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: patchwork-godot-*-linux-*
+          path: ws/addons/patchwork/rust/plugin/linux
+          merge-multiple: true
+      - name: Download MacOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: patchwork-godot-*-macos-*
+          path: ws/addons/patchwork/rust/plugin/macos/libpatchwork_rust_core.macos.framework
+          merge-multiple: true
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: patchwork-godot-*-windows-*
+          path: ws/addons/patchwork/rust/plugin/windows
+          merge-multiple: true
+      - name: Wut
+        run: |
+          ls -la ws/addons/patchwork/rust/plugin/linux || echo "No linux artifacts"
+          ls -la ws/addons/patchwork/rust/plugin/macos/libpatchwork_rust_core.macos.framework || echo "No macos artifacts"
+          ls -la ws/addons/patchwork/rust/plugin/windows || echo "No windows artifacts"
+      - name: zip
+      # add the entire "addons" folder to the artifacts
+        run: |
+          cd ws
+          zip -r9 patchwork-godot-plugin.zip addons
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          path: ws/patchwork-godot-plugin.zip
+          name: patchwork-godot-plugin
+          

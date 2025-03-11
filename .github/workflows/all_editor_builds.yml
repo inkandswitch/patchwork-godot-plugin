@@ -1,0 +1,251 @@
+name: Build Editor All Platforms
+on:
+  workflow_call:
+
+# Global Settings
+# SCONS_CACHE for windows must be set in the build environment
+env:
+  GODOT_BASE_BRANCH: master
+  # Change the README too
+  GODOT_MAIN_SYNC_REF: 4.3
+  SCONSFLAGS: verbose=yes warnings=all werror=no module_text_server_fb_enabled=yes minizip=yes deprecated=yes debug_symbols=no
+  SCONSFLAGS_TEMPLATE: no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no
+  SCONS_CACHE_MSVC_CONFIG: true
+
+concurrency:
+  group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Windows 10 with latest image
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "Windows Editor"
+            os: "windows-latest"
+            id: windows-editor
+            platform: windows
+            target: editor
+            sconsflags: debug_symbols=no tests=yes
+            bin: ./bin/godot.windows.editor.x86_64.exe
+
+          - name: "🐧 Linux Editor"
+            os: "ubuntu-22.04"
+            id: linux-editor
+            platform: linux
+            target: editor
+            sconsflags: debug_symbols=no tests=yes
+            sconsflags-template: debug_symbols=no optimize=size use_lto=yes
+            bin: ./bin/godot.linuxbsd.editor.x86_64
+
+          - name: "🍎 macOS Editor"
+            os: "macos-latest"
+            id: macos-editor
+            platform: macos
+            target: editor
+            sconsflags: debug_symbols=no tests=yes use_volk=no vulkan_sdk_path=$VULKAN_SDK_PATH use_lto=yes generate_bundle=yes
+            bin: ./bin/godot.macos.editor.arm64
+
+    steps:
+      - name: checkout-godot
+        uses: actions/checkout@v4
+        with:
+          repository: godotengine/godot
+          ref: ${{env.GODOT_MAIN_SYNC_REF}}
+
+      - name: checkout-patchwork_editor
+        uses: actions/checkout@v4
+        with:
+          path: modules/patchwork_editor
+          fetch-depth: 0
+
+      - name: copy actions
+        shell: bash
+        run: |
+          cp -R modules/patchwork_editor/.github/actions/* .github/actions/
+
+      - name: Restore Godot build cache
+        uses: ./.github/actions/godot-cache-restore
+        id: restore-cache
+        with:
+          cache-name: ${{ matrix.id }}-${{ matrix.target }}
+        continue-on-error: true
+
+      - name: Install Linux deps
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install build-essential pkg-config libx11-dev libxcursor-dev \
+            libxinerama-dev libgl1-mesa-dev libglu-dev libasound2-dev libpulse-dev \
+            libudev-dev libxi-dev libxrandr-dev yasm clang-format libwayland-bin
+          sudo apt-get install libwayland-bin
+
+      - name: Setup python and scons
+        uses: ./.github/actions/godot-deps
+
+      - name: Setup Vulkan SDK
+        if: matrix.platform == 'macos'
+        run: |
+          sh misc/scripts/install_vulkan_sdk_macos.sh
+
+      - name: Compile Editor (x86_64)
+        if: matrix.target == 'editor'
+        id: compile-editor
+        uses: ./.github/actions/godot-build
+        with:
+          sconsflags: arch=x86_64 ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }}
+          platform: ${{ matrix.platform }}
+          target: editor
+          tests: false
+          scons-cache-limit: 4096
+
+      - name: Compile Editor for macos arm64
+        uses: ./.github/actions/godot-build
+        if: matrix.platform == 'macos' && matrix.target == 'editor'
+        with:
+          sconsflags: arch=arm64 ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }} generate_bundle=yes
+          platform: ${{ matrix.platform }}
+          target: editor
+          tests: false
+          scons-cache-limit: 4096
+
+      - name: cleanup macos
+        if: matrix.platform == 'macos' && matrix.target == 'editor'
+        shell: bash
+        # lipo -create ./bin/godot.macos.${{ matrix.target }}.x86_64 ./bin/godot.macos.${{ matrix.target }}.arm64 -output ./bin/godot.macos.${{ matrix.target }}.universal
+        run: |
+          rm ./bin/godot.macos.${{ matrix.target }}.x86_64 ./bin/godot.macos.${{ matrix.target }}.arm64
+          strip bin/godot.*
+          chmod +x bin/godot.*
+
+      - name: Save Godot build cache
+        # if: success() || (steps.restore-cache.outputs.cache-hit == 'false' && (steps.compile-editor.outcome != 'skipped' || steps.compile-template.outcome != 'skipped'))
+        uses: ./.github/actions/godot-cache-save
+        with:
+          cache-name: ${{ matrix.id }}-${{ matrix.target }}
+        continue-on-error: true
+
+      - name: Prepare artifact
+        uses: ./.github/actions/godot-prepare-artifact
+
+      # TODO: Enable this!!!
+      # - name: Mac Sign
+      #   if: matrix.platform == 'macos' && matrix.target == 'editor'
+      #   uses: ./.github/actions/macos-sign
+      #   with:
+      #     FRAMEWORK_PATH: ${{ github.workspace }}/bin/godot_macos_editor.app
+      #     SIGN_FLAGS: "--deep --force --options=runtime --entitlements ${{ github.workspace }}/misc/dist/macos/editor.entitlements"
+      #     APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
+      #     APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+      #     APPLE_DEV_PASSWORD: ${{ secrets.APPLE_DEV_PASSWORD }}
+      #     APPLE_DEV_ID: ${{ secrets.APPLE_DEV_ID }}
+      #     APPLE_DEV_TEAM_ID: ${{ secrets.APPLE_DEV_TEAM_ID }}
+      #     APPLE_DEV_APP_ID: ${{ secrets.APPLE_DEV_APP_ID }}
+
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.id != 'linux-sanitizers'
+        with:
+          name: patchwork_editor-${{ matrix.platform }}
+          path: ${{github.workspace}}/bin/*
+          retention-days: 90
+
+  # test:
+  #   needs: build
+  #   runs-on: ${{ matrix.os }}
+  #   name: ${{ matrix.name }} test
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       include:
+  #         - name: "Windows"
+  #           os: "windows-latest"
+  #           platform: windows
+  #           bin: ./bin/godot.windows.editor.x86_64.exe
+
+  #         - name: "🐧 Linux"
+  #           os: "ubuntu-24.04"
+  #           platform: linux
+  #           bin: ./bin/godot.linuxbsd.editor.x86_64
+
+  #         - name: "🍎 macOS"
+  #           os: "macos-latest"
+  #           platform: macos
+  #           bin: ./bin/godot.macos.editor.arm64
+
+  #   steps:
+  #     - name: checkout-godot
+  #       uses: actions/checkout@v4
+  #       with:
+  #         repository: godotengine/godot
+  #         ref: ${{env.GODOT_MAIN_SYNC_REF}}
+
+  #     - name: checkout-patchwork_editor
+  #       uses: actions/checkout@v4
+  #       with:
+  #         path: modules/patchwork_editor
+  #         fetch-depth: 0
+
+  #     - name: copy actions
+  #       shell: bash
+  #       run: |
+  #         cp -R modules/patchwork_editor/.github/actions/* .github/actions/
+
+  #     - name: Download patchwork_editor artifacts
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         name: patchwork_editor-editor-${{ matrix.platform }}
+  #         path: bin
+
+  #     - name: set permissions
+  #       shell: bash
+  #       run: |
+  #         chmod a+x bin/godot*
+    
+  #     - name: run tests
+  #       shell: bash
+  #       run: |
+  #         ${{matrix.bin}} --headless --test --force-colors "--test-case=[patchwork_editor]*"
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: "ubuntu-20.04"
+    permissions:
+      contents: write
+    needs: [build]
+    steps:
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: patchwork_editor-linux
+          path: artifacts/linux
+      - name: Download MacOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: patchwork_editor-macos
+          path: artifacts/macos
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: patchwork_editor-windows
+          path: artifacts/windows
+      - name: Zip artifacts
+        run: |
+          ls -la artifacts/*
+          cd artifacts/windows
+          zip -r9  "../patchwork_editor-${{ github.ref_name }}-windows.zip" *
+          cd ../..
+          mv "artifacts/macos/patchwork_editor.universal.zip" "artifacts/patchwork_editor-${{ github.ref_name }}-macos.zip"
+          cd artifacts/linux
+          zip -r9  "../patchwork_editor-${{ github.ref_name }}-linux.zip" *
+      - name: Release
+        uses: nikitalita/action-gh-release@v1.0
+        with:
+          files: |
+            artifacts/patchwork_editor-${{ github.ref_name }}-windows.zip
+            artifacts/patchwork_editor-${{ github.ref_name }}-macos.zip
+            artifacts/patchwork_editor-${{ github.ref_name }}-linux.zip

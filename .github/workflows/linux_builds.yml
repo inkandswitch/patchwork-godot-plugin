@@ -1,0 +1,55 @@
+name: 🐧 Linux Builds
+on:
+  workflow_call:
+
+jobs:
+  linux:
+    runs-on: "ubuntu-22.04"
+    name: linux ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ["x86_64-unknown-linux-gnu"] # , "i686-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "armv7-unknown-linux-gnueabihf"
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Install dependencies"
+        shell: sh
+        run: |
+          sudo dpkg --add-architecture aarch64
+          sudo apt-get update
+          sudo apt-get install libunwind-dev
+          sudo apt-get install build-essential
+          sudo apt-get install pkg-config
+          sudo apt-get install libssl-dev
+          sudo apt-get install zlib1g-dev
+          # Multi platform build
+          sudo apt-get install gcc-multilib g++-multilib libc6-dev-i386
+          # Arm64 and arm32
+          sudo apt install gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf
+      - name: Build
+        uses: ./.github/actions/build-plugin
+        with:
+          arch: ${{ matrix.arch }}
+          # features: ${{ matrix.features.feature }},${{ matrix.precision }}-${{ matrix.dimensions.feature }}
+      - name: Copy to bin
+        shell: sh
+        run: |
+          mkdir -p rust/plugin/linux
+          mv rust/plugin/target/release/libpatchwork_rust_core.so rust/plugin/linux/libpatchwork_rust_core.linux.${{ matrix.arch }}.so
+          mv rust/plugin/target/release/libpatchwork_rust_core.a rust/plugin/linux/libpatchwork_rust_core.linux.${{ matrix.arch }}.a
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: patchwork-godot-dylib-linux-${{ matrix.arch}}
+          path: |
+            rust/plugin/linux/*.so
+          if-no-files-found: error
+      - name: Upload Static
+        uses: actions/upload-artifact@v4
+        with:
+          name: patchwork-godot-static-linux-${{ matrix.arch}}
+          path: |
+            rust/plugin/linux/*.a
+          if-no-files-found: error
+    
