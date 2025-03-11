@@ -48,7 +48,7 @@ jobs:
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: patchwork-godot-dylib-${{ matrix.arch}}
+          name: patchwork-godot-dylib-macos-${{ matrix.arch}}
           # add this when we turn on code signing
           # rust/plugin/macos/**/CodeResources
           path: |
@@ -58,7 +58,7 @@ jobs:
       - name: Upload Static
         uses: actions/upload-artifact@v4
         with:
-          name: patchwork-godot-static-linux-${{ matrix.arch}}
+          name: patchwork-godot-static-macos-${{ matrix.arch}}
           path: |
             rust/plugin/macos/**/*.a
           if-no-files-found: error
