@@ -335,7 +335,13 @@ func update_ui() -> void:
 
 	for i in range(branches.size()):
 		var branch = branches[i]
-		branch_picker.add_item(branch.name, i)
+
+		var label = branch.name
+
+		if branch.is_main:
+			label = label + " 👑"
+
+		branch_picker.add_item(label, i)
 		branch_picker.set_item_metadata(i, branch.id)
 
 		# this should not happen, but right now the sync is not working correctly so we need to surface this in the interface
