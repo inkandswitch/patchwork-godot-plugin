@@ -22,10 +22,10 @@ jobs:
       - name: Copy to bin
         shell: sh
         run: |
-          ls rust/plugin/target/release
+          ls target/release
           mkdir -p rust/plugin/windows
-          mv rust/plugin/target/release/patchwork_rust_core.dll rust/plugin/windows/patchwork_rust_core.windows.${{ matrix.arch }}.dll
-          mv rust/plugin/target/release/patchwork_rust_core.lib rust/plugin/windows/patchwork_rust_core.windows.${{ matrix.arch }}.lib
+          mv target/release/patchwork_rust_core.dll rust/plugin/windows/patchwork_rust_core.windows.${{ matrix.arch }}.dll
+          mv target/release/patchwork_rust_core.lib rust/plugin/windows/patchwork_rust_core.windows.${{ matrix.arch }}.lib
       - name: Upload
         uses: actions/upload-artifact@v4
         with:

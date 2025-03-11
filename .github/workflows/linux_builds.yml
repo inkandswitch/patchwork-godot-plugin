@@ -36,8 +36,8 @@ jobs:
         shell: sh
         run: |
           mkdir -p rust/plugin/linux
-          mv rust/plugin/target/release/libpatchwork_rust_core.so rust/plugin/linux/libpatchwork_rust_core.linux.${{ matrix.arch }}.so
-          mv rust/plugin/target/release/libpatchwork_rust_core.a rust/plugin/linux/libpatchwork_rust_core.linux.${{ matrix.arch }}.a
+          mv target/release/libpatchwork_rust_core.so rust/plugin/linux/libpatchwork_rust_core.linux.${{ matrix.arch }}.so
+          mv target/release/libpatchwork_rust_core.a rust/plugin/linux/libpatchwork_rust_core.linux.${{ matrix.arch }}.a
       - name: Upload
         uses: actions/upload-artifact@v4
         with:

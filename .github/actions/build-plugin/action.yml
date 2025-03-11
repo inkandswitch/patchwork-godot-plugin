@@ -30,29 +30,25 @@ runs:
     - name: Build
       shell: sh
       run: |
-        cd rust/plugin
         cargo build --target=${{ inputs.arch }} --release  ${{ inputs.extra_flags}}
-        cd ../..
     - name: Copy to release
       shell: sh
       run: |
-        mkdir -p rust/plugin/target/release
-        rm -rf rust/plugin/target/release
-        cp -rf rust/plugin/target/${{ inputs.arch }}/release rust/plugin/target/release
+        mkdir -p target/release
+        rm -rf target/release
+        cp -rf target/${{ inputs.arch }}/release target/release
     - name: Build Rapier Macos Universal
       shell: sh
       # we already built for x86_64-apple-darwin for mac, now build arm64
       if: ${{ inputs.arch == 'x86_64-apple-darwin'}}
       run: |
-        mkdir -p rust/plugin/target/release
+        mkdir -p target/release
         rustup target add aarch64-apple-darwin
-        cd rust/plugin
         cargo build --target=aarch64-apple-darwin --release
-        cd ../..
-        lipo -create -output rust/plugin/target/release/libpatchwork_rust_core.dylib rust/plugin/target/aarch64-apple-darwin/release/libpatchwork_rust_core.dylib rust/plugin/target/x86_64-apple-darwin/release/libpatchwork_rust_core.dylib
+        lipo -create -output target/release/libpatchwork_rust_core.dylib target/aarch64-apple-darwin/release/libpatchwork_rust_core.dylib target/x86_64-apple-darwin/release/libpatchwork_rust_core.dylib
     - name: Move Static Libs macOS
       shell: sh
       if: ${{ inputs.arch == 'x86_64-apple-darwin'}}
       run: |
-        mv rust/plugin/target/x86_64-apple-darwin/release/libpatchwork_rust_core.a rust/plugin/target/release/libpatchwork_rust_core.x86_64.a
-        mv rust/plugin/target/aarch64-apple-darwin/release/libpatchwork_rust_core.a rust/plugin/target/release/libpatchwork_rust_core.arm64.a
+        mv target/x86_64-apple-darwin/release/libpatchwork_rust_core.a target/release/libpatchwork_rust_core.x86_64.a
+        mv target/aarch64-apple-darwin/release/libpatchwork_rust_core.a target/release/libpatchwork_rust_core.arm64.a
