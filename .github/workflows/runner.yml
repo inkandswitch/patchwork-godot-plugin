@@ -63,7 +63,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: patchwork-godot-*-macos-*
-          path: ws/addons/patchwork/rust/plugin/macos/libpatchwork_rust_core.macos.framework
+          path: ws/addons/patchwork/rust/plugin/macos
           merge-multiple: true
       - name: Download Windows artifacts
         uses: actions/download-artifact@v4
