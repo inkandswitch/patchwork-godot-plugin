@@ -50,7 +50,7 @@ jobs:
       # checkout
       - uses: actions/checkout@v4
         with:
-          path: ws/addons
+          path: ws/addons/patchwork-godot-plugin
 
       # just download the artifacts from the macos, windows and linux plugin builds
       - name: Download Linux artifacts
