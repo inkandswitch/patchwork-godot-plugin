@@ -73,9 +73,9 @@ jobs:
           merge-multiple: true
       - name: Wut
         run: |
-          ls -la ws/addons/patchwork-godot-plugin/rust/plugin/linux
-          ls -la ws/addons/patchwork-godot-plugin/rust/plugin/macos/libpatchwork_rust_core.macos.framework
-          ls -la ws/addons/patchwork-godot-plugin/rust/plugin/windows
+          ls -la ws/addons/patchwork-godot-plugin/rust/plugin/linux || echo "No linux artifacts"
+          ls -la ws/addons/patchwork-godot-plugin/rust/plugin/macos/libpatchwork_rust_core.macos.framework || echo "No macos artifacts"
+          ls -la ws/addons/patchwork-godot-plugin/rust/plugin/windows || echo "No windows artifacts"
       - name: zip
       # add the entire "addons" folder to the artifacts
         run: |
