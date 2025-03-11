@@ -10,5 +10,5 @@ windows.debug.x86_64 =   "rust/plugin/windows/patchwork_rust_core.windows.x86_64
 windows.release.x86_64 = "rust/plugin/windows/patchwork_rust_core.windows.x86_64-pc-windows-msvc.dll"
 windows.debug.arm64 =   "rust/plugin/windows/patchwork_rust_core.windows.aarch64-pc-windows-msvc.dll"
 windows.release.arm64 = "rust/plugin/windows/patchwork_rust_core.windows.aarch64-pc-windows-msvc.dll"
-macos.debug =      "rust/plugin/macos/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.dylib"
-macos.release =    "rust/plugin/macos/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.dylib"
+macos.debug =      "rust/plugin/macos/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.dylib"
+macos.release =    "rust/plugin/macos/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.dylib"

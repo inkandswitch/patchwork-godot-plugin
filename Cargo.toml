@@ -1,0 +1,6 @@
+# workspace is in rust/plugin
+[workspace]
+members = [
+    "rust/plugin",
+]
+
