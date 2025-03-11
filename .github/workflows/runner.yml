@@ -50,32 +50,32 @@ jobs:
       # checkout
       - uses: actions/checkout@v4
         with:
-          path: ws/addons/patchwork-godot-plugin
+          path: ws/addons/patchwork
 
       # just download the artifacts from the macos, windows and linux plugin builds
       - name: Download Linux artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: patchwork-godot-*-linux-*
-          path: ws/addons/patchwork-godot-plugin/rust/plugin/linux
+          path: ws/addons/patchwork/rust/plugin/linux
           merge-multiple: true
       - name: Download MacOS artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: patchwork-godot-*-macos-*
-          path: ws/addons/patchwork-godot-plugin/rust/plugin/macos/libpatchwork_rust_core.macos.framework
+          path: ws/addons/patchwork/rust/plugin/macos/libpatchwork_rust_core.macos.framework
           merge-multiple: true
       - name: Download Windows artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: patchwork-godot-*-windows-*
-          path: ws/addons/patchwork-godot-plugin/rust/plugin/windows
+          path: ws/addons/patchwork/rust/plugin/windows
           merge-multiple: true
       - name: Wut
         run: |
-          ls -la ws/addons/patchwork-godot-plugin/rust/plugin/linux || echo "No linux artifacts"
-          ls -la ws/addons/patchwork-godot-plugin/rust/plugin/macos/libpatchwork_rust_core.macos.framework || echo "No macos artifacts"
-          ls -la ws/addons/patchwork-godot-plugin/rust/plugin/windows || echo "No windows artifacts"
+          ls -la ws/addons/patchwork/rust/plugin/linux || echo "No linux artifacts"
+          ls -la ws/addons/patchwork/rust/plugin/macos/libpatchwork_rust_core.macos.framework || echo "No macos artifacts"
+          ls -la ws/addons/patchwork/rust/plugin/windows || echo "No windows artifacts"
       - name: zip
       # add the entire "addons" folder to the artifacts
         run: |
