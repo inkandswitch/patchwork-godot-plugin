@@ -319,7 +319,10 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                     } else {
                         // Generate a UUID if no patchwork_id exists
                         node_id = uuid::Uuid::new_v4().simple().to_string();
-                        properties.insert("metadata/patchwork_id".to_string(), node_id.clone());
+                        properties.insert(
+                            "metadata/patchwork_id".to_string(),
+                            format!("\"{}\"", node_id).clone(),
+                        );
                     }
 
                     // If this is the first node, it's the root node
