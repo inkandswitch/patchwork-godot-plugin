@@ -3,7 +3,7 @@ use automerge::{
     ObjType, ROOT,
 };
 use autosurgeon::{Hydrate, Reconcile};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tree_sitter::{Parser, Query, QueryCursor};
 use uuid;
 
@@ -15,7 +15,7 @@ pub struct GodotScene {
     format: i32,
     uid: String,
     nodes: HashMap<String, GodotNode>,
-    ext_resources: HashMap<String, ExternalResourceNode>,
+    ext_resources: Vec<ExternalResourceNode>,
     sub_resources: HashMap<String, SubResourceNode>,
     root_node_id: String,
 }
@@ -41,9 +41,10 @@ pub struct GodotNode {
 
 #[derive(Debug, Clone)]
 pub struct ExternalResourceNode {
+    resource_type: String,
+    uid: Option<String>,
+    path: String,
     id: String,
-    heading: HashMap<String, String>, // key value pairs in the header of the section
-    properties: HashMap<String, String>, // key value pairs below the section header
 }
 
 #[derive(Debug, Clone)]
@@ -107,25 +108,23 @@ impl GodotScene {
         }
 
         // External resources
-        for (_, resource) in &self.ext_resources {
-            output.push_str("[ext_resource ");
 
-            // Attributes
-            let mut attrs = Vec::new();
-            for (key, value) in &resource.heading {
-                if key != "id" {
-                    // id is handled separately
-                    attrs.push(format!("{}={}", key, value));
-                }
+        let mut serialized_ext_resources = HashSet::new();
+
+        for resource in &self.ext_resources {   
+            // the same resource could be in the list multiple times, so we need to check if we already serialized it
+            // todo: think about how to properly handle this
+            if serialized_ext_resources.contains(&resource.id) {
+                continue;
             }
 
-            // Ensure id is the last attribute
-            if let Some(id) = resource.heading.get("id") {
-                attrs.push(format!("id={}", id));
-            }
+            serialized_ext_resources.insert(resource.id.clone());
 
-            output.push_str(&attrs.join(" "));
-            output.push_str("]\n");
+            output.push_str(&format!("[ext_resource type=\"{}\"", resource.resource_type));
+            if let Some(uid) = &resource.uid {
+                output.push_str(&format!(" uid=\"{}\"", uid));
+            }
+            output.push_str(&format!(" path=\"{}\" id=\"{}\"]\n", resource.path, resource.id));
         }
 
         if !self.ext_resources.is_empty() {
@@ -257,7 +256,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
             // Initialize with default values
             let mut scene_metadata: Option<SceneMetadata> = None;
             let mut nodes: HashMap<String, GodotNode> = HashMap::new();
-            let mut ext_resources: HashMap<String, ExternalResourceNode> = HashMap::new();
+            let mut ext_resources: Vec<ExternalResourceNode> = Vec::new();
             let mut sub_resources: HashMap<String, SubResourceNode> = HashMap::new();
             let mut root_node_id: Option<String> = None;
 
@@ -418,14 +417,36 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 //
                 } else if section_id == "ext_resource" {
                     // Add to ext_resources map
-                    if let Some(id) = heading.get("id").cloned() {
-                        let node = ExternalResourceNode {
-                            id: id.clone(),
-                            heading,
-                            properties,
-                        };
-                        ext_resources.insert(id.clone(), node);
-                    }
+
+                    let resource_type = match heading.get("type").cloned() {
+                        Some(resource_type) => resource_type,
+                        None => {
+                            return Err("Missing required 'type' attribute in ext_resource section".to_string())
+                        }
+                    };
+
+                    let uid: Option<String> = heading.get("uid").cloned();
+
+                    let path = match heading.get("path").cloned() {
+                        Some(path) => path,
+                        None => {
+                            return Err("Missing required 'path' attribute in ext_resource section".to_string())
+                        }
+                    };
+
+                    let id = match heading.get("id").cloned() {
+                        Some(id) => id,
+                        None => {
+                            return Err("Missing required 'id' attribute in ext_resource section".to_string())
+                        }
+                    };
+
+                    ext_resources.push(ExternalResourceNode {
+                        resource_type,
+                        uid,
+                        path,
+                        id,
+                    });
 
                 // SUB-RESOURCE
                 //
