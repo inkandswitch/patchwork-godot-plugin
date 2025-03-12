@@ -87,6 +87,8 @@ position=Vector2(1600, -115)
 scale=Vector2(2.5, 2.5)
 texture=ExtResource("2_mk66l")
 
+[connection signal="body_entered" from="RigidBody2D" to="." method="_on_rigid_body_2d_body_entered"]
+[connection signal="button_pressed" from="UI/Button" to="GameManager" method="_on_button_pressed" flags=3 unbinds=1 binds=["extra_param", 42, true]]
 "#;
 
     let scene = godot_parser::parse_scene(&source.to_string()).unwrap();
