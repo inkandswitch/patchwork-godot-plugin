@@ -202,8 +202,10 @@ impl GodotScene {
 
         output.push_str("]\n");
 
-        // Properties
-        for (key, value) in &node.properties {
+        // Properties sorted in descending order
+        let mut sorted_props: Vec<(&String, &String)> = node.properties.iter().collect();
+        sorted_props.sort_by(|(a,_), (b,_)| a.to_lowercase().cmp(&b.to_lowercase()));
+        for (key, value) in sorted_props {
             output.push_str(&format!("{}={}\n", key, value));
         }
 
