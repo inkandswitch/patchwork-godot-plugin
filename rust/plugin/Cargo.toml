@@ -8,17 +8,17 @@ authors = [
 edition = "2021"
 license = "MIT"
 rust-version = "1.57.0"
-autolib = true
 
 [lib]
-name = "patchwork_rust_core"
-crate-type = ["cdylib", "staticlib"]
+name = "patchwork_rust"
+crate-type = ["cdylib", "staticlib", "rlib"]
 bench = false
 doc = false
 
-[[bin]]
-name = "test"
-path = "src/test.rs"
+# Removing the bin section since src/test.rs doesn't exist
+# [[bin]]
+# name = "test"
+# path = "src/test.rs"
 
 [dependencies]
 automerge = "0.6.0"
