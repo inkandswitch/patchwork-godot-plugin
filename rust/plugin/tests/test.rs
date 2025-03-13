@@ -159,7 +159,23 @@ fn test_resconcile_and_hydrate() {
                 },
             ),
         ]),
-        sub_resources: HashMap::new(),
+        sub_resources: HashMap::from([(
+            "Gradient_80myt".to_string(),
+            godot_parser::SubResourceNode {
+                id: "Gradient_80myt".to_string(),
+                resource_type: "Gradient".to_string(),
+                properties: HashMap::from([
+                    (
+                        "colors".to_string(),
+                        "PackedColorArray(0.98, 0.98, 0.98, 1, 0.81, 0.81, 0.81, 1)".to_string(),
+                    ),
+                    (
+                        "offsets".to_string(),
+                        "PackedFloat32Array(0.0788732, 1)".to_string(),
+                    ),
+                ]),
+            },
+        )]),
         connections: vec![],
     };
 
