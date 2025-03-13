@@ -1,7 +1,6 @@
 use automerge::{
     transaction::{Transactable, Transaction}, Automerge, ObjType, ReadDoc, ROOT
 };
-use autosurgeon::{Hydrate, Reconcile};
 use std::collections::{HashMap, HashSet};
 use tree_sitter::{Parser, Query, QueryCursor};
 use uuid;
@@ -96,6 +95,37 @@ impl GodotScene {
 
         // Store root node id
         tx.put(&structured_content, "root_node_id", self.root_node_id.clone()).unwrap();
+
+
+        // Reconcile external resources
+        let ext_resources = tx
+        .get_obj_id(&scene_file, "ext_resources")
+        .unwrap_or_else(|| tx.put_object(&scene_file, "ext_resources", ObjType::Map).unwrap());
+
+        for (id, resource) in &self.ext_resources {
+            let resource_obj = tx
+                .get_obj_id(&ext_resources, id)
+                .unwrap_or_else(|| tx.put_object(&ext_resources, id, ObjType::Map).unwrap());
+
+            tx.put(&resource_obj, "resource_type", resource.resource_type.clone()).unwrap();
+            
+            if let Some(uid) = &resource.uid {
+                tx.put(&resource_obj, "uid", uid.clone()).unwrap();
+            } else if tx.get_string(&resource_obj, "uid").is_some() {
+                tx.delete(&resource_obj, "uid").unwrap();
+            } 
+
+            tx.put(&resource_obj, "path", resource.path.clone()).unwrap();
+            tx.put(&resource_obj, "id", resource.id.clone()).unwrap();                 
+        }
+
+        // Remove external resources that are not in the scene
+        let existing_resource_ids = tx.keys(&ext_resources).collect::<HashSet<_>>();
+        for resource_id in existing_resource_ids {
+            if !self.ext_resources.contains_key(&resource_id) {
+                tx.delete(&ext_resources, &resource_id).unwrap();
+            }
+        }
 
         // Reconcile nodes
         for (node_id, node) in &self.nodes {
@@ -242,9 +272,43 @@ impl GodotScene {
             .ok_or_else(|| "Could not find root_node_id in structured_content".to_string())?;
 
         // Create a map to store the nodes
-        let mut nodes = HashMap::new();
+
+        // Iterate through all external resources
+        let mut ext_resources = HashMap::new();
+
+        let ext_resources_id = doc.get_obj_id(&scene_file, "ext_resources")
+            .ok_or_else(|| "Could not find ext_resources in scene_file".to_string())?;  
+
+        for resource_id in doc.keys(&ext_resources_id) {
+            let resource_obj = doc.get_obj_id(&ext_resources_id, &resource_id)
+                .ok_or_else(|| format!("Could not find resource object for ID: {}", resource_id))?;
+
+            let resource_type = doc.get_string(&resource_obj, "resource_type")
+                .ok_or_else(|| format!("Could not find resource_type for ID: {}", resource_id))?;
+
+            let path = doc.get_string(&resource_obj, "path")
+                .ok_or_else(|| format!("Could not find path for ID: {}", resource_id))?;
+
+            let id = doc.get_string(&resource_obj, "id")
+                .ok_or_else(|| format!("Could not find id for ID: {}", resource_id))?;
+
+            let uid = doc.get_string(&resource_obj, "uid");
+
+            let external_resource = ExternalResourceNode {
+                resource_type,
+                uid,
+                path,
+                id,
+            };
+
+            ext_resources.insert(resource_id.clone(), external_resource);
+        }
 
         // Iterate through all node IDs in the nodes object
+
+        let mut nodes = HashMap::new();
+
+
         for node_id in doc.keys(&nodes_obj) {
             // Get the node object
             let node_obj = doc.get_obj_id(&nodes_obj, &node_id)
@@ -316,7 +380,7 @@ impl GodotScene {
             format,
             uid,
             root_node_id,
-            ext_resources: HashMap::new(),
+            ext_resources,
             sub_resources: HashMap::new(),
             nodes,
             connections: Vec::new(),
