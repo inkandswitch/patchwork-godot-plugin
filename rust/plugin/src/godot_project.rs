@@ -287,9 +287,9 @@ impl GodotProject {
     #[func]
     fn get_file(&self, path: String) -> Variant {
         match self._get_file(path) {
-            Some(FileContent::String(s)) => s.to_variant(),
-            Some(FileContent::Binary(bytes)) => bytes.to_variant(),
-            Some(FileContent::Scene(scene)) => scene.serialize().to_variant(),
+            Some(FileContent::String(s)) => GString::from(s).to_variant(),
+            Some(FileContent::Binary(bytes)) => PackedByteArray::from(bytes).to_variant(),
+            Some(FileContent::Scene(scene)) => GString::from(scene.serialize()).to_variant(),
             None => Variant::nil(),
         }
     }
