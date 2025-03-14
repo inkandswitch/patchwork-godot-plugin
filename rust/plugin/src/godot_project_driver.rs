@@ -468,9 +468,6 @@ impl DriverState {
     ) {    
         let branch_doc_state = self.branch_states.get(&branch_doc_handle.document_id()).unwrap().clone();
 
-
-        println!("rust: SAVE FILES !!!! {:?}", file_entries);
-
         let mut binary_entries: Vec<(String, DocHandle)> = Vec::new();
         let mut text_entries: Vec<(String, &String)> = Vec::new();
         let mut scene_entries: Vec<(String, &GodotScene)> = Vec::new();
@@ -525,7 +522,23 @@ impl DriverState {
                  // delete url in file entry if it previously had one
                  if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
                     let _ = tx.delete(&file_entry, "url");
-                }             
+                }
+
+                // delete structured content in file entry if it previously had one
+                if let Ok(Some((_, _))) = tx.get(&file_entry, "structured_content") {
+                    let _ = tx.delete(&file_entry, "structured_content");
+                }
+
+                // either get existing text or create new text
+                let content_key = match tx.get(&file_entry, "content") {
+                    Ok(Some((automerge::Value::Object(ObjType::Text), content))) => content,
+                    _ => tx
+                        .put_object(&file_entry, "content", ObjType::Text)
+                        .unwrap(),
+                };
+                let _ = tx.update_text(&content_key, &content);
+
+                             
             }
 
             // write scene entries to doc

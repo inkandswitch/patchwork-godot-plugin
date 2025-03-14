@@ -238,8 +238,12 @@ impl GodotProject {
         };
 
         // try to read file as scene
-        let structured_content = doc.get_at(&file_entry, "structured_content", &heads);
-        if structured_content.is_ok() {
+        let structured_content = doc
+            .get_at(&file_entry, "structured_content", &heads)
+            .unwrap()
+            .map(|(value, _)| value);
+
+        if structured_content.is_some() {
             return GodotScene::hydrate(&mut doc, &path)
                 .ok()
                 .map(|scene| FileContent::Scene(scene));
@@ -247,6 +251,7 @@ impl GodotProject {
 
         // try to read file as text
         let content = doc.get_at(&file_entry, "content", &heads);
+
         match content {
             Ok(Some((automerge::Value::Object(ObjType::Text), content))) => {
                 match doc.text_at(content, &heads) {
@@ -284,13 +289,14 @@ impl GodotProject {
                 })
             })
     }
-    // TODO: make this just call _get_file_at(path, None)
+
     fn _get_file(&self, path: String) -> Option<FileContent> {
         self._get_file_at(path, None)
     }
+
     #[func]
     fn get_file(&self, path: String) -> Variant {
-        match self._get_file(path) {
+        match self._get_file(path.clone()) {
             Some(FileContent::String(s)) => GString::from(s).to_variant(),
             Some(FileContent::Binary(bytes)) => PackedByteArray::from(bytes).to_variant(),
             Some(FileContent::Scene(scene)) => GString::from(scene.serialize()).to_variant(),
@@ -571,39 +577,6 @@ impl GodotProject {
     #[func]
     fn save_file_at(&self, path: String, heads: PackedStringArray, content: Variant) {
         self.save_files_at(dict! { path: content }, heads);
-    }
-
-    #[func]
-    fn is_file_synced(&self, path: String, content: Variant) -> bool {
-        match content.get_type() {
-            VariantType::STRING => {
-                if let Some(FileContent::String(stored_content)) = self._get_file(path.to_string())
-                {
-                    if path.ends_with(".tscn") {
-                        // our parser doesn't serialize the same as godot does, so we need to normalize the content
-                        let normalized_content =
-                            godot_parser::parse_scene(&content.to::<GString>().to_string())
-                                .unwrap()
-                                .serialize();
-
-                        return normalized_content == stored_content;
-                    }
-
-                    return stored_content == content.to::<GString>().to_string();
-                }
-
-                return false;
-            }
-            VariantType::PACKED_BYTE_ARRAY => {
-                if let Some(FileContent::Binary(stored_content)) = self._get_file(path.to_string())
-                {
-                    return stored_content == content.to::<PackedByteArray>().to_vec();
-                }
-
-                return false;
-            }
-            _ => panic!("invalid content type"),
-        }
     }
 
     fn _save_files(
