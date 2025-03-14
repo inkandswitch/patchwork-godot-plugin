@@ -228,7 +228,7 @@ impl GodotProject {
             Some(heads) => heads,
             None => branch_state.synced_heads.clone(),
         };
-        let doc = branch_state.doc_handle.with_doc(|d| d.clone());
+        let mut doc = branch_state.doc_handle.with_doc(|d| d.clone());
 
         let files = doc.get_at(ROOT, "files", &heads).unwrap().unwrap().1;
         // does the file exist?
@@ -237,10 +237,14 @@ impl GodotProject {
             _ => return None,
         };
 
-        let curr_file_entry = match doc.get(&files, &path) {
-            Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
-            _ => return None,
-        };
+        // try to read file as scene
+        let structured_content = doc.get_at(&file_entry, "structured_content", &heads);
+        if structured_content.is_ok() {
+            return GodotScene::hydrate(&mut doc, &path)
+                .ok()
+                .map(|scene| FileContent::Scene(scene));
+        }
+
         // try to read file as text
         let content = doc.get_at(&file_entry, "content", &heads);
         match content {
