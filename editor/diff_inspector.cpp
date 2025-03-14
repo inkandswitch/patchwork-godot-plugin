@@ -31,6 +31,8 @@
 #include "diff_inspector.h"
 
 #include "core/error/error_macros.h"
+#include "core/object/object.h"
+#include "editor/diff_result.h"
 #include "editor/editor_inspector.h"
 
 Variant DiffInspector::get_property_revert_value(Object *p_object, const StringName &p_property) {
@@ -50,12 +52,26 @@ bool DiffInspector::can_property_revert(Object *p_object, const StringName &p_pr
 	return EditorPropertyRevert::can_property_revert(p_object, p_property, cur_value);
 }
 
-EditorProperty *DiffInspector::instantiate_property_editor(Object *p_object, Variant::Type p_type, const String &p_path, PropertyHint p_hint, const String &p_hint_text, uint32_t p_usage, bool p_wide) {
-	return EditorInspector::instantiate_property_editor(p_object, p_type, p_path, p_hint, p_hint_text, p_usage, p_wide);
+Control *DiffInspector::instantiate_property_editor(Object *p_object, const String &p_path, bool p_wide) {
+	List<PropertyInfo> list;
+	p_object->get_property_list(&list, false);
+	PropertyInfo p_info;
+	for (auto &E : list) {
+		if (E.name == p_path) {
+			p_info = E;
+			break;
+		}
+	}
+	auto ret = EditorInspector::instantiate_property_editor(p_object, p_info.type, p_path, p_info.hint, p_info.hint_string, p_info.usage, p_wide);
+	if (!ret) {
+		// iterate through all the special plugins and find one that parses
+	}
+	ERR_FAIL_COND_V_MSG(!ret, nullptr, vformat("Failed to instantiate property editor for %s", p_path));
+	return ret;
 }
 
 void DiffInspector::_bind_methods() {
-	ClassDB::bind_static_method("DiffInspector", D_METHOD("instantiate_property_editor", "object", "type", "path", "hint", "hint_text", "usage", "wide"), &DiffInspector::instantiate_property_editor, DEFVAL(false));
+	ClassDB::bind_static_method("DiffInspector", D_METHOD("instantiate_property_editor", "object", "path", "wide"), &DiffInspector::instantiate_property_editor, DEFVAL(false));
 	ClassDB::bind_static_method("DiffInspector", D_METHOD("get_property_revert_value", "object", "property"), &DiffInspector::get_property_revert_value);
 	ClassDB::bind_static_method("DiffInspector", D_METHOD("can_property_revert", "object", "property", "has_current_value", "custom_current_value"), &DiffInspector::can_property_revert);
 }
