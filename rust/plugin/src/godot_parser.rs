@@ -508,7 +508,7 @@ impl GodotScene {
             let mut sorted_props: Vec<(&String, &String)> = resource.properties.iter().collect();
             sorted_props.sort_by(|(a,_), (b,_)| a.to_lowercase().cmp(&b.to_lowercase()));
             for (key, value) in sorted_props {
-                output.push_str(&format!("{}={}\n", key, value));
+                output.push_str(&format!("{} = {}\n", key, value));
             }
 
             output.push('\n');
@@ -570,7 +570,7 @@ impl GodotScene {
         let mut sorted_props: Vec<(&String, &String)> = node.properties.iter().collect();
         sorted_props.sort_by(|(a,_), (b,_)| a.to_lowercase().cmp(&b.to_lowercase()));
         for (key, value) in sorted_props {
-            output.push_str(&format!("{}={}\n", key, value));
+            output.push_str(&format!("{} = {}\n", key, value));
         }
 
         // Always add a blank line after a node's properties
