@@ -10,8 +10,9 @@ use std::{
     str::FromStr,
 };
 
+use crate::godot_parser::GodotScene;
 use crate::utils::{commit_with_attribution_and_timestamp, print_branch_state, print_doc};
-use crate::{godot_project::{BranchesMetadataDoc, GodotProjectDoc, StringOrPackedByteArray}, godot_parser, utils::get_linked_docs_of_branch};
+use crate::{godot_project::{BranchesMetadataDoc, GodotProjectDoc, FileContent}, godot_parser, utils::get_linked_docs_of_branch};
 use automerge::{
     patches::TextRepresentation, transaction::Transactable, ChangeHash, ObjType,
     PatchLog, ReadDoc, TextEncoding, ROOT,
@@ -44,7 +45,7 @@ pub enum InputEvent {
     SaveFiles {
         branch_doc_handle: DocHandle,
         heads: Option<Vec<ChangeHash>>,
-        files: Vec<(String, StringOrPackedByteArray)>,
+        files: Vec<(String, FileContent)>,
     },
 
     SetUserName {
@@ -462,38 +463,40 @@ impl DriverState {
     fn save_files(
         &mut self,
         branch_doc_handle: DocHandle,
-        files: Vec<(String, StringOrPackedByteArray)>,
+        file_entries: Vec<(String, FileContent)>,
         heads: Option<Vec<ChangeHash>>,
     ) {    
         let branch_doc_state = self.branch_states.get(&branch_doc_handle.document_id()).unwrap().clone();
 
-        let binary_entries: Vec<(String, DocHandle)> = files.iter().filter_map(|(path, content)| {
-            if let StringOrPackedByteArray::Binary(content) = content {
-                let binary_doc_handle = self.repo_handle.new_document();
-                binary_doc_handle.with_doc_mut(|d| {
-                    let mut tx = d.transaction();
-                    let _ = tx.put(ROOT, "content", content.clone());
-                    commit_with_attribution_and_timestamp(tx, &self.user_name, &Some(branch_doc_state.name.clone()));
-                });
 
-                println!("create binary doc: {:?} size: {:?}", path, content.len());
+        println!("rust: SAVE FILES !!!! {:?}", file_entries);
 
-                self.add_binary_doc_handle(path, &binary_doc_handle);
+        let mut binary_entries: Vec<(String, DocHandle)> = Vec::new();
+        let mut text_entries: Vec<(String, &String)> = Vec::new();
+        let mut scene_entries: Vec<(String, &GodotScene)> = Vec::new();
 
-                Some((path.clone(), binary_doc_handle))
-            } else {
-                None
+
+        for (path, content) in file_entries.iter() {                
+            match content {
+                FileContent::Binary(content) => {
+                    let binary_doc_handle = self.repo_handle.new_document();
+                    binary_doc_handle.with_doc_mut(|d| {
+                        let mut tx = d.transaction();
+                        let _ = tx.put(ROOT, "content", content.clone());
+                        commit_with_attribution_and_timestamp(tx, &self.user_name, &Some(branch_doc_state.name.clone()));
+                    });
+
+                    self.add_binary_doc_handle(path, &binary_doc_handle);
+                    binary_entries.push((path.clone(), binary_doc_handle));
+                }
+                FileContent::String(content) =>  {
+                    text_entries.push((path.clone(), content));
+                },
+                FileContent::Scene(godot_scene) => {
+                    scene_entries.push((path.clone(), godot_scene));
+                },
             }
-        }).collect();
-
-        let text_entries: Vec<(String, &String)> = files.iter().filter_map(|(path, content)| {
-            if let StringOrPackedByteArray::String(content) = content {
-                Some((path.clone(), content))
-            } else {
-                None
-            }
-        }).collect();
-
+        }
         branch_doc_handle.with_doc_mut(|d| {
             let mut tx = match heads {
                 Some(heads) => d.transaction_at(
@@ -522,31 +525,15 @@ impl DriverState {
                  // delete url in file entry if it previously had one
                  if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
                     let _ = tx.delete(&file_entry, "url");
-                }
-
-                // replace text content
-
-                let _ = tx.put(&file_entry, "content", content);
-
-                // special handling for scene files
-
-                // right now we store the content of scene files both as text and as structured data
-                // eventually we should only store the structured data and derive the text from that
-
-                if path.ends_with(".tscn") || path.ends_with(".tres") {                
-                    let res = godot_parser::parse_scene(&content);
-
-                    match res {
-                        Ok(scene) => {
-                            scene.reconcile(&mut tx, path);
-                        }
-                        Err(e) => {
-                            panic!("error parsing godot scene: {:?}", e);
-                        }
-                    }
-                } 
+                }             
             }
 
+            // write scene entries to doc
+            for (path, godot_scene) in scene_entries {
+                godot_scene.reconcile(&mut tx, path);
+            }
+
+            // write binary entries to doc
             for (path, binary_doc_handle) in binary_entries {
                 let file_entry = tx.put_object(&files, &path, ObjType::Map);
                 let _ = tx.put(

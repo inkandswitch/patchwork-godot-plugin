@@ -14,6 +14,7 @@ use automerge_repo::{DocHandle, DocumentId};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use godot::prelude::*;
 
+use crate::godot_parser::{self, GodotScene};
 use crate::godot_project_driver::{BranchState, DocHandleType};
 use crate::patches::get_changed_files;
 use crate::patches::get_changed_files_vec;
@@ -56,10 +57,11 @@ pub struct Branch {
     pub forked_at: Vec<String>,
 }
 
-#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
-pub enum StringOrPackedByteArray {
+#[derive(Debug, Clone, PartialEq)]
+pub enum FileContent {
     String(String),
     Binary(Vec<u8>),
+    Scene(GodotScene),
 }
 
 #[derive(Debug, Clone)]
@@ -115,6 +117,8 @@ impl GodotProject {
         checked_out_branch_doc_id: String, // empty string to check out the main branch of the newly created project
         maybe_user_name: String,
     ) -> Gd<Self> {
+        println!("rust: CREATE !!!! {:?}", storage_folder_path);
+
         let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
         let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
 
@@ -214,11 +218,7 @@ impl GodotProject {
             .collect::<PackedStringArray>()
     }
 
-    fn _get_file_at(
-        &self,
-        path: String,
-        heads: Option<Vec<ChangeHash>>,
-    ) -> Option<StringOrPackedByteArray> {
+    fn _get_file_at(&self, path: String, heads: Option<Vec<ChangeHash>>) -> Option<FileContent> {
         let branch_state = self.get_checked_out_branch_state();
         if branch_state.is_none() {
             return None;
@@ -246,12 +246,12 @@ impl GodotProject {
         match content {
             Ok(Some((automerge::Value::Object(ObjType::Text), content))) => {
                 match doc.text_at(content, &heads) {
-                    Ok(text) => return Some(StringOrPackedByteArray::String(text.to_string())),
+                    Ok(text) => return Some(FileContent::String(text.to_string())),
                     Err(e) => println!("failed to read text file {:?}: {:?}", path, e),
                 }
             }
             _ => match doc.get_string_at(&file_entry, "content", &heads) {
-                Some(s) => return Some(StringOrPackedByteArray::String(s)),
+                Some(s) => return Some(FileContent::String(s)),
                 _ => {}
             },
         }
@@ -263,11 +263,11 @@ impl GodotProject {
             .and_then(|doc_handle| {
                 doc_handle.with_doc(|d| match d.get(ROOT, "content") {
                     Ok(Some((value, _))) if value.is_bytes() => {
-                        Some(StringOrPackedByteArray::Binary(value.into_bytes().unwrap()))
+                        Some(FileContent::Binary(value.into_bytes().unwrap()))
                     }
-                    Ok(Some((value, _))) if value.is_str() => Some(
-                        StringOrPackedByteArray::String(value.into_string().unwrap()),
-                    ),
+                    Ok(Some((value, _))) if value.is_str() => {
+                        Some(FileContent::String(value.into_string().unwrap()))
+                    }
                     _ => {
                         println!(
                             "failed to read binary doc {:?} {:?} {:?}",
@@ -281,16 +281,15 @@ impl GodotProject {
             })
     }
     // TODO: make this just call _get_file_at(path, None)
-    fn _get_file(&self, path: String) -> Option<StringOrPackedByteArray> {
+    fn _get_file(&self, path: String) -> Option<FileContent> {
         self._get_file_at(path, None)
     }
     #[func]
     fn get_file(&self, path: String) -> Variant {
         match self._get_file(path) {
-            Some(StringOrPackedByteArray::String(s)) => GString::from(s).to_variant(),
-            Some(StringOrPackedByteArray::Binary(bytes)) => {
-                PackedByteArray::from(bytes).to_variant()
-            }
+            Some(FileContent::String(s)) => s.to_variant(),
+            Some(FileContent::Binary(bytes)) => bytes.to_variant(),
+            Some(FileContent::Scene(scene)) => scene.serialize().to_variant(),
             None => Variant::nil(),
         }
     }
@@ -465,18 +464,16 @@ impl GodotProject {
         let mut changed_files_dict_files_array = Array::new();
         for file in changed_files {
             let file_entry = match self._get_file_at(file.clone(), Some(heads.clone())) {
-                Some(StringOrPackedByteArray::String(s)) => GString::from(s).to_variant(),
-                Some(StringOrPackedByteArray::Binary(bytes)) => {
-                    PackedByteArray::from(bytes).to_variant()
-                }
+                Some(FileContent::String(s)) => GString::from(s).to_variant(),
+                Some(FileContent::Binary(bytes)) => PackedByteArray::from(bytes).to_variant(),
+                Some(FileContent::Scene(scene)) => scene.serialize().to_variant(),
                 None => Variant::nil(),
             };
             let file_entry_current = match self._get_file_at(file.clone(), Some(curr_heads.clone()))
             {
-                Some(StringOrPackedByteArray::String(s)) => GString::from(s).to_variant(),
-                Some(StringOrPackedByteArray::Binary(bytes)) => {
-                    PackedByteArray::from(bytes).to_variant()
-                }
+                Some(FileContent::String(s)) => GString::from(s).to_variant(),
+                Some(FileContent::Binary(bytes)) => PackedByteArray::from(bytes).to_variant(),
+                Some(FileContent::Scene(scene)) => scene.serialize().to_variant(),
                 None => Variant::nil(),
             };
 
@@ -572,6 +569,39 @@ impl GodotProject {
         self.save_files_at(dict! { path: content }, heads);
     }
 
+    #[func]
+    fn is_file_synced(&self, path: String, content: Variant) -> bool {
+        match content.get_type() {
+            VariantType::STRING => {
+                if let Some(FileContent::String(stored_content)) = self._get_file(path.to_string())
+                {
+                    if path.ends_with(".tscn") {
+                        // our parser doesn't serialize the same as godot does, so we need to normalize the content
+                        let normalized_content =
+                            godot_parser::parse_scene(&content.to::<GString>().to_string())
+                                .unwrap()
+                                .serialize();
+
+                        return normalized_content == stored_content;
+                    }
+
+                    return stored_content == content.to::<GString>().to_string();
+                }
+
+                return false;
+            }
+            VariantType::PACKED_BYTE_ARRAY => {
+                if let Some(FileContent::Binary(stored_content)) = self._get_file(path.to_string())
+                {
+                    return stored_content == content.to::<PackedByteArray>().to_vec();
+                }
+
+                return false;
+            }
+            _ => panic!("invalid content type"),
+        }
+    }
+
     fn _save_files(
         &self,
         branch_doc_handle: DocHandle,
@@ -580,13 +610,29 @@ impl GodotProject {
     ) {
         // we filter the files here because godot sends us indiscriminately all the files in the project
         // we only want to save the files that have actually changed
-        let changed_files: Vec<(String, StringOrPackedByteArray)> = files
+        let changed_files: Vec<(String, FileContent)> = files
             .iter_shared()
             .filter_map(|(path, content)| match content.get_type() {
                 VariantType::STRING => {
                     let content = String::from(content.to::<GString>());
 
-                    if let Some(StringOrPackedByteArray::String(stored_content)) =
+                    // save scene files as structured data
+                    if path.to_string().ends_with(".tscn") {
+                        let scene = godot_parser::parse_scene(&content).unwrap();
+
+                        if let Some(FileContent::Scene(stored_scene)) =
+                            self._get_file(path.to_string())
+                        {
+                            if stored_scene == scene {
+                                println!("file {:?} is already up to date", path.to_string());
+                                return None;
+                            }
+                        }
+
+                        return Some((path.to_string(), FileContent::Scene(scene)));
+                    }
+
+                    if let Some(FileContent::String(stored_content)) =
                         self._get_file(path.to_string())
                     {
                         if stored_content == content {
@@ -595,12 +641,12 @@ impl GodotProject {
                         }
                     }
 
-                    Some((path.to_string(), StringOrPackedByteArray::String(content)))
+                    Some((path.to_string(), FileContent::String(content)))
                 }
                 VariantType::PACKED_BYTE_ARRAY => {
                     let content = content.to::<PackedByteArray>().to_vec();
 
-                    if let Some(StringOrPackedByteArray::Binary(stored_content)) =
+                    if let Some(FileContent::Binary(stored_content)) =
                         self._get_file(path.to_string())
                     {
                         if stored_content == content {
@@ -609,7 +655,7 @@ impl GodotProject {
                         }
                     }
 
-                    Some((path.to_string(), StringOrPackedByteArray::Binary(content)))
+                    Some((path.to_string(), FileContent::Binary(content)))
                 }
                 _ => panic!("invalid content type"),
             })
@@ -869,7 +915,7 @@ impl GodotProject {
                 } => {
                     if doc_handle_type == DocHandleType::Binary {
                         println!(
-                            "rust: NewBinaryDocHandle {} {} changes",
+                            "rust: NewBinaryDocHandle !!!! {} {} changes",
                             doc_handle.document_id(),
                             doc_handle.with_doc(|d| d.get_heads().len())
                         );
