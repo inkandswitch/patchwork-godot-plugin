@@ -65,10 +65,23 @@ pub enum FileContent {
 }
 
 #[derive(Debug, Clone)]
+struct BranchUnion {
+    primary_branch_doc_id: DocumentId,
+    secondary_branch_doc_ids: Vec<DocumentId>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum BranchUnionState {
+    Invalid,
+    Loading,
+    Loaded,
+}
+
+#[derive(Debug, Clone)]
 enum CheckedOutBranchState {
     NothingCheckedOut,
-    CheckingOut(DocumentId),
-    CheckedOut(DocumentId),
+    CheckingOut(BranchUnion),
+    CheckedOut(BranchUnion),
 }
 
 #[derive(Debug, Clone)]
@@ -141,7 +154,10 @@ impl GodotProject {
         );
 
         let checked_out_branch_state = match DocumentId::from_str(&checked_out_branch_doc_id) {
-            Ok(doc_id) => CheckedOutBranchState::CheckingOut(doc_id),
+            Ok(doc_id) => CheckedOutBranchState::CheckingOut(BranchUnion {
+                primary_branch_doc_id: doc_id,
+                secondary_branch_doc_ids: Vec::new(),
+            }),
             Err(_) => CheckedOutBranchState::NothingCheckedOut,
         };
 
@@ -669,8 +685,10 @@ impl GodotProject {
             .find(|branch_state| branch_state.is_main)
             .unwrap();
 
-        self.checked_out_branch_state =
-            CheckedOutBranchState::CheckingOut(main_branch.doc_handle.document_id());
+        self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(BranchUnion {
+            primary_branch_doc_id: main_branch.doc_handle.document_id(),
+            secondary_branch_doc_ids: Vec::new(),
+        });
     }
 
     #[func]
@@ -683,37 +701,33 @@ impl GodotProject {
     }
 
     #[func]
-    fn checkout_branch(&mut self, branch_doc_id: String) {
-        let branch_doc_state = self
-            .branch_states
-            .get(&DocumentId::from_str(&branch_doc_id).unwrap())
-            .cloned();
+    fn checkout_branch(
+        &mut self,
+        primary_branch_doc_id: String,
+        secondary_branch_doc_ids: Array<Variant>,
+    ) {
+        let branch_union = BranchUnion {
+            primary_branch_doc_id: DocumentId::from_str(&primary_branch_doc_id).unwrap(),
+            secondary_branch_doc_ids: secondary_branch_doc_ids
+                .iter_shared()
+                .map(|id| DocumentId::from_str(&id.to::<GString>().to_string()).unwrap())
+                .collect(),
+        };
 
-        match branch_doc_state {
-            Some(branch_state) => {
-                // if it's loaded check out immediately
-                if branch_state.synced_heads == branch_state.doc_handle.with_doc(|d| d.get_heads())
-                {
-                    self.checked_out_branch_state =
-                        CheckedOutBranchState::CheckedOut(branch_state.doc_handle.document_id());
-
-                    self.base_mut().emit_signal(
-                        "checked_out_branch",
-                        &[branch_state
-                            .doc_handle
-                            .document_id()
-                            .to_string()
-                            .to_variant()],
-                    );
-
-                // ... otherwise wait in checking out state
-                } else {
-                    self.checked_out_branch_state =
-                        CheckedOutBranchState::CheckingOut(branch_state.doc_handle.document_id());
-                }
+        match self.get_branch_union_state(&branch_union) {
+            BranchUnionState::Invalid => {
+                println!("couldn't checkout branch, some branch doc ids not found");
+                return;
             }
-            None => {
-                println!("couldn't checkout branch, no branch state found");
+            BranchUnionState::Loading => {
+                self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(branch_union);
+            }
+            BranchUnionState::Loaded => {
+                self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(branch_union);
+                self.base_mut().emit_signal(
+                    "checked_out_branch",
+                    &[primary_branch_doc_id.to_string().to_variant()],
+                );
             }
         }
     }
@@ -917,7 +931,7 @@ impl GodotProject {
 
                     self.base_mut().emit_signal("branches_changed", &[branches]);
 
-                    let mut active_branch_doc_id: Option<DocumentId> = None;
+                    let mut active_branch_union: Option<BranchUnion> = None;
                     let mut checking_out_new_branch = false;
 
                     match &self.checked_out_branch_state {
@@ -925,26 +939,31 @@ impl GodotProject {
                             // check out main branch if we haven't checked out anything yet
                             if branch_state.is_main {
                                 checking_out_new_branch = true;
-                                self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(
-                                    branch_state.doc_handle.document_id(),
-                                );
-                                active_branch_doc_id = Some(branch_state.doc_handle.document_id());
+
+                                let branch_union = BranchUnion {
+                                    primary_branch_doc_id: branch_state.doc_handle.document_id(),
+                                    secondary_branch_doc_ids: Vec::new(),
+                                };
+
+                                self.checked_out_branch_state =
+                                    CheckedOutBranchState::CheckingOut(branch_union.clone());
+
+                                active_branch_union = Some(branch_union);
                             }
                         }
-                        CheckedOutBranchState::CheckingOut(branch_doc_id) => {
-                            active_branch_doc_id = Some(branch_doc_id.clone());
+                        CheckedOutBranchState::CheckingOut(branch_union) => {
+                            active_branch_union = Some(branch_union.clone());
                             checking_out_new_branch = true;
                         }
-                        CheckedOutBranchState::CheckedOut(branch_doc_id) => {
-                            active_branch_doc_id = Some(branch_doc_id.clone());
+                        CheckedOutBranchState::CheckedOut(branch_union) => {
+                            active_branch_union = Some(branch_union.clone());
                         }
                     }
 
                     // only trigger update if checked out branch is fully synced
-                    if let Some(active_branch_doc_id) = active_branch_doc_id {
-                        if branch_state.doc_handle.document_id() == active_branch_doc_id
-                            && branch_state.synced_heads
-                                == branch_state.doc_handle.with_doc(|d| d.get_heads())
+                    if let Some(active_branch_union) = active_branch_union {
+                        if self.get_branch_union_state(&active_branch_union)
+                            == BranchUnionState::Loaded
                         {
                             if checking_out_new_branch {
                                 println!(
@@ -952,9 +971,8 @@ impl GodotProject {
                                     branch_state.name
                                 );
 
-                                self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(
-                                    branch_state.doc_handle.document_id(),
-                                );
+                                self.checked_out_branch_state =
+                                    CheckedOutBranchState::CheckedOut(active_branch_union);
 
                                 self.base_mut().emit_signal(
                                     "checked_out_branch",
@@ -983,7 +1001,10 @@ impl GodotProject {
 
                 OutputEvent::CompletedCreateBranch { branch_doc_id } => {
                     self.checked_out_branch_state =
-                        CheckedOutBranchState::CheckingOut(branch_doc_id);
+                        CheckedOutBranchState::CheckingOut(BranchUnion {
+                            primary_branch_doc_id: branch_doc_id,
+                            secondary_branch_doc_ids: Vec::new(),
+                        });
                 }
 
                 OutputEvent::CompletedShutdown => {
@@ -998,9 +1019,10 @@ impl GodotProject {
 
     fn get_checked_out_branch_state(&self) -> Option<BranchState> {
         match &self.checked_out_branch_state {
-            CheckedOutBranchState::CheckedOut(document_id) => {
-                self.branch_states.get(document_id).cloned()
-            }
+            CheckedOutBranchState::CheckedOut(branch_union) => self
+                .branch_states
+                .get(&branch_union.primary_branch_doc_id)
+                .cloned(),
             _ => {
                 println!(
                     "tried to get checked out branch state but nothing is checked out: {:?}",
@@ -1009,6 +1031,38 @@ impl GodotProject {
                 None
             }
         }
+    }
+
+    fn get_branch_union_state(&self, branch_union: &BranchUnion) -> BranchUnionState {
+        let mut all_branch_doc_ids: Vec<DocumentId> = branch_union
+            .secondary_branch_doc_ids
+            .iter()
+            .cloned()
+            .collect();
+
+        all_branch_doc_ids.push(branch_union.primary_branch_doc_id.clone());
+
+        let all_branch_doc_states: Vec<BranchState> = all_branch_doc_ids
+            .iter()
+            .filter_map(|id| self.branch_states.get(id).cloned())
+            .collect();
+
+        if all_branch_doc_states.len() != all_branch_doc_ids.len() {
+            println!("couldn't checkout branch, some branch doc ids not found");
+            return BranchUnionState::Invalid;
+        }
+
+        let are_all_branch_doc_states_loaded = all_branch_doc_states.iter().all(|branch_state| {
+            return branch_state.doc_handle.with_doc(|d| {
+                d.get_heads().len() > 0 && d.get_heads() == branch_state.synced_heads
+            });
+        });
+
+        if are_all_branch_doc_states_loaded {
+            return BranchUnionState::Loaded;
+        }
+
+        BranchUnionState::Loading
     }
 }
 

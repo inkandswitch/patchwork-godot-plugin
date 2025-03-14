@@ -144,7 +144,7 @@ func _on_branch_picker_item_selected(index: int) -> void:
 
 
 	print("picked in branch picker: ", index, " ", selected_branch)
-	checkout_branch(selected_branch.id)
+	checkout_branch(selected_branch.id, [])
 
 
 func _on_highlight_changes_checkbox_toggled(pressed: bool) -> void:
@@ -233,7 +233,7 @@ func ensure_user_has_no_unsaved_files(message: String, callback: Callable):
 func checkout_branch(branch_id: String) -> void:
 	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before checking out another branch.", func():
 		_before_cvs_action("checking out", func():
-			godot_project.checkout_branch(branch_id)
+			godot_project.checkout_branch(branch_id, [])
 			add_call_to_queue(self._after_cvs_action)
 		, false)
 	)
