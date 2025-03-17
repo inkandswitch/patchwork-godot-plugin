@@ -7,15 +7,19 @@ extends MarginContainer
 var godot_project: GodotProject
 
 @onready var branch_picker: OptionButton = %BranchPicker
+@onready var other_branch_picker: OptionButton = %OtherBranchPicker
 @onready var menu_button: MenuButton = %MenuButton
 @onready var history_list: ItemList = %HistoryList
 @onready var user_button: Button = %UserButton
 @onready var inspector: ScrollContainer = %PEEditorInspector
 @onready var highlight_changes_checkbox: CheckBox = %HighlightChangesCheckbox
+@onready var tab_container: TabContainer = %TabContainer
 
 const TEMP_DIR = "user://tmp"
 
 var branches = []
+var other_branch_id
+var merge_preview_active = false
 var plugin: EditorPlugin
 var config: PatchworkConfig
 var current_inspector_object: FakeInspectorResource
@@ -54,6 +58,8 @@ func _on_scene_saved(path):
 
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
+	print("sidebar ready")
+
 	update_ui()
 
 	# @Paul: I think somewhere besides the plugin sidebar gets instantiated. Is this something godot does?
@@ -73,8 +79,18 @@ func _ready() -> void:
 	popup.id_pressed.connect(_on_menu_button_id_pressed)
 	user_button.pressed.connect(_on_user_button_pressed)
 	branch_picker.item_selected.connect(_on_branch_picker_item_selected)
+	other_branch_picker.item_selected.connect(_on_other_branch_picker_item_selected)
 	highlight_changes_checkbox.toggled.connect(_on_highlight_changes_checkbox_toggled)
 
+
+func _on_tab_container_tab_changed(tab_idx: int) -> void:
+	var tab_name = tab_container.get_tab_title(tab_idx)
+
+	if tab_name == "Merge Preview 🧪":
+		merge_preview_active = true
+		checkout_branch(godot_project.get_checked_out_branch().id, [other_branch_id])
+	else:
+		merge_preview_active = false
 
 func _on_menu_button_id_pressed(id: int) -> void:
 	match id:
@@ -144,7 +160,21 @@ func _on_branch_picker_item_selected(index: int) -> void:
 
 
 	print("picked in branch picker: ", index, " ", selected_branch)
-	checkout_branch(selected_branch.id)
+
+
+	if merge_preview_active:
+		checkout_branch(selected_branch.id, [other_branch_id])
+	else:
+		checkout_branch(selected_branch.id, [])
+
+
+func _on_other_branch_picker_item_selected(index: int) -> void:
+	var selected_branch = branches[index]
+	other_branch_id = selected_branch.id
+
+	print("other branch id: ", other_branch_id)
+
+	checkout_branch(godot_project.get_checked_out_branch().id, [other_branch_id])
 
 
 func _on_highlight_changes_checkbox_toggled(pressed: bool) -> void:
@@ -230,10 +260,10 @@ func ensure_user_has_no_unsaved_files(message: String, callback: Callable):
 		callback.call()
 
 
-func checkout_branch(branch_id: String) -> void:
+func checkout_branch(branch_id: String, secondary_branch_ids: Array) -> void:
 	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before checking out another branch.", func():
 		_before_cvs_action("checking out", func():
-			godot_project.checkout_branch(branch_id)
+			godot_project.checkout_branch(branch_id, secondary_branch_ids)
 			add_call_to_queue(self._after_cvs_action)
 		, false)
 	)
@@ -312,7 +342,7 @@ func update_ui() -> void:
 
 	self.branches = godot_project.get_branches()
 
-	# highlight chanages
+	# highlight changes
 
 	var edited_root = EditorInterface.get_edited_scene_root()
 
@@ -328,15 +358,18 @@ func update_ui() -> void:
 			HighlightChangesLayer.remove_highlight(edited_root)
 
 
-	# update branch picker
+	# update branch pickers
 
 	branch_picker.clear()
+	other_branch_picker.clear()
+	other_branch_picker.add_item("---")
+	
 	print("UI: checked out branch: ", checked_out_branch)
 
 	for i in range(branches.size()):
 		var branch = branches[i]
-
 		var label = branch.name
+		var is_checked_out = checked_out_branch && branch.id == checked_out_branch.id
 
 		if branch.is_main:
 			label = label + " 👑"
@@ -344,11 +377,19 @@ func update_ui() -> void:
 		branch_picker.add_item(label, i)
 		branch_picker.set_item_metadata(i, branch.id)
 
+		if !is_checked_out:
+			other_branch_picker.add_item(label, i)
+			other_branch_picker.set_item_metadata(i, branch.id)
+
+			if branch.id == other_branch_id:
+				other_branch_picker.select(i)
+
+
 		# this should not happen, but right now the sync is not working correctly so we need to surface this in the interface
 		if branch.is_not_loaded:
 			branch_picker.set_item_icon(i, load("res://addons/patchwork/icons/warning.svg"))
 
-		if checked_out_branch && branch.id == checked_out_branch.id:
+		if is_checked_out:
 			branch_picker.select(i)
 
 	# update history
