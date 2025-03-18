@@ -1,5 +1,5 @@
 #include "patchwork_editor.h"
-
+#include "diff_result.h"
 #include "missing_resource_container.h"
 
 #include <core/io/json.h>
@@ -362,16 +362,10 @@ void PatchworkEditor::progress_end_task_bg(const String &p_task) {
 	EditorNode::get_singleton()->progress_end_task_bg(p_task);
 }
 
-
-Dictionary PatchworkEditor::get_diff(Dictionary changed_files_dict) {
-	// files = [{
-	// 	path: "path/to/file",
-	// 	change: "modified",
-	// 	old_content: "res://path/to/file_old",
-	// 	new_content: "res://path/to/file_new"
-	// }, ...]
+Ref<DiffResult> PatchworkEditor::get_diff(Dictionary changed_files_dict) {
+	Ref<DiffResult> result;
+	result.instantiate();
 	Array files = changed_files_dict["files"];
-	Dictionary display_diff;
 	for (const auto &d : files) {
 		Dictionary dict = d;
 		if (dict.size() == 0) {
@@ -383,24 +377,23 @@ Dictionary PatchworkEditor::get_diff(Dictionary changed_files_dict) {
 			auto old_content = dict["old_content"];
 			auto new_content = dict["new_content"];
 			auto diff = get_file_diff(old_content, new_content);
-
-			display_diff[path] = diff;
-			// show diff
+			result->set_file_diff(path, diff);
 		} else if (change_type == "added" || change_type == "deleted") {
-			Dictionary diff;
-			diff["type"] = change_type;
-			display_diff[path] = diff;
+			Ref<FileDiffResult> file_diff;
+			file_diff.instantiate();
+			file_diff->set_type(change_type);
+			result->set_file_diff(path, file_diff);
 		}
 	}
-	return display_diff;
+	return result;
 }
 
-Dictionary PatchworkEditor::get_file_diff(const String &p_path, const String &p_path2) {
+Ref<FileDiffResult> PatchworkEditor::get_file_diff(const String &p_path, const String &p_path2) {
 	Error error = OK;
 	auto res1 = ResourceLoader::load(p_path, "", ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &error);
-	ERR_FAIL_COND_V_MSG(error != OK, Dictionary(), "Failed to load resource at path " + p_path);
+	ERR_FAIL_COND_V_MSG(error != OK, Ref<FileDiffResult>(), "Failed to load resource at path " + p_path);
 	auto res2 = ResourceLoader::load(p_path2, "", ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &error);
-	ERR_FAIL_COND_V_MSG(error != OK, Dictionary(), "Failed to load resource at path " + p_path2);
+	ERR_FAIL_COND_V_MSG(error != OK, Ref<FileDiffResult>(), "Failed to load resource at path " + p_path2);
 	return get_diff_res(res1, res2);
 }
 
@@ -479,8 +472,9 @@ bool PatchworkEditor::deep_equals(Variant a, Variant b, bool exclude_non_storage
 	return true;
 }
 
-Dictionary PatchworkEditor::get_diff_obj(Object *a, Object *b, bool exclude_non_storage) {
-	Dictionary diff;
+Ref<ObjectDiffResult> PatchworkEditor::get_diff_obj(Object *a, Object *b, bool exclude_non_storage) {
+	Ref<ObjectDiffResult> diff;
+	diff.instantiate();
 	List<PropertyInfo> p_list_a;
 	List<PropertyInfo> p_list_b;
 	a->get_property_list(&p_list_a, false);
@@ -501,13 +495,19 @@ Dictionary PatchworkEditor::get_diff_obj(Object *a, Object *b, bool exclude_non_
 		prop_names.insert(prop.name);
 	}
 	for (auto &prop : prop_names) {
-		auto prop_a = a->get(prop);
-		auto prop_b = b->get(prop);
-		if (!deep_equals(prop_a, prop_b)) {
-			auto arr = Array();
-			arr.push_back(prop_a);
-			arr.push_back(prop_b);
-			diff[prop] = arr;
+		bool a_valid = false;
+		bool b_valid = false;
+		auto prop_a = a->get(prop, &a_valid);
+		auto prop_b = b->get(prop, &b_valid);
+		if (!a_valid && !b_valid) {
+			continue;
+		}
+		if (!a_valid) {
+			diff->set_property_diff(memnew(PropertyDiffResult(prop, "deleted", Variant(), prop_b, a, b)));
+		} else if (!b_valid) {
+			diff->set_property_diff(memnew(PropertyDiffResult(prop, "added", prop_a, Variant(), a, b)));
+		} else if (!deep_equals(prop_a, prop_b)) {
+			diff->set_property_diff(memnew(PropertyDiffResult(prop, "changed", prop_a, prop_b, a, b)));
 		}
 	}
 	return diff;
@@ -522,8 +522,9 @@ void get_child_node_paths(Node *node_a, HashSet<NodePath> &paths, const String &
 	}
 }
 
-Dictionary PatchworkEditor::evaluate_node_differences(Node *scene1, Node *scene2, const NodePath &path) {
-	Dictionary result;
+Ref<NodeDiffResult> PatchworkEditor::evaluate_node_differences(Node *scene1, Node *scene2, const NodePath &path) {
+	Ref<NodeDiffResult> result;
+	result.instantiate();
 	bool is_root = path == "." || path.is_empty();
 	Node *node1 = scene1;
 	Node *node2 = scene2;
@@ -538,46 +539,42 @@ Dictionary PatchworkEditor::evaluate_node_differences(Node *scene1, Node *scene2
 		} else {
 			node2 = nullptr;
 		}
-		result["path"] = path;
+		result->set_path(path);
 	} else {
-		result["path"] = "." + scene1->get_name();
+		result->set_path("." + scene1->get_name());
 	}
 	if (node1 == nullptr) {
-		result["type"] = "node_added";
+		result->set_type("node_added");
 		return result;
 	}
 	if (node2 == nullptr) {
-		result["type"] = "node_deleted";
+		result->set_type("node_deleted");
 		return result;
 	}
 	auto diff = get_diff_obj(node1, node2, true);
-	if (diff.size() > 0) {
-		result["type"] = "node_changed";
-		// TODO: handle scene changes
-		result["props"] = diff;
+	if (diff->get_property_diffs().size() > 0) {
+		result->set_type("node_changed");
+		result->set_props(diff);
 		return result;
 	}
-	return Dictionary();
+	return Ref<NodeDiffResult>();
 }
 
-Dictionary PatchworkEditor::get_diff_res(Ref<Resource> p_res, Ref<Resource> p_res2) {
-	// check the types
-	Dictionary result;
+Ref<FileDiffResult> PatchworkEditor::get_diff_res(Ref<Resource> p_res, Ref<Resource> p_res2) {
+	Ref<FileDiffResult> result;
+	result.instantiate();
+	result->set_res_old(p_res);
+	result->set_res_new(p_res2);
+
 	if (p_res->get_class() != p_res2->get_class()) {
-		result["type"] = "type_changed";
-		result["old_type"] = p_res->get_class();
-		result["new_type"] = p_res2->get_class();
+		result->set_type("type_changed");
 		return result;
 	}
-	// ensure that the references stick around
-	result["res_old"] = p_res;
-	result["res_new"] = p_res2;
 	if (p_res->get_class() != "PackedScene") {
-		result["type"] = "resource_changed";
-		result["props"] = get_diff_obj(p_res.ptr(), p_res2.ptr(), true);
+		result->set_type("resource_changed");
+		result->set_props(get_diff_obj((Object *)p_res.ptr(), (Object *)p_res2.ptr(), true));
 		return result;
 	}
-	// otherwise, we have to instantiate the scenes and compare them
 	Ref<PackedScene> p_scene1 = p_res;
 	Ref<PackedScene> p_scene2 = p_res2;
 	auto scene1 = p_scene1->instantiate();
@@ -585,17 +582,15 @@ Dictionary PatchworkEditor::get_diff_res(Ref<Resource> p_res, Ref<Resource> p_re
 	HashSet<NodePath> paths;
 	get_child_node_paths(scene1, paths);
 	get_child_node_paths(scene2, paths);
-	Array node_diffs;
+	Dictionary node_diffs;
 	for (auto &path : paths) {
-		Dictionary value1 = (evaluate_node_differences(scene1, scene2, path));
-		if (value1.size() > 0) {
-			value1["res_old"] = p_res;
-			value1["res_new"] = p_res2;
-			node_diffs.push_back(value1);
+		Ref<NodeDiffResult> value1 = evaluate_node_differences(scene1, scene2, path);
+		if (value1.is_valid()) {
+			node_diffs[(Variant)path] = value1;
 		}
 	}
-	result["type"] = "scene_changed";
-	result["nodes"] = node_diffs;
+	result->set_type("scene_changed");
+	result->set_node_diffs(node_diffs);
 	return result;
 }
 

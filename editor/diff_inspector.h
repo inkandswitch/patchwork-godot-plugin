@@ -33,6 +33,7 @@
 
 #include "scene/gui/scroll_container.h"
 class EditorProperty;
+class PropertyDiffResult;
 class DiffInspector : public ScrollContainer {
 	GDCLASS(DiffInspector, ScrollContainer);
 
@@ -42,7 +43,7 @@ protected:
 public:
 	static Variant get_property_revert_value(Object *p_object, const StringName &p_property);
 	static bool can_property_revert(Object *p_object, const StringName &p_property, bool has_current_value, Variant p_custom_current_value);
-	static EditorProperty *instantiate_property_editor(Object *p_object, Variant::Type p_type, const String &p_path, PropertyHint p_hint, const String &p_hint_text, uint32_t p_usage, bool p_wide = false);
+	static Control *instantiate_property_editor(Object *p_object, const String &p_path, bool p_wide = false);
 };
 
 #endif // DIFF_INSPECTOR_H
