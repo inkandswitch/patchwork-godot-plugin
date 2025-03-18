@@ -57,16 +57,24 @@ public:
 class ObjectDiffResult : public RefCounted {
 	GDCLASS(ObjectDiffResult, RefCounted)
 
-private:
+	Object *old_object;
+	Object *new_object;
 	Dictionary property_diffs;
 
 protected:
 	static void _bind_methods();
 
 public:
+	void set_old_object(Object *p_old_object);
+	Object *get_old_object() const;
+	void set_new_object(Object *p_new_object);
+	Object *get_new_object() const;
+	void set_property_diffs(const Dictionary &p_diffs);
+	Dictionary get_property_diffs() const;
 	void set_property_diff(const Ref<PropertyDiffResult> &p_diff);
 	Ref<PropertyDiffResult> get_property_diff(const String &p_name) const;
-	Dictionary get_property_diffs() const;
+	ObjectDiffResult();
+	ObjectDiffResult(Object *p_old_object, Object *p_new_object, const Dictionary &p_property_diffs);
 };
 
 class NodeDiffResult : public RefCounted {
@@ -75,6 +83,8 @@ class NodeDiffResult : public RefCounted {
 private:
 	NodePath path;
 	String type;
+	Object *old_object;
+	Object *new_object;
 	Ref<ObjectDiffResult> props;
 
 protected:
@@ -86,7 +96,13 @@ public:
 	void set_type(const String &p_type);
 	String get_type() const;
 	void set_props(const Ref<ObjectDiffResult> &p_props);
+	void set_old_object(Object *p_old_object);
+	Object *get_old_object() const;
+	void set_new_object(Object *p_new_object);
+	Object *get_new_object() const;
 	Ref<ObjectDiffResult> get_props() const;
+	NodeDiffResult();
+	NodeDiffResult(const NodePath &p_path, const String &p_type, Object *p_old_object, Object *p_new_object, const Ref<ObjectDiffResult> &p_props);
 };
 
 class PropertyDiffResult : public RefCounted {

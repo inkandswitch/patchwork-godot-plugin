@@ -27,6 +27,10 @@ void initialize_patchwork_editor_module(ModuleInitializationLevel p_level) {
 		ClassDB::register_class<FileDiffResult>();
 		ClassDB::register_class<ObjectDiffResult>();
 		ClassDB::register_class<NodeDiffResult>();
+		ClassDB::register_class<PropertyDiffResult>();
+		ClassDB::register_class<DiffInspectorProperty>();
+		// register the editor inspector section
+		ClassDB::register_class<EditorInspectorSection>();
 	}
 }
 
