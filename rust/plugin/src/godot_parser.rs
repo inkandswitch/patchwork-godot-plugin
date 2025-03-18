@@ -30,7 +30,7 @@ pub struct GodotNode {
     pub id: String,
     pub name: String,
     pub type_or_instance: TypeOrInstance, // a node either has a type or an instance property
-    pub parent: Option<String>,
+    pub parent_id: Option<String>,
     pub owner: Option<String>,
     pub index: Option<i32>,
     pub groups: Option<String>,
@@ -65,6 +65,7 @@ pub struct SubResourceNode {
 }
 
 impl GodotScene {
+
     pub fn reconcile(&self, tx: &mut Transaction, path: String) {
         let files = tx
             .get_obj_id(ROOT, "files")
@@ -194,8 +195,8 @@ impl GodotScene {
             }
             
             // Store optional properties
-            if let Some(parent) = &node.parent {
-                tx.put(&node_obj, "parent", parent.clone()).unwrap();
+            if let Some(parent_id) = &node.parent_id {
+                tx.put(&node_obj, "parent_id", parent_id.clone()).unwrap();
             } else if tx.get_string(&node_obj, "parent").is_some() {
                 tx.delete(&node_obj, "parent").unwrap();
             }
@@ -243,7 +244,6 @@ impl GodotScene {
                 .unwrap_or_else(|| tx.put_object(&node_obj, "child_node_ids", ObjType::List).unwrap());
             
 
-
             // reconcile child node ids
             for (i, new_child_node_id) in node.child_node_ids.iter().enumerate() {
                 if let Some(current_child_node_id) = tx.get_string(&children_obj, i) {
@@ -256,18 +256,6 @@ impl GodotScene {
 
                 }
             }
-
-
-            // // delete child node ids if they are not in the node
-
-            // let new_child_node_ids_count = node.child_node_ids.len();
-            // let prev_child_node_ids_count = tx.length(&children_obj);
-
-            // if new_child_node_ids_count < prev_child_node_ids_count {
-            //     for i in (new_child_node_ids_count..prev_child_node_ids_count).rev() {
-            //         tx.delete(&children_obj, i).unwrap();
-            //     }
-            // }
         }
         
         // Remove nodes that are in the document but not in the scene
@@ -405,7 +393,7 @@ impl GodotScene {
             };
 
             // Get optional properties
-            let parent = doc.get_string(&node_obj, "parent");
+            let parent_id = doc.get_string(&node_obj, "parent_id");
             let owner = doc.get_string(&node_obj, "owner");
             let index = doc.get_int(&node_obj, "index").map(|i| i as i32);
             let groups = doc.get_string(&node_obj, "groups");
@@ -438,7 +426,7 @@ impl GodotScene {
                 id,
                 name,
                 type_or_instance,
-                parent,
+                parent_id,
                 owner,
                 index,
                 groups,
@@ -544,8 +532,14 @@ impl GodotScene {
             output.push_str(&format!(" type=\"{}\"", t));
         }
 
-        if let Some(parent) = &node.parent {
-            output.push_str(&format!(" parent=\"{}\"", parent));
+        if let Some(parent_id) = &node.parent_id {
+            let parent_name = if *parent_id == self.root_node_id {
+                ".".to_string()
+            } else {
+                self.nodes.get(parent_id).unwrap().name.clone()
+            };
+
+            output.push_str(&format!(" parent=\"{}\"", parent_name));
         }
 
         if let TypeOrInstance::Instance(i) = &node.type_or_instance {
@@ -735,12 +729,12 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         ));
                     };
 
-                    let parent = heading.get("parent").cloned().map(|p| unquote(&p));
+                    let parent_name = heading.get("parent").cloned().map(|p| unquote(&p));
         
                 
-                    if root_node_id.is_none() {
+                    let parent_id = if root_node_id.is_none() {
                         root_node_id = Some(node_id.clone());
-
+                        None
                     } else {
                         loop {
                             let ancestor = match ancestor_nodes.last_mut() {
@@ -750,25 +744,25 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                                 }
                             };
 
-                            if Some(ancestor.name.clone()) == parent
+                            if Some(ancestor.name.clone()) == parent_name
                                 || 
                                 // special case, the root node is refered to by "."
-                                (parent == Some(".".to_string())       
+                                (parent_name == Some(".".to_string())       
                                     && Some(ancestor.id.clone()) == root_node_id)
                             {      
                                 nodes.get_mut(&ancestor.id).unwrap().child_node_ids.push(node_id.clone());
-                                break;
+                                break Some(ancestor.id.clone());
                             } else {
-                                ancestor_nodes.pop();
+                                ancestor_nodes.pop();                                                            
                             }
-                        };
-                    }
+                        }
+                    };
 
                     let node = GodotNode {
                         id: node_id.clone(),
                         name,
                         type_or_instance,
-                        parent: parent.clone(),
+                        parent_id,
                         owner: heading.get("owner").cloned().map(|o| unquote(&o)),
                         index: heading.get("index").and_then(|i| i.parse::<i32>().ok()),
                         groups: heading.get("groups").cloned(),
