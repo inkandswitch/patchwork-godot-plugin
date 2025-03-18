@@ -10,7 +10,7 @@ extends ScrollContainer
 @export var removed_color: Color
 @export var modified_color: Color
 
-
+var diff_stylebox_tex = preload("./diff_stylebox_tex.png")
 @onready var main_vbox: VBoxContainer = %DifferMainVBox
 var diff_result: DiffResult
 
@@ -53,12 +53,34 @@ func getChangedNodes() -> Array[Node]:
 	for section in sections:
 		#check if it is a node tho
 		if section.get_object() is Node:
-		changed_nodes.append(section.get_object())
+			changed_nodes.append(section.get_object())
 	return changed_nodes
 
+
+func get_diff_stylebox(color: Color) -> StyleBoxTexture:
+	var stylebox: StyleBoxTexture = StyleBoxTexture.new()
+	stylebox.texture = diff_stylebox_tex
+	stylebox.modulate_color = color
+	return stylebox
+
+func get_added_stylebox() -> StyleBoxTexture:
+	return get_diff_stylebox(added_color)
+
+func get_removed_stylebox() -> StyleBoxTexture:
+	return get_diff_stylebox(removed_color)
+
+func get_modified_stylebox() -> StyleBoxTexture:
+	return get_diff_stylebox(modified_color)
+
 func add_PropertyDiffResult(editor_vbox: Control, property_diff: PropertyDiffResult) -> void:
-	if property_diff == null || property_diff.get_change_type() != "changed":
+	var has_prop_new = true
+	var has_prop_old = true
+	if property_diff == null:
 		return
+	if property_diff.get_change_type() == "added":
+		has_prop_old = false
+	if property_diff.get_change_type() == "removed":
+		has_prop_new = false
 	var prop_name = property_diff.get_name()
 	var prop_type = property_diff.get_change_type()
 	var prop_old = property_diff.get_old_value()
@@ -66,15 +88,29 @@ func add_PropertyDiffResult(editor_vbox: Control, property_diff: PropertyDiffRes
 	var prop_old_object = property_diff.get_old_object()
 	var prop_new_object = property_diff.get_new_object()
 	print("Adding property diff result for ", prop_name, " with type ", prop_type)
-	var editor_property_new: DiffInspectorProperty = DiffInspector.instantiate_property_editor(prop_new_object, prop_name, false)
-	var editor_property_old: DiffInspectorProperty = DiffInspector.instantiate_property_editor(prop_old_object, prop_name, false)
-	editor_property_new.set_object_and_property(prop_new_object, prop_name)
-	editor_property_old.set_object_and_property(prop_old_object, prop_name)
-	update_property_editor(editor_property_new)
-	update_property_editor(editor_property_old)
-	editor_vbox.add_child(editor_property_new)
-	editor_vbox.add_child(editor_property_old)
+	var editor_property_old: DiffInspectorProperty = null
+	if has_prop_old:
+		editor_property_old = DiffInspector.instantiate_property_editor(prop_old_object, prop_name, false)
+		editor_property_old.set_object_and_property(prop_old_object, prop_name)
+		editor_property_old.set_label(prop_name)
+		update_property_editor(editor_property_old)
+		var removed_panel_container: PanelContainer = PanelContainer.new()
+		removed_panel_container.size.x = 10
+		removed_panel_container.add_theme_stylebox_override("panel", get_removed_stylebox())
+		removed_panel_container.add_child(editor_property_old)
+		editor_vbox.add_child(removed_panel_container)
 
+	var editor_property_new: DiffInspectorProperty = null
+	if has_prop_new:
+		editor_property_new = DiffInspector.instantiate_property_editor(prop_new_object, prop_name, false)
+		editor_property_new.set_object_and_property(prop_new_object, prop_name)
+		editor_property_new.set_label(prop_name)
+		update_property_editor(editor_property_new)
+		var added_panel_container: PanelContainer = PanelContainer.new()
+		added_panel_container.size.x = 10
+		added_panel_container.add_theme_stylebox_override("panel", get_added_stylebox())
+		added_panel_container.add_child(editor_property_new)
+		editor_vbox.add_child(added_panel_container)
 
 func add_ObjectDiffResult(object_diff: ObjectDiffResult) -> void:
 	var prop_results: Array[PropertyDiffResult] = []
@@ -97,6 +133,34 @@ func add_ObjectDiffResult(object_diff: ObjectDiffResult) -> void:
 	sections.append(inspector_section)
 	main_vbox.add_child(inspector_section)
 
+func get_flat_stylebox(color: Color) -> StyleBoxFlat:
+	var stylebox: StyleBoxFlat = StyleBoxFlat.new()
+	stylebox.bg_color = color
+	return stylebox
+
+func get_node_box(icon: Texture2D, text: String) -> PanelContainer:
+	var panel_container: PanelContainer = PanelContainer.new()
+	# HBox with two items: The removed icon and a label with the text "Node Deleted"
+	var hbox: HBoxContainer = HBoxContainer.new()
+	var icon_rect: TextureRect = TextureRect.new()
+	icon_rect.texture = icon
+	icon_rect.size.x = 60
+	icon_rect.size.y = 60
+	icon_rect.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+	hbox.add_child(icon_rect)	
+	var label: Label = Label.new()
+	label.text = text
+	hbox.add_child(label)
+	panel_container.add_child(hbox)
+	panel_container.size.y = 60
+	return panel_container
+
+func get_node_deleted_box() -> PanelContainer:
+	return get_node_box(removed_icon, "Node Deleted")
+
+func get_node_added_box() -> PanelContainer:
+	return get_node_box(added_icon, "Node Added")
+
 func add_NodeDiffResult(node_diff: NodeDiffResult) -> void:
 	var node_name: String = node_diff.get_path()
 	var node_type: String = node_diff.get_type()
@@ -109,10 +173,15 @@ func add_NodeDiffResult(node_diff: NodeDiffResult) -> void:
 	# and we don't add the old object to the inspector
 	var inspector_section: EditorInspectorSection = EditorInspectorSection.new()
 	var vbox = inspector_section.get_vbox()
+	print("!!! adding node diff result for ", node_name, " with type ", node_type)
 	if node_type == "node_added":
 		inspector_section.setup(node_name, node_name, node_new_object, added_color, true)
+		print("adding node added box")
+		vbox.add_child(get_node_added_box())
 	elif node_type == "node_deleted":
+		print("adding node deleted box")
 		inspector_section.setup(node_name, node_name, node_old_object, removed_color, true)
+		vbox.add_child(get_node_deleted_box())
 	else:
 		inspector_section.setup(node_name, node_name, node_new_object, modified_color, true)
 		var prop_results: Array[PropertyDiffResult] = []
@@ -141,6 +210,9 @@ func add_FileDiffResult(file_path: String, file_diff: FileDiffResult) -> void:
 	elif type == "scene_changed":
 		node_diffs = file_diff.get_node_diffs()
 		for node in node_diffs.keys():
+			# skip temporary nodes created by the instance
+			if (String(node).contains("@")):
+				continue
 			var node_diff: NodeDiffResult = node_diffs[node]
 			add_NodeDiffResult(node_diff)
 			

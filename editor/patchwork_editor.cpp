@@ -490,10 +490,21 @@ Ref<ObjectDiffResult> PatchworkEditor::get_diff_obj(Object *a, Object *b, bool e
 	diff.instantiate();
 	List<PropertyInfo> p_list_a;
 	List<PropertyInfo> p_list_b;
+	bool has_script_instance = false;
 	diff->set_old_object(a);
 	diff->set_new_object(b);
 	a->get_property_list(&p_list_a, false);
 	b->get_property_list(&p_list_b, false);
+	if (a->get_script_instance()) {
+		a->get_script_instance()->get_property_list(&p_list_a);
+		a->notification(NOTIFICATION_READY);
+		a->get_script_instance()->notification(NOTIFICATION_READY);
+	}
+	if (b->get_script_instance()) {
+		b->get_script_instance()->get_property_list(&p_list_b);
+		b->notification(NOTIFICATION_READY);
+		b->get_script_instance()->notification(NOTIFICATION_READY);
+	}
 	// diff is key: [old_value, new_value]
 	HashSet<String> prop_names;
 	// TODO: handle PROPERTY_USAGE_NO_EDITOR, PROPERTY_USAGE_INTERNAL, etc.
@@ -557,6 +568,9 @@ Ref<NodeDiffResult> PatchworkEditor::evaluate_node_differences(Node *scene1, Nod
 		result->set_path(path);
 	} else {
 		result->set_path("." + scene1->get_name());
+	}
+	if (String(path).contains("Coin6")) {
+		int foo = 0;
 	}
 	result->set_old_object(node1);
 	result->set_new_object(node2);

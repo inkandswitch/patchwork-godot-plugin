@@ -1,0 +1,63 @@
+[gd_resource type="Theme" load_steps=4 format=3 uid="uid://hr3cor4s2ov2"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_nfkfj"]
+content_margin_left = 4.0
+content_margin_top = 4.0
+content_margin_right = 4.0
+content_margin_bottom = 4.0
+bg_color = Color(1, 1, 1, 0.75)
+draw_center = false
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+corner_detail = 5
+expand_margin_left = 2.0
+expand_margin_top = 2.0
+expand_margin_right = 2.0
+expand_margin_bottom = 2.0
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_atoxs"]
+content_margin_left = 4.0
+content_margin_top = 4.0
+content_margin_right = 4.0
+content_margin_bottom = 4.0
+bg_color = Color(0.1, 0.1, 0.1, 0.6)
+border_width_bottom = 2
+border_color = Color(0, 0, 0, 0.6)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+corner_detail = 5
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_og2e8"]
+content_margin_left = 0.0
+content_margin_top = 0.0
+content_margin_right = 0.0
+content_margin_bottom = 0.0
+bg_color = Color(0.1, 0.1, 0.1, 0.6)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+corner_detail = 5
+
+[resource]
+Control/colors/font_uneditable_color = Color(1, 1, 1, 1)
+Control/colors/property_color = Color(0.893422, 0.894953, 0.898775, 1)
+Control/colors/read_only_label_color = Color(1, 1, 1, 1)
+Control/colors/readonly_color = Color(0.982101, 0.98236, 0.982876, 1)
+Editor/colors/property_color = Color(0.64951, 0.653922, 0.663725, 1)
+Editor/colors/readonly_color = Color(0.64951, 0.653922, 0.663725, 1)
+Editor/colors/readonly_warning_color = Color(0.64951, 0.653922, 0.663725, 1)
+Editor/colors/warning_color = Color(0.64951, 0.653922, 0.663725, 1)
+LineEdit/colors/font_uneditable_color = Color(0.87451, 0.87451, 0.87451, 1)
+LineEdit/styles/focus = SubResource("StyleBoxFlat_nfkfj")
+LineEdit/styles/normal = SubResource("StyleBoxFlat_atoxs")
+LineEdit/styles/read_only = SubResource("StyleBoxFlat_atoxs")
+Panel/styles/panel = SubResource("StyleBoxFlat_og2e8")
