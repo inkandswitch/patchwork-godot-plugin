@@ -493,6 +493,7 @@ func _cleanup_inspector(node: Node) -> void:
 func show_diff(heads_before, heads_after):
 	# TODO: handle dependencies of these files
 	var diff_dict = godot_project.get_changed_file_content_between(PackedStringArray(heads_before), PackedStringArray(heads_after))
+
 	var files_arr = diff_dict["files"]
 	if files_arr.size() == 0:
 		#print("No changes between %s and %s" % [hash1, hash2])

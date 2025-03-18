@@ -331,7 +331,7 @@ impl GodotProject {
 
     #[func]
     fn get_node_changes(&self, path: String) -> Array<Variant> {
-        let checked_out_branch_union = match self.get_checked_out_branch_union() {
+        let mut checked_out_branch_union = match self.get_checked_out_branch_union() {
             Some(branch_union) => branch_union,
             None => return Array::new(),
         };
@@ -345,21 +345,24 @@ impl GodotProject {
             TextRepresentation::String(TextEncoding::Utf8CodeUnit),
         );
 
-        let path = Vec::from([
+        let scene =
+            godot_parser::GodotScene::hydrate(&mut checked_out_branch_union.doc, &path).unwrap();
+
+        let patch_path = Vec::from([
             Prop::Map(String::from("files")),
             Prop::Map(String::from(path)),
             Prop::Map(String::from("structured_content")),
             Prop::Map(String::from("nodes")),
         ]);
 
-        let mut changed_nodes: HashSet<String> = HashSet::new();
-        let mut added_nodes: HashSet<String> = HashSet::new();
+        let mut changed_node_ids: HashSet<String> = HashSet::new();
+        let mut added_node_ids: HashSet<String> = HashSet::new();
 
         for patch in patches {
-            match_path(&path, &patch).inspect(|PathWithAction { path, action }| {
+            match_path(&patch_path, &patch).inspect(|PathWithAction { path, action }| {
                 match path.first() {
                     Some((_, Prop::Map(node_id))) => {
-                        changed_nodes.insert(node_id.clone());
+                        changed_node_ids.insert(node_id.clone());
                     }
                     None => {
                         if let PatchAction::PutMap {
@@ -368,7 +371,7 @@ impl GodotProject {
                             conflict: _,
                         } = action
                         {
-                            added_nodes.insert(key.clone());
+                            added_node_ids.insert(key.clone());
                         }
                     }
                     _ => {}
@@ -378,12 +381,12 @@ impl GodotProject {
 
         let mut result: Array<Variant> = Array::new();
 
-        for node_path in changed_nodes {
+        for node_id in changed_node_ids {
             // we need to filter out added nodes because they are already in the added_nodes array
-            if !added_nodes.contains(&node_path) {
+            if !added_node_ids.contains(&node_id) {
                 result.push(
                     &dict! {
-                        "node_path": node_path,
+                        "node_path": scene.get_node_path(&node_id),
                         "type": "changed"
                     }
                     .to_variant(),
@@ -391,10 +394,10 @@ impl GodotProject {
             }
         }
 
-        for node_path in added_nodes {
+        for node_id in added_node_ids {
             result.push(
                 &dict! {
-                    "node_path": node_path,
+                    "node_path": scene.get_node_path(&node_id),
                     "type": "added"
                 }
                 .to_variant(),

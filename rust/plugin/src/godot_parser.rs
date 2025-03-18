@@ -66,6 +66,31 @@ pub struct SubResourceNode {
 
 impl GodotScene {
 
+    pub fn get_node_path (&self, node_id: &str) -> String {
+        let mut path = String::new();
+        let mut current_id = node_id;
+
+        loop {
+            let node = self.nodes.get(current_id).unwrap();
+    
+            path = format!("{}/", node.name) + &path;
+
+
+            match &node.parent_id {
+                Some(parent_id) => {
+                    current_id = parent_id.as_str();
+
+                    if current_id == self.root_node_id {
+                        return path;
+                    }
+                }
+                None => {
+                    return path;
+                }
+            }
+        }
+    }
+
     pub fn reconcile(&self, tx: &mut Transaction, path: String) {
         let files = tx
             .get_obj_id(ROOT, "files")
