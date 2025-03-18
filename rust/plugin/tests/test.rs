@@ -75,10 +75,48 @@ fn test_parse_and_serialize() {
     );
 }
 
+fn get_test_scene_source_with_duplicate_ids() -> String {
+    return r#"[gd_scene load_steps=6 format=3 uid="uid://jnrusvm3gric"]
+[node name="Root" type="Node2D"]
+metadata/patchwork_id = "1122ae43c1054005997967892c521ea9"
+
+[node name="ColorRect1" type="ColorRect" parent="."]
+color = Color(0.980392, 0.980392, 0.980392, 1)
+metadata/patchwork_id = "5b9416e8d96042b6a509f7da3263f687"
+
+[node name="ColorRect2" type="ColorRect" parent="."]
+color = Color(0.980392, 0.980392, 0.980392, 1)
+metadata/patchwork_id = "5b9416e8d96042b6a509f7da3263f687"
+"#
+    .to_string();
+}
+
+#[test]
+fn test_parse_scene_with_duplicate_ids() {
+    let source = get_test_scene_source_with_duplicate_ids();
+    let scene = godot_parser::parse_scene(&source).unwrap();
+
+    let root_node = scene.nodes.get(scene.root_node_id.as_str()).unwrap();
+
+    assert_eq!(root_node.child_node_ids.len(), 2);
+
+    println!("root_node: {:?}", root_node.child_node_ids);
+
+    // first node has original id
+    assert_eq!(
+        root_node.child_node_ids[0],
+        "5b9416e8d96042b6a509f7da3263f687"
+    );
+
+    // second node gets assigned a new id
+    assert_ne!(
+        root_node.child_node_ids[1],
+        "5b9416e8d96042b6a509f7da3263f687"
+    );
+}
+
 #[test]
 fn test_resconcile_and_hydrate() {
-    let source = get_test_scene_source();
-
     let example_scene = godot_parser::GodotScene {
         format: 3,
         load_steps: 0,

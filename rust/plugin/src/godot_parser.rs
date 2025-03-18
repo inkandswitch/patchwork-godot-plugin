@@ -619,6 +619,8 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
 
     let result = parser.parse(source, None);
 
+    let mut parsed_node_ids = HashSet::new();
+
     return match result {
         Some(tree) => {
             let content_bytes = source.as_bytes();
@@ -720,11 +722,19 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 //
                 } else if section_id == "node" {
                     // Create a node and add it to the nodes map
-                    let mut node_id = String::new();
+                    let node_id;                
 
                     // Check if node has a patchwork_id in metadata
                     if let Some(patchwork_id) = properties.get("metadata/patchwork_id") {
-                        node_id = patchwork_id.clone();
+                        let patchwork_id = unquote(&patchwork_id);
+
+                        // generate a new id if the patchwork_id is already used by another node
+                        // this can happen if a node is copied and pasted in Godot
+                        if parsed_node_ids.contains(&patchwork_id) {
+                            node_id = uuid::Uuid::new_v4().simple().to_string();
+                        } else {
+                            node_id = patchwork_id;
+                        }
                     } else {
                         // Generate a UUID if no patchwork_id exists
                         node_id = uuid::Uuid::new_v4().simple().to_string();
@@ -733,6 +743,8 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                             format!("\"{}\"", node_id).clone(),
                         );
                     }
+
+                    parsed_node_ids.insert(node_id.clone());
 
                     let name = match heading.get("name") {
                         Some(name) => unquote(name),
