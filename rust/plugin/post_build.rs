@@ -134,13 +134,13 @@ fn after_build(){
             // if isCI {
             //     platform_dir.join(format!("{}.macos.framework", &lib_name)).join(format!("{}.{}", lib_name, lib_dll_ext))
             // } else {
-                platform_dir.join(format!("{}.macos.framework", &lib_name)).join(format!("{}.{}", lib_name, lib_dll_ext))
+                platform_dir.join(format!("{}.macos.framework", &lib_name)).join(format!("{}.macos.{}", lib_name, lib_dll_ext))
             // }
         } else {
             platform_dir.join(format!("{}.{}.{}", lib_name, targets[i], lib_dll_ext))
         };
         let a_dest_path = if platform_name == "macos" {
-            platform_dir.join(format!("{}.macos.framework", &lib_name)).join(format!("{}.{}.{}", lib_name, arch_macos, lib_a_ext))
+            platform_dir.join(format!("{}.macos.framework", &lib_name)).join(format!("{}.macos.{}.{}", lib_name, arch_macos, lib_a_ext))
         } else {
             platform_dir.join(format!("{}.{}.{}", lib_name, targets[i], lib_a_ext))
         };
