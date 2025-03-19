@@ -14,10 +14,11 @@ pub struct GodotScene {
     load_steps: i32,
     format: i32,
     uid: String,
-    nodes: HashMap<String, GodotNode>,
+    root_node_id: String,
     ext_resources: Vec<ExternalResourceNode>,
     sub_resources: HashMap<String, SubResourceNode>,
-    root_node_id: String,
+    nodes: HashMap<String, GodotNode>,
+    connections: Vec<GodotConnection>,
 }
 
 #[derive(Debug, Clone)]
@@ -37,6 +38,17 @@ pub struct GodotNode {
     groups: Option<String>,
     properties: HashMap<String, String>,
     child_node_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GodotConnection {
+    signal: String,
+    from: String,
+    to: String,
+    method: String,
+    flags: Option<i32>,
+    unbinds: Option<i32>,
+    binds: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -154,6 +166,20 @@ impl GodotScene {
             }
         }
 
+        for connection in &self.connections {
+            output.push_str(&format!("[connection signal=\"{}\" from=\"{}\" to=\"{}\" method=\"{}\"", connection.signal, connection.from, connection.to, connection.method));
+            if let Some(flags) = connection.flags {
+                output.push_str(&format!(" flags={}", flags));
+               }
+            if let Some(unbinds) = connection.unbinds {
+                output.push_str(&format!(" unbinds={}", unbinds));
+            }
+            if let Some(binds) = &connection.binds {
+                output.push_str(&format!(" binds={}", binds));
+            }
+            output.push_str("]\n");
+        }
+
         output
     }
 
@@ -243,6 +269,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
             let mut nodes: HashMap<String, GodotNode> = HashMap::new();
             let mut ext_resources: Vec<ExternalResourceNode> = Vec::new();
             let mut sub_resources: HashMap<String, SubResourceNode> = HashMap::new();
+            let mut connections: Vec<GodotConnection> = Vec::new();
             let mut root_node_id: Option<String> = None;
 
             // Stack to track node hierarchy
@@ -459,6 +486,56 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                     };
 
                     sub_resources.insert(id, sub_resource);
+
+                // CONNECTION
+                //
+                } else if section_id == "connection" {
+                    let signal = match heading.get("signal").cloned() {
+                        Some(signal) => unquote(&signal),
+                        None => {
+                            return Err("Missing required 'signal' attribute in connection section".to_string())
+                        }
+                    };
+
+                    let from = match heading.get("from").cloned() {
+                        Some(from) => unquote(&from),
+                        None => {
+                            return Err("Missing required 'from' attribute in connection section".to_string())
+                        }
+                    };
+
+                    let to = match heading.get("to").cloned() {
+                        Some(to) => unquote(&to),
+                        None => {
+                            return Err("Missing required 'to' attribute in connection section".to_string())
+                        }
+                    }; 
+
+                    let method = match heading.get("method").cloned() {
+                        Some(method) => unquote(&method),
+                        None => {
+                            return Err("Missing required 'method' attribute in connection section".to_string())
+                        }
+                    };
+
+                    let flags = heading.get("flags").and_then(|f| f.parse::<i32>().ok());
+
+                    let unbinds = heading.get("unbinds").and_then(|u| u.parse::<i32>().ok());
+
+                    let binds =  heading.get("binds").cloned().map(|b| unquote(&b));
+
+                    
+                    let connection = GodotConnection {
+                        signal,
+                        from,
+                        to,
+                        method,
+                        flags,
+                        unbinds,
+                        binds,
+                    };
+                
+                    connections.push(connection);                                
                 }
             }
 
@@ -476,10 +553,11 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 load_steps: scene_metadata.load_steps,
                 format: scene_metadata.format,
                 uid: scene_metadata.uid,
-                nodes,
+                root_node_id,
                 ext_resources,
                 sub_resources,
-                root_node_id,
+                nodes,
+                connections,
             })
         }
         None => Err("Failed to parse scene file".to_string()),
