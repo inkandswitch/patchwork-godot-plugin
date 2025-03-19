@@ -10,15 +10,10 @@ license = "MIT"
 rust-version = "1.57.0"
 
 [lib]
-name = "patchwork_rust"
+name = "patchwork_rust_core"
 crate-type = ["cdylib", "staticlib", "rlib"]
 bench = false
 doc = false
-
-# Removing the bin section since src/test.rs doesn't exist
-# [[bin]]
-# name = "test"
-# path = "src/test.rs"
 
 [dependencies]
 automerge = "0.6.0"

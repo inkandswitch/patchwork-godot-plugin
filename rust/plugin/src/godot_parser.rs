@@ -96,7 +96,6 @@ impl GodotScene {
         // Store root node id
         tx.put(&structured_content, "root_node_id", self.root_node_id.clone()).unwrap();
 
-
         // Reconcile external resources
         let ext_resources = tx
         .get_obj_id(&scene_file, "ext_resources")

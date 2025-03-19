@@ -1,7 +1,7 @@
 @tool
 extends EditorPlugin
 
-var godot_project: GodotProject
+var godot_project # : GodotProject
 var config: PatchworkConfig
 var file_system: FileSystem
 var sidebar
@@ -30,19 +30,21 @@ func _process(_delta: float) -> void:
 		godot_project.process()
 
 func _enter_tree() -> void:
-	print("start patchwork!!!");
+	print("start patchwork");
 	config = PatchworkConfig.new();
 	file_system = FileSystem.new(self)
 
-	await init_godot_project()
+	# await init_godot_project()
 
-	# listen for file changes once we have initialized the godot project
-	file_system.connect("file_changed", _on_local_file_changed)
+	print("nothing to do")
 
-	# setup patchwork sidebar
-	sidebar = preload("res://addons/patchwork/gdscript/sidebar.tscn").instantiate()
-	sidebar.init(self, godot_project, config)
-	add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
+	# # listen for file changes once we have initialized the godot project
+	# file_system.connect("file_changed", _on_local_file_changed)
+
+	# # setup patchwork sidebar
+	# sidebar = preload("res://addons/patchwork/gdscript/sidebar.tscn").instantiate()
+	# sidebar.init(self, godot_project, config)
+	# add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
 
 func init_godot_project():
 	var storage_folder_path = ProjectSettings.globalize_path("res://.patchwork")
