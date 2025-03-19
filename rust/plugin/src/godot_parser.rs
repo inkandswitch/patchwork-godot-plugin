@@ -1,6 +1,5 @@
 use automerge::{
-    transaction::{Transactable, Transaction},
-    ObjType, ROOT,
+    transaction::{Transactable, Transaction}, Automerge, ObjType, ReadDoc, ROOT
 };
 use autosurgeon::{Hydrate, Reconcile};
 use std::collections::{HashMap, HashSet};
@@ -11,66 +10,66 @@ use crate::doc_utils::SimpleDocReader;
 
 #[derive(Debug, Clone)]
 pub struct GodotScene {
-    load_steps: i32,
-    format: i32,
-    uid: String,
-    root_node_id: String,
-    ext_resources: Vec<ExternalResourceNode>,
-    sub_resources: HashMap<String, SubResourceNode>,
-    nodes: HashMap<String, GodotNode>,
-    connections: Vec<GodotConnection>,
+    pub load_steps: i32,
+    pub format: i32,
+    pub uid: String,
+    pub root_node_id: String,
+    pub ext_resources: Vec<ExternalResourceNode>,
+    pub sub_resources: HashMap<String, SubResourceNode>,
+    pub nodes: HashMap<String, GodotNode>,
+    pub connections: Vec<GodotConnection>,
 }
 
 #[derive(Debug, Clone)]
-enum TypeOrInstance {
+pub enum TypeOrInstance {
     Type(String),
     Instance(String),
 }
 
 #[derive(Debug, Clone)]
 pub struct GodotNode {
-    id: String,
-    name: String,
-    type_or_instance: TypeOrInstance, // a node either has a type or an instance property
-    parent: Option<String>,
-    owner: Option<String>,
-    index: Option<i32>,
-    groups: Option<String>,
-    properties: HashMap<String, String>,
-    child_node_ids: Vec<String>,
+    pub id: String,
+    pub name: String,
+    pub type_or_instance: TypeOrInstance, // a node either has a type or an instance property
+    pub parent: Option<String>,
+    pub owner: Option<String>,
+    pub index: Option<i32>,
+    pub groups: Option<String>,
+    pub properties: HashMap<String, String>,
+    pub child_node_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct GodotConnection {
-    signal: String,
-    from: String,
-    to: String,
-    method: String,
-    flags: Option<i32>,
-    unbinds: Option<i32>,
-    binds: Option<String>,
+    pub signal: String,
+    pub from: String,
+    pub to: String,
+    pub method: String,
+    pub flags: Option<i32>,
+    pub unbinds: Option<i32>,
+    pub binds: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ExternalResourceNode {
-    resource_type: String,
-    uid: Option<String>,
-    path: String,
-    id: String,
+    pub resource_type: String,
+    pub uid: Option<String>,
+    pub path: String,
+    pub id: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct SubResourceNode {
-    id: String,
-    resource_type: String,
-    properties: HashMap<String, String>, // key value pairs below the section header
+    pub id: String,
+    pub resource_type: String,
+    pub properties: HashMap<String, String>, // key value pairs below the section header
 }
 
 impl GodotScene {
     pub fn reconcile(&self, tx: &mut Transaction, path: String) {
         let files = tx
             .get_obj_id(ROOT, "files")
-            .unwrap_or_else(|| panic!("Could not find files object in document"));
+            .unwrap_or_else(|| tx.put_object(ROOT, "files", ObjType::Map).unwrap());
 
         let scene_file = tx
             .get_obj_id(&files, &path)
@@ -90,17 +89,222 @@ impl GodotScene {
                     .unwrap()
             });
 
-        for (path, node) in &self.nodes {
-            let node_key = tx
-                .get_obj_id(&nodes, path)
-                .unwrap_or_else(|| tx.put_object(&nodes, path, ObjType::Map).unwrap());
+        // Store root node id
+        tx.put(&structured_content, "root_node_id", self.root_node_id.clone()).unwrap();
 
-            // todo: reconcile other fields
-
+        // Reconcile nodes
+        for (node_id, node) in &self.nodes {
+            let node_obj = tx
+                .get_obj_id(&nodes, node_id)
+                .unwrap_or_else(|| tx.put_object(&nodes, node_id, ObjType::Map).unwrap());
+            
+            // Store basic node properties
+            tx.put(&node_obj, "id", node.id.clone()).unwrap();
+            tx.put(&node_obj, "name", node.name.clone()).unwrap();
+            
+            // Store type or instance
+            match &node.type_or_instance {
+                TypeOrInstance::Type(type_name) => {
+                    tx.put(&node_obj, "type", type_name.clone()).unwrap();
+                    // Remove instance if it exists
+                    if tx.get_string(&node_obj, "instance").is_some() {
+                        tx.delete(&node_obj, "instance").unwrap();
+                    }
+                },
+                TypeOrInstance::Instance(instance_id) => {
+                    tx.put(&node_obj, "instance", instance_id.clone()).unwrap();
+                    // Remove type if it exists
+                    if tx.get_string(&node_obj, "type").is_some() {
+                        tx.delete(&node_obj, "type").unwrap();
+                    }
+                }
+            }
+            
+            // Store optional properties
+            if let Some(parent) = &node.parent {
+                tx.put(&node_obj, "parent", parent.clone()).unwrap();
+            } else if tx.get_string(&node_obj, "parent").is_some() {
+                tx.delete(&node_obj, "parent").unwrap();
+            }
+            
+            if let Some(owner) = &node.owner {
+                tx.put(&node_obj, "owner", owner.clone()).unwrap();
+            } else if tx.get_string(&node_obj, "owner").is_some() {
+                tx.delete(&node_obj, "owner").unwrap();
+            }
+            
+            if let Some(index) = node.index {
+                tx.put(&node_obj, "index", index as i64).unwrap();
+            } else if tx.get_int(&node_obj, "index").is_some() {
+                tx.delete(&node_obj, "index").unwrap();
+            }
+            
+            if let Some(groups) = &node.groups {
+                tx.put(&node_obj, "groups", groups.clone()).unwrap();
+            } else if tx.get_string(&node_obj, "groups").is_some() {
+                tx.delete(&node_obj, "groups").unwrap();
+            }
+            
+            // Store properties
+            let properties_obj = tx
+                .get_obj_id(&node_obj, "properties")
+                .unwrap_or_else(|| tx.put_object(&node_obj, "properties", ObjType::Map).unwrap());
+            
+            // Get existing properties to check for deletions
+            let mut existing_props = tx.keys(&properties_obj).collect::<HashSet<_>>();
+            
+            // Add or update properties
             for (key, value) in &node.properties {
-                tx.put(&node_key, key, value);
+                tx.put(&properties_obj, key, value.clone()).unwrap();
+                existing_props.remove(key);
+            }
+            
+            // Remove properties that no longer exist
+            for key in existing_props {
+                tx.delete(&properties_obj, &key).unwrap();
+            }
+            
+            // Store child node IDs
+            let children_obj = tx
+                .get_obj_id(&node_obj, "child_node_ids")
+                .unwrap_or_else(|| tx.put_object(&node_obj, "child_node_ids", ObjType::List).unwrap());
+            
+
+            // // reconcile child node ids
+            // for (i, child_node_id) in node.child_node_ids.iter().enumerate() {
+            //     if tx.get_string(&children_obj, child_node_id).is_some() {
+            //         tx.put(&children_obj, i, child_node_id.clone()).unwrap();
+            //     } else {
+            //         tx.insert(&children_obj, i, child_node_id.clone()).unwrap();
+            //     }
+            // }
+
+
+            // // delete child node ids if they are not in the node
+
+            // let new_child_node_ids_count = node.child_node_ids.len();
+            // let prev_child_node_ids_count = tx.length(&children_obj);
+
+            // if new_child_node_ids_count < prev_child_node_ids_count {
+            //     for i in (new_child_node_ids_count..prev_child_node_ids_count).rev() {
+            //         tx.delete(&children_obj, i).unwrap();
+            //     }
+            // }
+        }
+        
+        // Remove nodes that are in the document but not in the scene
+        let existing_nodes =  tx.keys(&nodes).collect::<HashSet<_>>();    
+        for node_id in existing_nodes {
+            if !self.nodes.contains_key(&node_id) {
+                tx.delete(&nodes, &node_id).unwrap();
             }
         }
+    }
+
+    pub fn hydrate(doc: &mut Automerge, path: &str) -> Result<Self, String> {
+        // Get the files object
+        let files = doc.get_obj_id(ROOT, "files")
+            .ok_or_else(|| "Could not find files object in document".to_string())?;
+
+        // Get the specific file at the given path
+        let scene_file = doc.get_obj_id(&files, path)
+            .ok_or_else(|| format!("Could not find file at path: {}", path))?;
+
+        // Get the structured content
+        let structured_content = doc.get_obj_id(&scene_file, "structured_content")
+            .ok_or_else(|| "Could not find structured_content in file".to_string())?;
+
+        // Get the nodes object
+        let nodes_obj = doc.get_obj_id(&structured_content, "nodes")
+            .ok_or_else(|| "Could not find nodes in structured_content".to_string())?;
+
+        let root_node_id = doc.get_string(&structured_content, "root_node_id")
+            .ok_or_else(|| "Could not find root_node_id in structured_content".to_string())?;
+
+        // Create a map to store the nodes
+        let mut nodes = HashMap::new();
+
+        // Iterate through all node IDs in the nodes object
+        for node_id in doc.keys(&nodes_obj) {
+            // Get the node object
+            let node_obj = doc.get_obj_id(&nodes_obj, &node_id)
+                .ok_or_else(|| format!("Could not find node object for ID: {}", node_id))?;
+
+            // Extract node properties
+            let id = doc.get_string(&node_obj, "id").unwrap_or_else(|| node_id.clone());
+            let name = doc.get_string(&node_obj, "name")
+                .ok_or_else(|| format!("Node {} is missing required name property", node_id))?;
+
+            // Determine if this is a type or instance
+            let type_or_instance = if let Some(type_name) = doc.get_string(&node_obj, "type") {
+                TypeOrInstance::Type(type_name)
+            } else if let Some(instance_id) = doc.get_string(&node_obj, "instance") {
+                TypeOrInstance::Instance(instance_id)
+            } else {
+                return Err(format!("Node {} is missing both type and instance properties", node_id));
+            };
+
+            // Get optional properties
+            let parent = doc.get_string(&node_obj, "parent");
+            let owner = doc.get_string(&node_obj, "owner");
+            let index = doc.get_int(&node_obj, "index").map(|i| i as i32);
+            let groups = doc.get_string(&node_obj, "groups");
+
+
+            // Get node properties
+            let properties_obj = doc.get_obj_id(&node_obj, "properties")
+            .ok_or_else(|| format!("Could not find properties object for node: {}", node_id))?;
+            let mut properties = HashMap::new();
+            for key in doc.keys(&properties_obj) {
+                let value = doc.get_string(&properties_obj, &key)
+                    .ok_or_else(|| format!("Could not find value for property: {}", key))?;
+
+                properties.insert(key, value);
+            }
+
+            // Get child node IDs
+            let mut child_node_ids = Vec::new();
+            if let Some(children_obj) = doc.get_obj_id(&node_obj, "child_node_ids") {
+                let length = doc.length(&children_obj);
+                for i in 0..length {
+                    if let Some(child_id) = doc.get_string(&children_obj, i) {
+                        child_node_ids.push(child_id);
+                    }
+                }
+            }
+
+            // Create the node
+            let node = GodotNode {
+                id,
+                name,
+                type_or_instance,
+                parent,
+                owner,
+                index,
+                groups,
+                properties,
+                child_node_ids,
+            };
+
+            // Add the node to our map
+            nodes.insert(node_id, node);
+        }
+
+        if nodes.is_empty() {
+            return Err("Scene contains no nodes".to_string());
+        }
+
+        // Create a GodotScene with default values for everything except nodes
+        Ok(GodotScene {
+            load_steps: 0,
+            format: 3,
+            uid: uuid::Uuid::new_v4().simple().to_string(),
+            root_node_id,
+            ext_resources: Vec::new(),
+            sub_resources: HashMap::new(),
+            nodes,
+            connections: Vec::new(),
+        })
     }
 
     pub fn serialize(&self) -> String {

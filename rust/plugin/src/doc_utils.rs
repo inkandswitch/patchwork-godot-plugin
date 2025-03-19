@@ -12,7 +12,12 @@ pub trait SimpleDocReader {
 
     fn get_obj_id<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<ObjId>;
 
-    fn get_string_at<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P, heads: &[automerge::ChangeHash]) -> Option<String>;
+    fn get_string_at<O: AsRef<ObjId>, P: Into<Prop>>(
+        &self,
+        obj: O,
+        prop: P,
+        heads: &[automerge::ChangeHash],
+    ) -> Option<String>;
 
     fn get_variant<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<Variant>;
 }
@@ -71,7 +76,12 @@ impl SimpleDocReader for Automerge {
         }
     }
 
-    fn get_string_at<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P, heads: &[ChangeHash]) -> Option<String> {
+    fn get_string_at<O: AsRef<ObjId>, P: Into<Prop>>(
+        &self,
+        obj: O,
+        prop: P,
+        heads: &[ChangeHash],
+    ) -> Option<String> {
         match self.get_at(obj, prop, &heads) {
             Ok(Some((Value::Scalar(cow), _))) => match cow.into_owned() {
                 automerge::ScalarValue::Str(smol_str) => Some(smol_str.to_string()),
@@ -80,7 +90,6 @@ impl SimpleDocReader for Automerge {
             _ => None,
         }
     }
-
 
     fn get_obj_id<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<ObjId> {
         match self.get(obj, prop) {
@@ -91,8 +100,12 @@ impl SimpleDocReader for Automerge {
 }
 
 impl SimpleDocReader for Transaction<'_> {
-
-    fn get_string_at<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P, heads: &[ChangeHash]) -> Option<String> {
+    fn get_string_at<O: AsRef<ObjId>, P: Into<Prop>>(
+        &self,
+        obj: O,
+        prop: P,
+        heads: &[ChangeHash],
+    ) -> Option<String> {
         match self.get_at(obj, prop, &heads) {
             Ok(Some((Value::Scalar(cow), _))) => match cow.into_owned() {
                 automerge::ScalarValue::Str(smol_str) => Some(smol_str.to_string()),
