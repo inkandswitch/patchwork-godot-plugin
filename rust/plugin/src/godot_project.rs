@@ -1,6 +1,6 @@
 use ::safer_ffi::prelude::*;
 use automerge::op_tree::B;
-use automerge::{ObjId, Patch, PatchAction, Prop};
+use automerge::{Automerge, ObjId, Patch, PatchAction, Prop};
 use autosurgeon::{Hydrate, Reconcile};
 use futures::io::empty;
 use std::collections::HashSet;
@@ -65,10 +65,31 @@ pub enum FileContent {
 }
 
 #[derive(Debug, Clone)]
+struct BranchUnionIds {
+    primary_branch_doc_id: DocumentId,
+    secondary_branch_doc_ids: Vec<DocumentId>,
+}
+
+struct BranchUnion {
+    ids: BranchUnionIds,
+    doc: Automerge,
+    synced_heads: Vec<ChangeHash>,
+    forked_at: Vec<ChangeHash>,
+    primary_branch_state: BranchState,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum BranchUnionState {
+    Invalid,
+    Loading,
+    Loaded,
+}
+
+#[derive(Debug, Clone)]
 enum CheckedOutBranchState {
     NothingCheckedOut,
-    CheckingOut(DocumentId),
-    CheckedOut(DocumentId),
+    CheckingOut(BranchUnionIds),
+    CheckedOut(BranchUnionIds),
 }
 
 #[derive(Debug, Clone)]
@@ -141,7 +162,10 @@ impl GodotProject {
         );
 
         let checked_out_branch_state = match DocumentId::from_str(&checked_out_branch_doc_id) {
-            Ok(doc_id) => CheckedOutBranchState::CheckingOut(doc_id),
+            Ok(doc_id) => CheckedOutBranchState::CheckingOut(BranchUnionIds {
+                primary_branch_doc_id: doc_id,
+                secondary_branch_doc_ids: Vec::new(),
+            }),
             Err(_) => CheckedOutBranchState::NothingCheckedOut,
         };
 
@@ -188,9 +212,10 @@ impl GodotProject {
 
     #[func]
     fn get_heads(&self) -> PackedStringArray /* String[] */ {
-        match &self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state
-                .synced_heads
+        match &self.get_checked_out_branch_union() {
+            Some(branch_union) => branch_union
+                .doc
+                .get_heads()
                 .iter()
                 .map(|h| GString::from(h.to_string()))
                 .collect::<PackedStringArray>(),
@@ -200,8 +225,8 @@ impl GodotProject {
 
     #[func]
     fn list_all_files(&self) -> PackedStringArray {
-        let doc = match &self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state.doc_handle.with_doc(|d| d.clone()),
+        let doc = match &self.get_checked_out_branch_union() {
+            Some(branch_union) => branch_union.doc.clone(),
             _ => return PackedStringArray::new(),
         };
 
@@ -219,16 +244,16 @@ impl GodotProject {
     }
 
     fn _get_file_at(&self, path: String, heads: Option<Vec<ChangeHash>>) -> Option<FileContent> {
-        let branch_state = self.get_checked_out_branch_state();
-        if branch_state.is_none() {
-            return None;
-        }
-        let branch_state = branch_state.unwrap();
+        let branch_union = match self.get_checked_out_branch_union() {
+            Some(branch_union) => branch_union,
+            None => return None,
+        };
+
         let heads = match heads {
             Some(heads) => heads,
-            None => branch_state.synced_heads.clone(),
+            None => branch_union.synced_heads.clone(),
         };
-        let mut doc = branch_state.doc_handle.with_doc(|d| d.clone());
+        let mut doc = branch_union.doc.clone();
 
         let files = doc.get_at(ROOT, "files", &heads).unwrap().unwrap().1;
         // does the file exist?
@@ -306,23 +331,19 @@ impl GodotProject {
 
     #[func]
     fn get_node_changes(&self, path: String) -> Array<Variant> {
-        let checked_out_branch_state = match self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state,
+        let checked_out_branch_union = match self.get_checked_out_branch_union() {
+            Some(branch_union) => branch_union,
             None => return Array::new(),
         };
 
-        let heads = checked_out_branch_state.forked_at.clone();
-        let curr_heads = checked_out_branch_state
-            .doc_handle
-            .with_doc(|d| d.get_heads());
+        let heads = checked_out_branch_union.forked_at.clone();
+        let curr_heads = checked_out_branch_union.synced_heads.clone();
 
-        let patches = checked_out_branch_state.doc_handle.with_doc(|d| {
-            d.diff(
-                &heads,
-                &curr_heads,
-                TextRepresentation::String(TextEncoding::Utf8CodeUnit),
-            )
-        });
+        let patches = checked_out_branch_union.doc.diff(
+            &heads,
+            &curr_heads,
+            TextRepresentation::String(TextEncoding::Utf8CodeUnit),
+        );
 
         let path = Vec::from([
             Prop::Map(String::from("files")),
@@ -397,24 +418,22 @@ impl GodotProject {
         let heads = array_to_heads(heads);
         // if curr_heads is empty, we're comparing against the current heads
 
-        let checked_out_branch_state = match &self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state.clone(),
+        let checked_out_branch_union = match self.get_checked_out_branch_union() {
+            Some(branch_union) => branch_union,
             None => return PackedStringArray::new(),
         };
 
         let curr_heads = if curr_heads.len() == 0 {
-            checked_out_branch_state.synced_heads.clone()
+            checked_out_branch_union.synced_heads.clone()
         } else {
             array_to_heads(curr_heads)
         };
 
-        let patches = checked_out_branch_state.doc_handle.with_doc(|d| {
-            d.diff(
-                &heads,
-                &curr_heads,
-                TextRepresentation::String(TextEncoding::Utf8CodeUnit),
-            )
-        });
+        let patches = checked_out_branch_union.doc.diff(
+            &heads,
+            &curr_heads,
+            TextRepresentation::String(TextEncoding::Utf8CodeUnit),
+        );
         get_changed_files(patches)
     }
 
@@ -450,24 +469,22 @@ impl GodotProject {
         let heads = array_to_heads(old_heads);
         // if curr_heads is empty, we're comparing against the current heads
 
-        let checked_out_branch_state = match &self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state.clone(),
+        let checked_out_branch_union = match self.get_checked_out_branch_union() {
+            Some(branch_union) => branch_union,
             None => return Dictionary::new(),
         };
 
         let curr_heads = if curr_heads.len() == 0 {
-            checked_out_branch_state.synced_heads.clone()
+            checked_out_branch_union.synced_heads.clone()
         } else {
             array_to_heads(curr_heads)
         };
 
-        let patches = checked_out_branch_state.doc_handle.with_doc(|d| {
-            d.diff(
-                &heads,
-                &curr_heads,
-                TextRepresentation::String(TextEncoding::Utf8CodeUnit),
-            )
-        });
+        let patches = checked_out_branch_union.doc.diff(
+            &heads,
+            &curr_heads,
+            TextRepresentation::String(TextEncoding::Utf8CodeUnit),
+        );
         let changed_files = get_changed_files_vec(patches);
         // get the file entry at the old_heads, then the current heads
         let mut changed_files_dict = Dictionary::new();
@@ -509,25 +526,23 @@ impl GodotProject {
 
     #[func]
     fn get_changed_files_on_current_branch(&self) -> PackedStringArray {
-        let checked_out_branch_state = match &self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state.clone(),
+        let checked_out_branch_union = match self.get_checked_out_branch_union() {
+            Some(branch_union) => branch_union,
             None => return PackedStringArray::new(),
         };
 
-        let patches = checked_out_branch_state.doc_handle.with_doc(|d| {
-            d.diff(
-                &checked_out_branch_state.forked_at,
-                &checked_out_branch_state.synced_heads,
-                TextRepresentation::String(TextEncoding::Utf8CodeUnit),
-            )
-        });
+        let patches = checked_out_branch_union.doc.diff(
+            &checked_out_branch_union.forked_at,
+            &checked_out_branch_union.synced_heads,
+            TextRepresentation::String(TextEncoding::Utf8CodeUnit),
+        );
         get_changed_files(patches)
     }
 
     #[func]
     fn get_changes(&self) -> Array<Dictionary> /* String[]  */ {
-        let checked_out_branch_doc = match &self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state.doc_handle.with_doc(|d| d.clone()),
+        let checked_out_branch_doc = match &self.get_checked_out_branch_union() {
+            Some(branch_union) => branch_union.doc.clone(),
             _ => return Array::new(),
         };
 
@@ -553,18 +568,24 @@ impl GodotProject {
     ) {
         let heads = array_to_heads(heads);
 
-        match &self.get_checked_out_branch_state() {
-            Some(branch_state) => {
-                self._save_files(branch_state.doc_handle.clone(), files, Some(heads))
-            }
+        match &self.get_checked_out_branch_union() {
+            Some(branch_union) => self._save_files(
+                branch_union.primary_branch_state.doc_handle.clone(),
+                files,
+                Some(heads),
+            ),
             None => panic!("couldn't save files, no checked out branch"),
         }
     }
 
     #[func]
     fn save_files(&self, files: Dictionary) {
-        match &self.get_checked_out_branch_state() {
-            Some(branch_state) => self._save_files(branch_state.doc_handle.clone(), files, None),
+        match &self.get_checked_out_branch_union() {
+            Some(branch_union) => self._save_files(
+                branch_union.primary_branch_state.doc_handle.clone(),
+                files,
+                None,
+            ),
             None => panic!("couldn't save files, no checked out branch"),
         }
     }
@@ -669,8 +690,10 @@ impl GodotProject {
             .find(|branch_state| branch_state.is_main)
             .unwrap();
 
-        self.checked_out_branch_state =
-            CheckedOutBranchState::CheckingOut(main_branch.doc_handle.document_id());
+        self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(BranchUnionIds {
+            primary_branch_doc_id: main_branch.doc_handle.document_id(),
+            secondary_branch_doc_ids: Vec::new(),
+        });
     }
 
     #[func]
@@ -683,37 +706,38 @@ impl GodotProject {
     }
 
     #[func]
-    fn checkout_branch(&mut self, branch_doc_id: String) {
-        let branch_doc_state = self
-            .branch_states
-            .get(&DocumentId::from_str(&branch_doc_id).unwrap())
-            .cloned();
+    fn checkout_branch(
+        &mut self,
+        primary_branch_doc_id: String,
+        secondary_branch_doc_ids: Array<Variant>,
+    ) {
+        println!(
+            "rust: checkout_branch {:?} {:?}",
+            primary_branch_doc_id, secondary_branch_doc_ids
+        );
 
-        match branch_doc_state {
-            Some(branch_state) => {
-                // if it's loaded check out immediately
-                if branch_state.synced_heads == branch_state.doc_handle.with_doc(|d| d.get_heads())
-                {
-                    self.checked_out_branch_state =
-                        CheckedOutBranchState::CheckedOut(branch_state.doc_handle.document_id());
+        let branch_union = BranchUnionIds {
+            primary_branch_doc_id: DocumentId::from_str(&primary_branch_doc_id).unwrap(),
+            secondary_branch_doc_ids: secondary_branch_doc_ids
+                .iter_shared()
+                .map(|id| DocumentId::from_str(&id.to::<GString>().to_string()).unwrap())
+                .collect(),
+        };
 
-                    self.base_mut().emit_signal(
-                        "checked_out_branch",
-                        &[branch_state
-                            .doc_handle
-                            .document_id()
-                            .to_string()
-                            .to_variant()],
-                    );
-
-                // ... otherwise wait in checking out state
-                } else {
-                    self.checked_out_branch_state =
-                        CheckedOutBranchState::CheckingOut(branch_state.doc_handle.document_id());
-                }
+        match self.get_branch_union_state(&branch_union) {
+            BranchUnionState::Invalid => {
+                println!("couldn't checkout branch, some branch doc ids not found");
+                return;
             }
-            None => {
-                println!("couldn't checkout branch, no branch state found");
+            BranchUnionState::Loading => {
+                self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(branch_union);
+            }
+            BranchUnionState::Loaded => {
+                self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(branch_union);
+                self.base_mut().emit_signal(
+                    "checked_out_branch",
+                    &[primary_branch_doc_id.to_string().to_variant()],
+                );
             }
         }
     }
@@ -759,12 +783,12 @@ impl GodotProject {
 
     #[func]
     fn get_checked_out_branch(&self) -> Variant /* {name: String, id: String, is_main: bool}? */ {
-        match &self.get_checked_out_branch_state() {
-            Some(branch_state) => dict! {
-                "name": branch_state.name.clone(),
-                "id": branch_state.doc_handle.document_id().to_string(),
-                "is_main": branch_state.is_main,
-                "forked_at": heads_to_array(branch_state.forked_at.clone()),
+        match &self.get_checked_out_branch_union() {
+            Some(branch_union) => dict! {
+                "name": branch_union.primary_branch_state.name.clone(),
+                "id": branch_union.primary_branch_state.doc_handle.document_id().to_string(),
+                "is_main": branch_union.primary_branch_state.is_main,
+                "forked_at": heads_to_array(branch_union.primary_branch_state.forked_at.clone()),
             }
             .to_variant(),
             None => Variant::nil(),
@@ -775,8 +799,8 @@ impl GodotProject {
 
     #[func]
     fn set_entity_state(&self, entity_id: String, prop: String, value: Variant) {
-        let checked_out_doc_handle = match &self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state.doc_handle.clone(),
+        let checked_out_doc_handle = match &self.get_checked_out_branch_union() {
+            Some(branch_union) => branch_union.primary_branch_state.doc_handle.clone(),
             None => {
                 return;
             }
@@ -834,51 +858,54 @@ impl GodotProject {
     #[func]
     fn get_entity_state(&self, entity_id: String, prop: String) -> Variant /* Option<int | float | string | bool */
     {
-        let checked_out_branch_doc_handle = match &self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state.doc_handle.clone(),
+        let checked_out_branch_union = match self.get_checked_out_branch_union() {
+            Some(branch_union) => branch_union,
             None => {
                 return Variant::nil();
             }
         };
 
-        checked_out_branch_doc_handle.with_doc(|checked_out_doc| {
-            let state = match checked_out_doc.get_obj_id(ROOT, "state") {
-                Some(id) => id,
-                None => {
-                    println!("invalid document, no state property");
-                    return Variant::nil();
-                }
-            };
+        let checked_out_doc = checked_out_branch_union.doc;
 
-            let entity = match checked_out_doc.get_obj_id(state, entity_id) {
-                Some(id) => id,
-                None => {
-                    return Variant::nil();
-                }
-            };
+        let state = match checked_out_doc.get_obj_id(ROOT, "state") {
+            Some(id) => id,
+            None => {
+                println!("invalid document, no state property");
+                return Variant::nil();
+            }
+        };
 
-            return match checked_out_doc.get_variant(entity, prop) {
-                Some(value) => value,
-                None => Variant::nil(),
-            };
-        })
+        let entity = match checked_out_doc.get_obj_id(state, entity_id) {
+            Some(id) => id,
+            None => {
+                return Variant::nil();
+            }
+        };
+
+        return match checked_out_doc.get_variant(entity, prop) {
+            Some(value) => value,
+            None => Variant::nil(),
+        };
     }
 
     #[func]
     fn get_all_entity_ids(&self) -> PackedStringArray {
-        let checked_out_branch_doc_handle = match &self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state.doc_handle.clone(),
+        let checked_out_branch_union = match self.get_checked_out_branch_union() {
+            Some(branch_union) => branch_union,
             None => return PackedStringArray::new(),
         };
 
-        checked_out_branch_doc_handle.with_doc(|d| {
-            let state = match d.get_obj_id(ROOT, "state") {
-                Some(id) => id,
-                None => return PackedStringArray::new(),
-            };
+        let checked_out_doc = checked_out_branch_union.doc;
 
-            d.keys(&state).map(|k| GString::from(k)).collect()
-        })
+        let state = match checked_out_doc.get_obj_id(ROOT, "state") {
+            Some(id) => id,
+            None => return PackedStringArray::new(),
+        };
+
+        checked_out_doc
+            .keys(&state)
+            .map(|k| GString::from(k))
+            .collect()
     }
 
     // needs to be called every frame to process the internal events
@@ -917,7 +944,7 @@ impl GodotProject {
 
                     self.base_mut().emit_signal("branches_changed", &[branches]);
 
-                    let mut active_branch_doc_id: Option<DocumentId> = None;
+                    let mut active_branch_union: Option<BranchUnionIds> = None;
                     let mut checking_out_new_branch = false;
 
                     match &self.checked_out_branch_state {
@@ -925,26 +952,31 @@ impl GodotProject {
                             // check out main branch if we haven't checked out anything yet
                             if branch_state.is_main {
                                 checking_out_new_branch = true;
-                                self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(
-                                    branch_state.doc_handle.document_id(),
-                                );
-                                active_branch_doc_id = Some(branch_state.doc_handle.document_id());
+
+                                let branch_union = BranchUnionIds {
+                                    primary_branch_doc_id: branch_state.doc_handle.document_id(),
+                                    secondary_branch_doc_ids: Vec::new(),
+                                };
+
+                                self.checked_out_branch_state =
+                                    CheckedOutBranchState::CheckingOut(branch_union.clone());
+
+                                active_branch_union = Some(branch_union);
                             }
                         }
-                        CheckedOutBranchState::CheckingOut(branch_doc_id) => {
-                            active_branch_doc_id = Some(branch_doc_id.clone());
+                        CheckedOutBranchState::CheckingOut(branch_union) => {
+                            active_branch_union = Some(branch_union.clone());
                             checking_out_new_branch = true;
                         }
-                        CheckedOutBranchState::CheckedOut(branch_doc_id) => {
-                            active_branch_doc_id = Some(branch_doc_id.clone());
+                        CheckedOutBranchState::CheckedOut(branch_union) => {
+                            active_branch_union = Some(branch_union.clone());
                         }
                     }
 
                     // only trigger update if checked out branch is fully synced
-                    if let Some(active_branch_doc_id) = active_branch_doc_id {
-                        if branch_state.doc_handle.document_id() == active_branch_doc_id
-                            && branch_state.synced_heads
-                                == branch_state.doc_handle.with_doc(|d| d.get_heads())
+                    if let Some(active_branch_union) = active_branch_union {
+                        if self.get_branch_union_state(&active_branch_union)
+                            == BranchUnionState::Loaded
                         {
                             if checking_out_new_branch {
                                 println!(
@@ -952,9 +984,8 @@ impl GodotProject {
                                     branch_state.name
                                 );
 
-                                self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(
-                                    branch_state.doc_handle.document_id(),
-                                );
+                                self.checked_out_branch_state =
+                                    CheckedOutBranchState::CheckedOut(active_branch_union);
 
                                 self.base_mut().emit_signal(
                                     "checked_out_branch",
@@ -983,7 +1014,10 @@ impl GodotProject {
 
                 OutputEvent::CompletedCreateBranch { branch_doc_id } => {
                     self.checked_out_branch_state =
-                        CheckedOutBranchState::CheckingOut(branch_doc_id);
+                        CheckedOutBranchState::CheckingOut(BranchUnionIds {
+                            primary_branch_doc_id: branch_doc_id,
+                            secondary_branch_doc_ids: Vec::new(),
+                        });
                 }
 
                 OutputEvent::CompletedShutdown => {
@@ -996,19 +1030,79 @@ impl GodotProject {
 
     // Helper functions
 
-    fn get_checked_out_branch_state(&self) -> Option<BranchState> {
+    fn get_checked_out_branch_union(&self) -> Option<BranchUnion> {
         match &self.checked_out_branch_state {
-            CheckedOutBranchState::CheckedOut(document_id) => {
-                self.branch_states.get(document_id).cloned()
+            CheckedOutBranchState::CheckedOut(branch_union) => {
+                let primary_branch_state = self
+                    .branch_states
+                    .get(&branch_union.primary_branch_doc_id)
+                    .unwrap()
+                    .clone();
+
+                let mut synced_heads = primary_branch_state.synced_heads.clone();
+                let mut doc = primary_branch_state.doc_handle.with_doc(|d| d.clone());
+
+                for secondary_branch_doc_id in branch_union.secondary_branch_doc_ids.iter() {
+                    let secondary_branch_state = self
+                        .branch_states
+                        .get(secondary_branch_doc_id)
+                        .unwrap()
+                        .clone();
+
+                    let mut secondary_doc =
+                        secondary_branch_state.doc_handle.with_doc(|d| d.clone());
+                    synced_heads.extend(secondary_branch_state.synced_heads.clone());
+                    doc.merge(&mut secondary_doc);
+                }
+
+                Some(BranchUnion {
+                    synced_heads,
+                    ids: branch_union.clone(),
+                    doc,
+                    forked_at: primary_branch_state.forked_at.clone(),
+                    primary_branch_state: primary_branch_state.clone(),
+                })
             }
             _ => {
                 println!(
-                    "tried to get checked out branch state but nothing is checked out: {:?}",
+                    "tried to get checked out branch union but nothing is checked out: {:?}",
                     self.checked_out_branch_state
                 );
                 None
             }
         }
+    }
+
+    fn get_branch_union_state(&self, branch_union: &BranchUnionIds) -> BranchUnionState {
+        let mut all_branch_doc_ids: Vec<DocumentId> = branch_union
+            .secondary_branch_doc_ids
+            .iter()
+            .cloned()
+            .collect();
+
+        all_branch_doc_ids.push(branch_union.primary_branch_doc_id.clone());
+
+        let all_branch_doc_states: Vec<BranchState> = all_branch_doc_ids
+            .iter()
+            .filter_map(|id| self.branch_states.get(id).cloned())
+            .collect();
+
+        if all_branch_doc_states.len() != all_branch_doc_ids.len() {
+            println!("couldn't checkout branch, some branch doc ids not found");
+            return BranchUnionState::Invalid;
+        }
+
+        let are_all_branch_doc_states_loaded = all_branch_doc_states.iter().all(|branch_state| {
+            return branch_state.doc_handle.with_doc(|d| {
+                d.get_heads().len() > 0 && d.get_heads() == branch_state.synced_heads
+            });
+        });
+
+        if are_all_branch_doc_states_loaded {
+            return BranchUnionState::Loaded;
+        }
+
+        BranchUnionState::Loading
     }
 }
 

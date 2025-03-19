@@ -40,10 +40,12 @@ func _enter_tree() -> void:
 	print(file)
 
 	# listen for file changes once we have initialized the godot project
-	file_system.connect("file_changed", _on_local_file_changed)
+	# file_system.connect("file_changed", _on_local_file_changed)
 
 	# setup patchwork sidebar
 	sidebar = preload("res://addons/patchwork/gdscript/sidebar.tscn").instantiate()
+	print("sidebar instantiated ", sidebar)
+
 	sidebar.init(self, godot_project, config)
 	add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
 
