@@ -5,15 +5,15 @@ extends MarginContainer
 # Godot 4.x: something.connect("signal_name", self._on_signal_name)
 
 var godot_project: GodotProject
-
+const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_inspector_container.gd")
 @onready var branch_picker: OptionButton = %BranchPicker
 @onready var other_branch_picker: OptionButton = %OtherBranchPicker
 @onready var menu_button: MenuButton = %MenuButton
 @onready var history_list: ItemList = %HistoryList
 @onready var user_button: Button = %UserButton
-@onready var inspector: ScrollContainer = %PEEditorInspector
 @onready var highlight_changes_checkbox: CheckBox = %HighlightChangesCheckbox
 @onready var tab_container: TabContainer = %TabContainer
+@onready var inspector: DiffInspectorContainer = %BigDiffer
 
 const TEMP_DIR = "user://tmp"
 
@@ -22,7 +22,6 @@ var other_branch_id
 var merge_preview_active = false
 var plugin: EditorPlugin
 var config: PatchworkConfig
-var current_inspector_object: FakeInspectorResource
 var queued_calls = []
 
 const CREATE_BRANCH_IDX = 1
@@ -61,7 +60,10 @@ func _ready() -> void:
 	print("sidebar ready")
 
 	update_ui()
-
+	# get the class name of the inspector
+	var inspector_class = inspector.get_class()
+	print("Inspector class: ", inspector_class)
+	inspector.get_script()
 	# @Paul: I think somewhere besides the plugin sidebar gets instantiated. Is this something godot does?
 	# to paper over this we check if plugin and godot_project are set
 
@@ -449,7 +451,9 @@ var prev_heads_after
 
 func update_properties_diff() -> void:
 	var checked_out_branch = godot_project.get_checked_out_branch()
-
+	if (!inspector):
+		print("inspector is null")
+		return
 	inspector.visible = !checked_out_branch.is_main;
 
 	print("checked_out_branch: ", checked_out_branch)
@@ -530,11 +534,20 @@ func show_diff(heads_before, heads_after):
 		})
 	new_dict["files"] = new_files
 	var display_diff = PatchworkEditor.get_diff(new_dict)
-	current_inspector_object = FakeInspectorResource.new()
-	current_inspector_object.recording_properties = true
-	for file in display_diff.keys():
-		current_inspector_object.add_file_diff(file, display_diff[file])
-	inspector.edit_object = current_inspector_object
+# 	  Failed to load resource at path user://tmp/project_old.godot
+#   res://addons/patchwork/gdscript/sidebar.gd:492 - Invalid call. Nonexistent function 'add_diff' in base 'Container (DiffInspectorContainer)'.
+	inspector.reset()
+	inspector.add_diff(display_diff)
+		
+
+	
+
+	# for file in display_diff.keys():
+	# 	for key in display_diff[file].keys():
+	# 		var value = display_diff[file][key]
+	# 		current_inspector_object.add_property(key, value)
+	# 	current_inspector_object.add_file_diff(file, display_diff[file])
+	# inspector.edit_object = current_inspector_object
 
 func _process(delta: float) -> void:
 	if queued_calls.size() == 0:

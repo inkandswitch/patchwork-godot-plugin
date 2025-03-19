@@ -373,15 +373,28 @@ Ref<DiffResult> PatchworkEditor::get_diff(Dictionary changed_files_dict) {
 		}
 		String change_type = dict["change"];
 		String path = dict["path"];
+		auto old_content = dict["old_content"];
+		auto new_content = dict["new_content"];
 		if (change_type == "modified") {
-			auto old_content = dict["old_content"];
-			auto new_content = dict["new_content"];
 			auto diff = get_file_diff(old_content, new_content);
+			if (diff.is_null()) {
+				continue;
+			}
 			result->set_file_diff(path, diff);
 		} else if (change_type == "added" || change_type == "deleted") {
 			Ref<FileDiffResult> file_diff;
 			file_diff.instantiate();
 			file_diff->set_type(change_type);
+			Error error = OK;
+			if (change_type == "added") {
+				file_diff->set_res_new(ResourceLoader::load(new_content, "", ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &error));
+			} else {
+				file_diff->set_res_old(ResourceLoader::load(old_content, "", ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &error));
+			}
+			if (error != OK) {
+				print_error("Failed to load resource at path " + path);
+				continue;
+			}
 			result->set_file_diff(path, file_diff);
 		}
 	}
@@ -477,6 +490,8 @@ Ref<ObjectDiffResult> PatchworkEditor::get_diff_obj(Object *a, Object *b, bool e
 	diff.instantiate();
 	List<PropertyInfo> p_list_a;
 	List<PropertyInfo> p_list_b;
+	diff->set_old_object(a);
+	diff->set_new_object(b);
 	a->get_property_list(&p_list_a, false);
 	b->get_property_list(&p_list_b, false);
 	// diff is key: [old_value, new_value]
@@ -543,6 +558,8 @@ Ref<NodeDiffResult> PatchworkEditor::evaluate_node_differences(Node *scene1, Nod
 	} else {
 		result->set_path("." + scene1->get_name());
 	}
+	result->set_old_object(node1);
+	result->set_new_object(node2);
 	if (node1 == nullptr) {
 		result->set_type("node_added");
 		return result;

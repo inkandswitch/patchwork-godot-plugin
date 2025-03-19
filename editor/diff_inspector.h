@@ -31,9 +31,18 @@
 #ifndef DIFF_INSPECTOR_H
 #define DIFF_INSPECTOR_H
 
+#include "editor/editor_inspector.h"
 #include "scene/gui/scroll_container.h"
 class EditorProperty;
 class PropertyDiffResult;
+
+class DiffInspectorProperty : public EditorProperty {
+	GDCLASS(DiffInspectorProperty, EditorProperty);
+
+protected:
+	static void _bind_methods();
+};
+
 class DiffInspector : public ScrollContainer {
 	GDCLASS(DiffInspector, ScrollContainer);
 
@@ -43,7 +52,7 @@ protected:
 public:
 	static Variant get_property_revert_value(Object *p_object, const StringName &p_property);
 	static bool can_property_revert(Object *p_object, const StringName &p_property, bool has_current_value, Variant p_custom_current_value);
-	static Control *instantiate_property_editor(Object *p_object, const String &p_path, bool p_wide = false);
+	static DiffInspectorProperty *instantiate_property_editor(Object *p_object, const String &p_path, bool p_wide = false);
 };
 
 #endif // DIFF_INSPECTOR_H

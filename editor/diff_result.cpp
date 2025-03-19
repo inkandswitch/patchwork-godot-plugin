@@ -81,9 +81,16 @@ Dictionary FileDiffResult::get_node_diffs() const {
 }
 
 void ObjectDiffResult::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("set_property_diff", "name", "diff"), &ObjectDiffResult::set_property_diff);
+	ClassDB::bind_method(D_METHOD("set_property_diff", "diff"), &ObjectDiffResult::set_property_diff);
 	ClassDB::bind_method(D_METHOD("get_property_diff", "name"), &ObjectDiffResult::get_property_diff);
 	ClassDB::bind_method(D_METHOD("get_property_diffs"), &ObjectDiffResult::get_property_diffs);
+	ClassDB::bind_method(D_METHOD("set_old_object", "old_object"), &ObjectDiffResult::set_old_object);
+	ClassDB::bind_method(D_METHOD("get_old_object"), &ObjectDiffResult::get_old_object);
+	ClassDB::bind_method(D_METHOD("set_new_object", "new_object"), &ObjectDiffResult::set_new_object);
+	ClassDB::bind_method(D_METHOD("get_new_object"), &ObjectDiffResult::get_new_object);
+
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "old_object"), "set_old_object", "get_old_object");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "new_object"), "set_new_object", "get_new_object");
 }
 
 void ObjectDiffResult::set_property_diff(const Ref<PropertyDiffResult> &p_diff) {
@@ -101,6 +108,31 @@ Dictionary ObjectDiffResult::get_property_diffs() const {
 	return property_diffs;
 }
 
+void ObjectDiffResult::set_old_object(Object *p_old_object) {
+	old_object = p_old_object;
+}
+
+Object *ObjectDiffResult::get_old_object() const {
+	return old_object;
+}
+
+void ObjectDiffResult::set_new_object(Object *p_new_object) {
+	new_object = p_new_object;
+}
+
+Object *ObjectDiffResult::get_new_object() const {
+	return new_object;
+}
+
+ObjectDiffResult::ObjectDiffResult() {
+}
+
+ObjectDiffResult::ObjectDiffResult(Object *p_old_object, Object *p_new_object, const Dictionary &p_property_diffs) {
+	old_object = p_old_object;
+	new_object = p_new_object;
+	property_diffs = p_property_diffs;
+}
+
 void NodeDiffResult::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_path", "path"), &NodeDiffResult::set_path);
 	ClassDB::bind_method(D_METHOD("get_path"), &NodeDiffResult::get_path);
@@ -108,6 +140,16 @@ void NodeDiffResult::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_type"), &NodeDiffResult::get_type);
 	ClassDB::bind_method(D_METHOD("set_props", "props"), &NodeDiffResult::set_props);
 	ClassDB::bind_method(D_METHOD("get_props"), &NodeDiffResult::get_props);
+	ClassDB::bind_method(D_METHOD("set_old_object", "old_object"), &NodeDiffResult::set_old_object);
+	ClassDB::bind_method(D_METHOD("get_old_object"), &NodeDiffResult::get_old_object);
+	ClassDB::bind_method(D_METHOD("set_new_object", "new_object"), &NodeDiffResult::set_new_object);
+	ClassDB::bind_method(D_METHOD("get_new_object"), &NodeDiffResult::get_new_object);
+
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "path"), "set_path", "get_path");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "type"), "set_type", "get_type");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "props"), "set_props", "get_props");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "old_object"), "set_old_object", "get_old_object");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "new_object"), "set_new_object", "get_new_object");
 }
 
 void NodeDiffResult::set_path(const NodePath &p_path) {
@@ -132,6 +174,33 @@ void NodeDiffResult::set_props(const Ref<ObjectDiffResult> &p_props) {
 
 Ref<ObjectDiffResult> NodeDiffResult::get_props() const {
 	return props;
+}
+
+Object *NodeDiffResult::get_old_object() const {
+	return old_object;
+}
+
+void NodeDiffResult::set_old_object(Object *p_old_object) {
+	old_object = p_old_object;
+}
+
+Object *NodeDiffResult::get_new_object() const {
+	return new_object;
+}
+
+void NodeDiffResult::set_new_object(Object *p_new_object) {
+	new_object = p_new_object;
+}
+
+NodeDiffResult::NodeDiffResult() {
+}
+
+NodeDiffResult::NodeDiffResult(const NodePath &p_path, const String &p_type, Object *p_old_object, Object *p_new_object, const Ref<ObjectDiffResult> &p_props) {
+	path = p_path;
+	type = p_type;
+	old_object = p_old_object;
+	new_object = p_new_object;
+	props = p_props;
 }
 
 void PropertyDiffResult::_bind_methods() {
