@@ -14,7 +14,7 @@ pub struct GodotScene {
     pub format: i64,
     pub uid: String,
     pub root_node_id: String,
-    pub ext_resources: Vec<ExternalResourceNode>,
+    pub ext_resources: HashMap<String, ExternalResourceNode>,
     pub sub_resources: HashMap<String, SubResourceNode>,
     pub nodes: HashMap<String, GodotNode>,
     pub connections: Vec<GodotConnection>,
@@ -88,7 +88,6 @@ impl GodotScene {
                 tx.put_object(&structured_content, "nodes", ObjType::Map)
                     .unwrap()
             });
-
 
         // Store Scene Metadata
         tx.put(&scene_file, "uid", self.uid.clone()).unwrap();
@@ -311,17 +310,13 @@ impl GodotScene {
             nodes.insert(node_id, node);
         }
 
-        if nodes.is_empty() {
-            return Err("Scene contains no nodes".to_string());
-        }
-
         // Create a GodotScene with default values for everything except nodes
         Ok(GodotScene {
             load_steps,
             format,
             uid,
             root_node_id,
-            ext_resources: Vec::new(),
+            ext_resources: HashMap::new(),
             sub_resources: HashMap::new(),
             nodes,
             connections: Vec::new(),
@@ -345,19 +340,12 @@ impl GodotScene {
         }
 
         // External resources
-
-        let mut serialized_ext_resources = HashSet::new();
-
         
-        for resource in &self.ext_resources {   
-            // the same resource could be in the list multiple times, so we need to check if we already serialized it
-            // todo: think about how to properly handle this
-            if serialized_ext_resources.contains(&resource.id) {
-                continue;
-            }
+        // sort resources by id (a to z)
+        let mut sorted_ext_resources: Vec<(&String, &ExternalResourceNode)> = self.ext_resources.iter().collect();
+        sorted_ext_resources.sort_by(|(a,_), (b,_)| a.to_lowercase().cmp(&b.to_lowercase()));
 
-            serialized_ext_resources.insert(resource.id.clone());
-
+        for (_, resource) in sorted_ext_resources {   
             output.push_str(&format!("[ext_resource type=\"{}\"", resource.resource_type));
             if let Some(uid) = &resource.uid {
                 output.push_str(&format!(" uid=\"{}\"", uid));
@@ -492,7 +480,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
             // Initialize with default values
             let mut scene_metadata: Option<SceneMetadata> = None;
             let mut nodes: HashMap<String, GodotNode> = HashMap::new();
-            let mut ext_resources: Vec<ExternalResourceNode> = Vec::new();
+            let mut ext_resources: HashMap<String, ExternalResourceNode> = HashMap::new();
             let mut sub_resources: HashMap<String, SubResourceNode> = HashMap::new();
             let mut connections: Vec<GodotConnection> = Vec::new();
             let mut root_node_id: Option<String> = None;
@@ -678,7 +666,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         }
                     };
 
-                    ext_resources.push(ExternalResourceNode {
+                    ext_resources.insert(id.clone(), ExternalResourceNode {
                         resource_type,
                         uid,
                         path,

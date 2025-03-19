@@ -139,7 +139,7 @@ fn test_resconcile_and_hydrate() {
             ),
         ]),
         root_node_id: "node1".to_string(),
-        ext_resources: vec![],
+        ext_resources: HashMap::new(),
         sub_resources: HashMap::new(),
         connections: vec![],
     };
