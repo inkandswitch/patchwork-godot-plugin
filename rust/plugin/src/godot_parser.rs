@@ -127,6 +127,45 @@ impl GodotScene {
             }
         }
 
+        // Reconcile sub resources
+        let sub_resources = tx
+            .get_obj_id(&scene_file, "sub_resources")
+            .unwrap_or_else(|| tx.put_object(&scene_file, "sub_resources", ObjType::Map).unwrap());     
+
+        for (id, resource) in &self.sub_resources {
+            let resource_obj = tx
+                .get_obj_id(&sub_resources, id)
+                .unwrap_or_else(|| tx.put_object(&sub_resources, id, ObjType::Map).unwrap());
+
+            tx.put(&resource_obj, "resource_type", resource.resource_type.clone()).unwrap();
+
+            tx.put(&resource_obj, "id", resource.id.clone()).unwrap();
+
+            let properties_obj = tx
+                .get_obj_id(&resource_obj, "properties")
+                .unwrap_or_else(|| tx.put_object(&resource_obj, "properties", ObjType::Map).unwrap());
+
+            let mut existing_props = tx.keys(&properties_obj).collect::<HashSet<_>>();
+
+            // Add or update properties
+            for (key, value) in &resource.properties {
+                if let Some(existing_value) = tx.get_string(&properties_obj, key) {
+                    if existing_value != *value {
+                        tx.put(&properties_obj, key, value.clone()).unwrap();
+                    }
+                } else {
+                    tx.put(&properties_obj, key, value.clone()).unwrap();
+                }
+                existing_props.remove(key);
+            }
+
+            // Remove properties that no longer exist
+            for key in existing_props {
+                tx.delete(&properties_obj, &key).unwrap();
+            }
+        }
+
+
         // Reconcile nodes
         for (node_id, node) in &self.nodes {
             let node_obj = tx
@@ -265,7 +304,7 @@ impl GodotScene {
             .ok_or_else(|| "Could not find format in scene_file".to_string())?;
 
         // Get the nodes object
-        let nodes_obj = doc.get_obj_id(&structured_content, "nodes")
+        let nodes_id = doc.get_obj_id(&structured_content, "nodes")
             .ok_or_else(|| "Could not find nodes in structured_content".to_string())?;
 
         let root_node_id = doc.get_string(&structured_content, "root_node_id")
@@ -274,6 +313,7 @@ impl GodotScene {
         // Create a map to store the nodes
 
         // Iterate through all external resources
+
         let mut ext_resources = HashMap::new();
 
         let ext_resources_id = doc.get_obj_id(&scene_file, "ext_resources")
@@ -304,14 +344,51 @@ impl GodotScene {
             ext_resources.insert(resource_id.clone(), external_resource);
         }
 
+        // Itereate through all sub resources
+        let mut sub_resources = HashMap::new();
+
+        let sub_resources_id = doc.get_obj_id(&scene_file, "sub_resources")
+            .ok_or_else(|| "Could not find sub_resources in scene_file".to_string())?;      
+
+        for sub_resource_id in doc.keys(&sub_resources_id) {
+            let sub_resource_obj = doc.get_obj_id(&sub_resources_id, &sub_resource_id)
+                .ok_or_else(|| format!("Could not find sub_resource object for ID: {}", sub_resource_id))?;
+
+            let resource_type = doc.get_string(&sub_resource_obj, "resource_type")
+                .ok_or_else(|| format!("Could not find resource_type for ID: {}", sub_resource_id))?;
+
+            let id = doc.get_string(&sub_resource_obj, "id")
+                .ok_or_else(|| format!("Could not find id for ID: {}", sub_resource_id))?;
+                
+            let properties_obj = doc.get_obj_id(&sub_resource_obj, "properties")
+                .ok_or_else(|| format!("Could not find properties object for ID: {}", sub_resource_id))?;
+
+            let mut properties = HashMap::new();
+            for key in doc.keys(&properties_obj) {
+                let value = doc.get_string(&properties_obj, &key)
+                    .ok_or_else(|| format!("Could not find value for property: {}", key))?;
+
+                properties.insert(key, value);
+            }
+
+            let sub_resource = SubResourceNode {
+                id,
+                resource_type,
+                properties,
+            };
+
+            sub_resources.insert(sub_resource_id.clone(), sub_resource);
+        }
+            
+
         // Iterate through all node IDs in the nodes object
 
         let mut nodes = HashMap::new();
 
 
-        for node_id in doc.keys(&nodes_obj) {
+        for node_id in doc.keys(&nodes_id) {
             // Get the node object
-            let node_obj = doc.get_obj_id(&nodes_obj, &node_id)
+            let node_obj = doc.get_obj_id(&nodes_id, &node_id)
                 .ok_or_else(|| format!("Could not find node object for ID: {}", node_id))?;
 
             // Extract node properties
@@ -381,7 +458,7 @@ impl GodotScene {
             uid,
             root_node_id,
             ext_resources,
-            sub_resources: HashMap::new(),
+            sub_resources,
             nodes,
             connections: Vec::new(),
         })
@@ -391,6 +468,7 @@ impl GodotScene {
         let mut output = String::new();
 
         // Scene header
+
         if self.load_steps != 0 {
             output.push_str(&format!(
                 "[gd_scene load_steps={} format={} uid={}]\n\n",
