@@ -7,19 +7,23 @@ extends MarginContainer
 var godot_project: GodotProject
 const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_inspector_container.gd")
 @onready var branch_picker: OptionButton = %BranchPicker
-@onready var other_branch_picker: OptionButton = %OtherBranchPicker
 @onready var menu_button: MenuButton = %MenuButton
 @onready var history_list: ItemList = %HistoryList
 @onready var user_button: Button = %UserButton
 @onready var highlight_changes_checkbox: CheckBox = %HighlightChangesCheckbox
 @onready var tab_container: TabContainer = %TabContainer
 @onready var inspector: DiffInspectorContainer = %BigDiffer
+@onready var merge_preview_modal: Control = %MergePreviewModal
+@onready var cancel_merge_button: Button = %CancelMergeButton
+@onready var confirm_merge_button: Button = %ConfirmMergeButton
+@onready var target_branch_picker: OptionButton = %TargetBranchPicker
+@onready var source_branch_picker: OptionButton = %SourceBranchPicker
+
 
 const TEMP_DIR = "user://tmp"
 
 var branches = []
 var other_branch_id
-var merge_preview_active = false
 var plugin: EditorPlugin
 var config: PatchworkConfig
 var queued_calls = []
@@ -81,19 +85,9 @@ func _ready() -> void:
 	popup.id_pressed.connect(_on_menu_button_id_pressed)
 	user_button.pressed.connect(_on_user_button_pressed)
 	branch_picker.item_selected.connect(_on_branch_picker_item_selected)
-	other_branch_picker.item_selected.connect(_on_other_branch_picker_item_selected)
 	highlight_changes_checkbox.toggled.connect(_on_highlight_changes_checkbox_toggled)
-	tab_container.tab_changed.connect(_on_tab_container_tab_changed)
-func _on_tab_container_tab_changed(tab_idx: int) -> void:
-	var tab_name = tab_container.get_tab_title(tab_idx)
-
-	if tab_name == "Merge Preview 🧪":
-		merge_preview_active = true
-		checkout_branch(godot_project.get_checked_out_branch().id, [other_branch_id])
-	else:
-		print("resetting merge preview")
-		merge_preview_active = false
-		checkout_branch(godot_project.get_checked_out_branch().id, [])
+	cancel_merge_button.pressed.connect(cancel_merge_preview)
+	confirm_merge_button.pressed.connect(confirm_merge_preview)
 
 func _on_menu_button_id_pressed(id: int) -> void:
 	match id:
@@ -101,7 +95,7 @@ func _on_menu_button_id_pressed(id: int) -> void:
 			create_new_branch()
 
 		MERGE_BRANCH_IDX:
-			merge_current_branch()
+			open_merge_preview()
 
 func _on_user_button_pressed():
 	var dialog = ConfirmationDialog.new()
@@ -159,20 +153,7 @@ func _on_branch_picker_item_selected(index: int) -> void:
 		# Return early to prevent checkout attempt
 		return
 
-
-	if merge_preview_active:
-		checkout_branch(selected_branch.id, [other_branch_id])
-	else:
-		checkout_branch(selected_branch.id, [])
-
-
-func _on_other_branch_picker_item_selected(index: int) -> void:
-	var selected_branch = branches[index]
-	other_branch_id = selected_branch.id
-
-	print("other branch id: ", other_branch_id)
-
-	checkout_branch(godot_project.get_checked_out_branch().id, [other_branch_id])
+	checkout_branch(selected_branch.id, [])
 
 
 func _on_highlight_changes_checkbox_toggled(pressed: bool) -> void:
@@ -316,6 +297,15 @@ func create_new_branch() -> void:
 		branch_name_input.grab_focus()
 	)
 
+func open_merge_preview():
+	merge_preview_modal.visible = true
+
+func cancel_merge_preview():
+	merge_preview_modal.visible = false
+
+func confirm_merge_preview():
+	merge_preview_modal.visible = false
+
 func merge_current_branch():
 	var checked_out_branch = godot_project.get_checked_out_branch()
 
@@ -330,7 +320,6 @@ func merge_current_branch():
 			, false)
 		)
 	)
-
 
 func update_ui() -> void:
 	if not godot_project:
@@ -359,8 +348,8 @@ func update_ui() -> void:
 	# update branch pickers
 
 	branch_picker.clear()
-	other_branch_picker.clear()
-	other_branch_picker.add_item("---")
+	source_branch_picker.clear()
+	target_branch_picker.clear()
 
 	for i in range(branches.size()):
 		var branch = branches[i]
@@ -369,23 +358,23 @@ func update_ui() -> void:
 
 		if branch.is_main:
 			label = label + " 👑"
+			target_branch_picker.select(i)
 
 		branch_picker.add_item(label, i)
 		branch_picker.set_item_metadata(i, branch.id)
 
-		if !is_checked_out:
-			other_branch_picker.add_item(label, i)
-			other_branch_picker.set_item_metadata(i, branch.id)
+		source_branch_picker.add_item(label, i)
+		source_branch_picker.set_item_metadata(i, branch.id)
 
-			if branch.id == other_branch_id:
-				other_branch_picker.select(i)
-
+		target_branch_picker.add_item(label, i)
+		target_branch_picker.set_item_metadata(i, branch.id)
 
 		# this should not happen, but right now the sync is not working correctly so we need to surface this in the interface
 		if branch.is_not_loaded:
 			branch_picker.set_item_icon(i, load("res://addons/patchwork/icons/warning.svg"))
 
 		if is_checked_out:
+			source_branch_picker.select(i)
 			branch_picker.select(i)
 
 	# update history

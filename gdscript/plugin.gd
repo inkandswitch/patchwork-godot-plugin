@@ -127,7 +127,7 @@ func sync_patchwork_to_godot():
 
 		# skip files that are already in sync 
 		# exeption: always reload open scenes, because the scene might not have changed but a contained scene might have
-		if patchwork_content == fs_content and not open_scene_paths.has(path):
+		if patchwork_content == fs_content:
 			continue
 
 		# reload after sync

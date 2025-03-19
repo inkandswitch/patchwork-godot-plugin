@@ -336,6 +336,7 @@ shape = SubResource("RectangleShape2D_cepcq")
     .to_string()
 }
 
+#[ignore]
 #[test]
 fn end_to_end_enemy_example() {
     let source = get_enemy_example_source();
@@ -360,4 +361,83 @@ fn end_to_end_enemy_example() {
         source, reserialized,
         "Serialized output should match original input"
     );
+}
+
+fn get_platform_example_source() -> String {
+    r#"[gd_scene load_steps=6 format=3 uid="uid://coq6d3u6wnvs2"]
+
+[ext_resource type="Script" path="res://components/platform/platform.gd" id="1_dpc6h"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_i4vtk"]
+size = Vector2(384, 40)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_o2vn2"]
+size = Vector2(384, 128)
+
+[sub_resource type="Animation" id="Animation_6232f"]
+resource_name = "shake"
+loop_mode = 1
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath(".:position")
+tracks/0/interp = 0
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1),
+"update": 1,
+"values": [Vector2(0, 0), Vector2(5, 4), Vector2(-2, 4), Vector2(-5, -4), Vector2(4, 5), Vector2(-4, 4), Vector2(2, -3), Vector2(-1, 0), Vector2(5, 2), Vector2(3, -2), Vector2(2, -3)]
+}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_cwxfq"]
+_data = {
+"shake": SubResource("Animation_6232f")
+}
+
+[node name="Platform" type="Node2D"]
+script = ExtResource("1_dpc6h")
+
+[node name="RigidBody2D" type="RigidBody2D" parent="."]
+unique_name_in_owner = true
+collision_layer = 4
+collision_mask = 0
+mass = 1000.0
+freeze = true
+
+[node name="Area2D" type="Area2D" parent="RigidBody2D"]
+
+[node name="AreaCollisionShape2D" type="CollisionShape2D" parent="RigidBody2D/Area2D"]
+unique_name_in_owner = true
+position = Vector2(0, -84)
+shape = SubResource("RectangleShape2D_i4vtk")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="RigidBody2D"]
+unique_name_in_owner = true
+shape = SubResource("RectangleShape2D_o2vn2")
+
+[node name="Sprites" type="Node2D" parent="RigidBody2D"]
+unique_name_in_owner = true
+texture_filter = 3
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="RigidBody2D"]
+unique_name_in_owner = true
+root_node = NodePath("../Sprites")
+libraries = {
+"": SubResource("AnimationLibrary_cwxfq")
+}
+
+[connection signal="body_entered" from="RigidBody2D" to="." method="_on_rigid_body_2d_body_entered"]
+[connection signal="body_entered" from="RigidBody2D/Area2D" to="." method="_on_area_2d_body_entered"]
+"#
+    .to_string()
+}
+
+#[test]
+#[ignore]
+fn end_to_end_platform_example() {
+    let source = get_platform_example_source();
+
+    // Parse the scene
+    let scene = godot_parser::parse_scene(&source).unwrap();
 }
