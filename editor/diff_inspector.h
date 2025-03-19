@@ -33,8 +33,54 @@
 
 #include "editor/editor_inspector.h"
 #include "scene/gui/scroll_container.h"
+#include "scene/resources/style_box_flat.h"
 class EditorProperty;
 class PropertyDiffResult;
+
+class DiffInspectorSection : public Container {
+	GDCLASS(DiffInspectorSection, Container);
+
+	String label;
+	String section;
+	bool vbox_added = false; // Optimization.
+	Color bg_color;
+	bool foldable = false;
+	int indent_depth = 0;
+	int level = 1;
+
+	Timer *dropping_unfold_timer = nullptr;
+	bool dropping = false;
+	bool dropping_for_unfold = false;
+
+	HashSet<StringName> revertable_properties;
+
+	void _test_unfold();
+	int _get_header_height();
+	Ref<Texture2D> _get_arrow();
+
+protected:
+	Object *object = nullptr;
+	VBoxContainer *vbox = nullptr;
+
+	void _notification(int p_what);
+	static void _bind_methods();
+	virtual void gui_input(const Ref<InputEvent> &p_event) override;
+
+public:
+	virtual Size2 get_minimum_size() const override;
+
+	void setup(const String &p_section, const String &p_label, Object *p_object, const Color &p_bg_color, bool p_foldable, int p_indent_depth = 0, int p_level = 1);
+	VBoxContainer *get_vbox();
+	void unfold();
+	void fold();
+	void set_bg_color(const Color &p_bg_color);
+
+	bool has_revertable_properties() const;
+	void property_can_revert_changed(const String &p_path, bool p_can_revert);
+
+	DiffInspectorSection();
+	~DiffInspectorSection();
+};
 
 class DiffInspectorProperty : public EditorProperty {
 	GDCLASS(DiffInspectorProperty, EditorProperty);

@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3 uid="uid://cxyjgsyba1v85"]
+[gd_scene load_steps=9 format=3 uid="uid://cxyjgsyba1v85"]
 
 [ext_resource type="Script" path="res://addons/patchwork/gdscript/sidebar.gd" id="1_ebh36"]
 [ext_resource type="Texture2D" uid="uid://ymewwqpn0vi4" path="res://addons/patchwork/icons/GuiTabMenuHl.svg" id="2_rfxbe"]
@@ -17,6 +17,7 @@ corner_radius_bottom_left = 3
 corner_detail = 5
 
 [sub_resource type="PlaceholderMaterial" id="PlaceholderMaterial_ywma1"]
+[ext_resource type="Theme" uid="uid://hr3cor4s2ov2" path="res://addons/patchwork/gdscript/diff_editor_theme.tres" id="4_7letu"]
 [ext_resource type="Script" path="res://addons/patchwork/gdscript/diff_inspector_container.gd" id="4_uttw7"]
 [ext_resource type="Texture2D" uid="uid://bu0h5oa7aoanu" path="res://addons/patchwork/icons/sign-add-svgrepo-com.svg" id="5_iqebc"]
 [ext_resource type="Texture2D" uid="uid://cy3bt4icrwm3w" path="res://addons/patchwork/icons/remove-svgrepo-com.svg" id="6_ha5pl"]
@@ -126,6 +127,7 @@ size_flags_vertical = 3
 theme_override_styles/panel = SubResource("StyleBoxFlat_i54cd")
 follow_focus = true
 edit_object = SubResource("PlaceholderMaterial_ywma1")
+theme = ExtResource("4_7letu")
 script = ExtResource("4_uttw7")
 added_icon = ExtResource("5_iqebc")
 removed_icon = ExtResource("6_ha5pl")
