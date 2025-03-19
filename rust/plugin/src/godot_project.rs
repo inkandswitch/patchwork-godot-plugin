@@ -714,17 +714,23 @@ impl GodotProject {
         primary_branch_doc_id: String,
         secondary_branch_doc_ids: Array<Variant>,
     ) {
+        let seconday_doc_ids = secondary_branch_doc_ids.iter_shared().map(|id|
+            // make sure it's not NIL first
+            if id != Variant::nil() && id.get_type() != VariantType::STRING {
+                id.to::<GString>().to_string()
+            } else {
+                String::from("")
+            }
+        ).filter(|id| id != "").collect::<Vec<String>>();
         println!(
             "rust: checkout_branch {:?} {:?}",
-            primary_branch_doc_id, secondary_branch_doc_ids
+            primary_branch_doc_id,
+            seconday_doc_ids
         );
 
         let branch_union = BranchUnionIds {
             primary_branch_doc_id: DocumentId::from_str(&primary_branch_doc_id).unwrap(),
-            secondary_branch_doc_ids: secondary_branch_doc_ids
-                .iter_shared()
-                .map(|id| DocumentId::from_str(&id.to::<GString>().to_string()).unwrap())
-                .collect(),
+            secondary_branch_doc_ids: seconday_doc_ids.iter().map(|id| DocumentId::from_str(&id).unwrap()).collect(),
         };
 
         match self.get_branch_union_state(&branch_union) {
