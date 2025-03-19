@@ -34,6 +34,28 @@ func update_property_editor(editor_property) -> void:
 	editor_property.update_editor_property_status()
 	editor_property.update_cache()
 
+func getDeletedNodes() -> Array[Node]:
+	var deleted_nodes: Array[Node] = []
+	for section in sections:
+		if section.get_object() is Node && section.get_object().get_object_name() == "Deleted Node":
+			deleted_nodes.append(section.get_object())
+	return deleted_nodes
+
+func getAddedNodes() -> Array[Node]:
+	var added_nodes: Array[Node] = []
+	for section in sections:
+		if section.get_object() is Node && section.get_object().get_object_name() == "Added Node":
+			added_nodes.append(section.get_object())
+	return added_nodes
+
+func getChangedNodes() -> Array[Node]:
+	var changed_nodes: Array[Node] = []
+	for section in sections:
+		#check if it is a node tho
+		if section.get_object() is Node:
+		changed_nodes.append(section.get_object())
+	return changed_nodes
+
 func add_PropertyDiffResult(editor_vbox: Control, property_diff: PropertyDiffResult) -> void:
 	if property_diff == null || property_diff.get_change_type() != "changed":
 		return
