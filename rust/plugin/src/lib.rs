@@ -6,8 +6,8 @@ struct MyExtension;
 unsafe impl ExtensionLibrary for MyExtension {}
 
 mod doc_utils;
+mod godot_parser;
 mod godot_project;
 mod godot_project_driver;
-mod godot_scene;
 mod patches;
 mod utils;

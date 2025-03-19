@@ -11,7 +11,7 @@ use std::{
 };
 
 use crate::utils::{commit_with_attribution_and_timestamp, print_branch_state, print_doc};
-use crate::{godot_project::{BranchesMetadataDoc, GodotProjectDoc, StringOrPackedByteArray}, godot_scene, utils::get_linked_docs_of_branch};
+use crate::{godot_project::{BranchesMetadataDoc, GodotProjectDoc, StringOrPackedByteArray}, godot_parser, utils::get_linked_docs_of_branch};
 use automerge::{
     patches::TextRepresentation, transaction::Transactable, ChangeHash, ObjType,
     PatchLog, ReadDoc, TextEncoding, ROOT,
@@ -534,7 +534,7 @@ impl DriverState {
                 // eventually we should only store the structured data and derive the text from that
 
                 if path.ends_with(".tscn") || path.ends_with(".tres") {                
-                    let res = godot_scene::parse(&content);
+                    let res = godot_parser::parse(&content);
 
                     match res {
                         Ok(scene) => {

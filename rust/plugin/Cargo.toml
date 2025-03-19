@@ -16,6 +16,9 @@ crate-type = ["cdylib", "staticlib"]
 bench = false
 doc = false
 
+[[bin]]
+name = "test"
+path = "src/test.rs"
 
 [dependencies]
 automerge = "0.6.0"
