@@ -3,6 +3,11 @@
 [ext_resource type="Script" path="res://addons/patchwork/gdscript/sidebar.gd" id="1_ebh36"]
 [ext_resource type="Texture2D" uid="uid://ymewwqpn0vi4" path="res://addons/patchwork/icons/GuiTabMenuHl.svg" id="2_rfxbe"]
 [ext_resource type="Texture2D" uid="uid://xec6o14n4y2v" path="res://addons/patchwork/icons/person.svg" id="3_m2w8q"]
+[ext_resource type="Theme" uid="uid://hr3cor4s2ov2" path="res://addons/patchwork/gdscript/diff_editor_theme.tres" id="4_7letu"]
+[ext_resource type="Script" path="res://addons/patchwork/gdscript/diff_inspector_container.gd" id="4_uttw7"]
+[ext_resource type="Texture2D" uid="uid://bu0h5oa7aoanu" path="res://addons/patchwork/icons/sign-add-svgrepo-com.svg" id="5_iqebc"]
+[ext_resource type="Texture2D" uid="uid://cy3bt4icrwm3w" path="res://addons/patchwork/icons/remove-svgrepo-com.svg" id="6_ha5pl"]
+[ext_resource type="Texture2D" uid="uid://mr0rb0dbfyws" path="res://addons/patchwork/icons/edit-two-svgrepo-com.svg" id="7_o8jin"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_i54cd"]
 content_margin_left = 4.0
@@ -17,11 +22,7 @@ corner_radius_bottom_left = 3
 corner_detail = 5
 
 [sub_resource type="PlaceholderMaterial" id="PlaceholderMaterial_ywma1"]
-[ext_resource type="Theme" uid="uid://hr3cor4s2ov2" path="res://addons/patchwork/gdscript/diff_editor_theme.tres" id="4_7letu"]
-[ext_resource type="Script" path="res://addons/patchwork/gdscript/diff_inspector_container.gd" id="4_uttw7"]
-[ext_resource type="Texture2D" uid="uid://bu0h5oa7aoanu" path="res://addons/patchwork/icons/sign-add-svgrepo-com.svg" id="5_iqebc"]
-[ext_resource type="Texture2D" uid="uid://cy3bt4icrwm3w" path="res://addons/patchwork/icons/remove-svgrepo-com.svg" id="6_ha5pl"]
-[ext_resource type="Texture2D" uid="uid://mr0rb0dbfyws" path="res://addons/patchwork/icons/edit-two-svgrepo-com.svg" id="7_o8jin"]
+
 
 [node name="Patchwork" type="MarginContainer"]
 anchors_preset = 15
@@ -121,6 +122,7 @@ layout_mode = 2
 theme_override_constants/separation = 16
 
 [node name="BigDiffer" type="ScrollContainer" parent="VBoxContainer/TabContainer/Diff/VBoxContainer"]
+script = ExtResource("4_uttw7")
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
@@ -128,7 +130,6 @@ theme_override_styles/panel = SubResource("StyleBoxFlat_i54cd")
 follow_focus = true
 edit_object = SubResource("PlaceholderMaterial_ywma1")
 theme = ExtResource("4_7letu")
-script = ExtResource("4_uttw7")
 added_icon = ExtResource("5_iqebc")
 removed_icon = ExtResource("6_ha5pl")
 modified_icon = ExtResource("7_o8jin")
