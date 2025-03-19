@@ -958,6 +958,7 @@ dependencies = [
  "tracing-subscriber",
  "tree-sitter",
  "tree-sitter-godot-resource",
+ "uuid",
 ]
 
 [[package]]

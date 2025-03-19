@@ -534,7 +534,7 @@ impl DriverState {
                 // eventually we should only store the structured data and derive the text from that
 
                 if path.ends_with(".tscn") || path.ends_with(".tres") {                
-                    let res = godot_parser::parse(&content);
+                    let res = godot_parser::parse_scene(&content);
 
                     match res {
                         Ok(scene) => {

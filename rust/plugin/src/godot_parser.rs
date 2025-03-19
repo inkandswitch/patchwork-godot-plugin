@@ -5,6 +5,7 @@ use automerge::{
 use autosurgeon::{Hydrate, Reconcile};
 use std::collections::HashMap;
 use tree_sitter::{Parser, Query, QueryCursor};
+use uuid;
 
 use crate::doc_utils::SimpleDocReader;
 
@@ -15,10 +16,16 @@ enum NodeTreeType {
 }
 
 #[derive(Debug, Clone)]
-pub struct GodotNodeTree {
-    tree_type: NodeTreeType,
-    format: u64,
-    uid: String,
+pub struct GodotScene {
+    attributes: HashMap<String, String>,
+    nodes: HashMap<String, GodotNode>,
+    ext_resources: HashMap<String, GodotNode>,
+    sub_resources: HashMap<String, GodotNode>,
+    root_node_id: String,
+}
+
+pub struct GodotResource {
+    attributes: HashMap<String, String>,
     nodes: HashMap<String, GodotNode>,
     ext_resources: HashMap<String, GodotNode>,
     sub_resources: HashMap<String, GodotNode>,
@@ -26,11 +33,13 @@ pub struct GodotNodeTree {
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
 pub struct GodotNode {
+    id: String,
     attributes: HashMap<String, String>, // key value pairs in the header of the section
     properties: HashMap<String, String>, // key value pairs below the section header
+    child_node_ids: Vec<String>,
 }
 
-impl GodotNodeTree {
+impl GodotScene {
     pub fn reconcile(&self, tx: &mut Transaction, path: String) {
         let files = tx
             .get_obj_id(ROOT, "files")
@@ -68,66 +77,173 @@ impl GodotNodeTree {
             }
         }
     }
-}
 
-// WIP custom reconciler
-/*
-fn get_string(value: automerge::Value) -> Option<String> {
-    match value {
-        automerge::Value::Scalar(v) => match v.as_ref() {
-            automerge::ScalarValue::Str(smol_str) => Some(smol_str.to_string()),
-            _ => None,
-        },
-        _ => None,
-    }
-}
+    pub fn serialize(&self) -> String {
+        let mut output = String::new();
 
-fn assign<R: autosurgeon::Reconciler>(
-    m: &mut <R as Reconciler>::Map<'_>,
-    key: &str,
-    value: String,
-) {
-    let value_clone = value.clone();
-    match m.entry(key) {
-        Some(v) => {
-            if get_string(v) != Some(value) {
-                m.put(key, value_clone);
+        // Scene header
+        if let Some(format) = self.attributes.get("format") {
+            if let Some(uid) = self.attributes.get("uid") {
+                output.push_str(&format!(
+                    "[gd_scene load_steps={} format={} {}]\n\n",
+                    self.ext_resources.len() + self.sub_resources.len() + 1,
+                    format,
+                    uid
+                ));
+            } else {
+                output.push_str(&format!(
+                    "[gd_scene load_steps={} format={}]\n\n",
+                    self.ext_resources.len() + self.sub_resources.len() + 1,
+                    format
+                ));
+            }
+        } else {
+            // Default header if no format specified
+            output.push_str("[gd_scene]\n\n");
+        }
+
+        // External resources
+        for (_, resource) in &self.ext_resources {
+            output.push_str("[ext_resource ");
+
+            // Attributes
+            let mut attrs = Vec::new();
+            for (key, value) in &resource.attributes {
+                if key != "id" {
+                    // id is handled separately
+                    attrs.push(format!("{}={}", key, value));
+                }
+            }
+
+            // Ensure id is the last attribute
+            if let Some(id) = resource.attributes.get("id") {
+                attrs.push(format!("id={}", id));
+            }
+
+            output.push_str(&attrs.join(" "));
+            output.push_str("]\n");
+        }
+
+        if !self.ext_resources.is_empty() {
+            output.push('\n');
+        }
+
+        // Sub-resources
+        for (_, resource) in &self.sub_resources {
+            output.push_str("[sub_resource ");
+
+            // Attributes
+            let mut attrs = Vec::new();
+            for (key, value) in &resource.attributes {
+                if key != "id" {
+                    // id is handled separately
+                    attrs.push(format!("{}={}", key, value));
+                }
+            }
+
+            // Ensure id is the last attribute
+            if let Some(id) = resource.attributes.get("id") {
+                attrs.push(format!("id={}", id));
+            }
+
+            output.push_str(&attrs.join(" "));
+            output.push_str("]\n");
+
+            // Properties
+            for (key, value) in &resource.properties {
+                if !key.starts_with("metadata/patchwork_id") {
+                    // Skip patchwork IDs
+                    output.push_str(&format!("{}={}\n", key, value));
+                }
+            }
+
+            output.push('\n');
+        }
+
+        // Nodes - we need to traverse in the correct order
+        if !self.nodes.is_empty() {
+            if let Some(root_node) = self.nodes.get(&self.root_node_id) {
+                self.serialize_node(&mut output, root_node, "", &self.nodes);
             }
         }
-        None => {
-            m.put(key, value);
+
+        output
+    }
+
+    fn serialize_node(
+        &self,
+        output: &mut String,
+        node: &GodotNode,
+        parent_path: &str,
+        nodes: &HashMap<String, GodotNode>,
+    ) {
+        output.push_str("[node ");
+
+        // Attributes
+        let mut attrs = Vec::new();
+
+        // Ensure name is the first attribute
+        if let Some(name) = node.attributes.get("name") {
+            attrs.push(format!("name={}", name));
         }
-    };
+
+        // Add type if present
+        if let Some(node_type) = node.attributes.get("type") {
+            attrs.push(format!("type={}", node_type));
+        }
+
+        // Add parent if not root
+        if !parent_path.is_empty() {
+            attrs.push(format!("parent=\"{}\"", parent_path));
+        }
+
+        // Add remaining attributes (except name, type, parent which were handled above)
+        for (key, value) in &node.attributes {
+            if key != "name" && key != "type" && key != "parent" {
+                attrs.push(format!("{}={}", key, value));
+            }
+        }
+
+        output.push_str(&attrs.join(" "));
+        output.push_str("]\n");
+
+        // Properties
+        for (key, value) in &node.properties {
+            output.push_str(&format!("{}={}\n", key, value));
+        }
+
+        // Always add a blank line after a node's properties
+        output.push('\n');
+
+        // Process children
+        let node_name = node
+            .attributes
+            .get("name")
+            .map(|n| n.trim_matches('"'))
+            .unwrap_or("");
+
+        let new_parent_path = if parent_path.is_empty() {
+            node_name.to_string()
+        } else {
+            format!("{}/{}", parent_path, node_name)
+        };
+
+        // Recursively serialize children
+        for child_id in &node.child_node_ids {
+            if let Some(child_node) = nodes.get(child_id) {
+                self.serialize_node(output, child_node, &new_parent_path, nodes);
+            }
+        }
+    }
 }
 
-impl Reconcile for GodotSceneNode {
-    type Key<'a> = u64;
-
-    fn reconcile<R: autosurgeon::Reconciler>(&self, reconciler: R) -> Result<(), R::Error> {
-        let mut m: <R as Reconciler>::Map<'_> = reconciler.map()?;
-
-        assign(&mut m, "name", self.name.clone());
-        assign(&mut m, "parent", self.parent.clone());
-        assign(&mut m, "instance", self.instance.clone());
-
-        let name_entry = m.entry("name");
-
-        Ok(())
-    }
-}*/
-
-pub fn parse(source: &String) -> Result<GodotNodeTree, String> {
+pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
     let mut parser = Parser::new();
     parser
         .set_language(tree_sitter_godot_resource::language())
         .expect("Error loading godot resource grammar");
 
     let result = parser.parse(source, None);
-
-    /*println!(
-        "Tree s-expression:\n{}",
-        result.clone().unwrap().root_node().to_sexp()
-    );*/
 
     return match result {
         Some(tree) => {
@@ -146,14 +262,15 @@ pub fn parse(source: &String) -> Result<GodotNodeTree, String> {
                 Query::new(tree_sitter_godot_resource::language(), query).expect("Invalid query");
             let mut query_cursor = QueryCursor::new();
             let matches = query_cursor.matches(&query, tree.root_node(), content_bytes);
-            let mut scene = GodotNodeTree {
-                tree_type: NodeTreeType::Scene,
-                format: 3,
-                uid: String::new(),
-                nodes: HashMap::new(),
-                ext_resources: HashMap::new(),
-                sub_resources: HashMap::new(),
-            };
+
+            let mut scene_attributes: HashMap<String, String> = HashMap::new();
+            let mut nodes: HashMap<String, GodotNode> = HashMap::new();
+            let mut ext_resources: HashMap<String, GodotNode> = HashMap::new();
+            let mut sub_resources: HashMap<String, GodotNode> = HashMap::new();
+            let mut root_node_id = String::new();
+
+            // Stack to track node hierarchy
+            let mut node_stack: Vec<String> = Vec::new();
 
             for m in matches {
                 let mut attributes = HashMap::new();
@@ -188,75 +305,132 @@ pub fn parse(source: &String) -> Result<GodotNodeTree, String> {
                     }
                 }
 
-                println!("section_id: {}", section_id);
-                println!("attributes: {:?}", attributes);
-                println!("properties: {:?}", properties);
+                // Process the section based on its type
+                if section_id.is_empty() {
+                    // First section with no ID is the scene attributes
+                    scene_attributes = attributes;
+                } else if section_id == "node" {
+                    // Create a node and add it to the nodes map
+                    let mut node_id = String::new();
 
-                // let attributes_clone = attributes.clone();
-                // let node = GodotSceneNode {
-                //     attributes,
-                //     properties,
-                // };
+                    // Check if node has a patchwork_id in metadata
+                    if let Some(patchwork_id) = properties.get("metadata/patchwork_id") {
+                        node_id = patchwork_id.clone();
+                    } else {
+                        // Generate a UUID if no patchwork_id exists
+                        node_id = uuid::Uuid::new_v4().simple().to_string();
+                        properties.insert("metadata/patchwork_id".to_string(), node_id.clone());
+                    }
 
-                // if section_id == "node" {
-                //     let mut node_clone = node.clone();
-                //     let scene_clone = scene.clone();
+                    // If this is the first node, it's the root node
+                    if root_node_id.is_empty() {
+                        root_node_id = node_id.clone();
+                        node_stack.push(node_id.clone());
+                    } else {
+                        // Handle parent-child relationships
+                        if let Some(parent_path) = attributes.get("parent") {
+                            // Handle different parent path formats
+                            if parent_path == "\".\"" {
+                                // Parent is root node
+                                if !node_stack.is_empty() {
+                                    // Pop until we reach the root node
+                                    while node_stack.len() > 1 {
+                                        node_stack.pop();
+                                    }
+                                }
+                            } else if parent_path.starts_with("\"") && parent_path.ends_with("\"") {
+                                // Extract parent name from the path
+                                let parent_name = parent_path.trim_matches('"');
 
-                //     // parse instance property to path instead of local id
-                //     if let Some(instance) = node_clone.attributes.get("instance") {
-                //         println!("has instance {}", instance);
-                //         if let Some(path) = external_resource_to_path(instance, &scene) {
-                //             println!("parse {}", path);
-                //             node_clone.attributes.insert("instance".to_string(), path);
-                //         } else {
-                //             println!("can't parse");
-                //         }
-                //     }
+                                // Handle relative paths
+                                if parent_name.contains("/") {
+                                    // For simplicity, we'll just pop to root for complex paths
+                                    // A more complete implementation would navigate the path
+                                    while node_stack.len() > 1 {
+                                        node_stack.pop();
+                                    }
+                                } else {
+                                    // Find the parent node in the stack
+                                    let mut found = false;
+                                    while !node_stack.is_empty() {
+                                        let potential_parent_id = node_stack.last().unwrap();
+                                        if let Some(potential_parent) =
+                                            nodes.get(potential_parent_id)
+                                        {
+                                            // Compare the node name with the parent path
+                                            if let Some(node_name) =
+                                                potential_parent.attributes.get("name")
+                                            {
+                                                if node_name == parent_path {
+                                                    found = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        node_stack.pop();
+                                    }
 
-                //     if let Some(node_path) = get_node_path(scene_clone, node) {
-                //         scene.nodes.insert(node_path, node_clone);
-                //     }
-                // } else if section_id == "editable_path" {
-                //     let editable_path = node.properties.get("path").unwrap();
-                //     scene.editable_paths.push(editable_path.clone());
-                // } else if section_id == "ext_resource" {
-                //     let node_clone = node.clone();
-                //     if let Some(raw_id) = attributes_clone.get("id") {
-                //         let id = raw_id.to_string()[1..raw_id.len() - 1].to_string();
+                                    // If parent not found, default to root
+                                    if !found && !node_stack.is_empty() {
+                                        while node_stack.len() > 1 {
+                                            node_stack.pop();
+                                        }
+                                    }
+                                }
+                            }
 
-                //         scene.external_resources.insert(id, node_clone);
-                //     }
-                // } else if section_id == "connection" {
-                //     let connections = GodotSceneConnections {
-                //         attributes: attributes_clone.clone(),
-                //     };
+                            // Add this node as a child of the current parent
+                            if let Some(parent_id) = node_stack.last() {
+                                if let Some(parent_node) = nodes.get_mut(parent_id) {
+                                    parent_node.child_node_ids.push(node_id.clone());
+                                }
+                            }
+                        }
 
-                //     let mut connection_id = String::new();
-                //     if let Some(signal) = connections.attributes.get("signal") {
-                //         connection_id.push_str(signal);
-                //     }
-                //     if let Some(target) = connections.attributes.get("target") {
-                //         connection_id.push_str(target);
-                //     }
-                //     if let Some(method) = connections.attributes.get("method") {
-                //         connection_id.push_str(method);
-                //     }
+                        // Push this node onto the stack
+                        node_stack.push(node_id.clone());
+                    }
 
-                //     scene.connections.insert(connection_id, connections);
-                // } else if section_id == "subresource" {
-                //     let node_clone = node.clone();
-                //     if let Some(raw_id) = attributes_clone.get("id") {
-                //         let id = raw_id.to_string()[1..raw_id.len() - 1].to_string();
-                //         scene.internal_resources.insert(id, node_clone);
-                //     } else {
-                //         // something? internal resources always have an id
-                //     }
-                // }
+                    let node = GodotNode {
+                        id: node_id.clone(),
+                        attributes,
+                        properties,
+                        child_node_ids: Vec::new(), // Child relationships are processed above
+                    };
+
+                    nodes.insert(node_id, node);
+                } else if section_id == "ext_resource" {
+                    // Add to ext_resources map
+                    if let Some(id) = attributes.get("id").cloned() {
+                        let node = GodotNode {
+                            id: id.clone(),
+                            attributes,
+                            properties,
+                            child_node_ids: Vec::new(),
+                        };
+                        ext_resources.insert(id.clone(), node);
+                    }
+                } else if section_id == "sub_resource" {
+                    // Add to sub_resources map
+                    if let Some(id) = attributes.get("id").cloned() {
+                        let node = GodotNode {
+                            id: id.clone(),
+                            attributes,
+                            properties,
+                            child_node_ids: Vec::new(),
+                        };
+                        sub_resources.insert(id.clone(), node);
+                    }
+                }
             }
 
-            //  println!("scene {:#?}", scene);
-
-            Ok(scene)
+            Ok(GodotScene {
+                attributes: scene_attributes,
+                nodes,
+                ext_resources,
+                sub_resources,
+                root_node_id,
+            })
         }
         None => Err("Failed to parse scene file".to_string()),
     };
