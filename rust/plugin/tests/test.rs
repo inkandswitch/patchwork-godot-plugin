@@ -88,7 +88,7 @@ fn test_resconcile_and_hydrate() {
                 "node1".to_string(),
                 godot_parser::GodotNode {
                     name: "Root".to_string(),
-                    parent: None,
+                    parent_id: None,
                     properties: HashMap::from([(
                         "metadata/patchwork_id".to_string(),
                         "node1".to_string(),
@@ -105,7 +105,7 @@ fn test_resconcile_and_hydrate() {
                 "node2".to_string(),
                 godot_parser::GodotNode {
                     name: "Sprite".to_string(),
-                    parent: Some(".".to_string()),
+                    parent_id: Some("node1".to_string()),
                     properties: HashMap::from([
                         ("position".to_string(), "Vector2(100.0, 100.0)".to_string()),
                         ("metadata/patchwork_id".to_string(), "node2".to_string()),
@@ -122,7 +122,7 @@ fn test_resconcile_and_hydrate() {
                 "node3".to_string(),
                 godot_parser::GodotNode {
                     name: "Label".to_string(),
-                    parent: Some(".".to_string()),
+                    parent_id: Some("node1".to_string()),
                     properties: HashMap::from([
                         ("offset_right".to_string(), "40.0".to_string()),
                         ("offset_bottom".to_string(), "23.0".to_string()),

@@ -358,8 +358,8 @@ impl GodotProject {
         for patch in patches {
             match_path(&path, &patch).inspect(|PathWithAction { path, action }| {
                 match path.first() {
-                    Some((_, Prop::Map(node_path))) => {
-                        changed_nodes.insert(node_path.clone());
+                    Some((_, Prop::Map(node_id))) => {
+                        changed_nodes.insert(node_id.clone());
                     }
                     None => {
                         if let PatchAction::PutMap {
