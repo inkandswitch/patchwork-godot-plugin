@@ -454,6 +454,9 @@ func update_properties_diff() -> void:
 	if (!inspector):
 		print("inspector is null")
 		return
+	if (!checked_out_branch):
+		print("checked_out_branch is null")
+		return
 	inspector.visible = !checked_out_branch.is_main;
 
 	print("checked_out_branch: ", checked_out_branch)
