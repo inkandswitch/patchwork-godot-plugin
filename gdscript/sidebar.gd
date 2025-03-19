@@ -219,7 +219,7 @@ func _before_cvs_action_after_save(cvs_action: String, callback: Callable, save:
 	if save:
 		plugin.sync_godot_to_patchwork()
 		plugin.file_system.connect_to_file_system()
-	print("*** All scenes saved!")
+		print("*** All scenes saved!")
 	add_call_to_queue(callback)
 
 
@@ -542,8 +542,6 @@ func show_diff(heads_before, heads_after):
 	inspector.reset()
 	inspector.add_diff(display_diff)
 		
-
-	
 
 	# for file in display_diff.keys():
 	# 	for key in display_diff[file].keys():

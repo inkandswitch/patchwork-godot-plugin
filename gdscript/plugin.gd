@@ -103,6 +103,7 @@ func sync_patchwork_to_godot():
 		return
 
 	var files_in_patchwork = godot_project.list_all_files()
+	var open_scene_paths = EditorInterface.get_open_scenes()
 
 	var files_to_reimport = {}
 
@@ -124,8 +125,9 @@ func sync_patchwork_to_godot():
 			printerr("different types at ", path, ": ", typeof(fs_content), " vs ", typeof(patchwork_content))
 			continue
 
-		# skip files that are already in sync
-		if patchwork_content == fs_content:
+		# skip files that are already in sync 
+		# exeption: always reload open scenes, because the scene might not have changed but a contained scene might have
+		if patchwork_content == fs_content and not open_scene_paths.has(path):
 			continue
 
 		# reload after sync
