@@ -619,7 +619,13 @@ impl GodotProject {
 
                     // save scene files as structured data
                     if path.to_string().ends_with(".tscn") {
-                        let scene = godot_parser::parse_scene(&content).unwrap();
+                        let scene = match godot_parser::parse_scene(&content) {
+                            Ok(scene) => scene,
+                            Err(error) => {
+                                println!("RUST: error parsing scene {}: {:?}", path, error);
+                                return None;
+                            }
+                        };
 
                         if let Some(FileContent::Scene(stored_scene)) =
                             self._get_file(path.to_string())
@@ -724,13 +730,15 @@ impl GodotProject {
         ).filter(|id| id != "").collect::<Vec<String>>();
         println!(
             "rust: checkout_branch {:?} {:?}",
-            primary_branch_doc_id,
-            seconday_doc_ids
+            primary_branch_doc_id, seconday_doc_ids
         );
 
         let branch_union = BranchUnionIds {
             primary_branch_doc_id: DocumentId::from_str(&primary_branch_doc_id).unwrap(),
-            secondary_branch_doc_ids: seconday_doc_ids.iter().map(|id| DocumentId::from_str(&id).unwrap()).collect(),
+            secondary_branch_doc_ids: seconday_doc_ids
+                .iter()
+                .map(|id| DocumentId::from_str(&id).unwrap())
+                .collect(),
         };
 
         match self.get_branch_union_state(&branch_union) {
