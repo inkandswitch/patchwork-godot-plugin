@@ -2,191 +2,88 @@ mod doc_utils;
 mod godot_parser;
 
 fn main() {
-    let example = r#"[gd_scene load_steps=14 format=4 uid="uid://dhcpt1kt8cs0g"]
+    let source = r#"[gd_scene load_steps=6 format=3 uid="uid://jnrusvm3gric"]
 
-[ext_resource type="PackedScene" uid="uid://8st4scqt06l8" path="res://components/player/player.tscn" id="2_7yl00"]
-[ext_resource type="PackedScene" uid="uid://jnrusvm3gric" path="res://spaces/background.tscn" id="2_tb5a2"]
-[ext_resource type="PackedScene" uid="uid://cswheshouik14" path="res://rules_goals/game_logic.tscn" id="3_xbkvd"]
-[ext_resource type="PackedScene" uid="uid://danlrmsfmsros" path="res://spaces/tilemap.tscn" id="3_yfnmv"]
-[ext_resource type="PackedScene" uid="uid://dthyncc3spfks" path="res://spaces/dangerzone.tscn" id="4_2mg6t"]
-[ext_resource type="PackedScene" uid="uid://coq6d3u6wnvs2" path="res://components/platform/platform.tscn" id="4_gd51l"]
-[ext_resource type="PackedScene" uid="uid://daf24t18h3n5e" path="res://components/coin/coin.tscn" id="5_u7hr5"]
-[ext_resource type="Texture2D" uid="uid://bjqboxowe07lw" path="res://assets/items/crystal.png" id="6_kpi5m"]
-[ext_resource type="PackedScene" uid="uid://jt80gv02u4f2" path="res://hud.tscn" id="6_mp7wy"]
-[ext_resource type="PackedScene" uid="uid://dk0xon0k7ga23" path="res://components/enemy/enemy.tscn" id="9_l6smt"]
-[ext_resource type="SpriteFrames" uid="uid://bo581k1esb50n" path="res://components/player/spriteframes-red.tres" id="9_qmofe"]
-[ext_resource type="PackedScene" uid="uid://beuisy5yrw0bq" path="res://components/flag/flag.tscn" id="12_dkbog"]
-[ext_resource type="Script" path="res://scripts/multiplayer_camera.gd" id="13_0d2mj"]
+[ext_resource type="Texture2D" uid="uid://dw612tw7iymyb" path="res://assets/background-layer-1.png" id="1_0qn5k"]
+[ext_resource type="Script" path="res://scripts/background.gd" id="1_1jh5j"]
+[ext_resource type="Texture2D" uid="uid://dne1wh5fsffy" path="res://assets/background-layer-2.png" id="2_mk66l"]
 
-[node name="Main" type="Node2D"]
+[sub_resource type="Gradient" id="Gradient_80myt"]
+offsets = PackedFloat32Array(0.0788732, 1)
+colors = PackedColorArray(0.98, 0.98, 0.98, 1, 0.81, 0.81, 0.81, 1)
 
-[node name="GameLogic" parent="." instance=ExtResource("3_xbkvd")]
-win_by_collecting_coins = true
-win_by_reaching_flag = true
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_ljotv"]
+gradient = SubResource("Gradient_80myt")
+width = 5115
+height = 1080
+fill_to = Vector2(0, 1)
 
-[node name="Background" parent="." instance=ExtResource("2_tb5a2")]
-tint = Color(0.569993, 0.558956, 0.878091, 1)
+[node name="Background" type="ParallaxBackground"]
+follow_viewport_enabled = true
+scroll_ignore_camera_zoom = true
+script = ExtResource("1_1jh5j")
 
-[node name="Dangerzone" parent="." instance=ExtResource("4_2mg6t")]
-position = Vector2(3072, 1216)
+[node name="ParallaxLayer" type="ParallaxLayer" parent="."]
+unique_name_in_owner = true
+motion_scale = Vector2(0, 0)
+motion_mirroring = Vector2(1600, 0)
 
-[node name="Coins" type="Node2D" parent="."]
+[node name="ColorRect" type="ColorRect" parent="ParallaxLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -2352.0
+offset_right = 5129.0
+offset_bottom = 98.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.980392, 0.980392, 0.980392, 1)
 
-[node name="Coin" parent="Coins" instance=ExtResource("5_u7hr5")]
-modulate = Color(1, 1, 0, 1)
-position = Vector2(1472, 320)
-texture = ExtResource("6_kpi5m")
-tint = Color(1, 1, 0, 1)
+[node name="Sprite2D" type="Sprite2D" parent="ParallaxLayer"]
+texture = SubResource("GradientTexture2D_ljotv")
+centered = false
 
-[node name="Coin3" parent="Coins" instance=ExtResource("5_u7hr5")]
-modulate = Color(1, 1, 0, 1)
-position = Vector2(1600, 256)
-texture = ExtResource("6_kpi5m")
-tint = Color(1, 1, 0, 1)
+[node name="ParallaxLayer2" type="ParallaxLayer" parent="."]
+unique_name_in_owner = true
+motion_scale = Vector2(0.03, 0)
+motion_mirroring = Vector2(1600, 0)
 
-[node name="Coin4" parent="Coins" instance=ExtResource("5_u7hr5")]
-modulate = Color(1, 1, 0, 1)
-position = Vector2(1728, 320)
-texture = ExtResource("6_kpi5m")
-tint = Color(1, 1, 0, 1)
+[node name="Sprite2D" type="Sprite2D" parent="ParallaxLayer2"]
+position = Vector2(0, -115)
+scale = Vector2(2.5, 2.5)
+texture = ExtResource("1_0qn5k")
+centered = false
 
-[node name="Platforms" type="Node2D" parent="."]
-position = Vector2(1920, -64)
+[node name="Sprite2D2" type="Sprite2D" parent="ParallaxLayer2"]
+position = Vector2(1600, -115)
+scale = Vector2(2.5, 2.5)
+texture = ExtResource("1_0qn5k")
+centered = false
 
-[node name="Platform" parent="Platforms" instance=ExtResource("4_gd51l")]
-position = Vector2(960, 320)
-width = 2
+[node name="ParallaxLayer3" type="ParallaxLayer" parent="."]
+unique_name_in_owner = true
+motion_scale = Vector2(0.1, 0)
+motion_mirroring = Vector2(1600, 0)
 
-[node name="Platform4" parent="Platforms" instance=ExtResource("4_gd51l")]
-position = Vector2(-1472, 0)
-width = 2
-one_way = true
-fall_time = 2.0
+[node name="Sprite2D" type="Sprite2D" parent="ParallaxLayer3"]
+position = Vector2(0, -115)
+scale = Vector2(2.5, 2.5)
+texture = ExtResource("2_mk66l")
+centered = false
 
-[node name="Player" parent="." instance=ExtResource("2_7yl00")]
-position = Vector2(512, 576)
-collision_layer = 1
-collision_mask = 7
-sprite_frames = ExtResource("9_qmofe")
-
-[node name="Camera2D" type="Camera2D" parent="Player"]
-position = Vector2(0, 15)
-limit_left = 0
-limit_bottom = 1080
-position_smoothing_enabled = true
-
-[node name="HUD" parent="." instance=ExtResource("6_mp7wy")]
-
-[node name="Enemy" parent="." instance=ExtResource("9_l6smt")]
-position = Vector2(1600, 704)
-
-[node name="Enemy2" parent="." instance=ExtResource("9_l6smt")]
-position = Vector2(1920, 576)
+[node name="Sprite2D2" type="Sprite2D" parent="ParallaxLayer3"]
+position = Vector2(1600, -115)
+scale = Vector2(2.5, 2.5)
+texture = ExtResource("2_mk66l")
+centered = false
 "#;
 
-    let reserialized = r#"[gd_scene load_steps=14 format=4 uid="uid://dhcpt1kt8cs0g"]
-
-[ext_resource type="PackedScene" path="res://spaces/tilemap.tscn" uid="uid://danlrmsfmsros" id="3_yfnmv"]
-[ext_resource path="res://components/player/player.tscn" type="PackedScene" uid="uid://8st4scqt06l8" id="2_7yl00"]
-[ext_resource path="res://spaces/background.tscn" type="PackedScene" uid="uid://jnrusvm3gric" id="2_tb5a2"]
-[ext_resource uid="uid://bjqboxowe07lw" path="res://assets/items/crystal.png" type="Texture2D" id="6_kpi5m"]
-[ext_resource path="res://components/platform/platform.tscn" uid="uid://coq6d3u6wnvs2" type="PackedScene" id="4_gd51l"]
-[ext_resource uid="uid://beuisy5yrw0bq" type="PackedScene" path="res://components/flag/flag.tscn" id="12_dkbog"]
-[ext_resource path="res://scripts/multiplayer_camera.gd" type="Script" id="13_0d2mj"]
-[ext_resource path="res://components/player/spriteframes-red.tres" uid="uid://bo581k1esb50n" type="SpriteFrames" id="9_qmofe"]
-[ext_resource path="res://hud.tscn" uid="uid://jt80gv02u4f2" type="PackedScene" id="6_mp7wy"]
-[ext_resource path="res://rules_goals/game_logic.tscn" type="PackedScene" uid="uid://cswheshouik14" id="3_xbkvd"]
-[ext_resource type="PackedScene" uid="uid://dk0xon0k7ga23" path="res://components/enemy/enemy.tscn" id="9_l6smt"]
-[ext_resource uid="uid://dthyncc3spfks" type="PackedScene" path="res://spaces/dangerzone.tscn" id="4_2mg6t"]
-[ext_resource uid="uid://daf24t18h3n5e" path="res://components/coin/coin.tscn" type="PackedScene" id="5_u7hr5"]
-
-[node name="Main" type="Node2D"]
-metadata/patchwork_id="cb69ec7e34864e5ca2bd4d0ca7105834"
-
-[node name="GameLogic" parent="." instance=ExtResource("3_xbkvd")]
-metadata/patchwork_id="d371a8c3887747538234d2300e26fc1f"
-win_by_collecting_coins=true
-win_by_reaching_flag=true
-
-[node name="Background" parent="." instance=ExtResource("2_tb5a2")]
-metadata/patchwork_id="14d0420c1c0844b582d2e6fac7569249"
-tint=Color(0.569993, 0.558956, 0.878091, 1)
-
-[node name="Dangerzone" parent="." instance=ExtResource("4_2mg6t")]
-metadata/patchwork_id="4f8f5c8d862e4793b3e1c10bcee8db75"
-position=Vector2(3072, 1216)
-
-[node name="Coins" type="Node2D" parent="."]
-metadata/patchwork_id="6b9b86bf04b64b958a043bc3444f2d88"
-
-[node name="Coin" parent="Coins" instance=ExtResource("5_u7hr5")]
-metadata/patchwork_id="486819e024244c9880bee32c0a846a08"
-modulate=Color(1, 1, 0, 1)
-position=Vector2(1472, 320)
-texture=ExtResource("6_kpi5m")
-tint=Color(1, 1, 0, 1)
-
-[node name="Coin3" parent="Coins" instance=ExtResource("5_u7hr5")]
-metadata/patchwork_id="ff095b825e7642739a37e2329f1e30fb"
-modulate=Color(1, 1, 0, 1)
-position=Vector2(1600, 256)
-texture=ExtResource("6_kpi5m")
-tint=Color(1, 1, 0, 1)
-
-[node name="Coin4" parent="Coins" instance=ExtResource("5_u7hr5")]
-metadata/patchwork_id="48e4d518129f4cdaad74075a7ae458f1"
-modulate=Color(1, 1, 0, 1)
-position=Vector2(1728, 320)
-texture=ExtResource("6_kpi5m")
-tint=Color(1, 1, 0, 1)
-
-[node name="Platforms" type="Node2D" parent="."]
-metadata/patchwork_id="a780e1716d0641e5a6577a23f3d75932"
-position=Vector2(1920, -64)
-
-[node name="Platform" parent="Platforms" instance=ExtResource("4_gd51l")]
-metadata/patchwork_id="a9c3a5a969054291a512136c4baee35a"
-position=Vector2(960, 320)
-width=2
-
-[node name="Platform4" parent="Platforms" instance=ExtResource("4_gd51l")]
-fall_time=2.0
-metadata/patchwork_id="ee10dc07f8fa42b29aa5b3249b6758d8"
-one_way=true
-position=Vector2(-1472, 0)
-width=2
-
-[node name="Player" parent="." instance=ExtResource("2_7yl00")]
-collision_layer=1
-collision_mask=7
-metadata/patchwork_id="6c9f6bc542514ca18fc1a24c0a734a19"
-position=Vector2(512, 576)
-sprite_frames=ExtResource("9_qmofe")
-
-[node name="Camera2D" type="Camera2D" parent="Player"]
-limit_bottom=1080
-limit_left=0
-metadata/patchwork_id="31ae337cfea242bfada4d2a1786b32f1"
-position=Vector2(0, 15)
-position_smoothing_enabled=true
-
-[node name="HUD" parent="." instance=ExtResource("6_mp7wy")]
-metadata/patchwork_id="a7f5c2a130bf4602b589000a672769c7"
-
-[node name="Enemy" parent="." instance=ExtResource("9_l6smt")]
-metadata/patchwork_id="b0927783ef0a4241b1ffa30f86bf63fa"
-position=Vector2(1600, 704)
-
-[node name="Enemy2" parent="." instance=ExtResource("9_l6smt")]
-metadata/patchwork_id="431d07788c4242d6a54b7bea25dd2357"
-position=Vector2(1920, 576)"#;
-
-    let scene = godot_parser::parse_scene(&reserialized.to_string()).unwrap();
+    let scene = godot_parser::parse_scene(&source.to_string()).unwrap();
 
     // println!("{:#?}", scene);
 
-    let source = scene.serialize();
-    println!("{}", source);
+    let reserialized: String = scene.serialize();
+    println!("{}", reserialized);
 
     println!("check: {}", source == reserialized);
 }
