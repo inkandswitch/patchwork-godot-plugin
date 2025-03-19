@@ -50,7 +50,7 @@ pub struct ExternalResourceNode {
 #[derive(Debug, Clone)]
 pub struct SubResourceNode {
     id: String,
-    heading: HashMap<String, String>, // key value pairs in the header of the section
+    resource_type: String,
     properties: HashMap<String, String>, // key value pairs below the section header
 }
 
@@ -111,6 +111,7 @@ impl GodotScene {
 
         let mut serialized_ext_resources = HashSet::new();
 
+        
         for resource in &self.ext_resources {   
             // the same resource could be in the list multiple times, so we need to check if we already serialized it
             // todo: think about how to properly handle this
@@ -131,33 +132,17 @@ impl GodotScene {
             output.push('\n');
         }
 
-        // Sub-resources
-        for (_, resource) in &self.sub_resources {
-            output.push_str("[sub_resource ");
+        // Sub-resources sorted by id (a to z)
+        let mut sorted_sub_resources: Vec<(&String, &SubResourceNode)> = self.sub_resources.iter().collect();
+        sorted_sub_resources.sort_by(|(a,_), (b,_)| a.to_lowercase().cmp(&b.to_lowercase()));
+        for (_, resource) in sorted_sub_resources {
+            output.push_str(&format!("[sub_resource type=\"{}\" id=\"{}\"]\n", resource.resource_type, resource.id));    
 
-            // Attributes
-            let mut attrs = Vec::new();
-            for (key, value) in &resource.heading {
-                if key != "id" {
-                    // id is handled separately
-                    attrs.push(format!("{}={}", key, value));
-                }
-            }
-
-            // Ensure id is the last attribute
-            if let Some(id) = resource.heading.get("id") {
-                attrs.push(format!("id={}", id));
-            }
-
-            output.push_str(&attrs.join(" "));
-            output.push_str("]\n");
-
-            // Properties
-            for (key, value) in &resource.properties {
-                if !key.starts_with("metadata/patchwork_id") {
-                    // Skip patchwork IDs
-                    output.push_str(&format!("{}={}\n", key, value));
-                }
+            // Properties sorted by name (a to z)
+            let mut sorted_props: Vec<(&String, &String)> = resource.properties.iter().collect();
+            sorted_props.sort_by(|(a,_), (b,_)| a.to_lowercase().cmp(&b.to_lowercase()));
+            for (key, value) in sorted_props {
+                output.push_str(&format!("{}={}\n", key, value));
             }
 
             output.push('\n');
@@ -201,7 +186,7 @@ impl GodotScene {
 
         output.push_str("]\n");
 
-        // Properties sorted in descending order
+        // Properties sorted a to z
         let mut sorted_props: Vec<(&String, &String)> = node.properties.iter().collect();
         sorted_props.sort_by(|(a,_), (b,_)| a.to_lowercase().cmp(&b.to_lowercase()));
         for (key, value) in sorted_props {
@@ -419,23 +404,23 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                     // Add to ext_resources map
 
                     let resource_type = match heading.get("type").cloned() {
-                        Some(resource_type) => resource_type,
+                        Some(resource_type) => unquote(&resource_type),
                         None => {
                             return Err("Missing required 'type' attribute in ext_resource section".to_string())
                         }
                     };
 
-                    let uid: Option<String> = heading.get("uid").cloned();
+                    let uid: Option<String> = heading.get("uid").cloned().map(|uid| unquote(&uid));
 
                     let path = match heading.get("path").cloned() {
-                        Some(path) => path,
+                        Some(path) => unquote(&path),
                         None => {
                             return Err("Missing required 'path' attribute in ext_resource section".to_string())
                         }
                     };
 
                     let id = match heading.get("id").cloned() {
-                        Some(id) => id,
+                        Some(id) => unquote(&id),
                         None => {
                             return Err("Missing required 'id' attribute in ext_resource section".to_string())
                         }
@@ -451,15 +436,29 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 // SUB-RESOURCE
                 //
                 } else if section_id == "sub_resource" {
-                    // Add to sub_resources map
-                    if let Some(id) = heading.get("id").cloned() {
-                        let node = SubResourceNode {
-                            id: id.clone(),
-                            heading,
-                            properties,
-                        };
-                        sub_resources.insert(id.clone(), node);
-                    }
+
+                    let id = match heading.get("id").cloned() {
+                        Some(id) => unquote(&id),
+                        None => {
+                            return Err("Missing required 'id' attribute in sub_resource section".to_string())
+                        }
+                    };
+
+                    let resource_type = match heading.get("type").cloned() {
+                        Some(resource_type) => unquote(&resource_type),
+                        None => {
+                            return Err("Missing required 'type' attribute in sub_resource section".to_string())
+                        }
+                    };
+
+
+                    let sub_resource = SubResourceNode {
+                        id: id.clone(),
+                        resource_type,
+                        properties,
+                    };
+
+                    sub_resources.insert(id, sub_resource);
                 }
             }
 
