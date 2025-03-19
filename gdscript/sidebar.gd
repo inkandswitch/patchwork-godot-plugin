@@ -160,9 +160,6 @@ func _on_branch_picker_item_selected(index: int) -> void:
 		return
 
 
-	print("picked in branch picker: ", index, " ", selected_branch)
-
-
 	if merge_preview_active:
 		checkout_branch(selected_branch.id, [other_branch_id])
 	else:
@@ -364,8 +361,6 @@ func update_ui() -> void:
 	branch_picker.clear()
 	other_branch_picker.clear()
 	other_branch_picker.add_item("---")
-	
-	print("UI: checked out branch: ", checked_out_branch)
 
 	for i in range(branches.size()):
 		var branch = branches[i]
@@ -397,8 +392,6 @@ func update_ui() -> void:
 	
 	var history = godot_project.get_changes()
 	history_list.clear()
-
-	print("changes:", history.size())
 
 	for change in history:
 		var change_hash = change.hash.substr(0, 7)
@@ -452,14 +445,10 @@ var prev_heads_after
 func update_properties_diff() -> void:
 	var checked_out_branch = godot_project.get_checked_out_branch()
 	if (!inspector):
-		print("inspector is null")
 		return
 	if (!checked_out_branch):
-		print("checked_out_branch is null")
 		return
 	inspector.visible = !checked_out_branch.is_main;
-
-	print("checked_out_branch: ", checked_out_branch)
 
 	if !inspector.visible:
 		return
@@ -515,8 +504,8 @@ func show_diff(heads_before, heads_after):
 		var new_content = file["new_content"]
 		# for all the files in the dict, save as tmp files
 
-		print("File: %s" % path)
-		print("Change: %s" % change)
+		# print("File: %s" % path)
+		# print("Change: %s" % change)
 		var old_path = TEMP_DIR.path_join(path.trim_prefix("res://")).get_basename() + "_old." + path.get_extension()
 		var new_path = TEMP_DIR.path_join(path.trim_prefix("res://")).get_basename() + "_new." + path.get_extension()
 		# print("Old path: %s" % old_path)
