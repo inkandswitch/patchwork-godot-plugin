@@ -81,8 +81,7 @@ func _ready() -> void:
 	branch_picker.item_selected.connect(_on_branch_picker_item_selected)
 	other_branch_picker.item_selected.connect(_on_other_branch_picker_item_selected)
 	highlight_changes_checkbox.toggled.connect(_on_highlight_changes_checkbox_toggled)
-
-
+	tab_container.tab_changed.connect(_on_tab_container_tab_changed)
 func _on_tab_container_tab_changed(tab_idx: int) -> void:
 	var tab_name = tab_container.get_tab_title(tab_idx)
 
@@ -90,7 +89,9 @@ func _on_tab_container_tab_changed(tab_idx: int) -> void:
 		merge_preview_active = true
 		checkout_branch(godot_project.get_checked_out_branch().id, [other_branch_id])
 	else:
+		print("resetting merge preview")
 		merge_preview_active = false
+		checkout_branch(godot_project.get_checked_out_branch().id, [])
 
 func _on_menu_button_id_pressed(id: int) -> void:
 	match id:
@@ -99,7 +100,6 @@ func _on_menu_button_id_pressed(id: int) -> void:
 
 		MERGE_BRANCH_IDX:
 			merge_current_branch()
-
 
 func _on_user_button_pressed():
 	var dialog = ConfirmationDialog.new()
@@ -134,7 +134,6 @@ func _on_user_button_pressed():
 	
 	add_child(dialog)
 	dialog.popup_centered()
-
 
 func _on_branch_picker_item_selected(index: int) -> void:
 	var selected_branch = branches[index]
