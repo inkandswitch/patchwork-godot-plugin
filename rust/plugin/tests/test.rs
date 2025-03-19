@@ -139,7 +139,26 @@ fn test_resconcile_and_hydrate() {
             ),
         ]),
         root_node_id: "node1".to_string(),
-        ext_resources: HashMap::new(),
+        ext_resources: HashMap::from([
+            (
+                "1_0qn5k".to_string(),
+                godot_parser::ExternalResourceNode {
+                    id: "1_0qn5k".to_string(),
+                    path: "res://assets/background-layer-1.png".to_string(),
+                    resource_type: "Texture2D".to_string(),
+                    uid: Some("uid://dw612tw7iymyb".to_string()),
+                },
+            ),
+            (
+                "1_1jh5j".to_string(),
+                godot_parser::ExternalResourceNode {
+                    id: "1_1jh5j".to_string(),
+                    path: "res://scripts/background.gd".to_string(),
+                    resource_type: "Script".to_string(),
+                    uid: None,
+                },
+            ),
+        ]),
         sub_resources: HashMap::new(),
         connections: vec![],
     };
