@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use automerge::Automerge;
 // Import the modules from the library
 use patchwork_rust::godot_parser;
+use patchwork_rust::godot_parser::GodotScene;
 use patchwork_rust::godot_project;
 use patchwork_rust::utils;
 
@@ -153,9 +154,11 @@ fn test_resconcile_and_hydrate() {
 
     tx.commit();
 
+    let rehydrated_scene = GodotScene::hydrate(&mut doc, "example.tscn").unwrap();
+
     let doc_json = serde_json::to_string_pretty(&automerge::AutoSerde::from(&doc)).unwrap();
     println!("Reconciled doc: {}", doc_json);
 
-    // Verify that the serialized output matches the original input
-    assert_eq!("", "", "Serialized output should match original input");
+    // assert that rehydrated scene is deep equal to example scene
+    assert_eq!(example_scene, rehydrated_scene);
 }

@@ -8,10 +8,10 @@ use uuid;
 
 use crate::doc_utils::SimpleDocReader;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GodotScene {
-    pub load_steps: i32,
-    pub format: i32,
+    pub load_steps: i64,
+    pub format: i64,
     pub uid: String,
     pub root_node_id: String,
     pub ext_resources: Vec<ExternalResourceNode>,
@@ -20,13 +20,13 @@ pub struct GodotScene {
     pub connections: Vec<GodotConnection>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeOrInstance {
     Type(String),
     Instance(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GodotNode {
     pub id: String,
     pub name: String,
@@ -39,7 +39,7 @@ pub struct GodotNode {
     pub child_node_ids: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GodotConnection {
     pub signal: String,
     pub from: String,
@@ -50,7 +50,7 @@ pub struct GodotConnection {
     pub binds: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExternalResourceNode {
     pub resource_type: String,
     pub uid: Option<String>,
@@ -58,7 +58,7 @@ pub struct ExternalResourceNode {
     pub id: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubResourceNode {
     pub id: String,
     pub resource_type: String,
@@ -88,6 +88,12 @@ impl GodotScene {
                 tx.put_object(&structured_content, "nodes", ObjType::Map)
                     .unwrap()
             });
+
+
+        // Store Scene Metadata
+        tx.put(&scene_file, "uid", self.uid.clone()).unwrap();
+        tx.put(&scene_file, "load_steps", self.load_steps).unwrap();
+        tx.put(&scene_file, "format", self.format).unwrap();
 
         // Store root node id
         tx.put(&structured_content, "root_node_id", self.root_node_id.clone()).unwrap();
@@ -170,14 +176,19 @@ impl GodotScene {
                 .unwrap_or_else(|| tx.put_object(&node_obj, "child_node_ids", ObjType::List).unwrap());
             
 
-            // // reconcile child node ids
-            // for (i, child_node_id) in node.child_node_ids.iter().enumerate() {
-            //     if tx.get_string(&children_obj, child_node_id).is_some() {
-            //         tx.put(&children_obj, i, child_node_id.clone()).unwrap();
-            //     } else {
-            //         tx.insert(&children_obj, i, child_node_id.clone()).unwrap();
-            //     }
-            // }
+
+            // reconcile child node ids
+            for (i, new_child_node_id) in node.child_node_ids.iter().enumerate() {
+                if let Some(current_child_node_id) = tx.get_string(&children_obj, i) {
+                    if current_child_node_id != *new_child_node_id {
+                        tx.put(&children_obj, i, new_child_node_id.clone()).unwrap();
+                    }
+                } else {
+                    let _ = tx.insert(&children_obj, i, new_child_node_id.clone());
+                    println!("new_child_node_id: {}", new_child_node_id);
+
+                }
+            }
 
 
             // // delete child node ids if they are not in the node
@@ -213,6 +224,16 @@ impl GodotScene {
         // Get the structured content
         let structured_content = doc.get_obj_id(&scene_file, "structured_content")
             .ok_or_else(|| "Could not find structured_content in file".to_string())?;
+
+        // Get the uid
+        let uid = doc.get_string(&scene_file, "uid")
+            .ok_or_else(|| "Could not find uid in scene_file".to_string())?;
+
+        let load_steps = doc.get_int(&scene_file, "load_steps")
+            .ok_or_else(|| "Could not find load_steps in scene_file".to_string())?;
+
+        let format = doc.get_int(&scene_file, "format")
+            .ok_or_else(|| "Could not find format in scene_file".to_string())?;
 
         // Get the nodes object
         let nodes_obj = doc.get_obj_id(&structured_content, "nodes")
@@ -296,9 +317,9 @@ impl GodotScene {
 
         // Create a GodotScene with default values for everything except nodes
         Ok(GodotScene {
-            load_steps: 0,
-            format: 3,
-            uid: uuid::Uuid::new_v4().simple().to_string(),
+            load_steps,
+            format,
+            uid,
             root_node_id,
             ext_resources: Vec::new(),
             sub_resources: HashMap::new(),
@@ -437,9 +458,9 @@ impl GodotScene {
 
 #[derive(Debug, Clone)]
 pub struct SceneMetadata {
-    load_steps: i32,
-    format: i32,
-    uid: String,
+    pub load_steps: i64,
+    pub format: i64,
+    pub uid: String,
 }
 
 pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
@@ -520,10 +541,10 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
 
                     let load_steps = heading
                         .get("load_steps")
-                        .and_then(|ls| ls.parse::<i32>().ok())
+                        .and_then(|ls| ls.parse::<i64>().ok())
                         .unwrap_or(0);
 
-                    let format = match heading.get("format").and_then(|f| f.parse::<i32>().ok()) {
+                    let format = match heading.get("format").and_then(|f| f.parse::<i64>().ok()) {
                         Some(format) => format,
                         None => {
                             return Err(
