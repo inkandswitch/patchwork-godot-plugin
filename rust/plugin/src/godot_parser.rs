@@ -10,14 +10,10 @@ use uuid;
 use crate::doc_utils::SimpleDocReader;
 
 #[derive(Debug, Clone)]
-enum NodeTreeType {
-    Scene,
-    Resource,
-}
-
-#[derive(Debug, Clone)]
 pub struct GodotScene {
-    attributes: HashMap<String, String>,
+    load_steps: i32,
+    format: i32,
+    uid: String,
     nodes: HashMap<String, GodotNode>,
     ext_resources: HashMap<String, GodotNode>,
     sub_resources: HashMap<String, GodotNode>,
@@ -82,24 +78,16 @@ impl GodotScene {
         let mut output = String::new();
 
         // Scene header
-        if let Some(format) = self.attributes.get("format") {
-            if let Some(uid) = self.attributes.get("uid") {
-                output.push_str(&format!(
-                    "[gd_scene load_steps={} format={} {}]\n\n",
-                    self.ext_resources.len() + self.sub_resources.len() + 1,
-                    format,
-                    uid
-                ));
-            } else {
-                output.push_str(&format!(
-                    "[gd_scene load_steps={} format={}]\n\n",
-                    self.ext_resources.len() + self.sub_resources.len() + 1,
-                    format
-                ));
-            }
+        if self.load_steps != 0 {
+            output.push_str(&format!(
+                "[gd_scene load_steps={} format={} uid={}]\n\n",
+                self.load_steps, self.format, self.uid
+            ));
         } else {
-            // Default header if no format specified
-            output.push_str("[gd_scene]\n\n");
+            output.push_str(&format!(
+                "[gd_scene format={} uid={}]\n\n",
+                self.format, self.uid
+            ));
         }
 
         // External resources
@@ -237,6 +225,13 @@ impl GodotScene {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct SceneMetadata {
+    load_steps: i32,
+    format: i32,
+    uid: String,
+}
+
 pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
     let mut parser = Parser::new();
     parser
@@ -263,7 +258,8 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
             let mut query_cursor = QueryCursor::new();
             let matches = query_cursor.matches(&query, tree.root_node(), content_bytes);
 
-            let mut scene_attributes: HashMap<String, String> = HashMap::new();
+            // Initialize with default values
+            let mut scene_metadata: Option<SceneMetadata> = None;
             let mut nodes: HashMap<String, GodotNode> = HashMap::new();
             let mut ext_resources: HashMap<String, GodotNode> = HashMap::new();
             let mut sub_resources: HashMap<String, GodotNode> = HashMap::new();
@@ -306,9 +302,38 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 }
 
                 // Process the section based on its type
-                if section_id.is_empty() {
-                    // First section with no ID is the scene attributes
-                    scene_attributes = attributes;
+                if section_id == "gd_scene" {
+                    // First section with ID "gd_scene" is the scene header
+                    // Extract specific properties from attributes
+
+                    let load_steps = attributes
+                        .get("load_steps")
+                        .and_then(|ls| ls.parse::<i32>().ok())
+                        .unwrap_or(0);
+
+                    let format =
+                        match attributes.get("format").and_then(|f| f.parse::<i32>().ok()) {
+                            Some(format) => format,
+                            None => {
+                                return Err("Missing required 'format' attribute in scene header"
+                                    .to_string())
+                            }
+                        };
+
+                    let uid = match attributes.get("uid") {
+                        Some(uid) => uid.clone(),
+                        None => {
+                            return Err(
+                                "Missing required 'uid' attribute in scene header".to_string()
+                            )
+                        }
+                    };
+
+                    scene_metadata = Some(SceneMetadata {
+                        load_steps,
+                        format,
+                        uid,
+                    });
                 } else if section_id == "node" {
                     // Create a node and add it to the nodes map
                     let mut node_id = String::new();
@@ -427,8 +452,15 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 }
             }
 
+            let scene_metadata = match scene_metadata {
+                Some(metadata) => metadata,
+                None => return Err(String::from("missing gd_scene header")),
+            };
+
             Ok(GodotScene {
-                attributes: scene_attributes,
+                load_steps: scene_metadata.load_steps,
+                format: scene_metadata.format,
+                uid: scene_metadata.uid,
                 nodes,
                 ext_resources,
                 sub_resources,
