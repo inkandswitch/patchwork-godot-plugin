@@ -18,6 +18,7 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 @onready var confirm_merge_button: Button = %ConfirmMergeButton
 @onready var target_branch_picker: OptionButton = %TargetBranchPicker
 @onready var source_branch_picker: OptionButton = %SourceBranchPicker
+@onready var log_main_tscn_button: Button = %LogMainTscnButton
 
 
 const TEMP_DIR = "user://tmp"
@@ -94,6 +95,13 @@ func _ready() -> void:
 	highlight_changes_checkbox.toggled.connect(_on_highlight_changes_checkbox_toggled)
 	cancel_merge_button.pressed.connect(cancel_merge_preview)
 	confirm_merge_button.pressed.connect(confirm_merge_preview)
+
+	log_main_tscn_button.pressed.connect(func():
+		print("Current MAIN.TCSN")
+		print("=====================================================")
+		print(godot_project.get_file("res://main.tscn"))
+		print("=====================================================")
+	)
 
 func _on_menu_button_id_pressed(id: int) -> void:
 	match id:

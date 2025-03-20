@@ -36,8 +36,6 @@ func _enter_tree() -> void:
 
 	await init_godot_project()
 
-	var file = godot_project.get_file("res://main.tscn")
-	print(file)
 
 	# listen for file changes once we have initialized the godot project
 	file_system.connect("file_changed", _on_local_file_changed)

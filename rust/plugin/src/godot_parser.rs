@@ -87,6 +87,10 @@ impl GodotScene {
         let mut path = String::new();
         let mut current_id = node_id;
 
+        if node_id == self.root_node_id {
+            return ".".to_string();
+        }
+
         loop {
             let node = self.nodes.get(current_id).unwrap();
 
