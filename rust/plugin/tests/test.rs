@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use automerge::Automerge;
 // Import the modules from the library
 use patchwork_rust_core::godot_parser;
+use patchwork_rust_core::godot_parser::GodotConnection;
 use patchwork_rust_core::godot_parser::GodotScene;
 use patchwork_rust_core::godot_project;
 use patchwork_rust_core::utils;
@@ -115,15 +116,18 @@ fn test_parse_scene_with_connections() {
         .find(|node| node.name == "Button")
         .unwrap();
 
-    assert_eq!(scene.connections.len(), 1);
-    assert_eq!(scene.connections[0].signal, "button_pressed");
-    assert_eq!(scene.connections[0].from_node_id, button_node.id);
-    assert_eq!(scene.connections[0].to_node_id, game_manager_node.id);
-    assert_eq!(scene.connections[0].method, "_on_button_pressed");
-    assert_eq!(scene.connections[0].flags, Some(3));
-    assert_eq!(scene.connections[0].unbinds, Some(1));
+    let connections = scene.connections.values().collect::<Vec<_>>();
+    let connection = connections[0];
+
+    assert_eq!(connections.len(), 1);
+    assert_eq!(connection.signal, "button_pressed");
+    assert_eq!(connection.from_node_id, button_node.id);
+    assert_eq!(connection.to_node_id, game_manager_node.id);
+    assert_eq!(connection.method, "_on_button_pressed");
+    assert_eq!(connection.flags, Some(3));
+    assert_eq!(connection.unbinds, Some(1));
     assert_eq!(
-        scene.connections[0].binds,
+        connection.binds,
         Some("[\"extra_param\", 42, true]".to_string())
     );
 }
@@ -267,7 +271,18 @@ fn test_resconcile_and_hydrate() {
                 ]),
             },
         )]),
-        connections: vec![],
+        connections: HashMap::from([(
+            "my_signal-node1-node2-my_method--".to_string(),
+            GodotConnection {
+                signal: "my_signal".to_string(),
+                from_node_id: "node1".to_string(),
+                to_node_id: "node2".to_string(),
+                method: "my_method".to_string(),
+                flags: None,
+                unbinds: None,
+                binds: None,
+            },
+        )]),
     };
 
     // write to automerge doc

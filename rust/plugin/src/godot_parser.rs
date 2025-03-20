@@ -17,7 +17,7 @@ pub struct GodotScene {
     pub ext_resources: HashMap<String, ExternalResourceNode>,
     pub sub_resources: HashMap<String, SubResourceNode>,
     pub nodes: HashMap<String, GodotNode>,
-    pub connections: Vec<GodotConnection>,
+    pub connections: HashMap<String, GodotConnection>, // key is concatenation of all properties of the connection
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,7 +33,7 @@ pub struct GodotNode {
     pub type_or_instance: TypeOrInstance, // a node either has a type or an instance property
     pub parent_id: Option<String>,
     pub owner: Option<String>,
-    pub index: Option<i32>,
+    pub index: Option<i64>,
     pub groups: Option<String>,
     pub properties: HashMap<String, String>,
     pub child_node_ids: Vec<String>,
@@ -45,11 +45,28 @@ pub struct GodotConnection {
     pub from_node_id: String,
     pub to_node_id: String,
     pub method: String,
-    pub flags: Option<i32>,
-    pub unbinds: Option<i32>,
+    pub flags: Option<i64>,
+    pub unbinds: Option<i64>,
     pub binds: Option<String>,
 }
 
+impl GodotConnection {
+    pub fn id(&self) -> String {
+        format!(
+            "{}-{}-{}-{}-{}-{}-{}",
+            self.signal,
+            self.from_node_id,
+            self.to_node_id,
+            self.method,
+            self.flags.map_or("".to_string(), |flags| flags.to_string()),
+            self.unbinds
+                .map_or("".to_string(), |unbinds| unbinds.to_string()),
+            self.binds
+                .clone()
+                .map_or("[]".to_string(), |binds| binds.to_string())
+        )
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExternalResourceNode {
     pub resource_type: String,
@@ -114,6 +131,13 @@ impl GodotScene {
             .get_obj_id(&structured_content, "nodes")
             .unwrap_or_else(|| {
                 tx.put_object(&structured_content, "nodes", ObjType::Map)
+                    .unwrap()
+            });
+
+        let connections = tx
+            .get_obj_id(&scene_file, "connections")
+            .unwrap_or_else(|| {
+                tx.put_object(&scene_file, "connections", ObjType::Map)
                     .unwrap()
             });
 
@@ -313,10 +337,50 @@ impl GodotScene {
         }
 
         // Remove nodes that are in the document but not in the scene
-        let existing_nodes = tx.keys(&nodes).collect::<HashSet<_>>();
+        let existing_nodes = tx.keys(&nodes).collect::<Vec<_>>();
         for node_id in existing_nodes {
             if !self.nodes.contains_key(&node_id) {
                 tx.delete(&nodes, &node_id).unwrap();
+            }
+        }
+
+        // Reconcile connections
+        for (id, connection) in self.connections.iter() {
+            let connection_obj = tx.get_obj_id(&connections, id);
+
+            // only need to create the connection object if it doesn't exist
+            if connection_obj.is_none() {
+                let connection_obj = tx.put_object(&connections, id, ObjType::Map).unwrap();
+
+                tx.put(&connection_obj, "signal", connection.signal.clone())
+                    .unwrap();
+                tx.put(
+                    &connection_obj,
+                    "from_node_id",
+                    connection.from_node_id.clone(),
+                )
+                .unwrap();
+                tx.put(&connection_obj, "to_node_id", connection.to_node_id.clone())
+                    .unwrap();
+                tx.put(&connection_obj, "method", connection.method.clone())
+                    .unwrap();
+
+                if let Some(flags) = connection.flags {
+                    tx.put(&connection_obj, "flags", flags).unwrap();
+                }
+                if let Some(unbinds) = connection.unbinds {
+                    tx.put(&connection_obj, "unbinds", unbinds).unwrap();
+                }
+                if let Some(binds) = &connection.binds {
+                    tx.put(&connection_obj, "binds", binds.clone()).unwrap();
+                }
+            }
+        }
+
+        // Remove connections that are in the document but not in the scene
+        for connection_id in tx.keys(&connections).collect::<Vec<_>>() {
+            if !self.connections.contains_key(&connection_id) {
+                let _ = tx.delete(&connections, &connection_id).unwrap();
             }
         }
     }
@@ -485,7 +549,7 @@ impl GodotScene {
             // Get optional properties
             let parent_id = doc.get_string(&node_obj, "parent_id");
             let owner = doc.get_string(&node_obj, "owner");
-            let index = doc.get_int(&node_obj, "index").map(|i| i as i32);
+            let index = doc.get_int(&node_obj, "index").map(|i| i);
             let groups = doc.get_string(&node_obj, "groups");
 
             // Get node properties
@@ -529,6 +593,65 @@ impl GodotScene {
             nodes.insert(node_id, node);
         }
 
+        // Iterate through all connections
+        let mut connections = HashMap::new();
+
+        let connections_id = doc
+            .get_obj_id(&scene_file, "connections")
+            .ok_or_else(|| "Could not find connections in scene document".to_string())?;
+
+        for connection_id in doc.keys(&connections_id) {
+            let connection_obj =
+                doc.get_obj_id(&connections_id, &connection_id)
+                    .ok_or_else(|| {
+                        format!("Could not find connection object for ID: {}", connection_id)
+                    })?;
+
+            let signal = doc.get_string(&connection_obj, "signal").ok_or_else(|| {
+                format!("Could not find signal for connection: {}", connection_id)
+            })?;
+
+            let from_node_id =
+                doc.get_string(&connection_obj, "from_node_id")
+                    .ok_or_else(|| {
+                        format!(
+                            "Could not find from_node_id for connection: {}",
+                            connection_id
+                        )
+                    })?;
+
+            let to_node_id = doc
+                .get_string(&connection_obj, "to_node_id")
+                .ok_or_else(|| {
+                    format!(
+                        "Could not find to_node_id for connection: {}",
+                        connection_id
+                    )
+                })?;
+
+            let method = doc.get_string(&connection_obj, "method").ok_or_else(|| {
+                format!("Could not find method for connection: {}", connection_id)
+            })?;
+
+            let flags = doc.get_int(&connection_obj, "flags");
+
+            let unbinds = doc.get_int(&connection_obj, "unbinds");
+
+            let binds = doc.get_string(&connection_obj, "binds");
+
+            let connection = GodotConnection {
+                signal,
+                from_node_id,
+                to_node_id,
+                method,
+                flags,
+                unbinds,
+                binds,
+            };
+
+            connections.insert(connection_id.clone(), connection);
+        }
+
         // Create a GodotScene with default values for everything except nodes
         Ok(GodotScene {
             load_steps,
@@ -538,7 +661,7 @@ impl GodotScene {
             ext_resources,
             sub_resources,
             nodes,
-            connections: Vec::new(),
+            connections,
         })
     }
 
@@ -610,7 +733,12 @@ impl GodotScene {
             }
         }
 
-        for connection in &self.connections {
+        let mut connections: Vec<(&String, &GodotConnection)> =
+            self.connections.iter().collect::<Vec<_>>();
+
+        connections.sort_by(|(id_a, _), (id_b, _)| id_a.cmp(id_b));
+
+        for (_, connection) in connections {
             let from_path = self.get_node_path(&connection.from_node_id);
             let to_path = self.get_node_path(&connection.to_node_id);
 
@@ -727,7 +855,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
             let mut nodes: HashMap<String, GodotNode> = HashMap::new();
             let mut ext_resources: HashMap<String, ExternalResourceNode> = HashMap::new();
             let mut sub_resources: HashMap<String, SubResourceNode> = HashMap::new();
-            let mut connections: Vec<GodotConnection> = Vec::new();
+            let mut connections: HashMap<String, GodotConnection> = HashMap::new();
             let mut root_node_id: Option<String> = None;
 
             // Create an index to map node paths to node ids
@@ -890,7 +1018,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         type_or_instance,
                         parent_id,
                         owner: heading.get("owner").cloned().map(|o| unquote(&o)),
-                        index: heading.get("index").and_then(|i| i.parse::<i32>().ok()),
+                        index: heading.get("index").and_then(|i| i.parse::<i64>().ok()),
                         groups: heading.get("groups").cloned(),
                         properties,
                         child_node_ids: Vec::new(),
@@ -1017,9 +1145,9 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         }
                     };
 
-                    let flags = heading.get("flags").and_then(|f| f.parse::<i32>().ok());
+                    let flags = heading.get("flags").and_then(|f| f.parse::<i64>().ok());
 
-                    let unbinds = heading.get("unbinds").and_then(|u| u.parse::<i32>().ok());
+                    let unbinds = heading.get("unbinds").and_then(|u| u.parse::<i64>().ok());
 
                     let binds = heading.get("binds").cloned().map(|b| unquote(&b));
 
@@ -1033,7 +1161,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         binds,
                     };
 
-                    connections.push(connection);
+                    connections.insert(connection.id().clone(), connection);
                 }
             }
 
