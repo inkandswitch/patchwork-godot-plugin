@@ -42,8 +42,8 @@ pub struct GodotNode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GodotConnection {
     pub signal: String,
-    pub from: String,
-    pub to: String,
+    pub from_node_id: String,
+    pub to_node_id: String,
     pub method: String,
     pub flags: Option<i32>,
     pub unbinds: Option<i32>,
@@ -611,9 +611,12 @@ impl GodotScene {
         }
 
         for connection in &self.connections {
+            let from_path = self.get_node_path(&connection.from_node_id);
+            let to_path = self.get_node_path(&connection.to_node_id);
+
             output.push_str(&format!(
                 "[connection signal=\"{}\" from=\"{}\" to=\"{}\" method=\"{}\"",
-                connection.signal, connection.from, connection.to, connection.method
+                connection.signal, from_path, to_path, connection.method
             ));
             if let Some(flags) = connection.flags {
                 output.push_str(&format!(" flags={}", flags));
@@ -974,7 +977,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         }
                     };
 
-                    let from = match heading.get("from").cloned() {
+                    let from_path = match heading.get("from").cloned() {
                         Some(from) => unquote(&from),
                         None => {
                             return Err("Missing required 'from' attribute in connection section"
@@ -982,13 +985,28 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         }
                     };
 
-                    let to = match heading.get("to").cloned() {
+                    let from_node_id = match node_id_by_node_path.get(&from_path) {
+                        Some(node_id) => node_id.clone(),
+                        None => {
+                            return Err(format!(
+                                "Can't find node \"{}\", {:?}",
+                                from_path, node_id_by_node_path
+                            ))
+                        }
+                    };
+
+                    let to_path = match heading.get("to").cloned() {
                         Some(to) => unquote(&to),
                         None => {
                             return Err(
                                 "Missing required 'to' attribute in connection section".to_string()
                             )
                         }
+                    };
+
+                    let to_node_id = match node_id_by_node_path.get(&to_path) {
+                        Some(node_id) => node_id.clone(),
+                        None => return Err(format!("Can't find node \"{}\"", from_path)),
                     };
 
                     let method = match heading.get("method").cloned() {
@@ -1007,8 +1025,8 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
 
                     let connection = GodotConnection {
                         signal,
-                        from,
-                        to,
+                        from_node_id,
+                        to_node_id,
                         method,
                         flags,
                         unbinds,

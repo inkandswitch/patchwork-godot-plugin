@@ -65,8 +65,6 @@ centered = false
 metadata/patchwork_id = "50a6b8d7ce2c469098b3416372f9b1b8"
 texture = SubResource("GradientTexture2D_ljotv")
 
-[connection signal="body_entered" from="RigidBody2D" to="." method="_on_rigid_body_2d_body_entered"]
-[connection signal="button_pressed" from="UI/Button" to="GameManager" method="_on_button_pressed" flags=3 unbinds=1 binds=["extra_param", 42, true]]
 "#.to_string()
 }
 
@@ -84,6 +82,49 @@ fn test_parse_and_serialize() {
     assert_eq!(
         source, reserialized,
         "Serialized output should match original input"
+    );
+}
+
+fn get_test_scene_source_with_connections_source() -> String {
+    r#"[gd_scene load_steps=6 format=3 uid="uid://jnrusvm3gric"]
+
+[node name="Root" type="Node2D"]
+
+[node name="GameManager" type="Node2D" parent="."]
+
+[node name="UI" type="Node2D" parent="."]
+
+[node name="Button" type="Button" parent="UI"]
+
+[connection signal="button_pressed" from="UI/Button" to="GameManager" method="_on_button_pressed" flags=3 unbinds=1 binds=["extra_param", 42, true]]"#.to_string()
+}
+
+#[test]
+fn test_parse_scene_with_connections() {
+    let source = get_test_scene_source_with_connections_source();
+    let scene = godot_parser::parse_scene(&source).unwrap();
+
+    let game_manager_node = scene
+        .nodes
+        .values()
+        .find(|node| node.name == "GameManager")
+        .unwrap();
+    let button_node = scene
+        .nodes
+        .values()
+        .find(|node| node.name == "Button")
+        .unwrap();
+
+    assert_eq!(scene.connections.len(), 1);
+    assert_eq!(scene.connections[0].signal, "button_pressed");
+    assert_eq!(scene.connections[0].from_node_id, button_node.id);
+    assert_eq!(scene.connections[0].to_node_id, game_manager_node.id);
+    assert_eq!(scene.connections[0].method, "_on_button_pressed");
+    assert_eq!(scene.connections[0].flags, Some(3));
+    assert_eq!(scene.connections[0].unbinds, Some(1));
+    assert_eq!(
+        scene.connections[0].binds,
+        Some("[\"extra_param\", 42, true]".to_string())
     );
 }
 
