@@ -28,7 +28,7 @@ func _ready():
 	color_rect.material = shader_material
 
 	# Set default shader parameters
-	shader_material.set_shader_parameter("fill_color", Color(77.0 / 255.0, 77.0 / 255.0, 77.0 / 255.0, 0.85))
+	shader_material.set_shader_parameter("fill_color", Color(0.25, 0.25, 0.25, 0.85))
 
 
 func update_overlay(node_changes: Array):
@@ -63,7 +63,7 @@ func update_overlay(node_changes: Array):
 			normalized_rects.append(normalized_rect)
 
 			if node_change.type == "changed":
-				rect_colors.append(Color(0.0, 0.0, 0.0, 0.0))
+				rect_colors.append(Color(0.75, 0.75, 0.75, 1.0))
 			else:
 				rect_colors.append(Color(0.18, 0.8, 0.251, 1.0))
 

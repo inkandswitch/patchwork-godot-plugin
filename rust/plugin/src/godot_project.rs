@@ -720,14 +720,11 @@ impl GodotProject {
         primary_branch_doc_id: String,
         secondary_branch_doc_ids: Array<Variant>,
     ) {
-        let seconday_doc_ids = secondary_branch_doc_ids.iter_shared().map(|id|
-            // make sure it's not NIL first
-            if id != Variant::nil() && id.get_type() != VariantType::STRING {
-                id.to::<GString>().to_string()
-            } else {
-                String::from("")
-            }
-        ).filter(|id| id != "").collect::<Vec<String>>();
+        let seconday_doc_ids = secondary_branch_doc_ids
+            .iter_shared()
+            .map(|id| id.to::<GString>().to_string())
+            .collect::<Vec<String>>();
+
         println!(
             "rust: checkout_branch {:?} {:?}",
             primary_branch_doc_id, seconday_doc_ids
@@ -1058,6 +1055,7 @@ impl GodotProject {
 
                 let mut synced_heads = primary_branch_state.synced_heads.clone();
                 let mut doc = primary_branch_state.doc_handle.with_doc(|d| d.clone());
+                let mut forked_at = primary_branch_state.forked_at.clone();
 
                 for secondary_branch_doc_id in branch_union.secondary_branch_doc_ids.iter() {
                     let secondary_branch_state = self
@@ -1065,6 +1063,8 @@ impl GodotProject {
                         .get(secondary_branch_doc_id)
                         .unwrap()
                         .clone();
+
+                    forked_at = secondary_branch_state.synced_heads.clone();
 
                     let mut secondary_doc =
                         secondary_branch_state.doc_handle.with_doc(|d| d.clone());
@@ -1076,7 +1076,7 @@ impl GodotProject {
                     synced_heads,
                     ids: branch_union.clone(),
                     doc,
-                    forked_at: primary_branch_state.forked_at.clone(),
+                    forked_at,
                     primary_branch_state: primary_branch_state.clone(),
                 })
             }

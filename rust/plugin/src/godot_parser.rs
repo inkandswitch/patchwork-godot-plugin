@@ -767,7 +767,6 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                     };
 
                     let parent_name = heading.get("parent").cloned().map(|p| unquote(&p));
-        
                 
                     let parent_id = if root_node_id.is_none() {
                         root_node_id = Some(node_id.clone());

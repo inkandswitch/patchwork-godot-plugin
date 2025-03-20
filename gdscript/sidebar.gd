@@ -28,6 +28,9 @@ var plugin: EditorPlugin
 var config: PatchworkConfig
 var queued_calls = []
 
+var selected_target_branch_id
+var highlight_changes = false
+
 const CREATE_BRANCH_IDX = 1
 const MERGE_BRANCH_IDX = 2
 
@@ -85,6 +88,9 @@ func _ready() -> void:
 	popup.id_pressed.connect(_on_menu_button_id_pressed)
 	user_button.pressed.connect(_on_user_button_pressed)
 	branch_picker.item_selected.connect(_on_branch_picker_item_selected)
+	target_branch_picker.item_selected.connect(_on_target_branch_picker_item_selected)
+	source_branch_picker.item_selected.connect(_on_source_branch_picker_item_selected)
+
 	highlight_changes_checkbox.toggled.connect(_on_highlight_changes_checkbox_toggled)
 	cancel_merge_button.pressed.connect(cancel_merge_preview)
 	confirm_merge_button.pressed.connect(confirm_merge_preview)
@@ -155,8 +161,19 @@ func _on_branch_picker_item_selected(index: int) -> void:
 
 	checkout_branch(selected_branch.id, [])
 
+func _on_target_branch_picker_item_selected(index: int) -> void:
+	print("Target branch picker item selected: ", branches[index])
+
+	selected_target_branch_id = branches[index].id
+	update_ui()
+	checkout_branch(godot_project.get_checked_out_branch().id, [selected_target_branch_id])
+
+func _on_source_branch_picker_item_selected(index: int) -> void:
+	update_ui()
+	checkout_branch(branches[index].id, [selected_target_branch_id])
 
 func _on_highlight_changes_checkbox_toggled(pressed: bool) -> void:
+	highlight_changes = pressed
 	update_ui()
 
 static var void_func = func(): return
@@ -298,13 +315,33 @@ func create_new_branch() -> void:
 	)
 
 func open_merge_preview():
+	# find main branch
+	var main_branch
+
+	for branch in branches:
+		if branch.is_main:
+			main_branch = branch
+			break
+
+	highlight_changes = true
+
+	selected_target_branch_id = main_branch.id
+
+	print("open merge preview ", selected_target_branch_id, " ", godot_project.get_checked_out_branch().id)
+
+	checkout_branch(godot_project.get_checked_out_branch().id, [selected_target_branch_id])
 	merge_preview_modal.visible = true
 
 func cancel_merge_preview():
 	merge_preview_modal.visible = false
+	checkout_branch(godot_project.get_checked_out_branch().id, [])
+	highlight_changes = false
+
 
 func confirm_merge_preview():
 	merge_preview_modal.visible = false
+	merge_current_branch()
+	highlight_changes = false
 
 func merge_current_branch():
 	var checked_out_branch = godot_project.get_checked_out_branch()
@@ -334,7 +371,7 @@ func update_ui() -> void:
 	var edited_root = EditorInterface.get_edited_scene_root()
 
 	if edited_root:
-		if highlight_changes_checkbox.is_pressed() && !checked_out_branch.is_main:
+		if highlight_changes && !checked_out_branch.is_main:
 				var edited_scene_file_path = edited_root.scene_file_path
 				var node_changes = godot_project.get_node_changes(edited_scene_file_path)
 
@@ -358,7 +395,6 @@ func update_ui() -> void:
 
 		if branch.is_main:
 			label = label + " 👑"
-			target_branch_picker.select(i)
 
 		branch_picker.add_item(label, i)
 		branch_picker.set_item_metadata(i, branch.id)
@@ -368,6 +404,9 @@ func update_ui() -> void:
 
 		target_branch_picker.add_item(label, i)
 		target_branch_picker.set_item_metadata(i, branch.id)
+
+		if branch.id == selected_target_branch_id:
+			target_branch_picker.select(i)
 
 		# this should not happen, but right now the sync is not working correctly so we need to surface this in the interface
 		if branch.is_not_loaded:
