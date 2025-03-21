@@ -20,7 +20,8 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 @onready var target_branch_picker: OptionButton = %TargetBranchPicker
 @onready var source_branch_picker: OptionButton = %SourceBranchPicker
 @onready var log_main_tscn_button: Button = %LogMainTscnButton
-
+@onready var merge_preview_diff_container: MarginContainer = %MergePreviewDiffContainer
+@onready var main_diff_container: MarginContainer = %MainDiffContainer
 
 const TEMP_DIR = "user://tmp"
 
@@ -324,6 +325,16 @@ func create_new_branch() -> void:
 		branch_name_input.grab_focus()
 	)
 
+func move_inspector_to_merge_preview() -> void:
+	if inspector and main_diff_container and merge_preview_diff_container:
+		inspector.reparent(merge_preview_diff_container)
+		inspector.visible = true
+
+func move_inspector_to_main() -> void:
+	if inspector and main_diff_container and merge_preview_diff_container:
+		inspector.reparent(main_diff_container)
+		inspector.visible = true
+
 func open_merge_preview():
 	# find main branch
 	var main_branch
@@ -337,17 +348,19 @@ func open_merge_preview():
 
 	checkout_branch(godot_project.get_checked_out_branch().id, [selected_target_branch_id])
 	merge_preview_modal.visible = true
+	move_inspector_to_merge_preview()
 
 func cancel_merge_preview():
 	merge_preview_modal.visible = false
 	checkout_branch(godot_project.get_checked_out_branch().id, [])
 	highlight_changes = false
-
+	move_inspector_to_main()
 
 func confirm_merge_preview():
 	merge_preview_modal.visible = false
 	merge_current_branch()
 	highlight_changes = false
+	move_inspector_to_main()
 
 func merge_current_branch():
 	var checked_out_branch = godot_project.get_checked_out_branch()
@@ -507,21 +520,6 @@ func update_properties_diff() -> void:
 
 	show_diff(heads_before, heads_after)
 
-	_cleanup_inspector(inspector)
-	
-
-# hides the extra nodes in the inspector that we don't want to show
-# this happens because we just use the existing inspector to show the diff
-func _cleanup_inspector(node: Node) -> void:
-	var tooltip_text = node.get("tooltip_text")
-
-	if (tooltip_text == "." || tooltip_text == "Resource"):
-		node.visible = false
-		return
-
-
-	for child in node.get_children():
-		_cleanup_inspector(child)
 
 func show_diff(heads_before, heads_after):
 	# TODO: handle dependencies of these files

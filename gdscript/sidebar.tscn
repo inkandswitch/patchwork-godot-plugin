@@ -127,7 +127,12 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "Highlight changes"
 
-[node name="BigDiffer" type="ScrollContainer" parent="VBoxContainer/TabContainer/Diff/VBoxContainer"]
+[node name="MainDiffContainer" type="MarginContainer" parent="VBoxContainer/TabContainer/Diff/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="BigDiffer" type="ScrollContainer" parent="VBoxContainer/TabContainer/Diff/VBoxContainer/MainDiffContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
@@ -142,7 +147,7 @@ added_color = Color(0.247059, 0.65098, 0.180392, 1)
 removed_color = Color(0.647059, 0.329412, 0.329412, 1)
 modified_color = Color(0.92549, 0.831373, 0.184314, 1)
 
-[node name="DifferMainVBox" type="VBoxContainer" parent="VBoxContainer/TabContainer/Diff/VBoxContainer/BigDiffer"]
+[node name="DifferMainVBox" type="VBoxContainer" parent="VBoxContainer/TabContainer/Diff/VBoxContainer/MainDiffContainer/BigDiffer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -215,10 +220,9 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "Highlight changes"
 
-[node name="DifferMainVBoxMP" type="VBoxContainer" parent="MergePreviewModal/MarginContainer/VBoxContainer"]
+[node name="MergePreviewDiffContainer" type="MarginContainer" parent="MergePreviewModal/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 3
 size_flags_vertical = 3
 
 [node name="HBoxContainer2" type="HBoxContainer" parent="MergePreviewModal/MarginContainer/VBoxContainer"]
