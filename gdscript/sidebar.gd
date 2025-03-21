@@ -524,6 +524,10 @@ func _cleanup_inspector(node: Node) -> void:
 
 func show_diff(heads_before, heads_after):
 	# TODO: handle dependencies of these files
+
+	print("heads_before: ", heads_before)
+	print("heads_after: ", heads_after)
+
 	var diff_dict = godot_project.get_changed_file_content_between(PackedStringArray(heads_before), PackedStringArray(heads_after))
 
 	var files_arr = diff_dict["files"]

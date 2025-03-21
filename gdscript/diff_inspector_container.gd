@@ -209,6 +209,7 @@ func add_FileDiffResult(file_path: String, file_diff: FileDiffResult) -> void:
 			add_ObjectDiffResult(props)
 	elif type == "scene_changed":
 		node_diffs = file_diff.get_node_diffs()
+		print("node_diff size: ", node_diffs.size())
 		for node in node_diffs.keys():
 			# skip temporary nodes created by the instance
 			if (String(node).contains("@")):
@@ -222,7 +223,10 @@ func add_diff(diff: DiffResult) -> void:
 	reset()
 	diff_result = diff
 	var file_diffs: Dictionary = diff.get_file_diffs()
+	var size = file_diffs.size()
+	print("Diff size: ", size)
 	for file in file_diffs.keys():
+		print("Adding file diff result for ", file)
 		add_FileDiffResult(file, file_diffs[file])
 
 	
