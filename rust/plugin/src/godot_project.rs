@@ -772,6 +772,7 @@ impl GodotProject {
                     // the branch docs are not synced correctly so this flag is used in the UI to
                     // indicate that the branch is not loaded and prevent users from checking it out
                     "is_not_loaded": branch_state.doc_handle.with_doc(|d| d.get_heads().len() == 0),
+                    "heads": heads_to_array(branch_state.synced_heads.clone()),
                 }
             })
             .collect::<Vec<Dictionary>>();
@@ -803,6 +804,7 @@ impl GodotProject {
                 "id": branch_union.primary_branch_state.doc_handle.document_id().to_string(),
                 "is_main": branch_union.primary_branch_state.is_main,
                 "forked_at": heads_to_array(branch_union.primary_branch_state.forked_at.clone()),
+                "heads": heads_to_array(branch_union.primary_branch_state.doc_handle.with_doc(|d| d.get_heads())),
             }
             .to_variant(),
             None => Variant::nil(),

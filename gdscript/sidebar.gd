@@ -467,6 +467,7 @@ func update_ui() -> void:
 	user_button.text = user_name
 
 	# update properties diff
+
 	update_properties_diff()
 
 func human_readable_timestamp(timestamp: int) -> String:
@@ -508,8 +509,25 @@ func update_properties_diff() -> void:
 		return
 	
 
-	var heads_before = checked_out_branch.forked_at
-	var heads_after = godot_project.get_heads()
+	var heads_after
+	var heads_before
+
+
+	# in normal mode, diff between checked out branch heads and forked heads
+	if !merge_preview_modal.visible:
+		heads_before = checked_out_branch.forked_at
+		heads_after = godot_project.get_heads()
+
+	# in merge preview diff between source branch and target branch
+	else:
+		var target_branch
+		for branch in branches:
+			if branch.id == selected_target_branch_id:
+				target_branch = branch
+				break
+
+		heads_before = target_branch.heads
+		heads_after = godot_project.get_checked_out_branch().heads
 
 
 	if (prev_heads_before == heads_before && prev_heads_after == heads_after):
