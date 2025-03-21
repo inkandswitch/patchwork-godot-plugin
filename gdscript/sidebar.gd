@@ -11,6 +11,7 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 @onready var history_list: ItemList = %HistoryList
 @onready var user_button: Button = %UserButton
 @onready var highlight_changes_checkbox: CheckBox = %HighlightChangesCheckbox
+@onready var highlight_changes_checkbox_mp: CheckBox = %HighlightChangesCheckboxMP
 @onready var tab_container: TabContainer = %TabContainer
 @onready var inspector: DiffInspectorContainer = %BigDiffer
 @onready var merge_preview_modal: Control = %MergePreviewModal
@@ -93,6 +94,7 @@ func _ready() -> void:
 	source_branch_picker.item_selected.connect(_on_source_branch_picker_item_selected)
 
 	highlight_changes_checkbox.toggled.connect(_on_highlight_changes_checkbox_toggled)
+	highlight_changes_checkbox_mp.toggled.connect(_on_highlight_changes_checkbox_toggled)
 	cancel_merge_button.pressed.connect(cancel_merge_preview)
 	confirm_merge_button.pressed.connect(confirm_merge_preview)
 
@@ -331,11 +333,7 @@ func open_merge_preview():
 			main_branch = branch
 			break
 
-	highlight_changes = true
-
 	selected_target_branch_id = main_branch.id
-
-	print("open merge preview ", selected_target_branch_id, " ", godot_project.get_checked_out_branch().id)
 
 	checkout_branch(godot_project.get_checked_out_branch().id, [selected_target_branch_id])
 	merge_preview_modal.visible = true
@@ -377,6 +375,9 @@ func update_ui() -> void:
 	# highlight changes
 
 	var edited_root = EditorInterface.get_edited_scene_root()
+
+	highlight_changes_checkbox_mp.button_pressed = highlight_changes
+	highlight_changes_checkbox.button_pressed = highlight_changes
 
 	if edited_root:
 		if highlight_changes && !checked_out_branch.is_main:
@@ -524,9 +525,8 @@ func _cleanup_inspector(node: Node) -> void:
 
 func show_diff(heads_before, heads_after):
 	# TODO: handle dependencies of these files
-	print("heads_before: ", heads_before)
-	print("heads_after: ", heads_after)
-
+	# print("heads_before: ", heads_before)
+	# print("heads_after: ", heads_after)
 	var diff_dict = godot_project.get_changed_file_content_between(PackedStringArray(heads_before), PackedStringArray(heads_after))
 
 	var files_arr = diff_dict["files"]

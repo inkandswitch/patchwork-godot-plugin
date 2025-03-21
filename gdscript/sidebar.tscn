@@ -70,6 +70,7 @@ layout_mode = 2
 icon = ExtResource("3_m2w8q")
 
 [node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
+modulate = Color(1, 1, 1, 0)
 layout_mode = 2
 theme_override_constants/separation = 16
 
@@ -77,9 +78,10 @@ theme_override_constants/separation = 16
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-current_tab = 0
+current_tab = 1
 
 [node name="History" type="TabBar" parent="VBoxContainer/TabContainer"]
+visible = false
 layout_mode = 2
 metadata/_tab_index = 0
 
@@ -92,6 +94,8 @@ grow_horizontal = 2
 grow_vertical = 2
 
 [node name="HSeparator2" type="HSeparator" parent="VBoxContainer/TabContainer/History/VBoxContainer"]
+visible = false
+modulate = Color(1, 1, 1, 0)
 layout_mode = 2
 theme_override_constants/separation = 16
 
@@ -101,7 +105,6 @@ layout_mode = 2
 size_flags_vertical = 3
 
 [node name="Diff" type="TabBar" parent="VBoxContainer/TabContainer"]
-visible = false
 layout_mode = 2
 metadata/_tab_index = 1
 
@@ -114,18 +117,15 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 8
 
-[node name="HSeparator2" type="HSeparator" parent="VBoxContainer/TabContainer/Diff/VBoxContainer"]
+[node name="HSeparator" type="HSeparator" parent="VBoxContainer/TabContainer/Diff/VBoxContainer"]
+modulate = Color(1, 1, 1, 0)
 layout_mode = 2
-theme_override_constants/separation = 16
+theme_override_constants/separation = 8
 
 [node name="HighlightChangesCheckbox" type="CheckBox" parent="VBoxContainer/TabContainer/Diff/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Highlight changes"
-
-[node name="HSeparator" type="HSeparator" parent="VBoxContainer/TabContainer/Diff/VBoxContainer"]
-layout_mode = 2
-theme_override_constants/separation = 16
 
 [node name="BigDiffer" type="ScrollContainer" parent="VBoxContainer/TabContainer/Diff/VBoxContainer"]
 unique_name_in_owner = true
@@ -182,6 +182,7 @@ theme_override_constants/margin_bottom = 8
 
 [node name="VBoxContainer" type="VBoxContainer" parent="MergePreviewModal/MarginContainer"]
 layout_mode = 2
+theme_override_constants/separation = 8
 
 [node name="Preview" type="Label" parent="MergePreviewModal/MarginContainer/VBoxContainer"]
 layout_mode = 2
@@ -209,10 +210,16 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="ColorRect" type="ColorRect" parent="MergePreviewModal/MarginContainer/VBoxContainer"]
+[node name="HighlightChangesCheckboxMP" type="CheckBox" parent="MergePreviewModal/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
+text = "Highlight changes"
+
+[node name="DifferMainVBoxMP" type="VBoxContainer" parent="MergePreviewModal/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
 size_flags_vertical = 3
-color = Color(1, 1, 1, 0)
 
 [node name="HBoxContainer2" type="HBoxContainer" parent="MergePreviewModal/MarginContainer/VBoxContainer"]
 layout_mode = 2
