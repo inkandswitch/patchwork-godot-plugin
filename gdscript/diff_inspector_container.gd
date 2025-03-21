@@ -14,7 +14,7 @@ var diff_stylebox_tex = preload("./diff_stylebox_tex.png")
 @onready var main_vbox: VBoxContainer = %DifferMainVBox
 var diff_result: DiffResult
 
-var categories: Array = []	
+var categories: Array = []
 var sections: Array = []
 
 func _ready() -> void:
@@ -72,6 +72,22 @@ func get_removed_stylebox() -> StyleBoxTexture:
 func get_modified_stylebox() -> StyleBoxTexture:
 	return get_diff_stylebox(modified_color)
 
+func add_color_marker(color: Color, panel_container: PanelContainer) -> void:
+	var color_rect: ColorRect = ColorRect.new()
+	color_rect.color = color
+	color_rect.custom_minimum_size = Vector2(10, 10)
+	color_rect.layout_direction = 2 # horizontal
+	color_rect.layout_mode = 2 # manual
+	color_rect.size_flags_horizontal = 4 # expand
+
+	var margin_container: MarginContainer = MarginContainer.new()
+	margin_container.layout_mode = 2 # manual
+	margin_container.add_theme_constant_override("margin_right", 20)
+	margin_container.add_child(color_rect)
+
+	panel_container.add_child(margin_container)
+
+
 func add_PropertyDiffResult(editor_vbox: Control, property_diff: PropertyDiffResult) -> void:
 	var has_prop_new = true
 	var has_prop_old = true
@@ -84,7 +100,7 @@ func add_PropertyDiffResult(editor_vbox: Control, property_diff: PropertyDiffRes
 	var prop_name = property_diff.get_name()
 	var prop_type = property_diff.get_change_type()
 	var prop_old = property_diff.get_old_value()
-	var prop_new = property_diff.get_new_value()	
+	var prop_new = property_diff.get_new_value()
 	var prop_old_object = property_diff.get_old_object()
 	var prop_new_object = property_diff.get_new_object()
 	print("Adding property diff result for ", prop_name, " with type ", prop_type)
@@ -95,8 +111,7 @@ func add_PropertyDiffResult(editor_vbox: Control, property_diff: PropertyDiffRes
 		editor_property_old.set_label(prop_name)
 		update_property_editor(editor_property_old)
 		var removed_panel_container: PanelContainer = PanelContainer.new()
-		removed_panel_container.size.x = 10
-		removed_panel_container.add_theme_stylebox_override("panel", get_removed_stylebox())
+		add_color_marker(removed_color, removed_panel_container)
 		removed_panel_container.add_child(editor_property_old)
 		editor_vbox.add_child(removed_panel_container)
 
@@ -104,11 +119,15 @@ func add_PropertyDiffResult(editor_vbox: Control, property_diff: PropertyDiffRes
 	if has_prop_new:
 		editor_property_new = DiffInspector.instantiate_property_editor(prop_new_object, prop_name, false)
 		editor_property_new.set_object_and_property(prop_new_object, prop_name)
-		editor_property_new.set_label(prop_name)
+
+		# don't show label twice if both old and new are present
+		if has_prop_old:
+			editor_property_new.set_label("")
+		else:
+			editor_property_new.set_label(prop_name)
 		update_property_editor(editor_property_new)
 		var added_panel_container: PanelContainer = PanelContainer.new()
-		added_panel_container.size.x = 10
-		added_panel_container.add_theme_stylebox_override("panel", get_added_stylebox())
+		add_color_marker(added_color, added_panel_container)
 		added_panel_container.add_child(editor_property_new)
 		editor_vbox.add_child(added_panel_container)
 
@@ -119,6 +138,7 @@ func add_ObjectDiffResult(object_diff: ObjectDiffResult) -> void:
 		var prop_diff: PropertyDiffResult = prop_diffs[prop]
 		prop_results.append(prop_diff)
 	var object_name = object_diff.get_name()
+
 	var prop_old_object = object_diff.get_old_object()
 	var prop_new_object = object_diff.get_new_object()
 	var object = prop_new_object if prop_new_object != null else prop_old_object
@@ -147,7 +167,7 @@ func get_node_box(icon: Texture2D, text: String) -> PanelContainer:
 	icon_rect.size.x = 60
 	icon_rect.size.y = 60
 	icon_rect.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
-	hbox.add_child(icon_rect)	
+	hbox.add_child(icon_rect)
 	var label: Label = Label.new()
 	label.text = text
 	hbox.add_child(label)
@@ -161,8 +181,9 @@ func get_node_deleted_box() -> PanelContainer:
 func get_node_added_box() -> PanelContainer:
 	return get_node_box(added_icon, "Node Added")
 
+
 func add_NodeDiffResult(node_diff: NodeDiffResult) -> void:
-	var node_name: String = node_diff.get_path()
+	var node_name: String = str(node_diff.get_path()).substr(2) # remove the leading "./"
 	var node_type: String = node_diff.get_type()
 	var node_old_object = node_diff.get_old_object()
 	var node_new_object = node_diff.get_new_object()
@@ -192,7 +213,6 @@ func add_NodeDiffResult(node_diff: NodeDiffResult) -> void:
 			add_PropertyDiffResult(vbox, prop_diff)
 	sections.append(inspector_section)
 	main_vbox.add_child(inspector_section)
-
 
 func add_FileDiffResult(file_path: String, file_diff: FileDiffResult) -> void:
 	if !is_instance_valid(file_diff):

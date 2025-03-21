@@ -138,8 +138,8 @@ script = ExtResource("4_uttw7")
 added_icon = ExtResource("5_iqebc")
 removed_icon = ExtResource("6_ha5pl")
 modified_icon = ExtResource("7_o8jin")
-added_color = Color(0.180392, 0.8, 0.443137, 1)
-removed_color = Color(0.878431, 0.313726, 0.372549, 1)
+added_color = Color(0.247059, 0.65098, 0.180392, 1)
+removed_color = Color(0.647059, 0.329412, 0.329412, 1)
 modified_color = Color(0.92549, 0.831373, 0.184314, 1)
 
 [node name="DifferMainVBox" type="VBoxContainer" parent="VBoxContainer/TabContainer/Diff/VBoxContainer/BigDiffer"]
@@ -149,6 +149,7 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 
 [node name="Debug" type="TabBar" parent="VBoxContainer/TabContainer"]
+visible = false
 layout_mode = 2
 metadata/_tab_index = 2
 
