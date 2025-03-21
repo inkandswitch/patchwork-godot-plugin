@@ -87,6 +87,18 @@ func add_color_marker(color: Color, panel_container: PanelContainer) -> void:
 
 	panel_container.add_child(margin_container)
 
+func add_label(label: String, panel_container: PanelContainer) -> void:
+	var label_node: Label = Label.new()
+	label_node.text = label
+	panel_container.add_child(label_node)
+
+func snake_case_to_human_readable(snake_case_string: String) -> String:
+	var words = snake_case_string.split("_")
+	var title_case_words = []
+	for word in words:
+		if word.length() > 0:
+			title_case_words.append(word[0].to_upper() + word.substr(1))
+	return " ".join(title_case_words)
 
 func add_PropertyDiffResult(editor_vbox: Control, property_diff: PropertyDiffResult) -> void:
 	var has_prop_new = true
@@ -98,6 +110,7 @@ func add_PropertyDiffResult(editor_vbox: Control, property_diff: PropertyDiffRes
 	if property_diff.get_change_type() == "removed":
 		has_prop_new = false
 	var prop_name = property_diff.get_name()
+	var prop_label = snake_case_to_human_readable(property_diff.get_name())
 	var prop_type = property_diff.get_change_type()
 	var prop_old = property_diff.get_old_value()
 	var prop_new = property_diff.get_new_value()
@@ -108,9 +121,9 @@ func add_PropertyDiffResult(editor_vbox: Control, property_diff: PropertyDiffRes
 	if has_prop_old:
 		editor_property_old = DiffInspector.instantiate_property_editor(prop_old_object, prop_name, false)
 		editor_property_old.set_object_and_property(prop_old_object, prop_name)
-		editor_property_old.set_label(prop_name)
 		update_property_editor(editor_property_old)
 		var removed_panel_container: PanelContainer = PanelContainer.new()
+		add_label(prop_label, removed_panel_container)
 		add_color_marker(removed_color, removed_panel_container)
 		removed_panel_container.add_child(editor_property_old)
 		editor_vbox.add_child(removed_panel_container)
@@ -120,13 +133,12 @@ func add_PropertyDiffResult(editor_vbox: Control, property_diff: PropertyDiffRes
 		editor_property_new = DiffInspector.instantiate_property_editor(prop_new_object, prop_name, false)
 		editor_property_new.set_object_and_property(prop_new_object, prop_name)
 
-		# don't show label twice if both old and new are present
-		if has_prop_old:
-			editor_property_new.set_label("")
-		else:
-			editor_property_new.set_label(prop_name)
-		update_property_editor(editor_property_new)
 		var added_panel_container: PanelContainer = PanelContainer.new()
+
+		# don't show label twice if both old and new are present
+		if !has_prop_old:
+			add_label(prop_label, added_panel_container)
+		update_property_editor(editor_property_new)
 		add_color_marker(added_color, added_panel_container)
 		added_panel_container.add_child(editor_property_new)
 		editor_vbox.add_child(added_panel_container)
@@ -148,8 +160,14 @@ func add_ObjectDiffResult(object_diff: ObjectDiffResult) -> void:
 	var inspector_section: EditorInspectorSection = EditorInspectorSection.new()
 	inspector_section.setup(object_name, object_name, object, added_color, true)
 	var vbox = inspector_section.get_vbox()
-	for prop_result in prop_results:
+
+	for i in range(prop_results.size()):
+		if i > 0:
+			var divider = HSeparator.new()
+			vbox.add_child(divider)
+		var prop_result = prop_results[i]
 		add_PropertyDiffResult(vbox, prop_result)
+		
 	sections.append(inspector_section)
 	main_vbox.add_child(inspector_section)
 
@@ -208,9 +226,18 @@ func add_NodeDiffResult(node_diff: NodeDiffResult) -> void:
 		var prop_results: Array[PropertyDiffResult] = []
 		var prop_diffs: ObjectDiffResult = node_diff.get_props()
 		var prop_diffs_dict: Dictionary = prop_diffs.get_property_diffs()
+
+
+		var i = 0
 		for prop in prop_diffs_dict.keys():
 			var prop_diff: PropertyDiffResult = prop_diffs_dict[prop]
+			if i > 0:
+				var divider = HSeparator.new()
+				vbox.add_child(divider)
 			add_PropertyDiffResult(vbox, prop_diff)
+			i += 1
+
+			
 	sections.append(inspector_section)
 	main_vbox.add_child(inspector_section)
 
