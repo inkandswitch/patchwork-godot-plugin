@@ -534,10 +534,16 @@ func show_diff(heads_before, heads_after):
 	var new_dict = {}
 	var new_files = []
 	for file: Dictionary in files_arr:
+		print("file: ", file)
 		var path = file["path"]
 		var change = file["change"]
 		var old_content = file["old_content"]
 		var new_content = file["new_content"]
+		var scene_changes = {}
+		if path.get_extension() == "tscn" and change == "modified":
+			scene_changes = godot_project.get_scene_changes_between(path, PackedStringArray(heads_before), PackedStringArray(heads_after))
+			print("scene_changes: ", scene_changes)
+			
 		# for all the files in the dict, save as tmp files
 
 		# print("File: %s" % path)
@@ -554,12 +560,15 @@ func show_diff(heads_before, heads_after):
 			plugin.file_system.save_file(old_path, old_content)
 		if new_path:
 			plugin.file_system.save_file(new_path, new_content)
-		new_files.append({
+		var file_dict = {
 			"path": path,
 			"change": change,
 			"old_content": old_path,
 			"new_content": new_path
-		})
+		};
+		if scene_changes.size() > 0:
+			file_dict["scene_changes"] = scene_changes
+		new_files.append(file_dict)
 	new_dict["files"] = new_files
 	var display_diff = PatchworkEditor.get_diff(new_dict)
 # 	  Failed to load resource at path user://tmp/project_old.godot

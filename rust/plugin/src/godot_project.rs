@@ -1121,6 +1121,177 @@ impl GodotProject {
 
         BranchUnionState::Loading
     }
+
+    #[func]
+    fn get_scene_changes_between(
+        &self,
+        path: String,
+        old_heads: PackedStringArray,
+        curr_heads: PackedStringArray,
+    ) -> Dictionary {
+        let heads = array_to_heads(old_heads);
+        let checked_out_branch_union = match self.get_checked_out_branch_union() {
+            Some(branch_union) => branch_union,
+            None => return Dictionary::new(),
+        };
+
+        let curr_heads = if curr_heads.len() == 0 {
+            checked_out_branch_union.synced_heads.clone()
+        } else {
+            array_to_heads(curr_heads)
+        };
+
+        let patches = checked_out_branch_union.doc.diff(
+            &heads,
+            &curr_heads,
+            TextRepresentation::String(TextEncoding::Utf8CodeUnit),
+        );
+
+        // Get old and new content
+        let old_content = match self._get_file_at(path.clone(), Some(heads.clone())) {
+            Some(FileContent::String(s)) => GString::from(s).to_variant(),
+            Some(FileContent::Binary(bytes)) => PackedByteArray::from(bytes).to_variant(),
+            Some(FileContent::Scene(scene)) => scene.serialize().to_variant(),
+            None => Variant::nil(),
+        };
+        
+        let new_content = match self._get_file_at(path.clone(), Some(curr_heads.clone())) {
+            Some(FileContent::String(s)) => GString::from(s).to_variant(),
+            Some(FileContent::Binary(bytes)) => PackedByteArray::from(bytes).to_variant(),
+            Some(FileContent::Scene(scene)) => scene.serialize().to_variant(),
+            None => Variant::nil(),
+        };
+
+        let change_type = if old_content.is_nil() {
+            "added"
+        } else if new_content.is_nil() {
+            "deleted"
+        } else {
+            "modified"
+        };
+
+        let mut result = Dictionary::new();
+        result.insert("change_type", change_type);
+        result.insert("old_content", old_content);
+        result.insert("new_content", new_content);
+
+        // If it's a scene file, add node changes
+        if path.ends_with(".tscn") {
+            let mut changed_nodes = Array::new();
+            
+            // Get old and new scenes for content comparison
+            let mut old_doc = checked_out_branch_union.doc.clone();
+            let mut new_doc = checked_out_branch_union.doc.clone();
+            
+            let old_scene = match godot_parser::GodotScene::hydrate(&mut old_doc, &path) {
+                Ok(scene) => Some(scene),
+                Err(_) => None,
+            };
+
+            let new_scene = match godot_parser::GodotScene::hydrate(&mut new_doc, &path) {
+                Ok(scene) => Some(scene),
+                Err(_) => None,
+            };
+
+            let patch_path = Vec::from([
+                Prop::Map(String::from("files")),
+                Prop::Map(String::from(path.clone())),
+                Prop::Map(String::from("structured_content")),
+                Prop::Map(String::from("nodes")),
+            ]);
+
+            let mut changed_node_ids: HashSet<String> = HashSet::new();
+            let mut added_node_ids: HashSet<String> = HashSet::new();
+            let mut deleted_node_ids: HashSet<String> = HashSet::new();
+
+            for patch in patches {
+                match_path(&patch_path, &patch).inspect(|PathWithAction { path, action }| {
+                    match path.first() {
+                        Some((_, Prop::Map(node_id))) => {
+                            changed_node_ids.insert(node_id.clone());
+                        }
+                        None => {
+                            match action {
+                                PatchAction::PutMap {
+                                    key,
+                                    value: _,
+                                    conflict: _,
+                                } => {
+                                    added_node_ids.insert(key.clone());
+                                }
+                                PatchAction::DeleteMap { key } => {
+                                    deleted_node_ids.insert(key.clone());
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
+                });
+            }
+
+            // Handle changed nodes
+            for node_id in changed_node_ids {
+                if !added_node_ids.contains(&node_id) && !deleted_node_ids.contains(&node_id) {
+                    let mut node_info = Dictionary::new();
+                    node_info.insert("type", "changed");
+                    
+                    if let Some(scene) = &new_scene {
+                        node_info.insert("node_path", scene.get_node_path(&node_id));
+                    }
+
+                    // Get old and new node content
+                    if let Some(old_scene) = &old_scene {
+                        if let Some(content) = old_scene.get_node_content(&node_id) {
+                            node_info.insert("old_content", content);
+                        }
+                    }
+                    
+                    if let Some(new_scene) = &new_scene {
+                        if let Some(content) = new_scene.get_node_content(&node_id) {
+                            node_info.insert("new_content", content);
+                        }
+                    }
+
+                    changed_nodes.push(&node_info.to_variant());
+                }
+            }
+
+            // Handle added nodes
+            for node_id in added_node_ids {
+                let mut node_info = Dictionary::new();
+                node_info.insert("type", "added");
+                
+                if let Some(scene) = &new_scene {
+                    node_info.insert("node_path", scene.get_node_path(&node_id));
+                    if let Some(content) = scene.get_node_content(&node_id) {
+                        node_info.insert("new_content", content);
+                    }
+                }
+
+                changed_nodes.push(&node_info.to_variant());
+            }
+
+            // Handle deleted nodes
+            for node_id in deleted_node_ids {
+                let mut node_info = Dictionary::new();
+                node_info.insert("type", "deleted");
+                
+                if let Some(scene) = &old_scene {
+                    node_info.insert("node_path", scene.get_node_path(&node_id));
+                    if let Some(content) = scene.get_node_content(&node_id) {
+                        node_info.insert("old_content", content);
+                    }
+                }
+
+                changed_nodes.push(&node_info.to_variant());
+            }
+
+            result.insert("changed_nodes", changed_nodes);
+        }
+
+        result
+    }
 }
 
 #[derive(Debug, Clone)]

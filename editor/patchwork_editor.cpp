@@ -375,13 +375,33 @@ Ref<DiffResult> PatchworkEditor::get_diff(Dictionary changed_files_dict) {
 		String path = dict["path"];
 		auto old_content = dict["old_content"];
 		auto new_content = dict["new_content"];
+		auto structured_changes = dict["structured_changes"];
 		if (change_type == "modified") {
-			auto diff = get_file_diff(old_content, new_content);
-			if (diff.is_null()) {
+			// check both the old and the new content to see what the file sizes are
+			auto faold = FileAccess::open(old_content, FileAccess::READ);
+			auto fanew = FileAccess::open(new_content, FileAccess::READ);
+			if (faold.is_null() || fanew.is_null()) {
 				continue;
 			}
-			result->set_file_diff(path, diff);
-		} else if (change_type == "added" || change_type == "deleted") {
+			auto old_size = faold->get_length();
+			auto new_size = fanew->get_length();
+			if (old_size < 4 && new_size < 4) {
+				ERR_FAIL_COND_V(old_size < 4 && new_size < 4, result);
+			}
+			if (old_size < 4) {
+				change_type = "added";
+			} else if (new_size < 4) {
+				change_type = "deleted";
+			} else {
+				auto diff = get_file_diff(old_content, new_content, structured_changes);
+				if (diff.is_null()) {
+					continue;
+				}
+				result->set_file_diff(path, diff);
+			}
+		}
+
+		if (change_type == "added" || change_type == "deleted") {
 			Ref<FileDiffResult> file_diff;
 			file_diff.instantiate();
 			file_diff->set_type(change_type);
@@ -401,13 +421,13 @@ Ref<DiffResult> PatchworkEditor::get_diff(Dictionary changed_files_dict) {
 	return result;
 }
 
-Ref<FileDiffResult> PatchworkEditor::get_file_diff(const String &p_path, const String &p_path2) {
+Ref<FileDiffResult> PatchworkEditor::get_file_diff(const String &p_path, const String &p_path2, const Dictionary &p_options) {
 	Error error = OK;
 	auto res1 = ResourceLoader::load(p_path, "", ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &error);
 	ERR_FAIL_COND_V_MSG(error != OK, Ref<FileDiffResult>(), "Failed to load resource at path " + p_path);
 	auto res2 = ResourceLoader::load(p_path2, "", ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &error);
 	ERR_FAIL_COND_V_MSG(error != OK, Ref<FileDiffResult>(), "Failed to load resource at path " + p_path2);
-	return get_diff_res(res1, res2);
+	return get_diff_res(res1, res2, p_options);
 }
 
 bool PatchworkEditor::deep_equals(Variant a, Variant b, bool exclude_non_storage) {
@@ -485,7 +505,7 @@ bool PatchworkEditor::deep_equals(Variant a, Variant b, bool exclude_non_storage
 	return true;
 }
 
-Ref<ObjectDiffResult> PatchworkEditor::get_diff_obj(Object *a, Object *b, bool exclude_non_storage) {
+Ref<ObjectDiffResult> PatchworkEditor::get_diff_obj(Object *a, Object *b, bool exclude_non_storage, const Dictionary &p_structured_changes) {
 	Ref<ObjectDiffResult> diff;
 	diff.instantiate();
 	List<PropertyInfo> p_list_a;
@@ -548,7 +568,7 @@ void get_child_node_paths(Node *node_a, HashSet<NodePath> &paths, const String &
 	}
 }
 
-Ref<NodeDiffResult> PatchworkEditor::evaluate_node_differences(Node *scene1, Node *scene2, const NodePath &path) {
+Ref<NodeDiffResult> PatchworkEditor::evaluate_node_differences(Node *scene1, Node *scene2, const NodePath &path, const Dictionary &p_structured_changes) {
 	Ref<NodeDiffResult> result;
 	result.instantiate();
 	bool is_root = path == "." || path.is_empty();
@@ -582,7 +602,11 @@ Ref<NodeDiffResult> PatchworkEditor::evaluate_node_differences(Node *scene1, Nod
 		result->set_type("node_deleted");
 		return result;
 	}
-	auto diff = get_diff_obj(node1, node2, true);
+
+	// Pass options to get_diff_obj
+	bool exclude_non_storage = p_structured_changes.has("exclude_non_storage") ? (bool)p_structured_changes["exclude_non_storage"] : true;
+	auto diff = get_diff_obj(node1, node2, exclude_non_storage);
+
 	if (diff->get_property_diffs().size() > 0) {
 		result->set_type("node_changed");
 		result->set_props(diff);
@@ -591,7 +615,7 @@ Ref<NodeDiffResult> PatchworkEditor::evaluate_node_differences(Node *scene1, Nod
 	return Ref<NodeDiffResult>();
 }
 
-Ref<FileDiffResult> PatchworkEditor::get_diff_res(Ref<Resource> p_res, Ref<Resource> p_res2) {
+Ref<FileDiffResult> PatchworkEditor::get_diff_res(Ref<Resource> p_res, Ref<Resource> p_res2, const Dictionary &p_structured_changes) {
 	Ref<FileDiffResult> result;
 	result.instantiate();
 	result->set_res_old(p_res);
@@ -603,7 +627,7 @@ Ref<FileDiffResult> PatchworkEditor::get_diff_res(Ref<Resource> p_res, Ref<Resou
 	}
 	if (p_res->get_class() != "PackedScene") {
 		result->set_type("resource_changed");
-		result->set_props(get_diff_obj((Object *)p_res.ptr(), (Object *)p_res2.ptr(), true));
+		result->set_props(get_diff_obj((Object *)p_res.ptr(), (Object *)p_res2.ptr(), true, p_structured_changes));
 		return result;
 	}
 	Ref<PackedScene> p_scene1 = p_res;
@@ -615,7 +639,7 @@ Ref<FileDiffResult> PatchworkEditor::get_diff_res(Ref<Resource> p_res, Ref<Resou
 	get_child_node_paths(scene2, paths);
 	Dictionary node_diffs;
 	for (auto &path : paths) {
-		Ref<NodeDiffResult> value1 = evaluate_node_differences(scene1, scene2, path);
+		Ref<NodeDiffResult> value1 = evaluate_node_differences(scene1, scene2, path, p_structured_changes);
 		if (value1.is_valid()) {
 			node_diffs[(Variant)path] = value1;
 		}
@@ -651,9 +675,9 @@ void PatchworkEditor::_bind_methods() {
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_recursive_dir_list", "dir", "wildcards", "absolute", "rel"), &PatchworkEditor::get_recursive_dir_list);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_diff", "changed_files_dict"), &PatchworkEditor::get_diff);
 
-	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_file_diff", "old_path", "new_path"), &PatchworkEditor::get_file_diff);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_file_diff", "old_path", "new_path", "options"), &PatchworkEditor::get_file_diff);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("deep_equals", "a", "b", "exclude_non_storage"), &PatchworkEditor::deep_equals, DEFVAL(true));
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_diff_obj", "a", "b", "exclude_non_storage"), &PatchworkEditor::get_diff_obj, DEFVAL(true));
-	ClassDB::bind_static_method(get_class_static(), D_METHOD("evaluate_node_differences", "scene1", "scene2", "path"), &PatchworkEditor::evaluate_node_differences);
-	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_diff_res", "res1", "res2"), &PatchworkEditor::get_diff_res);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("evaluate_node_differences", "scene1", "scene2", "path", "options"), &PatchworkEditor::evaluate_node_differences);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_diff_res", "res1", "res2", "options"), &PatchworkEditor::get_diff_res);
 }

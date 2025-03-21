@@ -218,6 +218,7 @@ func add_FileDiffResult(file_path: String, file_diff: FileDiffResult) -> void:
 			
 # defs for these are in editor/diff_result.h
 func add_diff(diff: DiffResult) -> void:
+	print("ADDING DIFF!!!")
 	reset()
 	diff_result = diff
 	var file_diffs: Dictionary = diff.get_file_diffs()

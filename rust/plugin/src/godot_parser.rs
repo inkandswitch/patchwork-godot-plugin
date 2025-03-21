@@ -2,6 +2,7 @@ use automerge::{
     transaction::{Transactable, Transaction},
     Automerge, ObjType, ReadDoc, ROOT,
 };
+use godot::prelude::*;
 use std::collections::{HashMap, HashSet};
 use tree_sitter::{Parser, Query, QueryCursor};
 use uuid;
@@ -816,6 +817,44 @@ impl GodotScene {
                 self.serialize_node(output, child_node);
             }
         }
+    }
+
+    pub fn get_node_content(&self, node_id: &str) -> Option<Dictionary> {
+        let node = self.nodes.get(node_id)?;
+        let mut content = Dictionary::new();
+
+        // Add basic node properties
+        content.insert("name", node.name.clone());
+        
+        // Add type or instance
+        match &node.type_or_instance {
+            TypeOrInstance::Type(type_name) => {
+                content.insert("type", type_name.clone());
+            }
+            TypeOrInstance::Instance(instance_id) => {
+                content.insert("instance", instance_id.clone());
+            }
+        }
+
+        // Add optional properties
+        if let Some(owner) = &node.owner {
+            content.insert("owner", owner.clone());
+        }
+        if let Some(index) = node.index {
+            content.insert("index", index);
+        }
+        if let Some(groups) = &node.groups {
+            content.insert("groups", groups.clone());
+        }
+
+        // Add node properties as a nested dictionary
+        let mut properties = Dictionary::new();
+        for (key, value) in &node.properties {
+            properties.insert(key.clone(), value.clone());
+        }
+        content.insert("properties", properties);
+
+        Some(content)
     }
 }
 
