@@ -524,7 +524,6 @@ func _cleanup_inspector(node: Node) -> void:
 
 func show_diff(heads_before, heads_after):
 	# TODO: handle dependencies of these files
-
 	print("heads_before: ", heads_before)
 	print("heads_after: ", heads_after)
 

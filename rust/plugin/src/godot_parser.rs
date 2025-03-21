@@ -1,6 +1,6 @@
 use automerge::{
     transaction::{Transactable, Transaction},
-    Automerge, ObjType, ReadDoc, ROOT,
+    Automerge, ChangeHash, ObjType, ReadDoc, ROOT,
 };
 use godot::prelude::*;
 use std::collections::{HashMap, HashSet};
@@ -391,41 +391,49 @@ impl GodotScene {
     }
 
     pub fn hydrate(doc: &mut Automerge, path: &str) -> Result<Self, String> {
+        Self::hydrate_at(doc, path, &doc.get_heads())
+    }
+
+    pub fn hydrate_at(
+        doc: &mut Automerge,
+        path: &str,
+        heads: &Vec<ChangeHash>,
+    ) -> Result<Self, String> {
         // Get the files object
         let files = doc
-            .get_obj_id(ROOT, "files")
+            .get_obj_id_at(ROOT, "files", &heads)
             .ok_or_else(|| "Could not find files object in document".to_string())?;
 
         // Get the specific file at the given path
         let scene_file = doc
-            .get_obj_id(&files, path)
+            .get_obj_id_at(&files, path, &heads)
             .ok_or_else(|| format!("Could not find file at path: {}", path))?;
 
         // Get the structured content
         let structured_content = doc
-            .get_obj_id(&scene_file, "structured_content")
+            .get_obj_id_at(&scene_file, "structured_content", &heads)
             .ok_or_else(|| "Could not find structured_content in file".to_string())?;
 
         // Get the uid
         let uid = doc
-            .get_string(&scene_file, "uid")
+            .get_string_at(&scene_file, "uid", &heads)
             .ok_or_else(|| "Could not find uid in scene_file".to_string())?;
 
         let load_steps = doc
-            .get_int(&scene_file, "load_steps")
+            .get_int_at(&scene_file, "load_steps", &heads)
             .ok_or_else(|| "Could not find load_steps in scene_file".to_string())?;
 
         let format = doc
-            .get_int(&scene_file, "format")
+            .get_int_at(&scene_file, "format", &heads)
             .ok_or_else(|| "Could not find format in scene_file".to_string())?;
 
         // Get the nodes object
         let nodes_id = doc
-            .get_obj_id(&structured_content, "nodes")
+            .get_obj_id_at(&structured_content, "nodes", &heads)
             .ok_or_else(|| "Could not find nodes in structured_content".to_string())?;
 
         let root_node_id = doc
-            .get_string(&structured_content, "root_node_id")
+            .get_string_at(&structured_content, "root_node_id", &heads)
             .ok_or_else(|| "Could not find root_node_id in structured_content".to_string())?;
 
         // Create a map to store the nodes
@@ -435,27 +443,27 @@ impl GodotScene {
         let mut ext_resources = HashMap::new();
 
         let ext_resources_id = doc
-            .get_obj_id(&scene_file, "ext_resources")
+            .get_obj_id_at(&scene_file, "ext_resources", &heads)
             .ok_or_else(|| "Could not find ext_resources in scene_file".to_string())?;
 
-        for resource_id in doc.keys(&ext_resources_id) {
+        for resource_id in doc.keys_at(&ext_resources_id, &heads) {
             let resource_obj = doc
-                .get_obj_id(&ext_resources_id, &resource_id)
+                .get_obj_id_at(&ext_resources_id, &resource_id, &heads)
                 .ok_or_else(|| format!("Could not find resource object for ID: {}", resource_id))?;
 
             let resource_type = doc
-                .get_string(&resource_obj, "resource_type")
+                .get_string_at(&resource_obj, "resource_type", &heads)
                 .ok_or_else(|| format!("Could not find resource_type for ID: {}", resource_id))?;
 
             let path = doc
-                .get_string(&resource_obj, "path")
+                .get_string_at(&resource_obj, "path", &heads)
                 .ok_or_else(|| format!("Could not find path for ID: {}", resource_id))?;
 
             let id = doc
-                .get_string(&resource_obj, "id")
+                .get_string_at(&resource_obj, "id", &heads)
                 .ok_or_else(|| format!("Could not find id for ID: {}", resource_id))?;
 
-            let uid = doc.get_string(&resource_obj, "uid");
+            let uid = doc.get_string_at(&resource_obj, "uid", &heads);
 
             let external_resource = ExternalResourceNode {
                 resource_type,
@@ -471,12 +479,12 @@ impl GodotScene {
         let mut sub_resources = HashMap::new();
 
         let sub_resources_id = doc
-            .get_obj_id(&scene_file, "sub_resources")
+            .get_obj_id_at(&scene_file, "sub_resources", &heads)
             .ok_or_else(|| "Could not find sub_resources in scene_file".to_string())?;
 
-        for sub_resource_id in doc.keys(&sub_resources_id) {
+        for sub_resource_id in doc.keys_at(&sub_resources_id, &heads) {
             let sub_resource_obj = doc
-                .get_obj_id(&sub_resources_id, &sub_resource_id)
+                .get_obj_id_at(&sub_resources_id, &sub_resource_id, &heads)
                 .ok_or_else(|| {
                     format!(
                         "Could not find sub_resource object for ID: {}",
@@ -485,28 +493,28 @@ impl GodotScene {
                 })?;
 
             let resource_type = doc
-                .get_string(&sub_resource_obj, "resource_type")
+                .get_string_at(&sub_resource_obj, "resource_type", &heads)
                 .ok_or_else(|| {
                     format!("Could not find resource_type for ID: {}", sub_resource_id)
                 })?;
 
             let id = doc
-                .get_string(&sub_resource_obj, "id")
+                .get_string_at(&sub_resource_obj, "id", &heads)
                 .ok_or_else(|| format!("Could not find id for ID: {}", sub_resource_id))?;
 
-            let properties_obj =
-                doc.get_obj_id(&sub_resource_obj, "properties")
-                    .ok_or_else(|| {
-                        format!(
-                            "Could not find properties object for ID: {}",
-                            sub_resource_id
-                        )
-                    })?;
+            let properties_obj = doc
+                .get_obj_id_at(&sub_resource_obj, "properties", &heads)
+                .ok_or_else(|| {
+                    format!(
+                        "Could not find properties object for ID: {}",
+                        sub_resource_id
+                    )
+                })?;
 
             let mut properties = HashMap::new();
-            for key in doc.keys(&properties_obj) {
+            for key in doc.keys_at(&properties_obj, &heads) {
                 let value = doc
-                    .get_string(&properties_obj, &key)
+                    .get_string_at(&properties_obj, &key, &heads)
                     .ok_or_else(|| format!("Could not find value for property: {}", key))?;
 
                 properties.insert(key, value);
@@ -525,46 +533,47 @@ impl GodotScene {
 
         let mut nodes = HashMap::new();
 
-        for node_id in doc.keys(&nodes_id) {
+        for node_id in doc.keys_at(&nodes_id, &heads) {
             // Get the node object
             let node_obj = doc
-                .get_obj_id(&nodes_id, &node_id)
+                .get_obj_id_at(&nodes_id, &node_id, &heads)
                 .ok_or_else(|| format!("Could not find node object for ID: {}", node_id))?;
 
             // Extract node properties
             let id = doc
-                .get_string(&node_obj, "id")
+                .get_string_at(&node_obj, "id", &heads)
                 .unwrap_or_else(|| node_id.clone());
             let name = doc
-                .get_string(&node_obj, "name")
+                .get_string_at(&node_obj, "name", &heads)
                 .ok_or_else(|| format!("Node {} is missing required name property", node_id))?;
 
             // Determine if this is a type or instance
-            let type_or_instance = if let Some(type_name) = doc.get_string(&node_obj, "type") {
-                TypeOrInstance::Type(type_name)
-            } else if let Some(instance_id) = doc.get_string(&node_obj, "instance") {
-                TypeOrInstance::Instance(instance_id)
-            } else {
-                return Err(format!(
-                    "Node {} is missing both type and instance properties",
-                    node_id
-                ));
-            };
+            let type_or_instance =
+                if let Some(type_name) = doc.get_string_at(&node_obj, "type", &heads) {
+                    TypeOrInstance::Type(type_name)
+                } else if let Some(instance_id) = doc.get_string_at(&node_obj, "instance", &heads) {
+                    TypeOrInstance::Instance(instance_id)
+                } else {
+                    return Err(format!(
+                        "Node {} is missing both type and instance properties",
+                        node_id
+                    ));
+                };
 
             // Get optional properties
-            let parent_id = doc.get_string(&node_obj, "parent_id");
-            let owner = doc.get_string(&node_obj, "owner");
-            let index = doc.get_int(&node_obj, "index").map(|i| i);
-            let groups = doc.get_string(&node_obj, "groups");
+            let parent_id = doc.get_string_at(&node_obj, "parent_id", &heads);
+            let owner = doc.get_string_at(&node_obj, "owner", &heads);
+            let index = doc.get_int_at(&node_obj, "index", &heads).map(|i| i);
+            let groups = doc.get_string_at(&node_obj, "groups", &heads);
 
             // Get node properties
             let properties_obj = doc
-                .get_obj_id(&node_obj, "properties")
+                .get_obj_id_at(&node_obj, "properties", &heads)
                 .ok_or_else(|| format!("Could not find properties object for node: {}", node_id))?;
             let mut properties = HashMap::new();
-            for key in doc.keys(&properties_obj) {
+            for key in doc.keys_at(&properties_obj, &heads) {
                 let value = doc
-                    .get_string(&properties_obj, &key)
+                    .get_string_at(&properties_obj, &key, &heads)
                     .ok_or_else(|| format!("Could not find value for property: {}", key))?;
 
                 properties.insert(key, value);
@@ -572,10 +581,10 @@ impl GodotScene {
 
             // Get child node IDs
             let mut child_node_ids = Vec::new();
-            if let Some(children_obj) = doc.get_obj_id(&node_obj, "child_node_ids") {
-                let length = doc.length(&children_obj);
+            if let Some(children_obj) = doc.get_obj_id_at(&node_obj, "child_node_ids", &heads) {
+                let length = doc.length_at(&children_obj, &heads);
                 for i in 0..length {
-                    if let Some(child_id) = doc.get_string(&children_obj, i) {
+                    if let Some(child_id) = doc.get_string_at(&children_obj, i, &heads) {
                         child_node_ids.push(child_id);
                     }
                 }
@@ -602,31 +611,33 @@ impl GodotScene {
         let mut connections = HashMap::new();
 
         let connections_id = doc
-            .get_obj_id(&scene_file, "connections")
+            .get_obj_id_at(&scene_file, "connections", &heads)
             .ok_or_else(|| "Could not find connections in scene document".to_string())?;
 
-        for connection_id in doc.keys(&connections_id) {
-            let connection_obj =
-                doc.get_obj_id(&connections_id, &connection_id)
-                    .ok_or_else(|| {
-                        format!("Could not find connection object for ID: {}", connection_id)
-                    })?;
+        for connection_id in doc.keys_at(&connections_id, &heads) {
+            let connection_obj = doc
+                .get_obj_id_at(&connections_id, &connection_id, &heads)
+                .ok_or_else(|| {
+                    format!("Could not find connection object for ID: {}", connection_id)
+                })?;
 
-            let signal = doc.get_string(&connection_obj, "signal").ok_or_else(|| {
-                format!("Could not find signal for connection: {}", connection_id)
-            })?;
+            let signal = doc
+                .get_string_at(&connection_obj, "signal", &heads)
+                .ok_or_else(|| {
+                    format!("Could not find signal for connection: {}", connection_id)
+                })?;
 
-            let from_node_id =
-                doc.get_string(&connection_obj, "from_node_id")
-                    .ok_or_else(|| {
-                        format!(
-                            "Could not find from_node_id for connection: {}",
-                            connection_id
-                        )
-                    })?;
+            let from_node_id = doc
+                .get_string_at(&connection_obj, "from_node_id", &heads)
+                .ok_or_else(|| {
+                    format!(
+                        "Could not find from_node_id for connection: {}",
+                        connection_id
+                    )
+                })?;
 
             let to_node_id = doc
-                .get_string(&connection_obj, "to_node_id")
+                .get_string_at(&connection_obj, "to_node_id", &heads)
                 .ok_or_else(|| {
                     format!(
                         "Could not find to_node_id for connection: {}",
@@ -634,15 +645,17 @@ impl GodotScene {
                     )
                 })?;
 
-            let method = doc.get_string(&connection_obj, "method").ok_or_else(|| {
-                format!("Could not find method for connection: {}", connection_id)
-            })?;
+            let method = doc
+                .get_string_at(&connection_obj, "method", &heads)
+                .ok_or_else(|| {
+                    format!("Could not find method for connection: {}", connection_id)
+                })?;
 
-            let flags = doc.get_int(&connection_obj, "flags");
+            let flags = doc.get_int_at(&connection_obj, "flags", &heads);
 
-            let unbinds = doc.get_int(&connection_obj, "unbinds");
+            let unbinds = doc.get_int_at(&connection_obj, "unbinds", &heads);
 
-            let binds = doc.get_string(&connection_obj, "binds");
+            let binds = doc.get_string_at(&connection_obj, "binds", &heads);
 
             let connection = GodotConnection {
                 signal,
@@ -825,7 +838,7 @@ impl GodotScene {
 
         // Add basic node properties
         content.insert("name", node.name.clone());
-        
+
         // Add type or instance
         match &node.type_or_instance {
             TypeOrInstance::Type(type_name) => {

@@ -6,11 +6,16 @@ pub trait SimpleDocReader {
 
     fn get_int<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<i64>;
 
+    fn get_int_at<O: AsRef<ObjId>, P: Into<Prop>>(
+        &self,
+        obj: O,
+        prop: P,
+        heads: &[automerge::ChangeHash],
+    ) -> Option<i64>;
+
     fn get_float<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<f64>;
 
     fn get_string<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<String>;
-
-    fn get_obj_id<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<ObjId>;
 
     fn get_string_at<O: AsRef<ObjId>, P: Into<Prop>>(
         &self,
@@ -18,6 +23,15 @@ pub trait SimpleDocReader {
         prop: P,
         heads: &[automerge::ChangeHash],
     ) -> Option<String>;
+
+    fn get_obj_id<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<ObjId>;
+
+    fn get_obj_id_at<O: AsRef<ObjId>, P: Into<Prop>>(
+        &self,
+        obj: O,
+        prop: P,
+        heads: &[automerge::ChangeHash],
+    ) -> Option<ObjId>;
 
     fn get_variant<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<Variant>;
 }
@@ -35,6 +49,21 @@ impl SimpleDocReader for Automerge {
 
     fn get_int<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<i64> {
         match self.get(obj, prop) {
+            Ok(Some((Value::Scalar(cow), _))) => match cow.into_owned() {
+                automerge::ScalarValue::Int(num) => Some(num),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn get_int_at<O: AsRef<ObjId>, P: Into<Prop>>(
+        &self,
+        obj: O,
+        prop: P,
+        heads: &[automerge::ChangeHash],
+    ) -> Option<i64> {
+        match self.get_at(obj, prop, &heads) {
             Ok(Some((Value::Scalar(cow), _))) => match cow.into_owned() {
                 automerge::ScalarValue::Int(num) => Some(num),
                 _ => None,
@@ -97,24 +126,21 @@ impl SimpleDocReader for Automerge {
             _ => None,
         }
     }
-}
 
-impl SimpleDocReader for Transaction<'_> {
-    fn get_string_at<O: AsRef<ObjId>, P: Into<Prop>>(
+    fn get_obj_id_at<O: AsRef<ObjId>, P: Into<Prop>>(
         &self,
         obj: O,
         prop: P,
         heads: &[ChangeHash],
-    ) -> Option<String> {
+    ) -> Option<ObjId> {
         match self.get_at(obj, prop, &heads) {
-            Ok(Some((Value::Scalar(cow), _))) => match cow.into_owned() {
-                automerge::ScalarValue::Str(smol_str) => Some(smol_str.to_string()),
-                _ => None,
-            },
+            Ok(Some((Value::Object(_), obj_id))) => Some(obj_id),
             _ => None,
         }
     }
+}
 
+impl SimpleDocReader for Transaction<'_> {
     fn get_bytes<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<Vec<u8>> {
         match self.get(obj, prop) {
             Ok(Some((Value::Scalar(cow), _))) => match cow.into_owned() {
@@ -127,6 +153,21 @@ impl SimpleDocReader for Transaction<'_> {
 
     fn get_int<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<i64> {
         match self.get(obj, prop) {
+            Ok(Some((Value::Scalar(cow), _))) => match cow.into_owned() {
+                automerge::ScalarValue::Int(num) => Some(num),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn get_int_at<O: AsRef<ObjId>, P: Into<Prop>>(
+        &self,
+        obj: O,
+        prop: P,
+        heads: &[automerge::ChangeHash],
+    ) -> Option<i64> {
+        match self.get_at(obj, prop, &heads) {
             Ok(Some((Value::Scalar(cow), _))) => match cow.into_owned() {
                 automerge::ScalarValue::Int(num) => Some(num),
                 _ => None,
@@ -168,8 +209,35 @@ impl SimpleDocReader for Transaction<'_> {
         }
     }
 
+    fn get_string_at<O: AsRef<ObjId>, P: Into<Prop>>(
+        &self,
+        obj: O,
+        prop: P,
+        heads: &[ChangeHash],
+    ) -> Option<String> {
+        match self.get_at(obj, prop, &heads) {
+            Ok(Some((Value::Scalar(cow), _))) => match cow.into_owned() {
+                automerge::ScalarValue::Str(smol_str) => Some(smol_str.to_string()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     fn get_obj_id<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<ObjId> {
         match self.get(obj, prop) {
+            Ok(Some((Value::Object(_), obj_id))) => Some(obj_id),
+            _ => None,
+        }
+    }
+
+    fn get_obj_id_at<O: AsRef<ObjId>, P: Into<Prop>>(
+        &self,
+        obj: O,
+        prop: P,
+        heads: &[ChangeHash],
+    ) -> Option<ObjId> {
+        match self.get_at(obj, prop, &heads) {
             Ok(Some((Value::Object(_), obj_id))) => Some(obj_id),
             _ => None,
         }
