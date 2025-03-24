@@ -375,7 +375,7 @@ Ref<DiffResult> PatchworkEditor::get_diff(Dictionary changed_files_dict) {
 		String path = dict["path"];
 		auto old_content = dict["old_content"];
 		auto new_content = dict["new_content"];
-		auto structured_changes = dict["structured_changes"];
+		auto structured_changes = dict["scene_changes"];
 		if (change_type == "modified") {
 			// check both the old and the new content to see what the file sizes are
 			auto faold = FileAccess::open(old_content, FileAccess::READ);
