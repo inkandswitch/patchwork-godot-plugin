@@ -27,7 +27,7 @@ content_margin_left = 8.0
 content_margin_top = 8.0
 content_margin_right = 8.0
 content_margin_bottom = 8.0
-bg_color = Color(0.256294, 0.292793, 0.352095, 1)
+bg_color = Color(0.323009, 0.365738, 0.435143, 1)
 shadow_size = 2
 
 [node name="Patchwork" type="MarginContainer"]
