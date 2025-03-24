@@ -227,7 +227,6 @@ func add_NodeDiffResult(node_diff: NodeDiffResult) -> void:
 		var prop_diffs: ObjectDiffResult = node_diff.get_props()
 		var prop_diffs_dict: Dictionary = prop_diffs.get_property_diffs()
 
-
 		var i = 0
 		for prop in prop_diffs_dict.keys():
 			var prop_diff: PropertyDiffResult = prop_diffs_dict[prop]
@@ -238,6 +237,7 @@ func add_NodeDiffResult(node_diff: NodeDiffResult) -> void:
 			i += 1
 
 			
+	inspector_section.unfold()
 	sections.append(inspector_section)
 	main_vbox.add_child(inspector_section)
 
