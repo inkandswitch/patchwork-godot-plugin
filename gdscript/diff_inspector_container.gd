@@ -157,7 +157,7 @@ func add_ObjectDiffResult(object_diff: ObjectDiffResult) -> void:
 	if object == null:
 		print("object is null!!!!!!!!!!!!")
 		return
-	var inspector_section: EditorInspectorSection = EditorInspectorSection.new()
+	var inspector_section: DiffInspectorSection = DiffInspectorSection.new()
 	inspector_section.setup(object_name, object_name, object, added_color, true)
 	var vbox = inspector_section.get_vbox()
 
@@ -210,19 +210,22 @@ func add_NodeDiffResult(node_diff: NodeDiffResult) -> void:
 		return
 	# the only difference between this and add_ObjectDiffResult is that we check if it's an added node or removed node
 	# and we don't add the old object to the inspector
-	var inspector_section: EditorInspectorSection = EditorInspectorSection.new()
+	var inspector_section: DiffInspectorSection = DiffInspectorSection.new()
 	var vbox = inspector_section.get_vbox()
 	print("!!! adding node diff result for ", node_name, " with type ", node_type)
 	if node_type == "node_added":
 		inspector_section.setup(node_name, node_name, node_new_object, added_color, true)
+		inspector_section.set_type("added")
 		print("adding node added box")
 		vbox.add_child(get_node_added_box())
 	elif node_type == "node_deleted":
 		print("adding node deleted box")
 		inspector_section.setup(node_name, node_name, node_old_object, removed_color, true)
+		inspector_section.set_type("removed")
 		vbox.add_child(get_node_deleted_box())
 	else:
 		inspector_section.setup(node_name, node_name, node_new_object, modified_color, true)
+		inspector_section.set_type("changed")
 		var prop_results: Array[PropertyDiffResult] = []
 		var prop_diffs: ObjectDiffResult = node_diff.get_props()
 		var prop_diffs_dict: Dictionary = prop_diffs.get_property_diffs()

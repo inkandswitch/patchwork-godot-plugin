@@ -57,6 +57,7 @@ class DiffInspectorSection : public Container {
 	void _test_unfold();
 	int _get_header_height();
 	Ref<Texture2D> _get_arrow();
+	String type = "changed";
 
 protected:
 	Object *object = nullptr;
@@ -74,9 +75,14 @@ public:
 	void unfold();
 	void fold();
 	void set_bg_color(const Color &p_bg_color);
-
+	Color get_bg_color() const;
 	bool has_revertable_properties() const;
 	void property_can_revert_changed(const String &p_path, bool p_can_revert);
+
+	void set_type(const String &p_type);
+	String get_type() const;
+
+	void update_bg_color();
 
 	DiffInspectorSection();
 	~DiffInspectorSection();
