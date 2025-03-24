@@ -74,6 +74,7 @@ pub struct ExternalResourceNode {
     pub uid: Option<String>,
     pub path: String,
     pub id: String,
+	pub idx: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,6 +82,7 @@ pub struct SubResourceNode {
     pub id: String,
     pub resource_type: String,
     pub properties: HashMap<String, String>, // key value pairs below the section header
+	pub idx: i64,
 }
 
 impl GodotScene {
@@ -188,6 +190,7 @@ impl GodotScene {
             tx.put(&resource_obj, "path", resource.path.clone())
                 .unwrap();
             tx.put(&resource_obj, "id", resource.id.clone()).unwrap();
+            tx.put(&resource_obj, "idx", resource.idx).unwrap();
         }
 
         // Remove external resources that are not in the scene
@@ -219,6 +222,7 @@ impl GodotScene {
             .unwrap();
 
             tx.put(&resource_obj, "id", resource.id.clone()).unwrap();
+            tx.put(&resource_obj, "idx", resource.idx).unwrap();
 
             let properties_obj = tx
                 .get_obj_id(&resource_obj, "properties")
@@ -240,6 +244,7 @@ impl GodotScene {
                 }
                 existing_props.remove(key);
             }
+            
 
             // Remove properties that no longer exist
             for key in existing_props {
@@ -446,6 +451,7 @@ impl GodotScene {
             .get_obj_id_at(&scene_file, "ext_resources", &heads)
             .ok_or_else(|| "Could not find ext_resources in scene_file".to_string())?;
 
+        let mut sorted_ext_resources = Vec::new();
         for resource_id in doc.keys_at(&ext_resources_id, &heads) {
             let resource_obj = doc
                 .get_obj_id_at(&ext_resources_id, &resource_id, &heads)
@@ -463,6 +469,10 @@ impl GodotScene {
                 .get_string_at(&resource_obj, "id", &heads)
                 .ok_or_else(|| format!("Could not find id for ID: {}", resource_id))?;
 
+			let idx = doc.get_int_at(&resource_obj, "idx", &heads).ok_or_else(|| {
+				format!("Could not find idx for ID: {}", resource_id)
+			})?;
+
             let uid = doc.get_string_at(&resource_obj, "uid", &heads);
 
             let external_resource = ExternalResourceNode {
@@ -470,10 +480,12 @@ impl GodotScene {
                 uid,
                 path,
                 id,
+				idx,
             };
-
-            ext_resources.insert(resource_id.clone(), external_resource);
+            sorted_ext_resources.push((resource_id.clone(), external_resource));
         }
+        sorted_ext_resources.sort_by_key(|(_, resource)| resource.idx);
+        ext_resources = sorted_ext_resources.into_iter().map(|(id, resource)| (id.clone(), resource)).collect();
 
         // Itereate through all sub resources
         let mut sub_resources = HashMap::new();
@@ -482,6 +494,7 @@ impl GodotScene {
             .get_obj_id_at(&scene_file, "sub_resources", &heads)
             .ok_or_else(|| "Could not find sub_resources in scene_file".to_string())?;
 
+        let mut sorted_sub_resources = Vec::new();
         for sub_resource_id in doc.keys_at(&sub_resources_id, &heads) {
             let sub_resource_obj = doc
                 .get_obj_id_at(&sub_resources_id, &sub_resource_id, &heads)
@@ -501,6 +514,10 @@ impl GodotScene {
             let id = doc
                 .get_string_at(&sub_resource_obj, "id", &heads)
                 .ok_or_else(|| format!("Could not find id for ID: {}", sub_resource_id))?;
+
+			let idx = doc.get_int_at(&sub_resource_obj, "idx", &heads).ok_or_else(|| {
+				format!("Could not find idx for ID: {}", sub_resource_id)
+			})?;
 
             let properties_obj = doc
                 .get_obj_id_at(&sub_resource_obj, "properties", &heads)
@@ -524,10 +541,13 @@ impl GodotScene {
                 id,
                 resource_type,
                 properties,
+				idx,
             };
 
-            sub_resources.insert(sub_resource_id.clone(), sub_resource);
+            sorted_sub_resources.push((sub_resource_id.clone(), sub_resource));
         }
+        sorted_sub_resources.sort_by_key(|(_, resource)| resource.idx);
+		sub_resources = sorted_sub_resources.into_iter().map(|(id, resource)| (id.clone(), resource)).collect();
 
         // Iterate through all node IDs in the nodes object
 
@@ -702,10 +722,10 @@ impl GodotScene {
 
         // External resources
 
-        // sort resources by id (a to z)
+        // sort resources by idx ascending
         let mut sorted_ext_resources: Vec<(&String, &ExternalResourceNode)> =
             self.ext_resources.iter().collect();
-        sorted_ext_resources.sort_by(|(a, _), (b, _)| a.to_lowercase().cmp(&b.to_lowercase()));
+        sorted_ext_resources.sort_by_key(|(_, resource)| resource.idx);
 
         for (_, resource) in sorted_ext_resources {
             output.push_str(&format!(
@@ -725,10 +745,10 @@ impl GodotScene {
             output.push('\n');
         }
 
-        // Sub-resources sorted by id (a to z)
+        // Sub-resources sorted by idx ascending
         let mut sorted_sub_resources: Vec<(&String, &SubResourceNode)> =
             self.sub_resources.iter().collect();
-        sorted_sub_resources.sort_by(|(a, _), (b, _)| a.to_lowercase().cmp(&b.to_lowercase()));
+        sorted_sub_resources.sort_by_key(|(_, resource)| resource.idx);
         for (_, resource) in sorted_sub_resources {
             output.push_str(&format!(
                 "[sub_resource type=\"{}\" id=\"{}\"]\n",
@@ -916,7 +936,8 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
 
             // Create an index to map node paths to node ids
             let mut node_id_by_node_path: HashMap<String, String> = HashMap::new();
-
+			let mut ext_resource_idx = 0;
+			let mut sub_resource_idx = 0;
             for m in matches {
                 let mut heading = HashMap::new();
                 let mut properties = HashMap::new();
@@ -1120,9 +1141,11 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                             uid,
                             path,
                             id,
+                            idx: ext_resource_idx,
                         },
                     );
 
+					ext_resource_idx += 1;
                 // SUB-RESOURCE
                 //
                 } else if section_id == "sub_resource" {
@@ -1146,10 +1169,12 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         id: id.clone(),
                         resource_type,
                         properties,
+                        idx: sub_resource_idx,
                     };
 
                     sub_resources.insert(id, sub_resource);
 
+					sub_resource_idx += 1;
                 // CONNECTION
                 //
                 } else if section_id == "connection" {
