@@ -1134,7 +1134,14 @@ impl GodotProject {
                 match_path(&patch_path, &patch).inspect(
                     |PathWithAction { path, action }| match path.first() {
                         Some((_, Prop::Map(node_id))) => {
-                            changed_node_ids.insert(node_id.clone());
+                            // hack: only consider nodes where properties changed as changed
+                            // this filters out all the parent nodes that don't really change only the child_node_ids change
+
+                            if let Some((_, Prop::Map(key))) = path.last() {
+                                if key == "properties" {
+                                    changed_node_ids.insert(node_id.clone());
+                                }
+                            }
                         }
                         None => match action {
                             PatchAction::PutMap {
