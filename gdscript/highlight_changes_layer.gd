@@ -31,14 +31,14 @@ func _ready():
 	shader_material.set_shader_parameter("fill_color", Color(0.25, 0.25, 0.25, 0.85))
 
 
-func update_overlay(node_changes: Array):
+func update_overlay(scene_changes: Dictionary):
 	color_rect.size = overlay_size
 	color_rect.global_position = overlay_position
 
 	var normalized_rects = []
 	var rect_colors = []
 	
-	for node_change in node_changes:
+	for node_change in scene_changes.changed_nodes:
 		var node_path = node_change.node_path
 		var node = scene_node.get_node_or_null(node_path)
 
@@ -73,7 +73,7 @@ func update_overlay(node_changes: Array):
 	shader_material.set_shader_parameter("rectangle_count", normalized_rects.size())
 
 
-static func highlight_changes(root: Node, node_changes: Array):
+static func highlight_changes(root: Node, scene_changes: Dictionary):
 	var highlight_changes_layer_container = root.get_node_or_null("PatchworkHighlightChangesLayerContainer")
 
 	if highlight_changes_layer_container == null:
@@ -94,7 +94,7 @@ static func highlight_changes(root: Node, node_changes: Array):
 	# bounding box calculation doesn't work perfectly for the root node so we scale it by three to make sure we cover the whole scene
 	diff_layer.overlay_size = bounding_box.size * 3
 	diff_layer.overlay_position = Vector2(bounding_box.position.x - bounding_box.size.x, bounding_box.position.y - bounding_box.size.y)
-	diff_layer.update_overlay(node_changes)
+	diff_layer.update_overlay(scene_changes)
 
 
 static func remove_highlight(root: Node):

@@ -385,24 +385,6 @@ func update_ui() -> void:
 
 	self.branches = godot_project.get_branches()
 
-	# highlight changes
-
-	var edited_root = EditorInterface.get_edited_scene_root()
-
-	highlight_changes_checkbox_mp.button_pressed = highlight_changes
-	highlight_changes_checkbox.button_pressed = highlight_changes
-
-	if edited_root:
-		if highlight_changes && !checked_out_branch.is_main:
-				var edited_scene_file_path = edited_root.scene_file_path
-				var node_changes = godot_project.get_node_changes(edited_scene_file_path)
-
-				print("adding highlight")
-				HighlightChangesLayer.highlight_changes(edited_root, node_changes)
-		else:
-			print("removing highlight")
-			HighlightChangesLayer.remove_highlight(edited_root)
-
 
 	# update branch pickers
 
@@ -466,9 +448,29 @@ func update_ui() -> void:
 
 	user_button.text = user_name
 
-	# update properties diff
+	# DIFF
 
-	update_properties_diff()
+	var heads_after
+	var heads_before
+
+	# in normal mode, diff between checked out branch heads and forked heads
+	if !merge_preview_modal.visible:
+		heads_before = checked_out_branch.forked_at
+		heads_after = godot_project.get_heads()
+
+	# in merge preview diff between source branch and target branch
+	else:
+		var target_branch
+		for branch in branches:
+			if branch.id == selected_target_branch_id:
+				target_branch = branch
+				break
+
+		heads_before = target_branch.heads
+		heads_after = godot_project.get_checked_out_branch().heads
+
+	update_properties_diff(heads_before, heads_after)
+	update_highlight_changes(heads_before, heads_after, checked_out_branch)
 
 func human_readable_timestamp(timestamp: int) -> String:
 	var now = Time.get_unix_time_from_system() * 1000 # Convert to ms
@@ -490,10 +492,28 @@ func human_readable_timestamp(timestamp: int) -> String:
 		return str(int(diff / 31536000)) + " years ago"
 
 
+func update_highlight_changes(heads_before, heads_after, checked_out_branch) -> void:
+	var edited_root = EditorInterface.get_edited_scene_root()
+
+	# reflect highlight changes checkbox state
+	highlight_changes_checkbox_mp.button_pressed = highlight_changes
+	highlight_changes_checkbox.button_pressed = highlight_changes
+
+	if edited_root:
+		if highlight_changes && !checked_out_branch.is_main:
+				var path = edited_root.scene_file_path
+				var scene_changes = godot_project.get_scene_changes_between(path, PackedStringArray(heads_before), PackedStringArray(heads_after))
+
+				HighlightChangesLayer.highlight_changes(edited_root, scene_changes)
+		else:
+			print("removing highlight")
+			HighlightChangesLayer.remove_highlight(edited_root)
+
+
 var prev_heads_before
 var prev_heads_after
 
-func update_properties_diff() -> void:
+func update_properties_diff(heads_before, heads_after) -> void:
 	var checked_out_branch = godot_project.get_checked_out_branch()
 	if (!inspector):
 		return
@@ -507,28 +527,6 @@ func update_properties_diff() -> void:
 	var change: Array[Dictionary] = godot_project.get_changes()
 	if (change.size() < 2):
 		return
-	
-
-	var heads_after
-	var heads_before
-
-
-	# in normal mode, diff between checked out branch heads and forked heads
-	if !merge_preview_modal.visible:
-		heads_before = checked_out_branch.forked_at
-		heads_after = godot_project.get_heads()
-
-	# in merge preview diff between source branch and target branch
-	else:
-		var target_branch
-		for branch in branches:
-			if branch.id == selected_target_branch_id:
-				target_branch = branch
-				break
-
-		heads_before = target_branch.heads
-		heads_after = godot_project.get_checked_out_branch().heads
-
 
 	if (prev_heads_before == heads_before && prev_heads_after == heads_after):
 		return
@@ -546,9 +544,7 @@ func show_diff(heads_before, heads_after):
 	var diff_dict = godot_project.get_changed_file_content_between(PackedStringArray(heads_before), PackedStringArray(heads_after))
 
 	var files_arr = diff_dict["files"]
-	if files_arr.size() == 0:
-		#print("No changes between %s and %s" % [hash1, hash2])
-		return
+
 	# print("Changes between %s and %s:" % [hash1, hash2])
 	var new_dict = {}
 	var new_files = []
@@ -561,7 +557,7 @@ func show_diff(heads_before, heads_after):
 		var scene_changes = {}
 		if path.get_extension() == "tscn" and change == "modified":
 			scene_changes = godot_project.get_scene_changes_between(path, PackedStringArray(heads_before), PackedStringArray(heads_after))
-			print("scene_changes: ", scene_changes)
+			# print("scene_changes: ", scene_changes)
 			
 		# for all the files in the dict, save as tmp files
 
