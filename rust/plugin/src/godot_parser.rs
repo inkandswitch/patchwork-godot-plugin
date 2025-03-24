@@ -14,11 +14,15 @@ pub struct GodotScene {
     pub load_steps: i64,
     pub format: i64,
     pub uid: String,
+	pub script_class: Option<String>,
+	pub resource_type: String,
     pub root_node_id: String,
     pub ext_resources: HashMap<String, ExternalResourceNode>,
     pub sub_resources: HashMap<String, SubResourceNode>,
     pub nodes: HashMap<String, GodotNode>,
     pub connections: HashMap<String, GodotConnection>, // key is concatenation of all properties of the connection
+	pub editable_instances: HashSet<String>,
+    pub main_resource: Option<SubResourceNode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -152,6 +156,56 @@ impl GodotScene {
         tx.put(&scene_file, "uid", self.uid.clone()).unwrap();
         tx.put(&scene_file, "load_steps", self.load_steps).unwrap();
         tx.put(&scene_file, "format", self.format).unwrap();
+		if let Some(script_class) = &self.script_class {
+			tx.put(&scene_file, "script_class", script_class.clone()).unwrap();
+		}
+		tx.put(&scene_file, "resource_type", self.resource_type.clone()).unwrap();
+
+        // Store main resource if it exists
+        if let Some(main_resource) = &self.main_resource {
+            let main_resource_obj = tx
+                .get_obj_id(&scene_file, "main_resource")
+                .unwrap_or_else(|| {
+                    tx.put_object(&scene_file, "main_resource", ObjType::Map)
+                        .unwrap()
+                });
+
+            tx.put(
+                &main_resource_obj,
+                "resource_type",
+                main_resource.resource_type.clone(),
+            )
+            .unwrap();
+
+            let properties_obj = tx
+                .get_obj_id(&main_resource_obj, "properties")
+                .unwrap_or_else(|| {
+                    tx.put_object(&main_resource_obj, "properties", ObjType::Map)
+                        .unwrap()
+                });
+
+            let mut existing_props = tx.keys(&properties_obj).collect::<HashSet<_>>();
+
+            // Add or update properties
+            for (key, value) in &main_resource.properties {
+                if let Some(existing_value) = tx.get_string(&properties_obj, key) {
+                    if existing_value != *value {
+                        tx.put(&properties_obj, key, value.clone()).unwrap();
+                    }
+                } else {
+                    tx.put(&properties_obj, key, value.clone()).unwrap();
+                }
+                existing_props.remove(key);
+            }
+
+            // Remove properties that no longer exist
+            for key in existing_props {
+                tx.delete(&properties_obj, &key).unwrap();
+            }
+        } else if tx.get_obj_id(&scene_file, "main_resource").is_some() {
+            // Remove main_resource if it exists but we don't have one
+            tx.delete(&scene_file, "main_resource").unwrap();
+        }
 
         // Store root node id
         tx.put(
@@ -326,7 +380,7 @@ impl GodotScene {
             }
 
             // Store child node IDs
-            let children_obj = tx
+            let children_obj: automerge::ObjId = tx
                 .get_obj_id(&node_obj, "child_node_ids")
                 .unwrap_or_else(|| {
                     tx.put_object(&node_obj, "child_node_ids", ObjType::List)
@@ -393,6 +447,23 @@ impl GodotScene {
                 let _ = tx.delete(&connections, &connection_id).unwrap();
             }
         }
+		// reconcile editable instances
+		// editable instances are stored as an array in the doc, similar to child node IDs
+		let editable_instances_obj: automerge::ObjId = tx.get_obj_id(&scene_file, "editable_instances").unwrap_or_else(|| {
+			tx.put_object(&scene_file, "editable_instances", ObjType::List).unwrap()
+		});
+
+
+		for (i, path) in self.editable_instances.iter().enumerate() {
+			if let Some(current_path) = tx.get_string(&editable_instances_obj, i) {
+				if current_path != *path {
+					tx.put(&editable_instances_obj, i, path.clone()).unwrap();
+				}
+			} else {
+				let _ = tx.insert(&editable_instances_obj, i, path.clone());
+			}
+		}
+
     }
 
     pub fn hydrate(doc: &mut Automerge, path: &str) -> Result<Self, String> {
@@ -431,6 +502,38 @@ impl GodotScene {
         let format = doc
             .get_int_at(&scene_file, "format", &heads)
             .ok_or_else(|| "Could not find format in scene_file".to_string())?;
+
+		let script_class = doc.get_string_at(&scene_file, "script_class", &heads);
+		let resource_type = doc.get_string_at(&scene_file, "resource_type", &heads).unwrap_or("PackedScene".to_string());
+
+        // Get main resource if it exists
+        let main_resource = if let Some(main_resource_obj) = doc.get_obj_id_at(&scene_file, "main_resource", &heads) {
+            let resource_type = doc
+                .get_string_at(&main_resource_obj, "resource_type", &heads)
+                .ok_or_else(|| "Could not find resource_type in main_resource".to_string())?;
+
+            let properties_obj = doc
+                .get_obj_id_at(&main_resource_obj, "properties", &heads)
+                .ok_or_else(|| "Could not find properties in main_resource".to_string())?;
+
+            let mut properties = HashMap::new();
+            for key in doc.keys_at(&properties_obj, &heads) {
+                let value = doc
+                    .get_string_at(&properties_obj, &key, &heads)
+                    .ok_or_else(|| format!("Could not find value for property: {}", key))?;
+
+                properties.insert(key, value);
+            }
+
+            Some(SubResourceNode {
+                id: "".to_string(), // Resource sections don't have IDs
+                resource_type,
+                properties,
+                idx: 0,
+            })
+        } else {
+            None
+        };
 
         // Get the nodes object
         let nodes_id = doc
@@ -690,35 +793,55 @@ impl GodotScene {
             connections.insert(connection_id.clone(), connection);
         }
 
+
+		let mut editable_instances = HashSet::new();
+		let editable_instances_obj = doc.get_obj_id_at(&scene_file, "editable_instances", &heads);
+		if let Some(editable_instances_obj) = editable_instances_obj {
+			let length = doc.length_at(&editable_instances_obj, &heads);	
+			for i in 0..length {
+				if let Some(path) = doc.get_string_at(&editable_instances_obj, i, &heads) {
+					editable_instances.insert(path);
+				}
+			}
+		}
+
         // Create a GodotScene with default values for everything except nodes
         Ok(GodotScene {
             load_steps,
             format,
             uid,
+			script_class,
+			resource_type,
             root_node_id,
             ext_resources,
             sub_resources,
             nodes,
             connections,
+            main_resource,
+			editable_instances,
         })
     }
 
     pub fn serialize(&self) -> String {
         let mut output = String::new();
 
-        // Scene header
+		if (self.resource_type != "PackedScene") {
+			output.push_str(&format!("[gd_resource type=\"{}\"", self.resource_type));
+			if let Some(script_class) = &self.script_class {
+				output.push_str(&format!(" script_class=\"{}\"", script_class));
+			}
+		}
+		else {
+			output.push_str("[gd_scene");
+		}
+		if self.load_steps != 0 {
+			output.push_str(&format!(
+				" load_steps={}",
+				self.load_steps
+			));
+		}
+		output.push_str(&format!(" format={} uid=\"{}\"]\n\n", self.format, self.uid));
 
-        if self.load_steps != 0 {
-            output.push_str(&format!(
-                "[gd_scene load_steps={} format={} uid={}]\n\n",
-                self.load_steps, self.format, self.uid
-            ));
-        } else {
-            output.push_str(&format!(
-                "[gd_scene format={} uid={}]\n\n",
-                self.format, self.uid
-            ));
-        }
 
         // External resources
 
@@ -765,6 +888,24 @@ impl GodotScene {
             output.push('\n');
         }
 
+        // Main resource if it exists
+        if let Some(main_resource) = &self.main_resource {
+            output.push_str(&format!(
+                "[resource]\n"
+            ));
+
+            // Properties sorted by name (a to z)
+            let mut sorted_props: Vec<(&String, &String)> = main_resource.properties.iter().collect();
+            sorted_props.sort_by(|(a, _), (b, _)| a.to_lowercase().cmp(&b.to_lowercase()));
+            for (key, value) in sorted_props {
+                output.push_str(&format!("{} = {}\n", key, value));
+            }
+
+            output.push('\n');
+			// short circuit if we have a main resource, no nodes or connections
+			return output;
+        }
+
         if !self.nodes.is_empty() {
             if let Some(root_node) = self.nodes.get(&self.root_node_id) {
                 self.serialize_node(&mut output, root_node);
@@ -796,6 +937,9 @@ impl GodotScene {
             output.push_str("]\n");
         }
 
+		for path in self.editable_instances.iter() {
+			output.push_str(&format!("[editable path=\"{}\"]\n", path));
+		}
         output
     }
 
@@ -896,6 +1040,8 @@ pub struct SceneMetadata {
     pub load_steps: i64,
     pub format: i64,
     pub uid: String,
+	pub script_class: Option<String>,
+	pub resource_type: String,
 }
 
 pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
@@ -933,11 +1079,12 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
             let mut sub_resources: HashMap<String, SubResourceNode> = HashMap::new();
             let mut connections: HashMap<String, GodotConnection> = HashMap::new();
             let mut root_node_id: Option<String> = None;
-
+            let mut main_resource: Option<SubResourceNode> = None;
+			let mut editable_instances: HashSet<String> = HashSet::new();
             // Create an index to map node paths to node ids
             let mut node_id_by_node_path: HashMap<String, String> = HashMap::new();
-			let mut ext_resource_idx = 0;
-			let mut sub_resource_idx = 0;
+            let mut ext_resource_idx = 0;
+            let mut sub_resource_idx = 0;
             for m in matches {
                 let mut heading = HashMap::new();
                 let mut properties = HashMap::new();
@@ -970,10 +1117,65 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         }
                     }
                 }
+				let mut resource_type: String = "PackedScene".to_string();
+                // GD_RESOURCE HEADER
+                if section_id == "gd_resource" {
+                    let load_steps = heading
+                        .get("load_steps")
+                        .and_then(|ls| ls.parse::<i64>().ok())
+                        .unwrap_or(0);
 
-                // SCENE HEADER
-                //
-                if section_id == "gd_scene" {
+                    let format = match heading.get("format").and_then(|f| f.parse::<i64>().ok()) {
+                        Some(format) => format,
+                        None => {
+                            return Err(
+                                "Missing required 'format' attribute in gd_resource header".to_string()
+                            )
+                        }
+                    };
+
+					let script_class: Option<String> = match heading.get("script_class") {
+						Some(script_class) => Some(unquote(&script_class)),
+						None => None,
+					};
+
+                    let uid: String = match heading.get("uid") {
+                        Some(uid) => unquote(&uid),
+                        None => {
+                            return Err(
+                                "Missing required 'uid' attribute in gd_resource header".to_string()
+                            )
+                        }
+                    };
+
+					resource_type = match heading.get("type").cloned() {
+						Some(resource_type) => unquote(&resource_type),
+						None => {
+							return Err("Missing required 'type' attribute in gd_resource header"
+								.to_string())
+						}
+					};
+
+
+                    scene_metadata = Some(SceneMetadata {
+                        load_steps,
+                        format,
+                        uid,
+						script_class,
+						resource_type,
+                    });
+
+                // RESOURCE
+                } else if section_id == "resource" {
+                    main_resource = Some(SubResourceNode {
+                        id: "".to_string(), // Resource sections don't have IDs
+                        resource_type,
+                        properties,
+                        idx: 0,
+                    });
+
+                // GD_SCENE HEADER
+                } else if section_id == "gd_scene" {
                     // First section with ID "gd_scene" is the scene header
                     // Extract specific properties from attributes
 
@@ -992,7 +1194,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                     };
 
                     let uid = match heading.get("uid") {
-                        Some(uid) => uid.clone(),
+                        Some(uid) => unquote(&uid),
                         None => {
                             return Err(
                                 "Missing required 'uid' attribute in scene header".to_string()
@@ -1004,10 +1206,11 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         load_steps,
                         format,
                         uid,
+						resource_type: "PackedScene".to_string(),
+						script_class: None,
                     });
 
                 // NODE
-                //
                 } else if section_id == "node" {
                     // Create a node and add it to the nodes map
                     let node_id;
@@ -1108,7 +1311,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 } else if section_id == "ext_resource" {
                     // Add to ext_resources map
 
-                    let resource_type = match heading.get("type").cloned() {
+                    let ext_resource_type = match heading.get("type").cloned() {
                         Some(resource_type) => unquote(&resource_type),
                         None => {
                             return Err("Missing required 'type' attribute in ext_resource section"
@@ -1137,7 +1340,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                     ext_resources.insert(
                         id.clone(),
                         ExternalResourceNode {
-                            resource_type,
+                            resource_type: ext_resource_type,
                             uid,
                             path,
                             id,
@@ -1145,9 +1348,8 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         },
                     );
 
-					ext_resource_idx += 1;
+                    ext_resource_idx += 1;
                 // SUB-RESOURCE
-                //
                 } else if section_id == "sub_resource" {
                     let id = match heading.get("id").cloned() {
                         Some(id) => unquote(&id),
@@ -1157,7 +1359,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         }
                     };
 
-                    let resource_type = match heading.get("type").cloned() {
+                    let subresource_type = match heading.get("type").cloned() {
                         Some(resource_type) => unquote(&resource_type),
                         None => {
                             return Err("Missing required 'type' attribute in sub_resource section"
@@ -1167,16 +1369,15 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
 
                     let sub_resource = SubResourceNode {
                         id: id.clone(),
-                        resource_type,
+                        resource_type: subresource_type,
                         properties,
                         idx: sub_resource_idx,
                     };
 
                     sub_resources.insert(id, sub_resource);
 
-					sub_resource_idx += 1;
+                    sub_resource_idx += 1;
                 // CONNECTION
-                //
                 } else if section_id == "connection" {
                     let signal = match heading.get("signal").cloned() {
                         Some(signal) => unquote(&signal),
@@ -1243,7 +1444,16 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                     };
 
                     connections.insert(connection.id().clone(), connection);
-                }
+                } else if section_id == "editable" {
+					// just has a path attribute
+					let path = match heading.get("path").cloned() {
+						Some(path) => unquote(&path),
+						None => {
+							return Err("Missing required 'path' attribute in editable section".to_string())
+						}
+					};
+					editable_instances.insert(path);
+				}
             }
 
             let scene_metadata = match scene_metadata {
@@ -1260,11 +1470,15 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 load_steps: scene_metadata.load_steps,
                 format: scene_metadata.format,
                 uid: scene_metadata.uid,
-                root_node_id,
+				script_class: scene_metadata.script_class,
+				resource_type: scene_metadata.resource_type,
+				root_node_id,
                 ext_resources,
                 sub_resources,
                 nodes,
                 connections,
+                main_resource,
+				editable_instances,
             })
         }
         None => Err("Failed to parse scene file".to_string()),
