@@ -406,8 +406,6 @@ impl GodotScene {
 
             let mut current_child_number = 0;
 
-            println!("reconcile child nodes {:?}", node.child_node_ids);
-
             for child_node_id in node.child_node_ids.iter() {
                 child_node_ids_to_remove.remove(child_node_id);
 
