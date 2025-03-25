@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 use automerge::Automerge;
 // Import the modules from the library
@@ -7,6 +8,7 @@ use patchwork_rust_core::godot_parser::GodotConnection;
 use patchwork_rust_core::godot_parser::GodotScene;
 use patchwork_rust_core::godot_project;
 use patchwork_rust_core::utils;
+use pretty_assertions::assert_eq;
 
 fn get_test_scene_source() -> String {
     r#"[gd_scene load_steps=6 format=3 uid="uid://jnrusvm3gric"]
@@ -178,6 +180,10 @@ fn test_resconcile_and_hydrate() {
         format: 3,
         load_steps: 0,
         uid: "uid://b8vp42c3k4q7v".to_string(),
+        script_class: None,
+        resource_type: "packed_scene".to_string(),
+        editable_instances: HashSet::new(),
+        main_resource: None,
         nodes: HashMap::from([
             (
                 "node1".to_string(),
@@ -238,6 +244,7 @@ fn test_resconcile_and_hydrate() {
             (
                 "1_0qn5k".to_string(),
                 godot_parser::ExternalResourceNode {
+                    idx: 0,
                     id: "1_0qn5k".to_string(),
                     path: "res://assets/background-layer-1.png".to_string(),
                     resource_type: "Texture2D".to_string(),
@@ -247,6 +254,7 @@ fn test_resconcile_and_hydrate() {
             (
                 "1_1jh5j".to_string(),
                 godot_parser::ExternalResourceNode {
+                    idx: 1,
                     id: "1_1jh5j".to_string(),
                     path: "res://scripts/background.gd".to_string(),
                     resource_type: "Script".to_string(),
@@ -257,6 +265,7 @@ fn test_resconcile_and_hydrate() {
         sub_resources: HashMap::from([(
             "Gradient_80myt".to_string(),
             godot_parser::SubResourceNode {
+                idx: 0,
                 id: "Gradient_80myt".to_string(),
                 resource_type: "Gradient".to_string(),
                 properties: HashMap::from([
@@ -294,6 +303,13 @@ fn test_resconcile_and_hydrate() {
     example_scene.reconcile(&mut tx, "example.tscn".to_string());
 
     tx.commit();
+
+    let doc_clone = doc.clone();
+
+    println!(
+        "doc: {}",
+        serde_json::to_string(&automerge::AutoSerde::from(&doc_clone)).unwrap()
+    );
 
     let rehydrated_scene = GodotScene::hydrate(&mut doc, "example.tscn").unwrap();
 
