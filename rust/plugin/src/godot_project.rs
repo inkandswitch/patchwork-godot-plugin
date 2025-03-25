@@ -253,7 +253,8 @@ impl GodotProject {
             Some(heads) => heads,
             None => branch_union.synced_heads.clone(),
         };
-        let mut doc = branch_union.doc.clone();
+
+        let doc = branch_union.doc;
 
         let files = doc.get_at(ROOT, "files", &heads).unwrap().unwrap().1;
         // does the file exist?
@@ -269,7 +270,7 @@ impl GodotProject {
             .map(|(value, _)| value);
 
         if structured_content.is_some() {
-            return GodotScene::hydrate_at(&mut doc, &path, &heads)
+            return GodotScene::hydrate_at(&doc, &path, &heads)
                 .ok()
                 .map(|scene| FileContent::Scene(scene));
         }
@@ -993,7 +994,7 @@ impl GodotProject {
                     let mut secondary_doc =
                         secondary_branch_state.doc_handle.with_doc(|d| d.clone());
                     synced_heads.extend(secondary_branch_state.synced_heads.clone());
-                    doc.merge(&mut secondary_doc);
+                    let _ = doc.merge(&mut secondary_doc);
                 }
 
                 Some(BranchUnion {

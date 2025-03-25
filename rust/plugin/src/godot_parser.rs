@@ -499,12 +499,12 @@ impl GodotScene {
         }
     }
 
-    pub fn hydrate(doc: &mut Automerge, path: &str) -> Result<Self, String> {
-        Self::hydrate_at(doc, path, &doc.get_heads())
+    pub fn hydrate(doc: &Automerge, path: &str) -> Result<Self, String> {
+        Self::hydrate_at(&doc, path, &doc.get_heads())
     }
 
     pub fn hydrate_at(
-        doc: &mut Automerge,
+        doc: &Automerge,
         path: &str,
         heads: &Vec<ChangeHash>,
     ) -> Result<Self, String> {
