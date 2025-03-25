@@ -22,6 +22,8 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 @onready var log_main_tscn_button: Button = %LogMainTscnButton
 @onready var merge_preview_diff_container: MarginContainer = %MergePreviewDiffContainer
 @onready var main_diff_container: MarginContainer = %MainDiffContainer
+@onready var merge_preview_message_label: Label = %MergePreviewMessageLabel
+@onready var merge_preview_message_icon: TextureRect = %MergePreviewMessageIcon
 
 const TEMP_DIR = "user://tmp"
 
@@ -358,7 +360,7 @@ func cancel_merge_preview():
 
 func confirm_merge_preview():
 	merge_preview_modal.visible = false
-	merge_current_branch()
+	godot_project.merge_branch(godot_project.get_checked_out_branch().id)
 	highlight_changes = false
 	move_inspector_to_main()
 
@@ -448,6 +450,23 @@ func update_ui() -> void:
 
 	user_button.text = user_name
 
+	# Merge preview message
+
+	var main_branch
+
+	for branch in branches:
+		if branch.is_main:
+			main_branch = branch
+			break
+
+	if main_branch.heads != checked_out_branch.forked_at:
+		merge_preview_message_label.text = "Be carful to review your changes and make sure the game is still working correctly before merging. \nThere have been changes to the main branch since \"" + checked_out_branch.name + "\" was created."
+		merge_preview_message_icon.texture = load("res://addons/patchwork/icons/warning-circle.svg")
+	else:
+		merge_preview_message_label.text = "This branch is safe to merge.\nThere have been no changes to the main branch since \"" + checked_out_branch.name + "\" was created."
+		merge_preview_message_icon.texture = load("res://addons/patchwork/icons/checkmark-circle.svg")
+
+	
 	# DIFF
 
 	var heads_after
@@ -467,7 +486,7 @@ func update_ui() -> void:
 				break
 
 		heads_before = target_branch.heads
-		heads_after = godot_project.get_checked_out_branch().heads
+		heads_after = godot_project.get_heads()
 
 	update_properties_diff(heads_before, heads_after)
 	update_highlight_changes(heads_before, heads_after, checked_out_branch)

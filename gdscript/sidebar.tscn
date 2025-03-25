@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3 uid="uid://cxyjgsyba1v85"]
+[gd_scene load_steps=13 format=3 uid="uid://cxyjgsyba1v85"]
 
 [ext_resource type="Script" path="res://addons/patchwork/gdscript/sidebar.gd" id="1_ebh36"]
 [ext_resource type="Texture2D" uid="uid://ymewwqpn0vi4" path="res://addons/patchwork/icons/GuiTabMenuHl.svg" id="2_rfxbe"]
@@ -8,6 +8,7 @@
 [ext_resource type="Texture2D" uid="uid://bu0h5oa7aoanu" path="res://addons/patchwork/icons/sign-add-svgrepo-com.svg" id="5_iqebc"]
 [ext_resource type="Texture2D" uid="uid://cy3bt4icrwm3w" path="res://addons/patchwork/icons/remove-svgrepo-com.svg" id="6_ha5pl"]
 [ext_resource type="Texture2D" uid="uid://mr0rb0dbfyws" path="res://addons/patchwork/icons/edit-two-svgrepo-com.svg" id="7_o8jin"]
+[ext_resource type="Texture2D" uid="uid://b3jhx5bvcdswo" path="res://addons/patchwork/icons/warning-circle.svg" id="9_p7w5p"]
 [ext_resource type="Texture2D" uid="uid://4obywo8ddx25" path="res://addons/patchwork/icons/arrow.svg" id="9_xrl6o"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_i54cd"]
@@ -208,6 +209,19 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
 text = "Merge"
+
+[node name="HBoxContainer4" type="HBoxContainer" parent="MergePreviewModal/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="MergePreviewMessageIcon" type="TextureRect" parent="MergePreviewModal/MarginContainer/VBoxContainer/HBoxContainer4"]
+unique_name_in_owner = true
+layout_mode = 2
+texture = ExtResource("9_p7w5p")
+stretch_mode = 2
+
+[node name="MergePreviewMessageLabel" type="Label" parent="MergePreviewModal/MarginContainer/VBoxContainer/HBoxContainer4"]
+unique_name_in_owner = true
+layout_mode = 2
 
 [node name="HSeparator" type="HSeparator" parent="MergePreviewModal/MarginContainer/VBoxContainer"]
 layout_mode = 2
