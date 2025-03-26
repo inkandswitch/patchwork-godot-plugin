@@ -96,12 +96,13 @@ func sync_godot_to_patchwork():
 	last_synced_heads = godot_project.get_heads()
 
 func sync_patchwork_to_godot():
+	var start_time = Time.get_ticks_msec()
+
 	if PatchworkEditor.unsaved_files_open():
 		print("unsaved files open, not syncing")
 		return
 
-	var files_in_patchwork = godot_project.list_all_files()
-	var open_scene_paths = EditorInterface.get_open_scenes()
+	var files_in_patchwork = godot_project.get_files()
 
 	var files_to_reimport = {}
 
@@ -110,7 +111,7 @@ func sync_patchwork_to_godot():
 	print("sync patchwork -> godot (", files_in_patchwork.size(), ")")
 
 	for path in files_in_patchwork:
-		var patchwork_content = godot_project.get_file(path)
+		var patchwork_content = files_in_patchwork[path]
 
 		if typeof(patchwork_content) == TYPE_NIL:
 			printerr("patchwork missing file content even though path exists: ", path)
@@ -123,10 +124,14 @@ func sync_patchwork_to_godot():
 			printerr("different types at ", path, ": ", typeof(fs_content), " vs ", typeof(patchwork_content))
 			continue
 
+
 		# skip files that are already in sync 
 		# exeption: always reload open scenes, because the scene might not have changed but a contained scene might have
 		if patchwork_content == fs_content:
 			continue
+
+		
+		print("file changed: ", path)
 
 		# reload after sync
 		file_system.save_file(path, patchwork_content)
@@ -154,6 +159,8 @@ func sync_patchwork_to_godot():
 		EditorInterface.get_resource_filesystem().reimport_files(files_to_reimport.keys())
 
 	file_system.connect_to_file_system()
+
+	print("sync patchwork -> godot took ", Time.get_ticks_msec() - start_time, "ms")
 
 const BANNED_FILES = [".DS_Store", "thumbs.db", "desktop.ini"] # system files that should be ignored
 
