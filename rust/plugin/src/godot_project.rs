@@ -256,7 +256,7 @@ impl GodotProject {
                     let _ = result.insert(path, text.to_variant());
                 }
                 FileContent::Binary(binary) => {
-                    let _ = result.insert(path, binary.to_variant());
+                    let _ = result.insert(path, PackedByteArray::from(binary).to_variant());
                 }
                 FileContent::Scene(godot_scene) => {
                     let _ = result.insert(path, godot_scene.serialize().to_variant());
