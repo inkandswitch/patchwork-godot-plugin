@@ -171,18 +171,18 @@ func _on_branch_picker_item_selected(index: int) -> void:
 		# Return early to prevent checkout attempt
 		return
 
-	checkout_branch(selected_branch.id, [])
+	checkout_branch(selected_branch.id)
 
 func _on_target_branch_picker_item_selected(index: int) -> void:
 	print("Target branch picker item selected: ", branches[index])
 
 	selected_target_branch_id = branches[index].id
 	update_ui()
-	checkout_branch(godot_project.get_checked_out_branch().id, [selected_target_branch_id])
+	checkout_branch(godot_project.get_checked_out_branch().id)
 
 func _on_source_branch_picker_item_selected(index: int) -> void:
 	update_ui()
-	checkout_branch(branches[index].id, [selected_target_branch_id])
+	checkout_branch(branches[index].id)
 
 func _on_highlight_changes_checkbox_toggled(pressed: bool) -> void:
 	highlight_changes = pressed
@@ -268,10 +268,10 @@ func ensure_user_has_no_unsaved_files(message: String, callback: Callable):
 		callback.call()
 
 
-func checkout_branch(branch_id: String, secondary_branch_ids: Array) -> void:
+func checkout_branch(branch_id: String) -> void:
 	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before checking out another branch.", func():
 		_before_cvs_action("checking out", func():
-			godot_project.checkout_branch(branch_id, secondary_branch_ids)
+			godot_project.checkout_branch(branch_id)
 			add_call_to_queue(self._after_cvs_action)
 		, false)
 	)
@@ -347,13 +347,13 @@ func open_merge_preview():
 
 	selected_target_branch_id = main_branch.id
 
-	checkout_branch(godot_project.get_checked_out_branch().id, [selected_target_branch_id])
+	checkout_branch(godot_project.get_checked_out_branch().id)
 	merge_preview_modal.visible = true
 	move_inspector_to_merge_preview()
 
 func cancel_merge_preview():
 	merge_preview_modal.visible = false
-	checkout_branch(godot_project.get_checked_out_branch().id, [])
+	checkout_branch(godot_project.get_checked_out_branch().id)
 	highlight_changes = false
 	move_inspector_to_main()
 
@@ -441,7 +441,7 @@ func update_ui() -> void:
 	menu_popup.clear()
 
 	menu_popup.add_item("Create new branch", CREATE_BRANCH_IDX) # Create new branch menu item
-	menu_popup.add_item("Merge branch", MERGE_BRANCH_IDX)
+	# menu_popup.add_item("Merge branch", MERGE_BRANCH_IDX)
 
 	# update user name
 

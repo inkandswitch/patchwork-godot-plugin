@@ -11,6 +11,7 @@ use std::{
 };
 
 use crate::godot_parser::GodotScene;
+use crate::godot_project::{ForkInfo, MergeInfo};
 use crate::utils::{commit_with_attribution_and_timestamp, print_branch_state, print_doc};
 use crate::{godot_project::{BranchesMetadataDoc, GodotProjectDoc, FileContent}, godot_parser, utils::get_linked_docs_of_branch};
 use automerge::{
@@ -100,13 +101,32 @@ pub struct BinaryDocState {
 }
 
 #[derive(Debug, Clone)]
+pub struct BranchStateForkInfo {
+    pub forked_from: DocumentId,
+    pub forked_at: Vec<ChangeHash>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BranchStateMergeInfo {
+    pub merge_into: DocumentId,
+    pub merge_at: Vec<ChangeHash>,
+}
+
+#[derive(Debug, Clone)]
 pub struct BranchState {    
     pub name: String,
     pub doc_handle: DocHandle,
     pub linked_doc_ids: HashSet<DocumentId>,
     pub synced_heads: Vec<ChangeHash>,
-    pub forked_at: Vec<ChangeHash>,
+    pub fork_info: Option<BranchStateForkInfo>,
+    pub merge_info: Option<BranchStateMergeInfo>,
     pub is_main: bool,
+}
+
+impl BranchState {
+    pub fn is_synced(&self) -> bool {
+        self.synced_heads == self.doc_handle.with_doc(|d| d.get_heads())
+    }
 }
 
 struct DriverState {
@@ -407,8 +427,8 @@ async fn init_project_doc_handles (repo_handle: &RepoHandle, branches_metadata_d
                 Branch {
                     name: String::from("main"),
                     id: main_branch_doc_handle.document_id().to_string(),
-                    is_merged: true,
-                    forked_at: Vec::new(),
+                    fork_info: None,
+                    merge_info: None,
                 },
             )]);
             let branches_clone = branches.clone();
@@ -441,8 +461,16 @@ impl DriverState {
 
     fn create_branch(&mut self, name: String) {
         let new_branch_handle = clone_doc(&self.repo_handle, &self.main_branch_doc_handle);
-        let main_heads = self.main_branch_doc_handle.with_doc(|d| d.get_heads()).iter().map(|h| h.to_string()).collect();
-        let branch = Branch { name: name.clone(), id: new_branch_handle.document_id().to_string(), is_merged: false, forked_at: main_heads};
+
+        let branch = Branch { 
+            name: name.clone(), 
+            id: new_branch_handle.document_id().to_string(),         
+            fork_info: Some(ForkInfo { 
+                forked_from: self.main_branch_doc_handle.document_id().to_string(), 
+                forked_at: self.main_branch_doc_handle.with_doc(|d| d.get_heads()).iter().map(|h| h.to_string()).collect() 
+            }), 
+            merge_info: None 
+        };
 
         self.tx.unbounded_send(OutputEvent::CompletedCreateBranch {
             branch_doc_id: new_branch_handle.document_id(),
@@ -458,6 +486,45 @@ impl DriverState {
             commit_with_attribution_and_timestamp(tx, &self.user_name, &Some(name));
         });
   
+    }
+
+    fn create_merge_preview_branch(&mut self, source_branch_doc_id: DocumentId, target_branch_doc_id: DocumentId) {    
+        let source_branch_state = self.branch_states.get(&source_branch_doc_id).unwrap();
+        let target_branch_state = self.branch_states.get(&target_branch_doc_id).unwrap();
+
+        let merge_preview_branch_doc_handle = self.repo_handle.new_document();
+        
+        source_branch_state.doc_handle.with_doc_mut(|source_branch_doc| {
+            target_branch_state.doc_handle.with_doc_mut(|target_branch_doc| {
+                merge_preview_branch_doc_handle.with_doc_mut(|merge_preview_branch_doc| {
+                    let _ = merge_preview_branch_doc.merge(source_branch_doc);
+                    let _ = merge_preview_branch_doc.merge(target_branch_doc);
+                });
+            });
+        });
+
+        let branch = Branch { 
+            name: format!("{} <- {}", target_branch_state.name, source_branch_state.name),         
+            id: merge_preview_branch_doc_handle.document_id().to_string(), 
+            fork_info: Some(ForkInfo {
+                forked_from: source_branch_doc_id.to_string(),
+                forked_at: source_branch_state.synced_heads.iter().map(|h| h.to_string()).collect(),
+            }),
+            merge_info: Some(MergeInfo {
+                merge_into: target_branch_doc_id.to_string(),
+                merge_at: target_branch_state.synced_heads.iter().map(|h| h.to_string()).collect(),
+            }),
+        };   
+
+        self.branches_metadata_doc_handle.with_doc_mut(|d| {
+            let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
+            let mut tx = d.transaction();
+            branches_metadata
+                .branches
+                .insert(branch.id.clone(), branch);
+            let _ = reconcile(&mut tx, branches_metadata);
+            commit_with_attribution_and_timestamp(tx, &self.user_name, &None);
+        });
     }
     
     fn save_files(
@@ -567,26 +634,14 @@ impl DriverState {
     }
 
     fn merge_branch(&mut self, branch_doc_handle: DocHandle)  {    
-        let branch_doc_state = self.branch_states.get(&branch_doc_handle.document_id()).unwrap();
+        // todo: implement merge
+        // let branch_doc_state = self.branch_states.get(&branch_doc_handle.document_id()).unwrap();
 
-        branch_doc_handle.with_doc_mut(|branch_doc| {
-            self.main_branch_doc_handle.with_doc_mut(|main_doc| {
-                let _ = main_doc.merge(branch_doc);
-            });
-        });
-
-        // mark branch as merged
-        self.branches_metadata_doc_handle.with_doc_mut(|d| {
-            let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
-            let mut tx = d.transaction();
-            branches_metadata
-                .branches.entry(branch_doc_handle.document_id().to_string()).and_modify(|branch| {
-                    branch.is_merged = true;
-                });
-
-            let _ = reconcile(&mut tx, branches_metadata);
-            commit_with_attribution_and_timestamp(tx, &self.user_name, &Some(branch_doc_state.name.clone()));
-        });
+        // branch_doc_handle.with_doc_mut(|branch_doc| {
+        //     self.main_branch_doc_handle.with_doc_mut(|main_doc| {
+        //         let _ = main_doc.merge(branch_doc);
+        //     });
+        // });    
     }
 
     fn update_branch_doc_state (&mut self, branch_doc_handle: DocHandle) {
@@ -600,7 +655,20 @@ impl DriverState {
                     doc_handle: branch_doc_handle.clone(),
                     linked_doc_ids: HashSet::new(),
                     synced_heads: Vec::new(),
-                    forked_at: branch.forked_at.iter().map(|h| ChangeHash::from_str(h).unwrap()).collect(),
+                    fork_info: match branch.fork_info {
+                        Some(fork_info) => Some(BranchStateForkInfo {
+                            forked_from: DocumentId::from_str(&fork_info.forked_from).unwrap(),
+                            forked_at: fork_info.forked_at.iter().map(|h| ChangeHash::from_str(h).unwrap()).collect(),
+                        }),
+                        None => None,
+                    },
+                    merge_info: match branch.merge_info {
+                        Some(merge_info) => Some(BranchStateMergeInfo {
+                            merge_into: DocumentId::from_str(&merge_info.merge_into).unwrap(),
+                            merge_at: merge_info.merge_at.iter().map(|h| ChangeHash::from_str(h).unwrap()).collect(),
+                        }),
+                        None => None,
+                    },
                     is_main: branch_doc_handle.document_id() == self.main_branch_doc_handle.document_id(),
                 });
                 self.branch_states.get_mut(&branch_doc_handle.document_id()).unwrap()
