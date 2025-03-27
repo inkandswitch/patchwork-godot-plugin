@@ -340,10 +340,9 @@ func create_merge_preview_branch():
 func cancel_merge_preview():
 	var checked_out_branch = godot_project.get_checked_out_branch()
 
+	godot_project.delete_branch(checked_out_branch.id)
 	godot_project.checkout_branch(checked_out_branch.forked_from)
 
-	# todo
-	print("cancel merge preview not implemented")
 
 func confirm_merge_preview():
 	# todo
@@ -384,8 +383,6 @@ func update_ui() -> void:
 		var branch = branches[i]
 		var label = branch.name
 		var is_checked_out = checked_out_branch && branch.id == checked_out_branch.id
-
-		label = label + " " + branch.id
 
 		if branch.is_main:
 			label = label + " 👑"

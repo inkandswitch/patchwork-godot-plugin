@@ -48,6 +48,10 @@ pub enum InputEvent {
         branch_doc_handle: DocHandle,
     },
 
+    DeleteBranch {
+        branch_doc_id: DocumentId,
+    },
+
     SaveFiles {
         branch_doc_handle: DocHandle,
         heads: Option<Vec<ChangeHash>>,
@@ -347,6 +351,10 @@ impl GodotProjectDriver {
                                 state.create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id);
                             },
 
+                            InputEvent::DeleteBranch { branch_doc_id } => {
+                                state.delete_branch(branch_doc_id);
+                            },
+
                             InputEvent::MergeBranch { branch_doc_handle } => {
                                 state.merge_branch(branch_doc_handle);
                             },                        
@@ -546,6 +554,20 @@ impl DriverState {
 
     }
     
+    // delete branch isn't fully implemented right now deletes are not propagated to the frontend
+    // right now this is just useful to clean up merge preview branches
+    fn delete_branch(&mut self, branch_doc_id: DocumentId) {
+        println!("driver: delete branch {:?}", branch_doc_id);
+
+        self.branches_metadata_doc_handle.with_doc_mut(|d| {
+            let mut tx = d.transaction();
+            let mut branches_metadata: BranchesMetadataDoc = hydrate(&mut tx).unwrap();
+            branches_metadata.branches.remove(&branch_doc_id.to_string());
+            let _ = reconcile(&mut tx, branches_metadata);
+            commit_with_attribution_and_timestamp(tx, &self.user_name, &None);
+        });
+    }
+
     fn save_files(
         &mut self,
         branch_doc_handle: DocHandle,

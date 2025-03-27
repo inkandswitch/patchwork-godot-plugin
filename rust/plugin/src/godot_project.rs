@@ -18,7 +18,6 @@ use godot::prelude::*;
 use crate::godot_parser::{self, GodotScene};
 use crate::godot_project_driver::{BranchState, DocHandleType};
 use crate::patches::get_changed_files;
-use crate::patches::get_changed_files_vec;
 use crate::utils::{array_to_heads, heads_to_array, parse_automerge_url};
 use crate::{
     doc_utils::SimpleDocReader,
@@ -579,6 +578,15 @@ impl GodotProject {
     }
 
     #[func]
+    fn delete_branch(&mut self, branch_doc_id: String) {
+        let branch_doc_id = DocumentId::from_str(&branch_doc_id).unwrap();
+
+        self.driver_input_tx
+            .unbounded_send(InputEvent::DeleteBranch { branch_doc_id })
+            .unwrap();
+    }
+
+    #[func]
     fn checkout_branch(&mut self, branch_doc_id: String) {
         let branch_doc_id = DocumentId::from_str(&branch_doc_id).unwrap();
 
@@ -602,11 +610,13 @@ impl GodotProject {
         }
     }
 
+    // filters out merge preview branches
     #[func]
     fn get_branches(&self) -> Array<Dictionary> /* { name: String, id: String }[] */ {
         let mut branches = self
             .branch_states
             .values()
+            .filter(|branch_state| branch_state.merge_info.is_none())
             .map(branch_state_to_dict)
             .collect::<Vec<Dictionary>>();
 
