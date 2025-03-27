@@ -1356,11 +1356,16 @@ impl GodotProject {
 						);
 
 						if let Some(change_type) = ext_resource_content.get("change_type") {
-							if change_type.to_string() == "modified" {
+							if change_type.to_string() != "unchanged" {
 								let path = ext_resource.path.clone();
-								changed_ext_resources.insert(ext_id.clone());
 								changed_ext_resource_paths.insert(path.clone());
-								
+							}
+							if change_type.to_string() == "added" {
+								added_ext_resources.insert(ext_id.clone());
+							} else if change_type.to_string() == "deleted" {
+								deleted_ext_resources.insert(ext_id.clone());
+							} else if change_type.to_string() == "modified" {
+								changed_ext_resources.insert(ext_id.clone());
 							}
 						}
 						current_deps.insert(ext_resource.path.clone(), ext_resource_content);
@@ -1394,28 +1399,24 @@ impl GodotProject {
 					let mut new_type: TypeOrInstance = TypeOrInstance::Type(String::new());
                     // Get old and new node content
                     if let Some(old_scene) = &old_scene {
+						if let Some(old_node) = old_scene.nodes.get(&node_id) {
+							old_type = old_node.type_or_instance.clone();
+						}
                         if let Some(content) = old_scene.get_node_content(&node_id) {
 							if let Some(props) = content.get("properties") {
 								old_props = props.to::<Dictionary>();
-							}
-							if let Some(type_name) = content.get("type") {
-								old_type = TypeOrInstance::Type(type_name.to_string());
-							} else if let Some(instance_id) = content.get("instance") {
-								old_type = TypeOrInstance::Instance(instance_id.to_string());
 							}
 							node_info.insert("old_content", content);
                         }
                     }
 
-                    if let Some(new_scene) = &new_scene {
+                    if let Some(new_scene) = &new_scene {	
+						if let Some(new_node) = new_scene.nodes.get(&node_id) {
+							new_type = new_node.type_or_instance.clone();
+                        }
                         if let Some(content) = new_scene.get_node_content(&node_id) {
 							if let Some(props) = content.get("properties") {
 								new_props = props.to::<Dictionary>();
-							}
-							if let Some(type_name) = content.get("type") {
-								new_type = TypeOrInstance::Type(type_name.to_string());
-							} else if let Some(instance_id) = content.get("instance") {
-								new_type = TypeOrInstance::Instance(instance_id.to_string());
 							}
 							node_info.insert("new_content", content);
                         }
@@ -1516,7 +1517,9 @@ impl GodotProject {
 									}
 								},
 								(VariantValue::ExtResourceID(ext_resource_id), VariantValue::ExtResourceID(new_ext_resource_id)) => {
-									if changed_ext_resources.contains(ext_resource_id) || changed_ext_resources.contains(new_ext_resource_id) {
+									if changed_ext_resources.contains(ext_resource_id) || changed_ext_resources.contains(new_ext_resource_id) ||
+									added_ext_resources.contains(ext_resource_id) || added_ext_resources.contains(new_ext_resource_id) ||
+									deleted_ext_resources.contains(ext_resource_id) || deleted_ext_resources.contains(new_ext_resource_id) {
 										fn_insert_changed_prop(prop, old_value, new_value);
 									} else if (ext_resource_id != new_ext_resource_id) {
 										fn_insert_changed_prop(prop, old_value, new_value);

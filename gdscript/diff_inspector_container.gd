@@ -323,12 +323,13 @@ func reset() -> void:
 		section.queue_free()
 	sections.clear()
 	categories.clear()
+	for child in main_vbox.get_children():
+		child.queue_free()
 	changed_nodes.clear()
 	added_nodes.clear()
 	deleted_nodes.clear()
 	changed_resources.clear()
-	for child in main_vbox.get_children():
-		child.queue_free()
+
 	
 	
 func get_main_vbox() -> VBoxContainer:
