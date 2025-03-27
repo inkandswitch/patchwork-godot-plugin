@@ -373,10 +373,10 @@ impl GodotProject {
                             );
                         }
                     })
-                })
-                .unwrap();
-
-            files.insert(path, linked_file_content);
+                });
+			if let Some(file_content) = linked_file_content {
+				files.insert(path, file_content);
+			}
         }
 
         return files;
