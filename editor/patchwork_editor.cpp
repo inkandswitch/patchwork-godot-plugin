@@ -649,6 +649,59 @@ Ref<FileDiffResult> PatchworkEditor::get_diff_res(Ref<Resource> p_res, Ref<Resou
 	return result;
 }
 
+Ref<ResourceImporter> PatchworkEditor::get_importer_by_name(const String &p_name) {
+	return ResourceFormatImporter::get_singleton()->get_importer_by_name(p_name);
+}
+
+Ref<Resource> PatchworkEditor::import_and_load_resource(const String &p_path) {
+	// get the import path
+	auto import_path = p_path + ".import";
+	// load the import file
+	Ref<ConfigFile> import_file;
+	import_file.instantiate();
+	Error err = import_file->load(import_path);
+	ERR_FAIL_COND_V_MSG(err != OK, {}, "Failed to load import file at path " + import_path);
+	// get the importer name
+	List<String> param_keys;
+	HashMap<StringName, Variant> params;
+	String importer_name = import_file->get_value("remap", "importer");
+	import_file->get_section_keys("params", &param_keys);
+	for (auto &param_key : param_keys) {
+		auto param_value = import_file->get_value("params", param_key);
+		params[param_key] = param_value;
+	}
+	String import_base_path = import_file->get_value("remap", "path", "");
+	if (import_base_path.is_empty()) {
+		// iterate through the remap keys, find one that begins with 'path'
+		List<String> remap_keys;
+		import_file->get_section_keys("remap", &remap_keys);
+		for (auto &remap_key : remap_keys) {
+			if (remap_key.begins_with("path")) {
+				import_base_path = import_file->get_value("remap", remap_key);
+				break;
+			}
+		}
+	}
+	String base_dir = import_base_path.get_base_dir();
+	String ext = import_base_path.get_extension();
+	String file = import_base_path.get_file();
+	String file_without_ext = file.get_slice(".", 0) + "." + file.get_slice(".", 1);
+	import_base_path = base_dir.path_join(file_without_ext);
+
+	// make dir recursive
+	DirAccess::make_dir_recursive_absolute(base_dir);
+	auto importer = get_importer_by_name(importer_name);
+	List<String> import_variants;
+	List<String> import_options;
+	Variant metadata;
+	err = importer->import(p_path, import_base_path, params, &import_variants, &import_options, &metadata);
+	ERR_FAIL_COND_V_MSG(err != OK, {}, "Failed to import resource at path " + p_path);
+	// load the resource
+	auto res = ResourceLoader::load(p_path, "", ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &err);
+	ERR_FAIL_COND_V_MSG(err != OK, {}, "Failed to load resource at path " + import_base_path);
+	return res;
+}
+
 PatchworkEditor *PatchworkEditor::singleton = nullptr;
 
 PatchworkEditor::PatchworkEditor(EditorNode *p_editor) {
@@ -680,4 +733,6 @@ void PatchworkEditor::_bind_methods() {
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_diff_obj", "a", "b", "exclude_non_storage"), &PatchworkEditor::get_diff_obj, DEFVAL(true));
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("evaluate_node_differences", "scene1", "scene2", "path", "options"), &PatchworkEditor::evaluate_node_differences);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_diff_res", "res1", "res2", "options"), &PatchworkEditor::get_diff_res);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_importer_by_name", "name"), &PatchworkEditor::get_importer_by_name);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("import_and_load_resource", "path"), &PatchworkEditor::import_and_load_resource);
 }

@@ -26,8 +26,9 @@ func add_new_uid(path: String, uid: String):
 		ResourceUID.set_id(id, path)
 		
 func _process(_delta: float) -> void:
+	pass
 	if godot_project:
-		godot_project.process()
+		godot_project.process(_delta)
 
 func _enter_tree() -> void:
 	print("start patchwork");

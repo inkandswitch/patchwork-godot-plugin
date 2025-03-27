@@ -1,7 +1,7 @@
 [configuration]
 entry_symbol = "gdext_rust_init"
 compatibility_minimum = 4.3
-reloadable = false
+reloadable = true
 
 [libraries]
 linux.debug.x86_64 =    "rust/plugin/linux/libpatchwork_rust_core.x86_64-unknown-linux-gnu.so"

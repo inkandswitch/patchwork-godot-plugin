@@ -91,6 +91,9 @@ pub struct SubResourceNode {
     pub properties: HashMap<String, String>, // key value pairs below the section header
     pub idx: i64,
 }
+// test
+// test 3
+//test 2
 
 impl GodotScene {
     pub fn get_node_path(&self, node_id: &str) -> String {
@@ -859,8 +862,8 @@ impl GodotScene {
             sub_resources,
             nodes,
             connections,
-            main_resource,
-            editable_instances,
+			editable_instances,
+			main_resource,
         })
     }
 
@@ -1515,8 +1518,8 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 sub_resources,
                 nodes,
                 connections,
+				editable_instances,
                 main_resource,
-                editable_instances,
             })
         }
         None => Err("Failed to parse scene file".to_string()),
