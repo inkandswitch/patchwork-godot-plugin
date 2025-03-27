@@ -391,9 +391,25 @@ impl GodotProject {
 
     #[func]
     fn get_main_branch(&self) -> Variant /* Branch? */ {
-        match &self.get_checked_out_branch_state() {
+        match &self
+            .branch_states
+            .values()
+            .find(|branch_state| branch_state.is_main)
+        {
             Some(branch_state) => branch_state_to_dict(branch_state).to_variant(),
             None => Variant::nil(),
+        }
+    }
+
+    #[func]
+    fn get_branch_by_id(&self, branch_id: String) -> Variant /* Branch? */ {
+        match DocumentId::from_str(&branch_id) {
+            Ok(id) => self
+                .branch_states
+                .get(&id)
+                .map(|branch_state| branch_state_to_dict(branch_state).to_variant())
+                .unwrap_or(Variant::nil()),
+            Err(_) => Variant::nil(),
         }
     }
 

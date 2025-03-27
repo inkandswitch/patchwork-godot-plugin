@@ -332,22 +332,23 @@ func move_inspector_to_main() -> void:
 		inspector.visible = true
 
 func create_merge_preview_branch():
-	var target_branch_doc_id = godot_project.get_main_branch().id
 	var source_branch_doc_id = godot_project.get_checked_out_branch().id
+	var target_branch_doc_id = godot_project.get_main_branch().id
 
 	godot_project.create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id)
 
 func cancel_merge_preview():
-	merge_preview_modal.visible = false
-	checkout_branch(godot_project.get_checked_out_branch().id)
-	highlight_changes = false
-	move_inspector_to_main()
+	var checked_out_branch = godot_project.get_checked_out_branch()
+
+	godot_project.checkout_branch(checked_out_branch.forked_from)
+
+	# todo
+	print("cancel merge preview not implemented")
 
 func confirm_merge_preview():
-	merge_preview_modal.visible = false
-	godot_project.merge_branch(godot_project.get_checked_out_branch().id)
-	highlight_changes = false
-	move_inspector_to_main()
+	# todo
+	print("confirm merge preview not implemented")
+
 
 func merge_current_branch():
 	var checked_out_branch = godot_project.get_checked_out_branch()
@@ -365,13 +366,13 @@ func merge_current_branch():
 	)
 
 func update_ui() -> void:
-	if not godot_project:
+	if !godot_project:
 		return
 
 	var checked_out_branch = godot_project.get_checked_out_branch()
 
-	self.branches = godot_project.get_branches()
 
+	self.branches = godot_project.get_branches()
 
 	# update branch pickers
 
@@ -383,6 +384,8 @@ func update_ui() -> void:
 		var branch = branches[i]
 		var label = branch.name
 		var is_checked_out = checked_out_branch && branch.id == checked_out_branch.id
+
+		label = label + " " + branch.id
 
 		if branch.is_main:
 			label = label + " 👑"
@@ -442,11 +445,14 @@ func update_ui() -> void:
 	if checked_out_branch.is_merge_preview:
 		move_inspector_to_merge_preview()
 
+		var source_branch = godot_project.get_branch_by_id(checked_out_branch.forked_from)
+		var target_branch = godot_project.get_branch_by_id(checked_out_branch.merge_into)
+
 		if checked_out_branch.merge_at != checked_out_branch.forked_at:
-			merge_preview_message_label.text = "Be carful to review your changes and make sure the game is still working correctly before merging. \nThere have been changes to the main branch since \"" + checked_out_branch.name + "\" was created."
+			merge_preview_message_label.text = "Be carful to review your changes and make sure the game is still working correctly before merging. \nThere have been changes to \"" + target_branch.name + "\" since \"" + source_branch.name + "\" was created."
 			merge_preview_message_icon.texture = load("res://addons/patchwork/icons/warning-circle.svg")
 		else:
-			merge_preview_message_label.text = "This branch is safe to merge.\nThere have been no changes to the main branch since \"" + checked_out_branch.name + "\" was created."
+			merge_preview_message_label.text = "This branch is safe to merge.\nThere have been no changes to \"" + target_branch.name + "\" since \"" + checked_out_branch.name + "\" was created."
 			merge_preview_message_icon.texture = load("res://addons/patchwork/icons/checkmark-circle.svg")
 
 	else:

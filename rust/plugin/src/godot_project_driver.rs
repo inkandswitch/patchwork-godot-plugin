@@ -540,7 +540,10 @@ impl DriverState {
             commit_with_attribution_and_timestamp(tx, &self.user_name, &None);
         });
 
-        println!("driver: done create merge preview branch")
+        self.tx.unbounded_send(OutputEvent::CompletedCreateBranch {
+            branch_doc_id: merge_preview_branch_doc_handle.document_id(),
+        }).unwrap();  
+
     }
     
     fn save_files(
