@@ -39,6 +39,11 @@ pub enum InputEvent {
         name: String,
     },
 
+    CreateMergePreviewBranch {
+        source_branch_doc_id: DocumentId,
+        target_branch_doc_id: DocumentId,
+    },
+
     MergeBranch {
         branch_doc_handle: DocHandle,
     },
@@ -338,6 +343,10 @@ impl GodotProjectDriver {
                                 state.create_branch(name.clone());
                             },
 
+                            InputEvent::CreateMergePreviewBranch { source_branch_doc_id, target_branch_doc_id } => {
+                                state.create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id);
+                            },
+
                             InputEvent::MergeBranch { branch_doc_handle } => {
                                 state.merge_branch(branch_doc_handle);
                             },                        
@@ -489,17 +498,22 @@ impl DriverState {
     }
 
     fn create_merge_preview_branch(&mut self, source_branch_doc_id: DocumentId, target_branch_doc_id: DocumentId) {    
+        println!("driver: create merge preview branch");
+
         let source_branch_state = self.branch_states.get(&source_branch_doc_id).unwrap();
         let target_branch_state = self.branch_states.get(&target_branch_doc_id).unwrap();
 
         let merge_preview_branch_doc_handle = self.repo_handle.new_document();
         
         source_branch_state.doc_handle.with_doc_mut(|source_branch_doc| {
-            target_branch_state.doc_handle.with_doc_mut(|target_branch_doc| {
-                merge_preview_branch_doc_handle.with_doc_mut(|merge_preview_branch_doc| {
-                    let _ = merge_preview_branch_doc.merge(source_branch_doc);
-                    let _ = merge_preview_branch_doc.merge(target_branch_doc);
-                });
+            merge_preview_branch_doc_handle.with_doc_mut(|merge_preview_branch_doc| {
+                let _ = merge_preview_branch_doc.merge(source_branch_doc);
+            });
+        });
+
+        target_branch_state.doc_handle.with_doc_mut(|target_branch_doc| {
+            merge_preview_branch_doc_handle.with_doc_mut(|merge_preview_branch_doc| {
+                let _ = merge_preview_branch_doc.merge(target_branch_doc);
             });
         });
 
@@ -525,6 +539,8 @@ impl DriverState {
             let _ = reconcile(&mut tx, branches_metadata);
             commit_with_attribution_and_timestamp(tx, &self.user_name, &None);
         });
+
+        println!("driver: done create merge preview branch")
     }
     
     fn save_files(

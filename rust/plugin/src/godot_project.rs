@@ -390,6 +390,14 @@ impl GodotProject {
     }
 
     #[func]
+    fn get_main_branch(&self) -> Variant /* Branch? */ {
+        match &self.get_checked_out_branch_state() {
+            Some(branch_state) => branch_state_to_dict(branch_state).to_variant(),
+            None => Variant::nil(),
+        }
+    }
+
+    #[func]
     fn save_files_at(
         &self,
         files: Dictionary, /*  Record<String, Variant> */
@@ -535,6 +543,23 @@ impl GodotProject {
             .unwrap();
 
         self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut;
+    }
+
+    #[func]
+    fn create_merge_preview_branch(
+        &mut self,
+        source_branch_doc_id: String,
+        target_branch_doc_id: String,
+    ) {
+        let source_branch_doc_id = DocumentId::from_str(&source_branch_doc_id).unwrap();
+        let target_branch_doc_id = DocumentId::from_str(&target_branch_doc_id).unwrap();
+
+        self.driver_input_tx
+            .unbounded_send(InputEvent::CreateMergePreviewBranch {
+                source_branch_doc_id,
+                target_branch_doc_id,
+            })
+            .unwrap();
     }
 
     #[func]
@@ -1052,16 +1077,17 @@ fn branch_state_to_dict(branch_state: &BranchState) -> Dictionary {
         // indicate that the branch is not loaded and prevent users from checking it out
         "is_not_loaded": branch_state.doc_handle.with_doc(|d| d.get_heads().len() == 0),
         "heads": heads_to_array(branch_state.synced_heads.clone()),
+        "is_merge_preview": branch_state.merge_info.is_some(),
     };
 
     if let Some(fork_info) = &branch_state.fork_info {
-        branch.insert("forked_from", fork_info.forked_from.to_string());
-        branch.insert("forked_at", heads_to_array(fork_info.forked_at.clone()));
+        let _ = branch.insert("forked_from", fork_info.forked_from.to_string());
+        let _ = branch.insert("forked_at", heads_to_array(fork_info.forked_at.clone()));
     }
 
     if let Some(merge_info) = &branch_state.merge_info {
-        branch.insert("merge_into", merge_info.merge_into.to_string());
-        branch.insert("merge_at", heads_to_array(merge_info.merge_at.clone()));
+        let _ = branch.insert("merge_into", merge_info.merge_into.to_string());
+        let _ = branch.insert("merge_at", heads_to_array(merge_info.merge_at.clone()));
     }
 
     branch

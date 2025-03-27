@@ -27,12 +27,10 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 const TEMP_DIR = "user://tmp"
 
 var branches = []
-var other_branch_id
 var plugin: EditorPlugin
 var config: PatchworkConfig
 var queued_calls = []
 
-var selected_target_branch_id
 var highlight_changes = false
 
 const CREATE_BRANCH_IDX = 1
@@ -113,7 +111,7 @@ func _on_menu_button_id_pressed(id: int) -> void:
 			create_new_branch()
 
 		MERGE_BRANCH_IDX:
-			open_merge_preview()
+			create_merge_preview_branch()
 
 func _on_user_button_pressed():
 	var dialog = ConfirmationDialog.new()
@@ -174,15 +172,12 @@ func _on_branch_picker_item_selected(index: int) -> void:
 	checkout_branch(selected_branch.id)
 
 func _on_target_branch_picker_item_selected(index: int) -> void:
-	print("Target branch picker item selected: ", branches[index])
-
-	selected_target_branch_id = branches[index].id
+	print("not implemented")
 	update_ui()
-	checkout_branch(godot_project.get_checked_out_branch().id)
 
 func _on_source_branch_picker_item_selected(index: int) -> void:
+	print("not implemented")
 	update_ui()
-	checkout_branch(branches[index].id)
 
 func _on_highlight_changes_checkbox_toggled(pressed: bool) -> void:
 	highlight_changes = pressed
@@ -327,29 +322,20 @@ func create_new_branch() -> void:
 	)
 
 func move_inspector_to_merge_preview() -> void:
-	if inspector and main_diff_container and merge_preview_diff_container:
+	if inspector and main_diff_container and merge_preview_diff_container and inspector.get_parent() != merge_preview_diff_container:
 		inspector.reparent(merge_preview_diff_container)
 		inspector.visible = true
 
 func move_inspector_to_main() -> void:
-	if inspector and main_diff_container and merge_preview_diff_container:
+	if inspector and main_diff_container and merge_preview_diff_container and inspector.get_parent() != main_diff_container:
 		inspector.reparent(main_diff_container)
 		inspector.visible = true
 
-func open_merge_preview():
-	# find main branch
-	var main_branch
+func create_merge_preview_branch():
+	var target_branch_doc_id = godot_project.get_main_branch().id
+	var source_branch_doc_id = godot_project.get_checked_out_branch().id
 
-	for branch in branches:
-		if branch.is_main:
-			main_branch = branch
-			break
-
-	selected_target_branch_id = main_branch.id
-
-	checkout_branch(godot_project.get_checked_out_branch().id)
-	merge_preview_modal.visible = true
-	move_inspector_to_merge_preview()
+	godot_project.create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id)
 
 func cancel_merge_preview():
 	merge_preview_modal.visible = false
@@ -400,6 +386,7 @@ func update_ui() -> void:
 
 		if branch.is_main:
 			label = label + " 👑"
+			target_branch_picker.select(i)
 
 		branch_picker.add_item(label, i)
 		branch_picker.set_item_metadata(i, branch.id)
@@ -410,16 +397,15 @@ func update_ui() -> void:
 		target_branch_picker.add_item(label, i)
 		target_branch_picker.set_item_metadata(i, branch.id)
 
-		if branch.id == selected_target_branch_id:
-			target_branch_picker.select(i)
-
 		# this should not happen, but right now the sync is not working correctly so we need to surface this in the interface
 		if branch.is_not_loaded:
 			branch_picker.set_item_icon(i, load("res://addons/patchwork/icons/warning.svg"))
 
 		if is_checked_out:
-			source_branch_picker.select(i)
 			branch_picker.select(i)
+
+		if checked_out_branch.is_merge_preview && branch.id == checked_out_branch.forked_from:
+			source_branch_picker.select(i)
 
 	# update history
 	
@@ -441,7 +427,7 @@ func update_ui() -> void:
 	menu_popup.clear()
 
 	menu_popup.add_item("Create new branch", CREATE_BRANCH_IDX) # Create new branch menu item
-	# menu_popup.add_item("Merge branch", MERGE_BRANCH_IDX)
+	menu_popup.add_item("Merge branch", MERGE_BRANCH_IDX)
 
 	# update user name
 
@@ -449,43 +435,29 @@ func update_ui() -> void:
 
 	user_button.text = user_name
 
-	# Merge preview message
+	# update merge preview
 
-	var main_branch
+	merge_preview_modal.visible = checked_out_branch.is_merge_preview
 
-	for branch in branches:
-		if branch.is_main:
-			main_branch = branch
-			break
+	if checked_out_branch.is_merge_preview:
+		move_inspector_to_merge_preview()
 
-	if main_branch.heads != checked_out_branch.forked_at:
-		merge_preview_message_label.text = "Be carful to review your changes and make sure the game is still working correctly before merging. \nThere have been changes to the main branch since \"" + checked_out_branch.name + "\" was created."
-		merge_preview_message_icon.texture = load("res://addons/patchwork/icons/warning-circle.svg")
+		if checked_out_branch.merge_at != checked_out_branch.forked_at:
+			merge_preview_message_label.text = "Be carful to review your changes and make sure the game is still working correctly before merging. \nThere have been changes to the main branch since \"" + checked_out_branch.name + "\" was created."
+			merge_preview_message_icon.texture = load("res://addons/patchwork/icons/warning-circle.svg")
+		else:
+			merge_preview_message_label.text = "This branch is safe to merge.\nThere have been no changes to the main branch since \"" + checked_out_branch.name + "\" was created."
+			merge_preview_message_icon.texture = load("res://addons/patchwork/icons/checkmark-circle.svg")
+
 	else:
-		merge_preview_message_label.text = "This branch is safe to merge.\nThere have been no changes to the main branch since \"" + checked_out_branch.name + "\" was created."
-		merge_preview_message_icon.texture = load("res://addons/patchwork/icons/checkmark-circle.svg")
+		move_inspector_to_main()
 
-	
 	# DIFF
-
 	var heads_after
 	var heads_before
 
-	# in normal mode, diff between checked out branch heads and forked heads
-	if !merge_preview_modal.visible:
-		heads_before = checked_out_branch.forked_at
-		heads_after = godot_project.get_heads()
-
-	# in merge preview diff between source branch and target branch
-	else:
-		var target_branch
-		for branch in branches:
-			if branch.id == selected_target_branch_id:
-				target_branch = branch
-				break
-
-		heads_before = target_branch.heads
-		heads_after = godot_project.get_heads()
+	heads_before = checked_out_branch.forked_at
+	heads_after = godot_project.get_heads()
 
 	update_properties_diff(heads_before, heads_after)
 	update_highlight_changes(heads_before, heads_after, checked_out_branch)
