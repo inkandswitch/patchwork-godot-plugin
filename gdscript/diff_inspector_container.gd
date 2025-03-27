@@ -6,9 +6,47 @@ extends ScrollContainer
 @export var removed_icon: Texture2D
 @export var modified_icon: Texture2D
 
-@export var added_color: Color
-@export var removed_color: Color
-@export var modified_color: Color
+
+func get_change_theme_color_name(change_type: String) -> String:
+	if change_type == "added":
+		return "prop_subsection_added"
+	elif change_type == "removed":
+		return "prop_subsection_removed"
+	elif change_type == "modified":
+		return "prop_subsection_modified"
+	return "prop_subsection"
+
+
+
+func set_inspector_change_color(name: String, color: Color) -> void:
+	# get the theme override for the given name for the Editor type
+	var theme: Theme = get_theme()
+	theme.set_color(get_change_theme_color_name(name), "Editor", color)
+	self.theme_changed.emit()
+
+
+func get_color_for_change_type(change_type: String) -> Color:
+	var theme: Theme = get_theme()
+	return theme.get_color(get_change_theme_color_name(change_type), "Editor")
+
+
+#3fa62e
+@export var added_color: Color = Color("#3fa62e"):
+	set(value):
+		added_color = value
+		set_inspector_change_color(("added"), value)
+		
+#a55454
+@export var removed_color: Color = Color("#a55454"):
+	set(value):
+		removed_color = value
+		set_inspector_change_color(("removed"), value)
+
+#e2be99
+@export var modified_color: Color = Color("#e2be99"):
+	set(value):
+		modified_color = value
+		set_inspector_change_color(("modified"), value)
 
 var diff_stylebox_tex = preload("./diff_stylebox_tex.png")
 @onready var main_vbox: VBoxContainer = %DifferMainVBox
@@ -20,7 +58,7 @@ var changed_nodes: Array = []
 var added_nodes: Array = []
 var deleted_nodes: Array = []
 var changed_resources: Array = []
-
+var changed_files: Array = []
 func _ready() -> void:
 	pass
 
@@ -64,20 +102,25 @@ func get_removed_stylebox() -> StyleBoxTexture:
 func get_modified_stylebox() -> StyleBoxTexture:
 	return get_diff_stylebox(modified_color)
 
-func add_color_marker(color: Color, panel_container: PanelContainer) -> void:
+
+func add_color_marker(change_type: String, panel_container: PanelContainer) -> void:
 	var color_rect: ColorRect = ColorRect.new()
-	color_rect.color = color
+	color_rect.color = get_color_for_change_type(change_type)
 	color_rect.custom_minimum_size = Vector2(10, 10)
 	color_rect.layout_direction = 2 # horizontal
 	color_rect.layout_mode = 2 # manual
 	color_rect.size_flags_horizontal = 4 # expand
-
 	var margin_container: MarginContainer = MarginContainer.new()
 	margin_container.layout_mode = 2 # manual
 	margin_container.add_theme_constant_override("margin_right", 20)
 	margin_container.add_child(color_rect)
-
 	panel_container.add_child(margin_container)
+	var update_color_rect = func():
+		color_rect.color = get_color_for_change_type(change_type)
+		color_rect.theme_changed.emit()
+		panel_container.queue_redraw()
+	self.theme_changed.connect(update_color_rect)
+
 
 func add_label(label: String, panel_container: PanelContainer) -> void:
 	var label_node: Label = Label.new()
@@ -93,7 +136,7 @@ func snake_case_to_human_readable(snake_case_string: String) -> String:
 	return " ".join(title_case_words)
 
 
-func get_prop_editor(fake_object: MissingResource, prop_name: String, prop_value: Variant, color: Color, prop_label: String) -> PanelContainer:
+func get_prop_editor(fake_object: MissingResource, prop_name: String, prop_value: Variant, change_type: String, prop_label: String) -> PanelContainer:
 	print("!!! getting prop editor for ", prop_name, " with value ", prop_value)
 	fake_object.recording_properties = true
 	fake_object.set(prop_name, prop_value)
@@ -106,7 +149,7 @@ func get_prop_editor(fake_object: MissingResource, prop_name: String, prop_value
 	update_property_editor(editor_property)
 	var panel_container: PanelContainer = PanelContainer.new()
 	add_label(prop_label, panel_container)
-	add_color_marker(color, panel_container)
+	add_color_marker(change_type, panel_container)
 	panel_container.add_child(editor_property)
 	return panel_container
 
@@ -117,10 +160,10 @@ func add_old_and_new(inspector_section: DiffInspectorSection, change_type: Strin
 	if label == null:
 		label = snake_case_to_human_readable(prop_name)
 	if has_old:
-		var prop_editor = get_prop_editor(inspector_section.get_object(), prop_name + "_old", old_prop_value, removed_color, label)
+		var prop_editor = get_prop_editor(inspector_section.get_object(), prop_name + "_old", old_prop_value, "removed", label)
 		inspector_section.get_vbox().add_child(prop_editor)
 	if has_new:
-		var prop_editor = get_prop_editor(inspector_section.get_object(), prop_name + "_new", new_prop_value, added_color, label if !has_old else "")
+		var prop_editor = get_prop_editor(inspector_section.get_object(), prop_name + "_new", new_prop_value, "added", label if !has_old else "")
 		inspector_section.get_vbox().add_child(prop_editor)
 
 
@@ -196,6 +239,8 @@ func get_node_added_box() -> PanelContainer:
 func get_prop_diffs_from_properties(properties: Dictionary, change_type: String) -> Dictionary:
 	var prop_diffs: Dictionary = {}
 	for prop in properties.keys():
+		if prop.begins_with("metadata/patchwork_id"):
+			continue
 		var prop_diff: Dictionary = {}
 		prop_diff["name"] = prop
 		prop_diff["change_type"] = change_type
@@ -205,8 +250,9 @@ func get_prop_diffs_from_properties(properties: Dictionary, change_type: String)
 		prop_diffs[prop] = prop_diff
 	return prop_diffs
 
-func add_NodeDiffResult(node_diff: Dictionary) -> void:
+func add_NodeDiffResult(file_section: DiffInspectorSection, node_diff: Dictionary) -> void:
 	var node_name: String = node_diff["node_path"] # remove the leading "./"
+	var node_label: String = node_name
 	var change_type: String = node_diff["change_type"]
 	print("!!! adding node diff result for ", node_name, " with type ", change_type)
 	
@@ -216,30 +262,31 @@ func add_NodeDiffResult(node_diff: Dictionary) -> void:
 	var fake_node = MissingResource.new()
 	
 	var node_type: String = ""
+	var color: Color = added_color
 	if change_type == "added":
-		inspector_section.setup(node_name, node_name, fake_node, added_color, true)
+		color = added_color
+		node_label += " (Added)"
 		# TODO: make rust code do this
 		prop_diffs = get_prop_diffs_from_properties(node_diff["new_content"]["properties"], "added")
 		node_type = node_diff["new_content"]["type"]
 		print("adding node added box")
-		vbox.add_child(get_node_added_box())
 		added_nodes.append(fake_node)
 	elif change_type == "removed":
+		color = removed_color
+		node_label += " (Deleted)"
 		print("adding node deleted box")
-		inspector_section.setup(node_name, node_name, fake_node, removed_color, true)
-		# TODO: make rust code do this
 		prop_diffs = get_prop_diffs_from_properties(node_diff["old_content"]["properties"], "removed")
 		node_type = node_diff["old_content"]["type"]
-		vbox.add_child(get_node_deleted_box())
 		deleted_nodes.append(fake_node)
 	else:
-		inspector_section.setup(node_name, node_name, fake_node, modified_color, true)
+		color = modified_color
+		node_label += " (Modified)"
 		prop_diffs = node_diff["changed_props"]
 		node_type = node_diff["new_content"]["type"]
 		changed_nodes.append(fake_node)
-
-	fake_node.original_class = node_type
+	inspector_section.setup(node_name, node_label, fake_node, color, true, 1, 2)
 	inspector_section.set_type(change_type)
+	fake_node.original_class = node_type
 	var i = 0
 	# get the length of the prop_diffs dictionary
 	var prop_diffs_length = prop_diffs.keys().size()
@@ -252,50 +299,58 @@ func add_NodeDiffResult(node_diff: Dictionary) -> void:
 		i += 1
 	inspector_section.unfold()
 	sections.append(inspector_section)
-	main_vbox.add_child(inspector_section)
+	file_section.get_vbox().add_child(inspector_section)
 
 
 
-class DiffSet:
-	var prop_name: String
-	var change_type: String
-	var old_prop_value: Variant
-	var new_prop_value: Variant
-	var label: String
+# class DiffSet:
+# 	var prop_name: String
+# 	var change_type: String
+# 	var old_prop_value: Variant
+# 	var new_prop_value: Variant
+# 	var label: String
 
-func add_resource_diff(file_path: String, old_resource: Resource, new_resource: Resource) -> void:
+func add_resource_diff(inspector_section: DiffInspectorSection, change_type: String, file_path: String, old_resource: Resource, new_resource: Resource) -> void:
 	print("adding resource diff for ", file_path)
 	if !is_instance_valid(old_resource) && !is_instance_valid(new_resource):
 		return
 	var prop_label = snake_case_to_human_readable(file_path)
 	var has_old = is_instance_valid(old_resource)
 	var has_new = is_instance_valid(new_resource)
-	var change_type = "modified"
-	if has_old && !has_new:
-		change_type = "removed"
-	elif !has_old && has_new:
-		change_type = "added"
-	elif has_old && has_new:
-		change_type = "modified"
-	var inspector_section: DiffInspectorSection = DiffInspectorSection.new()
-	var vbox = inspector_section.get_vbox()
 	var fake_node: MissingResource = MissingResource.new()
 	fake_node.original_class = "Resource"
-	inspector_section.setup(file_path, file_path, fake_node, modified_color, true)
-	inspector_section.set_type(change_type)
 	changed_resources.append(fake_node)
 	add_old_and_new(inspector_section, change_type, "Resource", old_resource, new_resource, prop_label)
-	main_vbox.add_child(inspector_section)
-	sections.append(inspector_section)
 
 func add_FileDiffResult(file_path: String, file_diff: Dictionary) -> void:
 	var file_name = file_path
+	var label = file_name
 	var type = file_diff["diff_type"]
+	var change_type = file_diff["change_type"]
 	print("!!! adding file diff result for ", file_name, " with type ", type)
+	var color: Color
+	if (change_type == "added"):
+		color = added_color
+		label += " (Added)"
+		changed_files.append(file_path)
+	elif (change_type == "removed"):
+		color = removed_color
+		label += " (Removed)"
+		changed_files.append(file_path)
+	elif (change_type == "modified"):
+		color = modified_color
+		label += " (Modified)"
+		changed_files.append(file_path)
+	var fake_node: MissingResource = MissingResource.new()
+	changed_files.append(fake_node)
+	var inspector_section: DiffInspectorSection = DiffInspectorSection.new()
+	inspector_section.setup(file_path, label, fake_node, color, true)
+	inspector_section.set_type(change_type)
+	var vbox = inspector_section.get_vbox()
 	if type == "resource_changed":
 		var res_old = file_diff["old_resource"]
 		var res_new = file_diff["new_resource"]
-		add_resource_diff(file_path, res_old, res_new)
+		add_resource_diff(inspector_section, change_type, file_path, res_old, res_new)
 	elif type == "scene_changed":
 		var node_diffs: Array = file_diff["changed_nodes"]
 		print("node_diff size: ", node_diffs.size())
@@ -304,7 +359,9 @@ func add_FileDiffResult(file_path: String, file_diff: Dictionary) -> void:
 			# skip temporary nodes created by the instance
 			if (node_path.contains("@")):
 				continue
-			add_NodeDiffResult(node)
+			add_NodeDiffResult(inspector_section, node)
+	sections.append(inspector_section)
+	main_vbox.add_child(inspector_section)
 			
 # defs for these are in editor/diff_result.h
 func add_diff(diff: Dictionary) -> void:
@@ -313,9 +370,9 @@ func add_diff(diff: Dictionary) -> void:
 	var file_diffs = diff.get("files")
 	var size = file_diffs.size()
 	print("Diff size: ", size)
-	for file in file_diffs:
-		print("Adding file diff result for ", file["path"])
-		add_FileDiffResult(file["path"], file)
+	for file in file_diffs.keys():
+		print("Adding file diff result for ", file)
+		add_FileDiffResult(file, file_diffs[file])
 
 	
 func reset() -> void:

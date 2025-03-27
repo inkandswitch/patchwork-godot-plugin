@@ -144,9 +144,7 @@ script = ExtResource("4_uttw7")
 added_icon = ExtResource("5_iqebc")
 removed_icon = ExtResource("6_ha5pl")
 modified_icon = ExtResource("7_o8jin")
-added_color = Color(0.247059, 0.65098, 0.180392, 1)
-removed_color = Color(0.647059, 0.329412, 0.329412, 1)
-modified_color = Color(0.92549, 0.831373, 0.184314, 1)
+modified_color = Color(0.933333, 0.643137, 0.352941, 1)
 
 [node name="DifferMainVBox" type="VBoxContainer" parent="VBoxContainer/TabContainer/Diff/VBoxContainer/MainDiffContainer/BigDiffer"]
 unique_name_in_owner = true

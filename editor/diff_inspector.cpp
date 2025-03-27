@@ -76,11 +76,13 @@ int DiffInspectorSection::_get_header_height() {
 
 void DiffInspectorSection::update_bg_color() {
 	if (type == "modified") {
-		bg_color = get_theme_color(SNAME("prop_subsection"), EditorStringName(Editor));
+		bg_color = get_theme_color(SNAME("prop_subsection_modified"), EditorStringName(Editor));
 	} else if (type == "added") {
 		bg_color = get_theme_color(SNAME("prop_subsection_added"), EditorStringName(Editor));
 	} else if (type == "removed") {
 		bg_color = get_theme_color(SNAME("prop_subsection_removed"), EditorStringName(Editor));
+	} else {
+		bg_color = get_theme_color(SNAME("prop_subsection"), EditorStringName(Editor));
 	}
 }
 
