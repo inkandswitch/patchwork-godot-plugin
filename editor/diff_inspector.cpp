@@ -75,7 +75,7 @@ int DiffInspectorSection::_get_header_height() {
 }
 
 void DiffInspectorSection::update_bg_color() {
-	if (type == "changed") {
+	if (type == "modified") {
 		bg_color = get_theme_color(SNAME("prop_subsection"), EditorStringName(Editor));
 	} else if (type == "added") {
 		bg_color = get_theme_color(SNAME("prop_subsection_added"), EditorStringName(Editor));
@@ -91,6 +91,10 @@ void DiffInspectorSection::set_type(const String &p_type) {
 
 String DiffInspectorSection::get_type() const {
 	return type;
+}
+
+Object *DiffInspectorSection::get_object() const {
+	return object;
 }
 
 void DiffInspectorSection::_notification(int p_what) {
@@ -413,6 +417,7 @@ void DiffInspectorSection::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("fold"), &DiffInspectorSection::fold);
 	ClassDB::bind_method(D_METHOD("set_type", "type"), &DiffInspectorSection::set_type);
 	ClassDB::bind_method(D_METHOD("get_type"), &DiffInspectorSection::get_type);
+	ClassDB::bind_method(D_METHOD("get_object"), &DiffInspectorSection::get_object);
 	// set/get bg color
 	ClassDB::bind_method(D_METHOD("set_bg_color", "bg_color"), &DiffInspectorSection::set_bg_color);
 	ClassDB::bind_method(D_METHOD("get_bg_color"), &DiffInspectorSection::get_bg_color);

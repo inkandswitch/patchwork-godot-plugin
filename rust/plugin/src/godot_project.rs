@@ -132,6 +132,8 @@ pub struct GodotProject {
     driver_output_rx: UnboundedReceiver<OutputEvent>,
 }
 
+
+
 #[godot_api]
 impl GodotProject {
     #[signal]
@@ -1381,7 +1383,7 @@ impl GodotProject {
             for node_id in changed_node_ids {
                 if !added_node_ids.contains(&node_id) && !deleted_node_ids.contains(&node_id) {
                     let mut node_info = Dictionary::new();
-                    node_info.insert("type", "changed");
+                    node_info.insert("change_type", "modified");
 
                     if let Some(scene) = &new_scene {
                         node_info.insert("node_path", scene.get_node_path(&node_id));
@@ -1482,7 +1484,7 @@ impl GodotProject {
 					let mut changed_props:Dictionary = Dictionary::new();
 
 					if old_class_name != new_class_name {
-						node_info.insert("type", "type_changed");
+						node_info.insert("change_type", "type_changed");
 					} else {
 						let mut props:HashSet<String> = HashSet::new();
 						for (key, _) in old_props.iter_shared() {
@@ -1498,7 +1500,9 @@ impl GodotProject {
 							let old_prop = old_props.get(prop.as_str()).unwrap_or(default_value.clone()).to_string();
 							let new_prop = new_props.get(prop.as_str()).unwrap_or(default_value.clone()).to_string();
 							let mut fn_insert_changed_prop = |prop: String, old_value: VariantValue, new_value: VariantValue| {
-								let _ = changed_props.insert(prop, dict!{
+								let _ = changed_props.insert(prop.clone(), dict!{
+									"name": prop.clone(),
+									"change_type": "modified",
 									"old_value": fn_get_prop_value(old_value, &old_scene, true),
 									"new_value": fn_get_prop_value(new_value, &new_scene, false)
 								});
@@ -1539,11 +1543,11 @@ impl GodotProject {
 					}
 				}
 			}
-
+// dsgasdg
             // Handle added nodes
             for node_id in added_node_ids {
                 let mut node_info = Dictionary::new();
-                node_info.insert("type", "added");
+                node_info.insert("change_type", "added");
 
                 if let Some(scene) = &new_scene {
                     node_info.insert("node_path", scene.get_node_path(&node_id));
@@ -1558,7 +1562,7 @@ impl GodotProject {
             // Handle deleted nodes
             for node_id in deleted_node_ids {
                 let mut node_info = Dictionary::new();
-                node_info.insert("type", "deleted");
+                node_info.insert("change_type", "deleted");
 
                 if let Some(scene) = &old_scene {
                     node_info.insert("node_path", scene.get_node_path(&node_id));
