@@ -1102,29 +1102,29 @@ impl GodotProject {
         unified.header(old_path.as_str(), new_path.as_str());
         // The diff of a file is a list of hunks, each hunk is a list of lines
         // the diff viewer expects the following data, but in Dictionary form
-// struct DiffLine {
-//     int new_line_no;
-//     int old_line_no;
-//     String content;
-//     String status;
-// These are manipulated by the diff viewer, no need to include them
-//     String old_text;
-//     String new_text;
-// };
+		// struct DiffLine {
+		//     int new_line_no;
+		//     int old_line_no;
+		//     String content;
+		//     String status;
+		// These are manipulated by the diff viewer, no need to include them
+		//     String old_text;
+		//     String new_text;
+		// };
 
-// struct DiffHunk {
-//     int new_start;
-//     int old_start;
-//     int new_lines;
-//     int old_lines;
-//     List<DiffLine> diff_lines;
-// };
+		// struct DiffHunk {
+		//     int new_start;
+		//     int old_start;
+		//     int new_lines;
+		//     int old_lines;
+		//     List<DiffLine> diff_lines;
+		// };
 
-// struct DiffFile {
-//     String new_file;
-//     String old_file;
-//     List<DiffHunk> diff_hunks;
-// };
+		// struct DiffFile {
+		//     String new_file;
+		//     String old_file;
+		//     List<DiffHunk> diff_hunks;
+		// };
 
 		fn get_range(ops: &[DiffOp]) -> (usize, usize, usize, usize) {
 			let first = ops[0];
@@ -1231,9 +1231,8 @@ impl GodotProject {
         };
 		let has_old = change_type != "added";
 		let has_new = change_type != "deleted";
-		let old_is_string = old_content.get_type() == VariantType::STRING;
-		let new_is_string = new_content.get_type() == VariantType::STRING;
-
+		let old_content_type = old_content.get_type();
+		let new_content_type = new_content.get_type();
         let mut result = Dictionary::new();
 		let _ = result.insert("path", path.to_variant());
         let _ = result.insert("change_type", change_type);
@@ -1289,25 +1288,30 @@ impl GodotProject {
 			None
 		};
 		if change_type != "unchanged" && !path.ends_with(".tscn") && !path.ends_with(".tres") {
-            if (!old_is_string && !new_is_string) {
-                let _ = result.insert("diff_type", "resource_changed");
-                if (has_old) {
-                    if let Some(old_resource) = fn_get_resource(path.clone(), &mut result, true) {
-                        let _ = result.insert("old_resource", old_resource);
-                    }
-                }
-                if (has_new) {
-                    if let Some(new_resource) = fn_get_resource(path.clone(), &mut result, false) {
-						let _ = result.insert("new_resource", new_resource);
+				if (old_content_type != VariantType::STRING && new_content_type != VariantType::STRING) {
+					let _ = result.insert("diff_type", "resource_changed");
+					if (has_old) {
+						if let Some(old_resource) = fn_get_resource(path.clone(), &mut result, true) {
+							let _ = result.insert("old_resource", old_resource);
+						}
 					}
+					if (has_new) {
+						if let Some(new_resource) = fn_get_resource(path.clone(), &mut result, false) {
+							let _ = result.insert("new_resource", new_resource);
+						}
+					}
+				} else if (old_content_type == VariantType::STRING || 
+							new_content_type == VariantType::STRING)  && 
+							(old_content_type != VariantType::PACKED_BYTE_ARRAY && new_content_type != VariantType::PACKED_BYTE_ARRAY)
+								{
+					let old_text = if old_content_type == VariantType::STRING { result.get("old_content").unwrap().to::<String>() } else { String::from("") };
+					let new_text = if new_content_type == VariantType::STRING { result.get("new_content").unwrap().to::<String>() } else { String::from("") };
+					let diff = GodotProject::get_diff_dict(path.clone(), path.clone(), old_text, new_text);
+					let _ = result.insert("text_diff", diff);
+					let _ = result.insert("diff_type", "text_changed");
+				} else {
+					let _ = result.insert("diff_type", "file_changed");
 				}
-			} else if old_is_string && new_is_string {
-				let old_text = result.get("old_content").unwrap().to::<String>();
-				let new_text = result.get("new_content").unwrap().to::<String>();
-				let diff = GodotProject::get_diff_dict(path.clone(), path.clone(), old_text, new_text);
-				let _ = result.insert("text_diff", diff);
-				let _ = result.insert("diff_type", "text_changed");
-            }
         }
 
         // If it's a scene file, add node changes

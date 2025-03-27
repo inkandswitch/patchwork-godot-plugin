@@ -229,11 +229,11 @@ func get_node_box(icon: Texture2D, text: String) -> PanelContainer:
 	panel_container.size.y = 60
 	return panel_container
 
-func get_node_deleted_box() -> PanelContainer:
-	return get_node_box(removed_icon, "Node Deleted")
+func get_node_deleted_box(type: String) -> PanelContainer:
+	return get_node_box(removed_icon, type + " Deleted")
 
-func get_node_added_box() -> PanelContainer:
-	return get_node_box(added_icon, "Node Added")
+func get_node_added_box(type: String) -> PanelContainer:
+	return get_node_box(added_icon, type + " Added")
 
 
 func get_prop_diffs_from_properties(properties: Dictionary, change_type: String) -> Dictionary:
@@ -332,7 +332,7 @@ func add_text_diff(inspector_section: DiffInspectorSection, unified_diff: Dictio
 func add_FileDiffResult(file_path: String, file_diff: Dictionary) -> void:
 	var file_name = file_path
 	var label = file_name
-	var type = file_diff["diff_type"]
+	var type = file_diff.get("diff_type", "added_or_removed")
 	var change_type = file_diff["change_type"]
 	print("!!! adding file diff result for ", file_name, " with change_type ", change_type, " and type ", type)
 	var color: Color
@@ -354,9 +354,14 @@ func add_FileDiffResult(file_path: String, file_diff: Dictionary) -> void:
 	inspector_section.setup(file_path, label, fake_node, color, true)
 	inspector_section.set_type(change_type)
 	var vbox = inspector_section.get_vbox()
-	if type == "resource_changed":
-		var res_old = file_diff["old_resource"]
-		var res_new = file_diff["new_resource"]
+	if type == "added_or_removed":
+		if change_type == "added":
+			vbox.add_child(get_node_added_box("File"))
+		elif change_type == "removed":
+			vbox.add_child(get_node_deleted_box("File"))
+	elif type == "resource_changed":
+		var res_old = file_diff.get("old_resource", null)
+		var res_new = file_diff.get("new_resource", null)
 		add_resource_diff(inspector_section, change_type, file_path, res_old, res_new)
 	elif type == "text_changed":
 		var text_diff = file_diff["text_diff"]
@@ -381,6 +386,8 @@ func add_diff(diff: Dictionary) -> void:
 	var size = file_diffs.size()
 	print("Diff size: ", size)
 	for file in file_diffs.keys():
+		if (file.to_lower().ends_with(".import")):
+			continue
 		print("Adding file diff result for ", file)
 		add_FileDiffResult(file, file_diffs[file])
 
