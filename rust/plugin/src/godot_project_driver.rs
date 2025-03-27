@@ -45,7 +45,8 @@ pub enum InputEvent {
     },
 
     MergeBranch {
-        branch_doc_handle: DocHandle,
+        source_branch_doc_id: DocumentId,
+        target_branch_doc_id: DocumentId,
     },
 
     DeleteBranch {
@@ -355,8 +356,8 @@ impl GodotProjectDriver {
                                 state.delete_branch(branch_doc_id);
                             },
 
-                            InputEvent::MergeBranch { branch_doc_handle } => {
-                                state.merge_branch(branch_doc_handle);
+                            InputEvent::MergeBranch { source_branch_doc_id, target_branch_doc_id } => {
+                                state.merge_branch(source_branch_doc_id, target_branch_doc_id);
                             },                        
 
                             InputEvent::SaveFiles { branch_doc_handle, files, heads} => {
@@ -674,15 +675,15 @@ impl DriverState {
         println!("rust: save {:?}",self.heads_in_frontend);
     }
 
-    fn merge_branch(&mut self, branch_doc_handle: DocHandle)  {    
-        // todo: implement merge
-        // let branch_doc_state = self.branch_states.get(&branch_doc_handle.document_id()).unwrap();
+    fn merge_branch(&mut self, source_branch_doc_id: DocumentId, target_branch_doc_id: DocumentId)  {    
+        let source_branch_state = self.branch_states.get(&source_branch_doc_id).unwrap();
+        let target_branch_state = self.branch_states.get(&target_branch_doc_id).unwrap();
 
-        // branch_doc_handle.with_doc_mut(|branch_doc| {
-        //     self.main_branch_doc_handle.with_doc_mut(|main_doc| {
-        //         let _ = main_doc.merge(branch_doc);
-        //     });
-        // });    
+        source_branch_state.doc_handle.with_doc_mut(|source_branch_doc| {
+            target_branch_state.doc_handle.with_doc_mut(|target_branch_doc| {
+                let _ = target_branch_doc.merge(source_branch_doc);
+            });
+        });    
     }
 
     fn update_branch_doc_state (&mut self, branch_doc_handle: DocHandle) {

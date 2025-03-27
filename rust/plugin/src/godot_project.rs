@@ -526,29 +526,18 @@ impl GodotProject {
     }
 
     #[func]
-    fn merge_branch(&mut self, branch_id: String) {
-        let branch_doc_id = match DocumentId::from_str(&branch_id) {
-            Ok(id) => id,
-            Err(e) => {
-                println!("invalid branch doc id: {:?}", e);
-                return;
-            }
-        };
+    fn merge_branch(&mut self, source_branch_doc_id: String, target_branch_doc_id: String) {
+        let source_branch_doc_id = DocumentId::from_str(&source_branch_doc_id).unwrap();
+        let target_branch_doc_id = DocumentId::from_str(&target_branch_doc_id).unwrap();
 
         self.driver_input_tx
             .unbounded_send(InputEvent::MergeBranch {
-                branch_doc_handle: self.doc_handles.get(&branch_doc_id).unwrap().clone(),
+                source_branch_doc_id: source_branch_doc_id,
+                target_branch_doc_id: target_branch_doc_id.clone(),
             })
             .unwrap();
 
-        let main_branch = self
-            .branch_states
-            .values()
-            .find(|branch_state| branch_state.is_main)
-            .unwrap();
-
-        self.checked_out_branch_state =
-            CheckedOutBranchState::CheckingOut(main_branch.doc_handle.document_id())
+        self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(target_branch_doc_id);
     }
 
     #[func]

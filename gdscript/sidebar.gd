@@ -332,7 +332,12 @@ func move_inspector_to_main() -> void:
 		inspector.visible = true
 
 func create_merge_preview_branch():
-	var source_branch_doc_id = godot_project.get_checked_out_branch().id
+	var checked_out_branch = godot_project.get_checked_out_branch()
+	if checked_out_branch.is_main:
+		popup_box(self, $ErrorDialog, "Can't merge the main branch!", "Error")
+		return
+
+	var source_branch_doc_id = checked_out_branch.id
 	var target_branch_doc_id = godot_project.get_main_branch().id
 
 	godot_project.create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id)
@@ -345,20 +350,18 @@ func cancel_merge_preview():
 
 
 func confirm_merge_preview():
-	# todo
-	print("confirm merge preview not implemented")
-
-
-func merge_current_branch():
 	var checked_out_branch = godot_project.get_checked_out_branch()
 
-	if checked_out_branch.is_main:
-		popup_box(self, $ErrorDialog, "Can't merge the main branch!", "Error")
-		return
+	var source_branch_doc_id = checked_out_branch.id
+	var target_branch_doc_id = checked_out_branch.merge_into
+
+	var original_source_branch = godot_project.get_branch_by_id(checked_out_branch.forked_from)
+	var target_branch = godot_project.get_branch_by_id(checked_out_branch.merge_into)
+
 	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before merging.", func():
-		popup_box(self, $ConfirmationDialog, "Are you sure you want to merge \"%s\" into main ?" % [checked_out_branch.name], "Merge Branch", func():
+		popup_box(self, $ConfirmationDialog, "Are you sure you want to merge \"%s\" into \"%s\" ?" % [original_source_branch.name, target_branch.name], "Merge Branch", func():
 			_before_cvs_action("merging", func():
-				godot_project.merge_branch(checked_out_branch.id)
+				godot_project.merge_branch(source_branch_doc_id, target_branch_doc_id)
 				add_call_to_queue(self._after_cvs_action)
 			, false)
 		)
