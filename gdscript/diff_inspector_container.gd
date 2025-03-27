@@ -322,12 +322,19 @@ func add_resource_diff(inspector_section: DiffInspectorSection, change_type: Str
 	changed_resources.append(fake_node)
 	add_old_and_new(inspector_section, change_type, "Resource", old_resource, new_resource, prop_label)
 
+func add_text_diff(inspector_section: DiffInspectorSection, unified_diff: Dictionary) -> void:
+	print("adding text diff")
+	var text_diff = TextDiffer.get_text_diff(unified_diff, false)
+	text_diff.custom_minimum_size = Vector2(100, 500)
+	inspector_section.get_vbox().add_child(text_diff)
+
+
 func add_FileDiffResult(file_path: String, file_diff: Dictionary) -> void:
 	var file_name = file_path
 	var label = file_name
 	var type = file_diff["diff_type"]
 	var change_type = file_diff["change_type"]
-	print("!!! adding file diff result for ", file_name, " with type ", type)
+	print("!!! adding file diff result for ", file_name, " with change_type ", change_type, " and type ", type)
 	var color: Color
 	if (change_type == "added"):
 		color = added_color
@@ -351,6 +358,9 @@ func add_FileDiffResult(file_path: String, file_diff: Dictionary) -> void:
 		var res_old = file_diff["old_resource"]
 		var res_new = file_diff["new_resource"]
 		add_resource_diff(inspector_section, change_type, file_path, res_old, res_new)
+	elif type == "text_changed":
+		var text_diff = file_diff["text_diff"]
+		add_text_diff(inspector_section, text_diff)
 	elif type == "scene_changed":
 		var node_diffs: Array = file_diff["changed_nodes"]
 		print("node_diff size: ", node_diffs.size())

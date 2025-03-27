@@ -10,6 +10,7 @@ use futures::io::empty;
 use safer_ffi::layout::OpaqueKind::T;
 use std::any::Any;
 use std::collections::HashSet;
+use std::io::BufWriter;
 use std::path::PathBuf;
 use std::{collections::HashMap, str::FromStr};
 
@@ -37,6 +38,9 @@ use crate::{
     doc_utils::SimpleDocReader,
     godot_project_driver::{GodotProjectDriver, InputEvent, OutputEvent},
 };
+use similar::{ChangeTag, DiffOp, TextDiff};
+
+
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
 struct BinaryFile {
@@ -131,6 +135,8 @@ pub struct GodotProject {
     driver_input_tx: UnboundedSender<InputEvent>,
     driver_output_rx: UnboundedReceiver<OutputEvent>,
 }
+
+
 
 
 
@@ -1090,6 +1096,88 @@ impl GodotProject {
 		return VariantValue::Variant(str_to_var(&prop_value));
 	}
 
+    fn get_diff_dict(old_path: String, new_path:String, old_text: String, new_text: String) -> Dictionary {
+        let diff = TextDiff::from_lines(&old_text, &new_text);
+        let mut unified = diff.unified_diff();
+        unified.header(old_path.as_str(), new_path.as_str());
+        // The diff of a file is a list of hunks, each hunk is a list of lines
+        // the diff viewer expects the following data, but in Dictionary form
+// struct DiffLine {
+//     int new_line_no;
+//     int old_line_no;
+//     String content;
+//     String status;
+// These are manipulated by the diff viewer, no need to include them
+//     String old_text;
+//     String new_text;
+// };
+
+// struct DiffHunk {
+//     int new_start;
+//     int old_start;
+//     int new_lines;
+//     int old_lines;
+//     List<DiffLine> diff_lines;
+// };
+
+// struct DiffFile {
+//     String new_file;
+//     String old_file;
+//     List<DiffHunk> diff_hunks;
+// };
+
+		fn get_range(ops: &[DiffOp]) -> (usize, usize, usize, usize) {
+			let first = ops[0];
+			let last = ops[ops.len() - 1];
+			let old_start = first.old_range().start;
+			let new_start = first.new_range().start;
+			let old_end = last.old_range().end;
+			let new_end = last.new_range().end;
+			(old_start + 1, new_start + 1, old_end - old_start, new_end - new_start)
+		}
+        let mut diff_file = Dictionary::new();
+        let _ = diff_file.insert("new_file", new_path);
+        let _ = diff_file.insert("old_file", old_path);
+        let mut diff_hunks = Array::new();
+        for (i, hunk) in unified.iter_hunks().enumerate() {
+            let mut diff_hunk = Dictionary::new();
+            let header = hunk.header();
+			let (old_start, new_start, old_lines, new_lines) = get_range(&hunk.ops());
+			let _ = diff_hunk.insert("old_start", old_start as i64);
+			let _ = diff_hunk.insert("new_start", new_start as i64);
+			let _ = diff_hunk.insert("old_lines", old_lines as i64);
+			let _ = diff_hunk.insert("new_lines", new_lines as i64);
+			let mut diff_lines = Array::new();
+			for (idx, change) in hunk.iter_changes().enumerate() {
+				let mut diff_line = Dictionary::new();
+				// get the tag
+				let status = match change.tag() {
+					ChangeTag::Equal => " ",
+					ChangeTag::Delete => "-",
+					ChangeTag::Insert => "+",
+				};
+				if let Some(old_index) = change.old_index() {
+					let _ = diff_line.insert("old_line_no", old_index as i64 + 1);
+				} else {
+					let _ = diff_line.insert("old_line_no", -1);
+				}
+				if let Some(new_index) = change.new_index() {
+					let _ = diff_line.insert("new_line_no", new_index as i64 + 1);
+				} else {
+					let _ = diff_line.insert("new_line_no", -1);
+				}
+				let content = change.as_str().unwrap();
+				let _ = diff_line.insert("content", content);
+				let _ = diff_line.insert("status", status);
+				diff_lines.push(&diff_line);
+			}
+			let _ = diff_hunk.insert("diff_lines", diff_lines);
+			diff_hunks.push(&diff_hunk);
+        }
+		let _ = diff_file.insert("diff_hunks", diff_hunks);
+        diff_file
+    }
+
     fn _get_scene_changes_between(
         &self,
         path: String,
@@ -1143,6 +1231,8 @@ impl GodotProject {
         };
 		let has_old = change_type != "added";
 		let has_new = change_type != "deleted";
+		let old_is_string = old_content.get_type() == VariantType::STRING;
+		let new_is_string = new_content.get_type() == VariantType::STRING;
 
         let mut result = Dictionary::new();
 		let _ = result.insert("path", path.to_variant());
@@ -1199,22 +1289,29 @@ impl GodotProject {
 			None
 		};
 		if change_type != "unchanged" && !path.ends_with(".tscn") && !path.ends_with(".tres") {
-			let _ = result.insert("diff_type", "resource_changed");
-
-			if (has_old) {
-				if let Some(old_resource) = fn_get_resource(path.clone(), &mut result, true) {
-					let _ = result.insert("old_resource", old_resource);
+            if (!old_is_string && !new_is_string) {
+                let _ = result.insert("diff_type", "resource_changed");
+                if (has_old) {
+                    if let Some(old_resource) = fn_get_resource(path.clone(), &mut result, true) {
+                        let _ = result.insert("old_resource", old_resource);
+                    }
+                }
+                if (has_new) {
+                    if let Some(new_resource) = fn_get_resource(path.clone(), &mut result, false) {
+						let _ = result.insert("new_resource", new_resource);
+					}
 				}
-			}
-			if (has_new) {
-				if let Some(new_resource) = fn_get_resource(path.clone(), &mut result, false) {
-					let _ = result.insert("new_resource", new_resource);
-				}
-			}
-		}
+			} else if old_is_string && new_is_string {
+				let old_text = result.get("old_content").unwrap().to::<String>();
+				let new_text = result.get("new_content").unwrap().to::<String>();
+				let diff = GodotProject::get_diff_dict(path.clone(), path.clone(), old_text, new_text);
+				let _ = result.insert("text_diff", diff);
+				let _ = result.insert("diff_type", "text_changed");
+            }
+        }
 
         // If it's a scene file, add node changes
-        if change_type != "unchanged" && path.ends_with(".tscn") {
+        if change_type != "unchanged" && (path.ends_with(".tscn") || path.ends_with(".tres")) {
 			let _ = result.insert("diff_type", "scene_changed");
             let mut changed_nodes = Array::new();
 
