@@ -375,7 +375,6 @@ func update_ui() -> void:
 
 	print("UPDATE_UI for ", checked_out_branch.name)
 
-
 	self.branches = godot_project.get_branches()
 
 	# update branch pickers
@@ -468,8 +467,16 @@ func update_ui() -> void:
 		inspector.visible = false
 
 	else:
-		var heads_before = checked_out_branch.forked_at
-		var heads_after = godot_project.get_heads()
+		var heads_before
+		var heads_after
+
+		if checked_out_branch.is_merge_preview:
+			heads_before = checked_out_branch.merge_at
+			heads_after = checked_out_branch.heads
+		else:
+			heads_before = checked_out_branch.forked_at
+			heads_after = checked_out_branch.heads
+
 		var diff = update_properties_diff(heads_before, heads_after)
 
 		inspector.visible = true
@@ -529,12 +536,6 @@ func update_properties_diff(heads_before, heads_after) -> Dictionary:
 	if (!inspector):
 		return last_diff
 	if (!checked_out_branch):
-		return last_diff
-
-
-	inspector.visible = !checked_out_branch.is_main;
-
-	if !inspector.visible:
 		return last_diff
 
 	var change: Array[Dictionary] = godot_project.get_changes()
