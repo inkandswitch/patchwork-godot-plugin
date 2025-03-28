@@ -1355,10 +1355,17 @@ impl GodotProject {
 						Some((_, Prop::Map(node_id))) => {
 							// hack: only consider nodes where properties changed as changed
 							// this filters out all the parent nodes that don't really change only the child_node_ids change
-		
-							if let Some((_, Prop::Map(key))) = path.last() {
+							// get second to last instead of last
+							if let Some((_, Prop::Map(key))) = path.get(path.len() - 2) {
 								if key == "properties" {
 									changed_node_ids.insert(node_id.clone());
+									return;
+								}
+							} 
+							if let Some((_, Prop::Map(key))) = path.last() {
+								if key != "child_node_ids" {
+									changed_node_ids.insert(node_id.clone());
+									return;
 								}
 							}
 						}
@@ -1382,6 +1389,14 @@ impl GodotProject {
 				match_path(&sub_resources_path, &patch).inspect(
 					|PathWithAction { path, action }| match path.first() {
 						Some((_, Prop::Map(sub_id))) => {
+							if let Some((_, Prop::Map(key))) = path.get(path.len() - 2) {
+								if key == "properties" {
+									changed_sub_resources.insert(sub_id.clone());
+									all_changed_sub_resource_ids.insert(sub_id.clone());
+									return;
+								}
+							} 
+
 							if let Some((_, Prop::Map(key))) = path.last() {
 								if key != "idx" { // ignore idx changes
 									changed_sub_resources.insert(sub_id.clone());
