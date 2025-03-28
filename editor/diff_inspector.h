@@ -81,7 +81,7 @@ public:
 
 	void set_type(const String &p_type);
 	String get_type() const;
-
+	Object *get_object() const;
 	void update_bg_color();
 
 	DiffInspectorSection();

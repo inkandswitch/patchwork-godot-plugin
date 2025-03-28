@@ -969,6 +969,7 @@ dependencies = [
  "pretty_assertions",
  "safer-ffi",
  "serde_json",
+ "similar",
  "tokio",
  "tracing-subscriber",
  "tree-sitter",

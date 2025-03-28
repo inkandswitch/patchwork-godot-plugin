@@ -1,6 +1,7 @@
 #ifndef PATCHWORK_EDITOR_H
 #define PATCHWORK_EDITOR_H
 
+#include "core/io/resource_importer.h"
 #include "core/object/ref_counted.h"
 #include "core/variant/dictionary.h"
 #include "core/variant/variant.h"
@@ -50,6 +51,8 @@ public:
 	static Ref<ObjectDiffResult> get_diff_obj(Object *a, Object *b, bool exclude_non_storage = true, const Dictionary &p_structured_changes = Dictionary());
 	static Ref<NodeDiffResult> evaluate_node_differences(Node *scene1, Node *scene2, const NodePath &path, const Dictionary &p_options);
 	static Ref<FileDiffResult> get_diff_res(Ref<Resource> p_res, Ref<Resource> p_res2, const Dictionary &p_options);
+	static Ref<ResourceImporter> get_importer_by_name(const String &p_name);
+	static Ref<Resource> import_and_load_resource(const String &p_path);
 	static bool deep_equals(Variant a, Variant b, bool exclude_non_storage = true);
 };
 

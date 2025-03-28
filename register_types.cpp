@@ -9,6 +9,8 @@
 #include "editor/editor_node.h"
 #include "editor/missing_resource_container.h"
 #include "editor/patchwork_editor.h"
+#include "editor/text_diff.h"
+ 
 void patchwork_editor_init_callback() {
 	EditorNode *editor = EditorNode::get_singleton();
 	editor->add_child(memnew(PatchworkEditor(editor)));
@@ -32,6 +34,7 @@ void initialize_patchwork_editor_module(ModuleInitializationLevel p_level) {
 		// register the editor inspector section
 		ClassDB::register_class<EditorInspectorSection>();
 		ClassDB::register_class<DiffInspectorSection>();
+		ClassDB::register_class<TextDiffer>();
 	}
 }
 

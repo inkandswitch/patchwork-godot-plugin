@@ -465,8 +465,8 @@ func update_ui() -> void:
 	heads_before = checked_out_branch.forked_at
 	heads_after = godot_project.get_heads()
 
-	update_properties_diff(heads_before, heads_after)
-	update_highlight_changes(heads_before, heads_after, checked_out_branch)
+	var diff = update_properties_diff(heads_before, heads_after)
+	update_highlight_changes(diff, checked_out_branch)
 
 func human_readable_timestamp(timestamp: int) -> String:
 	var now = Time.get_unix_time_from_system() * 1000 # Convert to ms
@@ -487,8 +487,9 @@ func human_readable_timestamp(timestamp: int) -> String:
 	else:
 		return str(int(diff / 31536000)) + " years ago"
 
+var IMPORT_GETTER = func(path: String): return PatchworkEditor.import_and_load_resource(path)
 
-func update_highlight_changes(heads_before, heads_after, checked_out_branch) -> void:
+func update_highlight_changes(diff: Dictionary, checked_out_branch) -> void:
 	var edited_root = EditorInterface.get_edited_scene_root()
 
 	# reflect highlight changes checkbox state
@@ -498,9 +499,10 @@ func update_highlight_changes(heads_before, heads_after, checked_out_branch) -> 
 	if edited_root:
 		if highlight_changes && !checked_out_branch.is_main:
 				var path = edited_root.scene_file_path
-				var scene_changes = godot_project.get_scene_changes_between(path, PackedStringArray(heads_before), PackedStringArray(heads_after))
-
-				HighlightChangesLayer.highlight_changes(edited_root, scene_changes)
+				var files = diff.get("files")
+				var scene_changes = files.get(path)
+				if scene_changes:
+					HighlightChangesLayer.highlight_changes(edited_root, scene_changes)
 		else:
 			print("removing highlight")
 			HighlightChangesLayer.remove_highlight(edited_root)
@@ -508,92 +510,50 @@ func update_highlight_changes(heads_before, heads_after, checked_out_branch) -> 
 
 var prev_heads_before
 var prev_heads_after
-
-func update_properties_diff(heads_before, heads_after) -> void:
+var last_diff: Dictionary = {}
+func update_properties_diff(heads_before, heads_after) -> Dictionary:
 	var checked_out_branch = godot_project.get_checked_out_branch()
 	if (!inspector):
-		return
+		return last_diff
 	if (!checked_out_branch):
-		return
+		return last_diff
 	inspector.visible = !checked_out_branch.is_main;
 
 	if !inspector.visible:
-		return
+		return last_diff
 
 	var change: Array[Dictionary] = godot_project.get_changes()
 	if (change.size() < 2):
-		return
+		return last_diff
 
 	if (prev_heads_before == heads_before && prev_heads_after == heads_after):
-		return
+		return last_diff
 
 	prev_heads_before = heads_before
 	prev_heads_after = heads_after
-
-	show_diff(heads_before, heads_after)
+	last_diff = show_diff(heads_before, heads_after)
+	return last_diff
 
 
 func show_diff(heads_before, heads_after):
 	# TODO: handle dependencies of these files
 	# print("heads_before: ", heads_before)
 	# print("heads_after: ", heads_after)
-	var diff_dict = godot_project.get_changed_file_content_between(PackedStringArray(heads_before), PackedStringArray(heads_after))
+	var files_arr = godot_project.get_changed_files_between(PackedStringArray(heads_before), PackedStringArray(heads_after))
 
-	var files_arr = diff_dict["files"]
 
 	# print("Changes between %s and %s:" % [hash1, hash2])
 	var new_dict = {}
-	var new_files = []
-	for file: Dictionary in files_arr:
-		print("file: ", file)
-		var path = file["path"]
-		var change = file["change"]
-		var old_content = file["old_content"]
-		var new_content = file["new_content"]
-		var scene_changes = {}
-		if path.get_extension() == "tscn" and change == "modified":
-			scene_changes = godot_project.get_scene_changes_between(path, PackedStringArray(heads_before), PackedStringArray(heads_after))
-			# print("scene_changes: ", scene_changes)
-			
-		# for all the files in the dict, save as tmp files
-
-		# print("File: %s" % path)
-		# print("Change: %s" % change)
-		var old_path = TEMP_DIR.path_join(path.trim_prefix("res://")).get_basename() + "_old." + path.get_extension()
-		var new_path = TEMP_DIR.path_join(path.trim_prefix("res://")).get_basename() + "_new." + path.get_extension()
-		# print("Old path: %s" % old_path)
-		#	print("New path: %s" % new_path)
-		if change == "added":
-			old_path = null
-		if change == "deleted":
-			new_path = null
-		if old_path:
-			plugin.file_system.save_file(old_path, old_content)
-		if new_path:
-			plugin.file_system.save_file(new_path, new_content)
-		var file_dict = {
-			"path": path,
-			"change": change,
-			"old_content": old_path,
-			"new_content": new_path
-		};
-		if scene_changes.size() > 0:
-			file_dict["scene_changes"] = scene_changes
-		new_files.append(file_dict)
-	new_dict["files"] = new_files
-	var display_diff = PatchworkEditor.get_diff(new_dict)
-# 	  Failed to load resource at path user://tmp/project_old.godot
-#   res://addons/patchwork/gdscript/sidebar.gd:492 - Invalid call. Nonexistent function 'add_diff' in base 'Container (DiffInspectorContainer)'.
+	var new_files = {}
+	for file_path: String in files_arr:
+		var file = godot_project.get_scene_changes_between(file_path, PackedStringArray(heads_before), PackedStringArray(heads_after), IMPORT_GETTER)
+		new_files[file_path] = file
+	new_dict.files = new_files
 	inspector.reset()
-	inspector.add_diff(display_diff)
-		
+	inspector.add_diff(new_dict)
+	print ("Length: ", new_files.size())
+	return new_dict
 
-	# for file in display_diff.keys():
-	# 	for key in display_diff[file].keys():
-	# 		var value = display_diff[file][key]
-	# 		current_inspector_object.add_property(key, value)
-	# 	current_inspector_object.add_file_diff(file, display_diff[file])
-	# inspector.edit_object = current_inspector_object
 
 func _process(delta: float) -> void:
 	if queued_calls.size() == 0:

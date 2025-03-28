@@ -62,7 +62,7 @@ func update_overlay(scene_changes: Dictionary):
 			
 			normalized_rects.append(normalized_rect)
 
-			if node_change.type == "changed":
+			if node_change.change_type == "modified":
 				rect_colors.append(Color(0.75, 0.75, 0.75, 1.0))
 			else:
 				rect_colors.append(Color(0.18, 0.8, 0.251, 1.0))
