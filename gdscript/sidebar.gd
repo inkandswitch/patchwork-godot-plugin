@@ -373,6 +373,8 @@ func update_ui() -> void:
 
 	var checked_out_branch = godot_project.get_checked_out_branch()
 
+	print("UPDATE_UI for ", checked_out_branch.name)
+
 
 	self.branches = godot_project.get_branches()
 
@@ -420,7 +422,6 @@ func update_ui() -> void:
 		var change_author = change.user_name
 		var change_timestamp = human_readable_timestamp(change.timestamp)
 
-
 		history_list.add_item(change_hash + " - " + change_author + " - " + change_timestamp)
 
 	# update context menu
@@ -459,14 +460,23 @@ func update_ui() -> void:
 		move_inspector_to_main()
 
 	# DIFF
-	var heads_after
-	var heads_before
 
-	heads_before = checked_out_branch.forked_at
-	heads_after = godot_project.get_heads()
 
-	var diff = update_properties_diff(heads_before, heads_after)
-	update_highlight_changes(diff, checked_out_branch)
+	# show no diff for main branch
+	if checked_out_branch.is_main:
+		update_highlight_changes({}, checked_out_branch)
+		inspector.visible = false
+
+	else:
+		var heads_before = checked_out_branch.forked_at
+		var heads_after = godot_project.get_heads()
+		var diff = update_properties_diff(heads_before, heads_after)
+
+		inspector.visible = true
+
+		print("UPDATE_UI DIFF after for ", checked_out_branch.name)
+
+		update_highlight_changes(diff, checked_out_branch)
 
 func human_readable_timestamp(timestamp: int) -> String:
 	var now = Time.get_unix_time_from_system() * 1000 # Convert to ms
@@ -513,10 +523,15 @@ var prev_heads_after
 var last_diff: Dictionary = {}
 func update_properties_diff(heads_before, heads_after) -> Dictionary:
 	var checked_out_branch = godot_project.get_checked_out_branch()
+
+	print("UPDATE_UI: update_properties_diff", !inspector, " ", !checked_out_branch, " ", checked_out_branch.is_main, " ", checked_out_branch.name)
+
 	if (!inspector):
 		return last_diff
 	if (!checked_out_branch):
 		return last_diff
+
+
 	inspector.visible = !checked_out_branch.is_main;
 
 	if !inspector.visible:
@@ -551,7 +566,7 @@ func show_diff(heads_before, heads_after):
 	new_dict.files = new_files
 	inspector.reset()
 	inspector.add_diff(new_dict)
-	print ("Length: ", new_files.size())
+	print("Length: ", new_files.size())
 	return new_dict
 
 
