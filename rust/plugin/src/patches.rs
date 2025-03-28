@@ -2,11 +2,11 @@ use std::collections::HashSet;
 
 use godot::builtin::{GString, PackedStringArray};
 
-pub fn get_changed_files_vec(patches: Vec<automerge::Patch>) -> Vec<String> {
+pub fn get_changed_files_vec(patches: &Vec<automerge::Patch>) -> Vec<String> {
     let mut changed_files = HashSet::new();
 
     // log all patches
-    for patch in patches.clone() {
+    for patch in patches.iter() {
         let first_key = match patch.path.get(0) {
             Some((_, prop)) => match prop {
                 automerge::Prop::Map(string) => string,
@@ -34,11 +34,11 @@ pub fn get_changed_files_vec(patches: Vec<automerge::Patch>) -> Vec<String> {
     return changed_files.iter().cloned().collect::<Vec<String>>();
 }
 
-pub fn get_changed_files(patches: Vec<automerge::Patch>) -> PackedStringArray {
+pub fn get_changed_files(patches: &Vec<automerge::Patch>) -> PackedStringArray {
     let mut changed_files = HashSet::new();
 
     // log all patches
-    for patch in patches.clone() {
+    for patch in patches.iter() {
         let first_key = match patch.path.get(0) {
             Some((_, prop)) => match prop {
                 automerge::Prop::Map(string) => string,

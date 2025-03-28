@@ -382,14 +382,13 @@ func add_FileDiffResult(file_path: String, file_diff: Dictionary) -> void:
 func add_diff(diff: Dictionary) -> void:
 	print("ADDING DIFF!!!")
 	diff_result = diff
-	var file_diffs = diff.get("files")
-	var size = file_diffs.size()
+	var size = diff_result.size()
 	print("Diff size: ", size)
-	for file in file_diffs.keys():
+	for file in diff_result.keys():
 		if (file.to_lower().ends_with(".import")):
 			continue
 		print("Adding file diff result for ", file)
-		add_FileDiffResult(file, file_diffs[file])
+		add_FileDiffResult(file, diff_result[file])
 
 	
 func reset() -> void:

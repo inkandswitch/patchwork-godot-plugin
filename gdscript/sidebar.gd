@@ -514,8 +514,7 @@ func update_highlight_changes(diff: Dictionary, checked_out_branch) -> void:
 	if edited_root:
 		if highlight_changes && !checked_out_branch.is_main:
 				var path = edited_root.scene_file_path
-				var files = diff.get("files")
-				var scene_changes = files.get(path)
+				var scene_changes = diff.get(path)
 				if scene_changes:
 					HighlightChangesLayer.highlight_changes(edited_root, scene_changes)
 		else:
@@ -551,20 +550,11 @@ func show_diff(heads_before, heads_after):
 	# TODO: handle dependencies of these files
 	# print("heads_before: ", heads_before)
 	# print("heads_after: ", heads_after)
-	var files_arr = godot_project.get_changed_files_between(PackedStringArray(heads_before), PackedStringArray(heads_after))
-
-
-	# print("Changes between %s and %s:" % [hash1, hash2])
-	var new_dict = {}
-	var new_files = {}
-	for file_path: String in files_arr:
-		var file = godot_project.get_scene_changes_between(file_path, PackedStringArray(heads_before), PackedStringArray(heads_after), IMPORT_GETTER)
-		new_files[file_path] = file
-	new_dict.files = new_files
+	var diff = godot_project.get_all_changes_between(PackedStringArray(heads_before), PackedStringArray(heads_after), IMPORT_GETTER)
 	inspector.reset()
-	inspector.add_diff(new_dict)
-	print("Length: ", new_files.size())
-	return new_dict
+	inspector.add_diff(diff)
+	print ("Length: ", diff.size())
+	return diff
 
 
 func _process(delta: float) -> void:
