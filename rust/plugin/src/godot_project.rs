@@ -1274,7 +1274,8 @@ impl GodotProject {
 				scene_files.push(path.clone());
 			}
 		}
-		
+		let mut loaded_ext_resources = HashMap::new();
+
 
 		let mut get_scene_diff = |path: &String| -> Dictionary {
 			let mut result = Dictionary::new();
@@ -1361,19 +1362,6 @@ impl GodotProject {
 								}
 							}
 						}
-						// None => match action {
-						// 	PatchAction::PutMap {
-						// 		key,
-						// 		value: _,
-						// 		conflict: _,
-						// 	} => {
-						// 		added_node_ids.insert(key.clone());
-						// 	}
-						// 	PatchAction::DeleteMap { key } => {
-						// 		deleted_node_ids.insert(key.clone());
-						// 	}
-						// 	_ => {}
-						// },
 						_ => {}
 					},
 				);
@@ -1387,15 +1375,6 @@ impl GodotProject {
 								}
 							}
 						}
-						// None => match action {
-						// 	PatchAction::PutMap { key, value: _, conflict: _ } => {
-						// 		added_ext_resources.insert(key.clone());
-						// 	}
-						// 	PatchAction::DeleteMap { key } => {
-						// 		deleted_ext_resources.insert(key.clone());
-						// 	}
-						// 	_ => {}
-						// },
 						_ => {}
 					},
 				);
@@ -1410,17 +1389,6 @@ impl GodotProject {
 								}
 							}
 						}
-						// None => match action {
-						// 	PatchAction::PutMap { key, value: _, conflict: _ } => {
-						// 		added_sub_resources.insert(key.clone());
-						// 		all_changed_sub_resource_ids.insert(key.clone());
-						// 	}
-						// 	PatchAction::DeleteMap { key } => {
-						// 		deleted_sub_resources.insert(key.clone());
-						// 		all_changed_sub_resource_ids.insert(key.clone());
-						// 	}
-						// 	_ => {}
-						// },
 						_ => {}
 					},
 				);
@@ -1499,7 +1467,7 @@ impl GodotProject {
 				}
 			};
 			
-			let fn_get_prop_value = |prop_value: VariantStrValue, scene: &Option<GodotScene>, _is_old: bool| -> Variant {
+			let mut fn_get_prop_value = |prop_value: VariantStrValue, scene: &Option<GodotScene>, _is_old: bool| -> Variant {
 				let mut path: Option<String> = None;
 				match prop_value {
 					VariantStrValue::Variant(variant) => {
@@ -1528,12 +1496,25 @@ impl GodotProject {
 						if let Some(resource) = resource {
 							return resource;
 						}
+					} 
+					if (!loaded_ext_resources.contains_key(&path)) {
+						// load it
+						let resource_content = self._get_file_at(path.clone(), if _is_old { Some(old_heads.clone()) } else { Some(curr_heads.clone()) });
+						if let Some(resource_content) = resource_content {
+							let resource = self._get_resource_at(path.clone(), &resource_content, if _is_old { old_heads.clone() } else { curr_heads.clone() }, &resource_import_getter);
+							if let Some(resource) = resource {
+								let _ = loaded_ext_resources.insert(path.clone(), resource);
+							}
+						}
+					}
+					if let Some(resource) = loaded_ext_resources.get(&path) {
+						return resource.clone();
 					}
 				}
 				return format!("<ExtResource not found>").to_variant();
 			};
 
-			let get_changed_prop_dict = |prop: String, old_value: VariantStrValue, new_value: VariantStrValue| {
+			let mut get_changed_prop_dict = |prop: String, old_value: VariantStrValue, new_value: VariantStrValue| {
 				return dict!{
 					"name": prop.clone(),
 					"change_type": "modified",
@@ -1541,7 +1522,7 @@ impl GodotProject {
 					"new_value": fn_get_prop_value(new_value, &new_scene, false)
 				}
 			};
-			let detect_changed_prop = |prop: String, class_name: &TypeOrInstance, old_prop: Option<String>, new_prop: Option<String>| {
+			let mut detect_changed_prop = |prop: String, class_name: &TypeOrInstance, old_prop: Option<String>, new_prop: Option<String>| {
 				let sn_2: StringName = StringName::from(&prop);
 				let default_value = if let TypeOrInstance::Type(class_name) = class_name {
 					ClassDb::singleton().class_get_property_default_value(&StringName::from(class_name), &sn_2).to_string()
