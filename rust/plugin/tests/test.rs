@@ -8,7 +8,7 @@ use patchwork_rust_core::godot_parser::GodotConnection;
 use patchwork_rust_core::godot_parser::GodotScene;
 use patchwork_rust_core::godot_project;
 use patchwork_rust_core::utils;
-use pretty_assertions::{assert_eq, assert_ne};
+// use pretty_assertions::{assert_eq, assert_ne};
 
 fn get_test_scene_source() -> String {
     r#"[gd_scene load_steps=6 format=3 uid="uid://jnrusvm3gric"]
@@ -40,15 +40,15 @@ unique_name_in_owner = true
 metadata/patchwork_id = "ae876d398eb24a959b9ff1b00d983948"
 
 [node name="ColorRect" type="ColorRect" parent="ParallaxLayer"]
+offset_bottom = 98.0
+offset_right = 5129.0
+offset_top = -2352.0
 anchor_bottom = 1.0
 anchor_right = 1.0
 anchors_preset = 15
 color = Color(0.980392, 0.980392, 0.980392, 1)
 grow_horizontal = 2
 grow_vertical = 2
-offset_bottom = 98.0
-offset_right = 5129.0
-offset_top = -2352.0
 metadata/patchwork_id = "5b9416e8d96042b6a509f7da3263f687"
 
 [node name="NestedColorRect" type="ColorRect" parent="ParallaxLayer/ColorRect"]
@@ -212,7 +212,7 @@ fn test_resconcile_and_hydrate() {
                     parent_id: Some("node1".to_string()),
                     properties: HashMap::from([(
                         "position".to_string(),
-                        "Vector2(100.0, 100.0)".to_string(),
+                        godot_parser::OrderedProperty::new("Vector2(100.0, 100.0)".to_string(), 0),
                     )]),
                     id: "node2".to_string(),
                     type_or_instance: godot_parser::TypeOrInstance::Type("Sprite2D".to_string()),
@@ -228,9 +228,18 @@ fn test_resconcile_and_hydrate() {
                     name: "Label".to_string(),
                     parent_id: Some("node1".to_string()),
                     properties: HashMap::from([
-                        ("offset_right".to_string(), "40.0".to_string()),
-                        ("offset_bottom".to_string(), "23.0".to_string()),
-                        ("text".to_string(), "\"Hello World\"".to_string()),
+                        (
+                            "offset_right".to_string(),
+                            godot_parser::OrderedProperty::new("40.0".to_string(), 0),
+                        ),
+                        (
+                            "offset_bottom".to_string(),
+                            godot_parser::OrderedProperty::new("23.0".to_string(), 1),
+                        ),
+                        (
+                            "text".to_string(),
+                            godot_parser::OrderedProperty::new("\"Hello World\"".to_string(), 2),
+                        ),
                     ]),
                     id: "node3".to_string(),
                     type_or_instance: godot_parser::TypeOrInstance::Type("Label".to_string()),
@@ -273,11 +282,18 @@ fn test_resconcile_and_hydrate() {
                 properties: HashMap::from([
                     (
                         "colors".to_string(),
-                        "PackedColorArray(0.98, 0.98, 0.98, 1, 0.81, 0.81, 0.81, 1)".to_string(),
+                        godot_parser::OrderedProperty::new(
+                            "PackedColorArray(0.98, 0.98, 0.98, 1, 0.81, 0.81, 0.81, 1)"
+                                .to_string(),
+                            0,
+                        ),
                     ),
                     (
                         "offsets".to_string(),
-                        "PackedFloat32Array(0.0788732, 1)".to_string(),
+                        godot_parser::OrderedProperty::new(
+                            "PackedFloat32Array(0.0788732, 1)".to_string(),
+                            1,
+                        ),
                     ),
                 ]),
             },
@@ -299,25 +315,13 @@ fn test_resconcile_and_hydrate() {
     // write to automerge doc
 
     let mut doc = Automerge::new();
-
     let mut tx = doc.transaction();
-
     example_scene.reconcile(&mut tx, "example.tscn".to_string());
-
     tx.commit();
 
-    let doc_clone = doc.clone();
-
-    println!(
-        "doc: {}",
-        serde_json::to_string(&automerge::AutoSerde::from(&doc_clone)).unwrap()
-    );
+    // rehydrate from automerge doc
 
     let rehydrated_scene = GodotScene::hydrate(&mut doc, "example.tscn").unwrap();
 
-    let doc_json = serde_json::to_string_pretty(&automerge::AutoSerde::from(&doc)).unwrap();
-    println!("Reconciled doc: {}", doc_json);
-
-    // assert that rehydrated scene is deep equal to example scene
-    assert_eq!(example_scene, rehydrated_scene);
+    assert_eq!(example_scene, rehydrated_scene)
 }

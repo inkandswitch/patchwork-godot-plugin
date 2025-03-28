@@ -3,11 +3,12 @@ use automerge::{
     Automerge, ChangeHash, ObjType, ReadDoc, ROOT,
 };
 use godot::prelude::*;
+use safer_ffi::layout::into_raw;
 use std::collections::{HashMap, HashSet};
 use tree_sitter::{Parser, Query, QueryCursor};
 use uuid;
 
-use crate::doc_utils::SimpleDocReader;
+use crate::{doc_utils::SimpleDocReader, utils::print_doc};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GodotScene {
@@ -32,6 +33,18 @@ pub enum TypeOrInstance {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrderedProperty {
+    value: String,
+    order: i64,
+}
+
+impl OrderedProperty {
+    pub fn new(value: String, order: i64) -> Self {
+        Self { value, order }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GodotNode {
     pub id: String,
     pub name: String,
@@ -40,7 +53,7 @@ pub struct GodotNode {
     pub owner: Option<String>,
     pub index: Option<i64>,
     pub groups: Option<String>,
-    pub properties: HashMap<String, String>,
+    pub properties: HashMap<String, OrderedProperty>,
 
     // in the automerge doc the child_node_ids are stored as a map with the key being the child node id and the value being a number that should be used for sort order
     // this allows us to reconcile the children as a set and preserve the order to some extend when merging concurrent changes
@@ -88,7 +101,7 @@ pub struct ExternalResourceNode {
 pub struct SubResourceNode {
     pub id: String,
     pub resource_type: String,
-    pub properties: HashMap<String, String>, // key value pairs below the section header
+    pub properties: HashMap<String, OrderedProperty>, // key value pairs below the section header
     pub idx: i64,
 }
 // test
@@ -201,13 +214,15 @@ impl GodotScene {
             let mut existing_props = tx.keys(&properties_obj).collect::<HashSet<_>>();
 
             // Add or update properties
-            for (key, value) in &main_resource.properties {
+            for (key, property) in &main_resource.properties {
                 if let Some(existing_value) = tx.get_string(&properties_obj, key) {
-                    if existing_value != *value {
-                        tx.put(&properties_obj, key, value.clone()).unwrap();
+                    if existing_value != property.value {
+                        tx.put(&properties_obj, key, property.value.clone())
+                            .unwrap();
                     }
                 } else {
-                    tx.put(&properties_obj, key, value.clone()).unwrap();
+                    tx.put(&properties_obj, key, property.value.clone())
+                        .unwrap();
                 }
                 existing_props.remove(key);
             }
@@ -302,22 +317,28 @@ impl GodotScene {
                         .unwrap()
                 });
 
-            let mut existing_props = tx.keys(&properties_obj).collect::<HashSet<_>>();
+            let mut properties_to_delete = tx.keys(&properties_obj).collect::<HashSet<_>>();
 
             // Add or update properties
-            for (key, value) in &resource.properties {
-                if let Some(existing_value) = tx.get_string(&properties_obj, key) {
-                    if existing_value != *value {
-                        tx.put(&properties_obj, key, value.clone()).unwrap();
-                    }
-                } else {
-                    tx.put(&properties_obj, key, value.clone()).unwrap();
+            for (key, property) in &resource.properties {
+                let value_obj = tx
+                    .get_obj_id(&properties_obj, key)
+                    .unwrap_or_else(|| tx.put_object(&properties_obj, key, ObjType::Map).unwrap());
+
+                let value = tx.get_string(&value_obj, "value");
+                if value != Some(property.value.clone()) {
+                    let _ = tx.put(&value_obj, "value", property.value.clone());
                 }
-                existing_props.remove(key);
+
+                let order = tx.get_int(&value_obj, "order");
+                if order != Some(property.order) {
+                    let _ = tx.put(&value_obj, "order", property.order);
+                }
+                properties_to_delete.remove(key);
             }
 
             // Remove properties that no longer exist
-            for key in existing_props {
+            for key in properties_to_delete {
                 tx.delete(&properties_obj, &key).unwrap();
             }
         }
@@ -382,22 +403,30 @@ impl GodotScene {
             });
 
             // Get existing properties to check for deletions
-            let mut existing_props = tx.keys(&properties_obj).collect::<HashSet<_>>();
+            let mut properties_to_delete = tx.keys(&properties_obj).collect::<HashSet<_>>();
 
             // Add or update properties
-            for (key, value) in &node.properties {
-                // don't store metadata/patchwork_id as property we already store it in the nodes object as id
-                // during serialization we add back metadata/patchwork_id to the properties
-                if key == "metadata/patchwork_id" {
-                    continue;
+            for (key, property) in &node.properties {
+                let value_obj = tx
+                    .get_obj_id(&properties_obj, key)
+                    .unwrap_or_else(|| tx.put_object(&properties_obj, key, ObjType::Map).unwrap());
+
+                println!("reconcile {:?} {:?}", key, property);
+
+                let value = tx.get_string(&value_obj, "value");
+                if value != Some(property.value.clone()) {
+                    let _ = tx.put(&value_obj, "value", property.value.clone());
                 }
 
-                tx.put(&properties_obj, key, value.clone()).unwrap();
-                existing_props.remove(key);
+                let order = tx.get_int(&value_obj, "order");
+                if order != Some(property.order) {
+                    let _ = tx.put(&value_obj, "order", property.order);
+                }
+                properties_to_delete.remove(key);
             }
 
             // Remove properties that no longer exist
-            for key in existing_props {
+            for key in properties_to_delete {
                 tx.delete(&properties_obj, &key).unwrap();
             }
 
@@ -564,11 +593,15 @@ impl GodotScene {
 
             let mut properties = HashMap::new();
             for key in doc.keys_at(&properties_obj, &heads) {
+                let property_obj = doc.get_obj_id_at(&properties_obj, &key, &heads).unwrap();
+
                 let value = doc
-                    .get_string_at(&properties_obj, &key, &heads)
+                    .get_string_at(&property_obj, "value", &heads)
                     .ok_or_else(|| format!("Could not find value for property: {}", key))?;
 
-                properties.insert(key, value);
+                let order = doc.get_int_at(&property_obj, "order", &heads).unwrap_or(0);
+
+                properties.insert(key, OrderedProperty { value, order });
             }
 
             Some(SubResourceNode {
@@ -679,11 +712,11 @@ impl GodotScene {
 
             let mut properties = HashMap::new();
             for key in doc.keys_at(&properties_obj, &heads) {
-                let value = doc
-                    .get_string_at(&properties_obj, &key, &heads)
-                    .ok_or_else(|| format!("Could not find value for property: {}", key))?;
+                let property_obj = doc.get_obj_id_at(&properties_obj, &key, &heads).unwrap();
+                let order = doc.get_int_at(&property_obj, "order", &heads).unwrap();
+                let value = doc.get_string_at(&property_obj, "value", &heads).unwrap();
 
-                properties.insert(key, value);
+                properties.insert(key, OrderedProperty { value, order });
             }
 
             let sub_resource = SubResourceNode {
@@ -744,11 +777,15 @@ impl GodotScene {
                 .ok_or_else(|| format!("Could not find properties object for node: {}", node_id))?;
             let mut properties = HashMap::new();
             for key in doc.keys_at(&properties_obj, &heads) {
+                let property_obj = doc.get_obj_id_at(&properties_obj, &key, &heads).unwrap();
+
                 let value = doc
-                    .get_string_at(&properties_obj, &key, &heads)
+                    .get_string_at(&property_obj, "value", &heads)
                     .ok_or_else(|| format!("Could not find value for property: {}", key))?;
 
-                properties.insert(key, value);
+                let order = doc.get_int_at(&property_obj, "order", &heads).unwrap();
+
+                properties.insert(key, OrderedProperty { value, order });
             }
 
             // Get child node IDs
@@ -927,11 +964,12 @@ impl GodotScene {
                 resource.resource_type, resource.id
             ));
 
-            // Properties sorted by name (a to z)
-            let mut sorted_props: Vec<(&String, &String)> = resource.properties.iter().collect();
-            sorted_props.sort_by(|(a, _), (b, _)| a.to_lowercase().cmp(&b.to_lowercase()));
-            for (key, value) in sorted_props {
-                output.push_str(&format!("{} = {}\n", key, value));
+            // Properties sorted by order number of each property
+            let mut sorted_props: Vec<(&String, &OrderedProperty)> =
+                resource.properties.iter().collect();
+            sorted_props.sort_by(|(_, a), (_, b)| a.order.cmp(&b.order));
+            for (key, property) in sorted_props {
+                output.push_str(&format!("{} = {}\n", key, property.value));
             }
 
             output.push('\n');
@@ -941,12 +979,12 @@ impl GodotScene {
         if let Some(main_resource) = &self.main_resource {
             output.push_str(&format!("[resource]\n"));
 
-            // Properties sorted by name (a to z)
-            let mut sorted_props: Vec<(&String, &String)> =
+            // Properties sorted by order number of each property
+            let mut sorted_props: Vec<(&String, &OrderedProperty)> =
                 main_resource.properties.iter().collect();
-            sorted_props.sort_by(|(a, _), (b, _)| a.to_lowercase().cmp(&b.to_lowercase()));
-            for (key, value) in sorted_props {
-                output.push_str(&format!("{} = {}\n", key, value));
+            sorted_props.sort_by(|(_, a), (_, b)| a.order.cmp(&b.order));
+            for (key, property) in sorted_props {
+                output.push_str(&format!("{} = {}\n", key, property.value));
             }
 
             output.push('\n');
@@ -1026,11 +1064,12 @@ impl GodotScene {
 
         output.push_str("]\n");
 
-        // Properties sorted a to z
-        let mut sorted_props: Vec<(&String, &String)> = node.properties.iter().collect();
-        sorted_props.sort_by(|(a, _), (b, _)| a.to_lowercase().cmp(&b.to_lowercase()));
-        for (key, value) in sorted_props {
-            output.push_str(&format!("{} = {}\n", key, value));
+        // Properties sorted by order number of each property
+        let mut sorted_props: Vec<(&String, &OrderedProperty)> = node.properties.iter().collect();
+        sorted_props
+            .sort_by(|(_, property_a), (_, property_b)| property_a.order.cmp(&property_b.order));
+        for (key, property) in sorted_props {
+            output.push_str(&format!("{} = {}\n", key, property.value));
         }
 
         // serialize node id as metadata/patchwork_id, nodes in Godot don't have ids so we use metadata to attach the id
@@ -1077,8 +1116,8 @@ impl GodotScene {
 
         // Add node properties as a nested dictionary
         let mut properties = Dictionary::new();
-        for (key, value) in &node.properties {
-            properties.insert(key.clone(), value.clone());
+        for (key, property) in &node.properties {
+            properties.insert(key.clone(), property.value.clone());
         }
         content.insert("properties", properties);
 
@@ -1138,8 +1177,9 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
             let mut sub_resource_idx = 0;
             for m in matches {
                 let mut heading = HashMap::new();
-                let mut properties = HashMap::new();
+                let mut properties = Vec::new();
                 let mut section_id = String::new();
+                let mut parsed_node_id = None;
 
                 for (i, capture) in m.captures.iter().enumerate() {
                     if let Ok(text) = capture.node.utf8_text(content_bytes) {
@@ -1160,7 +1200,18 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                                 // prop_key
                                 if let Some(value_capture) = m.captures.get(i + 1) {
                                     if let Ok(value) = value_capture.node.utf8_text(content_bytes) {
-                                        properties.insert(text.to_string(), value.to_string());
+                                        let key = text.to_string();
+                                        if key == "metadata/patchwork_id" {
+                                            parsed_node_id = Some(value.to_string());
+                                        } else {
+                                            properties.push((
+                                                key,
+                                                OrderedProperty {
+                                                    value: value.to_string(),
+                                                    order: properties.len() as i64,
+                                                },
+                                            ));
+                                        }
                                     }
                                 }
                             }
@@ -1218,7 +1269,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                     main_resource = Some(SubResourceNode {
                         id: "".to_string(), // Resource sections don't have IDs
                         resource_type,
-                        properties,
+                        properties: properties.into_iter().collect(),
                         idx: 0,
                     });
 
@@ -1260,27 +1311,21 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
 
                 // NODE
                 } else if section_id == "node" {
-                    // Create a node and add it to the nodes map
-                    let node_id;
-
                     // Check if node has a patchwork_id in metadata
-                    if let Some(patchwork_id) = properties.get("metadata/patchwork_id") {
-                        let patchwork_id = unquote(&patchwork_id);
+                    let node_id = if let Some(parsed_node_id) = parsed_node_id {
+                        let parsed_node_id = unquote(&parsed_node_id);
 
                         // generate a new id if the patchwork_id is already used by another node
                         // this can happen if a node is copied and pasted in Godot
-                        if parsed_node_ids.contains(&patchwork_id) {
-                            node_id = uuid::Uuid::new_v4().simple().to_string();
+                        if parsed_node_ids.contains(&parsed_node_id) {
+                            uuid::Uuid::new_v4().simple().to_string()
                         } else {
-                            node_id = patchwork_id;
+                            parsed_node_id
                         }
                     } else {
                         // Generate a UUID if no patchwork_id exists
-                        node_id = uuid::Uuid::new_v4().simple().to_string();
-                    }
-
-                    // delete metadata/patchwork_id from properties because we store it in the nodes object as id
-                    properties.remove("metadata/patchwork_id");
+                        uuid::Uuid::new_v4().simple().to_string()
+                    };
 
                     parsed_node_ids.insert(node_id.clone());
 
@@ -1347,7 +1392,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         owner: heading.get("owner").cloned().map(|o| unquote(&o)),
                         index: heading.get("index").and_then(|i| i.parse::<i64>().ok()),
                         groups: heading.get("groups").cloned(),
-                        properties,
+                        properties: properties.into_iter().collect(),
                         child_node_ids: Vec::new(),
                     };
 
@@ -1417,7 +1462,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                     let sub_resource = SubResourceNode {
                         id: id.clone(),
                         resource_type: subresource_type,
-                        properties,
+                        properties: properties.into_iter().collect(),
                         idx: sub_resource_idx,
                     };
 
