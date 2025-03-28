@@ -268,7 +268,7 @@ func add_NodeDiffResult(file_section: DiffInspectorSection, node_diff: Dictionar
 		node_label += " (Added)"
 		# TODO: make rust code do this
 		prop_diffs = get_prop_diffs_from_properties(node_diff["new_content"]["properties"], "added")
-		node_type = node_diff["new_content"]["type"]
+		# node_type = node_diff["new_content"]["type"]
 		print("adding node added box")
 		added_nodes.append(fake_node)
 	elif change_type == "removed":
@@ -276,17 +276,17 @@ func add_NodeDiffResult(file_section: DiffInspectorSection, node_diff: Dictionar
 		node_label += " (Deleted)"
 		print("adding node deleted box")
 		prop_diffs = get_prop_diffs_from_properties(node_diff["old_content"]["properties"], "removed")
-		node_type = node_diff["old_content"]["type"]
+		# node_type = node_diff["old_content"]["type"]
 		deleted_nodes.append(fake_node)
 	else:
 		color = modified_color
 		node_label += " (Modified)"
 		prop_diffs = node_diff["changed_props"]
-		node_type = node_diff["new_content"]["type"]
+		# node_type = node_diff["new_content"]["type"]
 		changed_nodes.append(fake_node)
 	inspector_section.setup(node_name, node_label, fake_node, color, true, 1, 2)
 	inspector_section.set_type(change_type)
-	fake_node.original_class = node_type
+	# fake_node.original_class = node_type
 	var i = 0
 	# get the length of the prop_diffs dictionary
 	var prop_diffs_length = prop_diffs.keys().size()
