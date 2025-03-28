@@ -62,6 +62,9 @@ func init_godot_project():
 		print("Failed to create GodotProject instance.")
 		return
 
+
+	print("wait for checked out branch")
+
 	await godot_project.checked_out_branch
 
 	config.set_project_value("checked_out_branch_doc_id", godot_project.get_checked_out_branch().id)
