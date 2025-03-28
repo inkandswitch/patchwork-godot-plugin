@@ -386,6 +386,12 @@ impl GodotScene {
 
             // Add or update properties
             for (key, value) in &node.properties {
+                // don't store metadata/patchwork_id as property we already store it in the nodes object as id
+                // during serialization we add back metadata/patchwork_id to the properties
+                if key == "metadata/patchwork_id" {
+                    continue;
+                }
+
                 tx.put(&properties_obj, key, value.clone()).unwrap();
                 existing_props.remove(key);
             }
@@ -862,8 +868,8 @@ impl GodotScene {
             sub_resources,
             nodes,
             connections,
-			editable_instances,
-			main_resource,
+            editable_instances,
+            main_resource,
         })
     }
 
@@ -1026,6 +1032,9 @@ impl GodotScene {
         for (key, value) in sorted_props {
             output.push_str(&format!("{} = {}\n", key, value));
         }
+
+        // serialize node id as metadata/patchwork_id, nodes in Godot don't have ids so we use metadata to attach the id
+        output.push_str(&format!("metadata/patchwork_id = \"{}\"\n", node.id));
 
         // Always add a blank line after a node's properties
         output.push('\n');
@@ -1268,11 +1277,10 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                     } else {
                         // Generate a UUID if no patchwork_id exists
                         node_id = uuid::Uuid::new_v4().simple().to_string();
-                        properties.insert(
-                            "metadata/patchwork_id".to_string(),
-                            format!("\"{}\"", node_id).clone(),
-                        );
                     }
+
+                    // delete metadata/patchwork_id from properties because we store it in the nodes object as id
+                    properties.remove("metadata/patchwork_id");
 
                     parsed_node_ids.insert(node_id.clone());
 
@@ -1518,7 +1526,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 sub_resources,
                 nodes,
                 connections,
-				editable_instances,
+                editable_instances,
                 main_resource,
             })
         }

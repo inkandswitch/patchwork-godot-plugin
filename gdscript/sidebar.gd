@@ -373,7 +373,6 @@ func update_ui() -> void:
 
 	var checked_out_branch = godot_project.get_checked_out_branch()
 
-	print("UPDATE_UI for ", checked_out_branch.name)
 
 	self.branches = godot_project.get_branches()
 
@@ -481,7 +480,6 @@ func update_ui() -> void:
 
 		inspector.visible = true
 
-		print("UPDATE_UI DIFF after for ", checked_out_branch.name)
 
 		update_highlight_changes(diff, checked_out_branch)
 
@@ -530,8 +528,6 @@ var prev_heads_after
 var last_diff: Dictionary = {}
 func update_properties_diff(heads_before, heads_after) -> Dictionary:
 	var checked_out_branch = godot_project.get_checked_out_branch()
-
-	print("UPDATE_UI: update_properties_diff", !inspector, " ", !checked_out_branch, " ", checked_out_branch.is_main, " ", checked_out_branch.name)
 
 	if (!inspector):
 		return last_diff
