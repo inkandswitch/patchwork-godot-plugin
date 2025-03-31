@@ -29,7 +29,8 @@ const TEMP_DIR = "user://tmp"
 var branches = []
 var plugin: EditorPlugin
 var config: PatchworkConfig
-var queued_calls = []
+
+var task_modal: TaskModal = TaskModal.new()
 
 var highlight_changes = false
 
@@ -42,7 +43,7 @@ func init(plugin: EditorPlugin, godot_project: GodotProject, config: PatchworkCo
 	self.plugin = plugin
 	self.config = config
 	
-func _update_ui_on_branches_changed(branches: Array):
+func _update_ui_on_branches_changed(_branches: Array):
 	print("Branches changed, updating UI", branches)
 	update_ui()
 
@@ -54,7 +55,7 @@ func _update_ui_on_files_changed():
 	print("Files changed, updating UI")
 	update_ui()
 
-func _update_ui_on_branch_checked_out(branch):
+func _update_ui_on_branch_checked_out(_branch):
 	print("Branch checked out, updating UI")
 	update_ui()
 
@@ -66,7 +67,8 @@ func _on_scene_saved(path):
 
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
-	print("sidebar ready")
+	# need to add task_modal as a child to the plugin otherwise process won't be called
+	add_child(task_modal)
 
 	update_ui()
 	# get the class name of the inspector
@@ -209,40 +211,6 @@ static func popup_box(parent_window: Node, dialog: AcceptDialog, message: String
 
 var current_cvs_action = []
 
-# The reason we are queueing calls is because we need to wait for the editor to finish performing certain actions before we can manipulate gui elements
-# We were getting crashes and weird behavior when trying to do everything synchronously
-# Basically, if we need to do something that would induce the editor to perform actions, we need to queue it
-func add_call_to_queue(call: Callable):
-	queued_calls.append(call)
-
-func _before_cvs_action_after_save(cvs_action: String, callback: Callable, save: bool):
-	PatchworkEditor.progress_add_task(cvs_action, cvs_action, 10, false)
-	current_cvs_action.append(cvs_action)
-	if save:
-		plugin.sync_godot_to_patchwork()
-		plugin.file_system.connect_to_file_system()
-		print("*** All scenes saved!")
-	add_call_to_queue(callback)
-
-
-func _before_cvs_action(cvs_action: String, callback: Callable, save: bool):
-	if not save:
-		add_call_to_queue(self._before_cvs_action_after_save.bind(cvs_action, callback, save))
-		return
-	print("*** Saving all scenes before CVS action %s" % [cvs_action])
-	plugin.file_system.disconnect_from_file_system()
-	EditorInterface.save_all_scenes();
-	add_call_to_queue(self._before_cvs_action_after_save.bind(cvs_action, callback, save))
-
-
-func _after_cvs_action():
-	if not current_cvs_action.is_empty():
-		for i in range(current_cvs_action.size()):
-			pass
-			PatchworkEditor.progress_end_task(current_cvs_action[i])
-		current_cvs_action = []
-
-
 func ensure_user_has_no_unsaved_files(message: String, callback: Callable):
 	# todo: add back auto save
 	if PatchworkEditor.unsaved_files_open():
@@ -262,18 +230,21 @@ func ensure_user_has_no_unsaved_files(message: String, callback: Callable):
 	else:
 		callback.call()
 
-
 func checkout_branch(branch_id: String) -> void:
+	var branch = godot_project.get_branch_by_id(branch_id)
+
 	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before checking out another branch.", func():
-		_before_cvs_action("checking out", func():
-			godot_project.checkout_branch(branch_id)
-			add_call_to_queue(self._after_cvs_action)
-		, false)
+		task_modal.do_task(
+			"Checking out branch \"%s\"" % [branch.name],
+			func():
+				godot_project.checkout_branch(branch_id)
+
+				if godot_project.get_checked_out_branch().id != branch_id:
+					await godot_project.checked_out_branch
+		)
 	)
 
 func create_new_branch() -> void:
-	var message = "creating a new branch"
-
 	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before creating a new branch.", func():
 		var dialog = ConfirmationDialog.new()
 		dialog.title = "Create New Branch"
@@ -307,10 +278,11 @@ func create_new_branch() -> void:
 			var new_branch_name = branch_name_input.text.strip_edges()
 			dialog.queue_free()
 
-			_before_cvs_action("creating a new branch", func():
+			task_modal.do_task("Creating new branch \"%s\"" % [new_branch_name], func():
 				godot_project.create_branch(new_branch_name)
-				add_call_to_queue(self._after_cvs_action)
-			, false)
+
+				await godot_project.checked_out_branch
+			)
 		)
 
 		add_child(dialog)
@@ -340,13 +312,19 @@ func create_merge_preview_branch():
 	var source_branch_doc_id = checked_out_branch.id
 	var target_branch_doc_id = godot_project.get_main_branch().id
 
-	godot_project.create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id)
+	task_modal.do_task("Creating merge preview", func():
+		godot_project.create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id)
+
+		await godot_project.checked_out_branch
+	)
 
 func cancel_merge_preview():
-	var checked_out_branch = godot_project.get_checked_out_branch()
+	task_modal.do_task("Cancel merge preview", func():
+		var checked_out_branch = godot_project.get_checked_out_branch()
 
-	godot_project.delete_branch(checked_out_branch.id)
-	godot_project.checkout_branch(checked_out_branch.forked_from)
+		godot_project.delete_branch(checked_out_branch.id)
+		godot_project.checkout_branch(checked_out_branch.forked_from)
+	)
 
 
 func confirm_merge_preview():
@@ -360,10 +338,9 @@ func confirm_merge_preview():
 
 	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before merging.", func():
 		popup_box(self, $ConfirmationDialog, "Are you sure you want to merge \"%s\" into \"%s\" ?" % [original_source_branch.name, target_branch.name], "Merge Branch", func():
-			_before_cvs_action("merging", func():
+			task_modal.do_task("Merging \"%s\" into \"%s\"" % [original_source_branch.name, target_branch.name], func():
 				godot_project.merge_branch(source_branch_doc_id, target_branch_doc_id)
-				add_call_to_queue(self._after_cvs_action)
-			, false)
+			)
 		)
 	)
 
@@ -553,18 +530,5 @@ func show_diff(heads_before, heads_after):
 	var diff = godot_project.get_all_changes_between(PackedStringArray(heads_before), PackedStringArray(heads_after), IMPORT_GETTER)
 	inspector.reset()
 	inspector.add_diff(diff)
-	print ("Length: ", diff.size())
+	print("Length: ", diff.size())
 	return diff
-
-
-func _process(delta: float) -> void:
-	if queued_calls.size() == 0:
-		return
-	var calls = []
-	calls.append_array(queued_calls)
-	queued_calls.clear()
-	for call in calls:
-		if call.is_valid():
-			call.call()
-		else:
-			print("Invalid call: ", call)

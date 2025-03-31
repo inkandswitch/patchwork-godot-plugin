@@ -83,7 +83,6 @@ func _scan_directory_for_files(dir: DirAccess, current_path: String, files: Arra
 	var file_name = dir.get_next()
 	
 	while file_name != "":
-
 		if file_name == "." or file_name == "..":
 			file_name = dir.get_next()
 			continue

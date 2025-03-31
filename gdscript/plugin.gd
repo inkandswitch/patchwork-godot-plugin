@@ -7,14 +7,7 @@ var file_system: FileSystem
 var sidebar
 
 var last_synced_heads: PackedStringArray
-# Array of [<path>, <content>]
-var file_content_to_reload: Array = []
-var files_to_reload_mutex: Mutex = Mutex.new()
-var current_pw_to_godot_sync_task_id: int = -1
-var deferred_pw_to_godot_sync: bool = false
-var timer: SceneTreeTimer = null
-
-var prev_checked_out_branch_id
+var task_modal: TaskModal = TaskModal.new()
 
 func add_new_uid(path: String, uid: String):
 	var id = ResourceUID.text_to_id(uid)
@@ -26,17 +19,24 @@ func add_new_uid(path: String, uid: String):
 		ResourceUID.set_id(id, path)
 		
 func _process(_delta: float) -> void:
-	pass
 	if godot_project:
 		godot_project.process(_delta)
 
+
 func _enter_tree() -> void:
-	print("start patchwork");
+	# need to add task_modal as a child to the plugin otherwise process won't be called
+	add_child(task_modal)
+
 	config = PatchworkConfig.new();
 	file_system = FileSystem.new(self)
 
+	task_modal.start_task("Loading Patchwork")
+
 	await init_godot_project()
 
+	task_modal.end_task("Loading Patchwork")
+
+	print("checked out branch: ", godot_project.get_checked_out_branch())
 
 	# listen for file changes once we have initialized the godot project
 	file_system.connect("file_changed", _on_local_file_changed)
@@ -48,6 +48,7 @@ func _enter_tree() -> void:
 	sidebar.init(self, godot_project, config)
 	add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
 
+	
 func init_godot_project():
 	var storage_folder_path = ProjectSettings.globalize_path("res://.patchwork")
 
