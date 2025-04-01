@@ -1,6 +1,6 @@
 @tool
 class_name DiffInspectorContainer
-extends ScrollContainer
+extends DiffInspector
 
 @export var added_icon: Texture2D
 @export var removed_icon: Texture2D
@@ -144,7 +144,7 @@ func get_prop_editor(fake_object: MissingResource, prop_name: String, prop_value
 	print("!!! fake_object prop value: ", fake_object.get(prop_name))
 	if prop_label == null:
 		prop_label = snake_case_to_human_readable(prop_name)
-	var editor_property: DiffInspectorProperty = DiffInspector.instantiate_property_editor(fake_object, prop_name, false)
+	var editor_property: DiffInspectorProperty = DiffInspector.instance_property_diff(fake_object, prop_name, false)
 	editor_property.set_object_and_property(fake_object, prop_name)
 	update_property_editor(editor_property)
 	var panel_container: PanelContainer = PanelContainer.new()

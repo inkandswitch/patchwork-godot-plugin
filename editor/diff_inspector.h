@@ -95,8 +95,8 @@ protected:
 	static void _bind_methods();
 };
 
-class DiffInspector : public ScrollContainer {
-	GDCLASS(DiffInspector, ScrollContainer);
+class DiffInspector : public EditorInspector {
+	GDCLASS(DiffInspector, EditorInspector);
 
 protected:
 	static void _bind_methods();
@@ -104,7 +104,7 @@ protected:
 public:
 	static Variant get_property_revert_value(Object *p_object, const StringName &p_property);
 	static bool can_property_revert(Object *p_object, const StringName &p_property, bool has_current_value, Variant p_custom_current_value);
-	static DiffInspectorProperty *instantiate_property_editor(Object *p_object, const String &p_path, bool p_wide = false);
+	static DiffInspectorProperty *instance_property_diff(Object *p_object, const String &p_path, bool p_wide = false);
 };
 
 #endif // DIFF_INSPECTOR_H

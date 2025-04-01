@@ -12,7 +12,7 @@
 [ext_resource type="Texture2D" uid="uid://b3jhx5bvcdswo" path="res://addons/patchwork/icons/warning-circle.svg" id="9_p7w5p"]
 [ext_resource type="Texture2D" uid="uid://4obywo8ddx25" path="res://addons/patchwork/icons/arrow.svg" id="9_xrl6o"]
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_i54cd"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ftank"]
 content_margin_left = 4.0
 content_margin_top = 4.0
 content_margin_right = 4.0
@@ -147,18 +147,17 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="BigDiffer" type="ScrollContainer" parent="VBoxContainer/TabContainer/Diff/VBoxContainer/MainDiffContainer"]
+[node name="BigDiffer" type="DiffInspector" parent="VBoxContainer/TabContainer/Diff/VBoxContainer/MainDiffContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 theme = ExtResource("4_7letu")
-theme_override_styles/panel = SubResource("StyleBoxFlat_i54cd")
-follow_focus = true
+theme_override_styles/panel = SubResource("StyleBoxFlat_ftank")
 script = ExtResource("4_uttw7")
 added_icon = ExtResource("5_iqebc")
 removed_icon = ExtResource("6_ha5pl")
 modified_icon = ExtResource("7_o8jin")
-modified_color = Color(0.933333, 0.643137, 0.352941, 1)
+metadata/_custom_type_script = "uid://d145i10hos3c6"
 
 [node name="DifferMainVBox" type="VBoxContainer" parent="VBoxContainer/TabContainer/Diff/VBoxContainer/MainDiffContainer/BigDiffer"]
 unique_name_in_owner = true

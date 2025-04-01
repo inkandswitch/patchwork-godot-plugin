@@ -458,7 +458,7 @@ bool DiffInspector::can_property_revert(Object *p_object, const StringName &p_pr
 	return EditorPropertyRevert::can_property_revert(p_object, p_property, cur_value);
 }
 
-DiffInspectorProperty *DiffInspector::instantiate_property_editor(Object *p_object, const String &p_path, bool p_wide) {
+DiffInspectorProperty *DiffInspector::instance_property_diff(Object *p_object, const String &p_path, bool p_wide) {
 	List<PropertyInfo> list;
 	p_object->get_property_list(&list, false);
 	PropertyInfo p_info;
@@ -477,7 +477,7 @@ DiffInspectorProperty *DiffInspector::instantiate_property_editor(Object *p_obje
 }
 
 void DiffInspector::_bind_methods() {
-	ClassDB::bind_static_method("DiffInspector", D_METHOD("instantiate_property_editor", "object", "path", "wide"), &DiffInspector::instantiate_property_editor, DEFVAL(false));
+	ClassDB::bind_static_method("DiffInspector", D_METHOD("instance_property_diff", "object", "path", "wide"), &DiffInspector::instance_property_diff, DEFVAL(false));
 	ClassDB::bind_static_method("DiffInspector", D_METHOD("get_property_revert_value", "object", "property"), &DiffInspector::get_property_revert_value);
 	ClassDB::bind_static_method("DiffInspector", D_METHOD("can_property_revert", "object", "property", "has_current_value", "custom_current_value"), &DiffInspector::can_property_revert);
 }
