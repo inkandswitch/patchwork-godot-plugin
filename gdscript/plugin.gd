@@ -17,7 +17,7 @@ func add_new_uid(path: String, uid: String):
 		ResourceUID.add_id(id, path)
 	elif not ResourceUID.get_id_path(id) == path:
 		ResourceUID.set_id(id, path)
-		
+
 func _process(_delta: float) -> void:
 	if godot_project:
 		godot_project.process(_delta)
@@ -48,7 +48,7 @@ func _enter_tree() -> void:
 	sidebar.init(self, godot_project, config)
 	add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
 
-	
+
 func init_godot_project():
 	var storage_folder_path = ProjectSettings.globalize_path("res://.patchwork")
 
@@ -124,19 +124,19 @@ func sync_patchwork_to_godot():
 			continue
 
 		var fs_content = file_system.get_file(path)
-		
+
 		if fs_content != null and typeof(fs_content) != typeof(patchwork_content):
 			# log if current content is not the same type as content
 			printerr("different types at ", path, ": ", typeof(fs_content), " vs ", typeof(patchwork_content))
 			continue
 
 
-		# skip files that are already in sync 
+		# skip files that are already in sync
 		# exeption: always reload open scenes, because the scene might not have changed but a contained scene might have
 		if patchwork_content == fs_content:
 			continue
 
-		
+
 		print("file changed: ", path)
 
 		# reload after sync
@@ -157,10 +157,10 @@ func sync_patchwork_to_godot():
 			add_new_uid(new_path, uid)
 		elif FileAccess.file_exists(path + ".import"):
 			files_to_reimport[path] = true
-		# if it's a script, 
+		# if it's a script,
 		elif path.get_extension() == "gd":
 			reload_scripts = true
-		
+
 		if path.get_extension() == "tscn":
 			# reload scene files to update references
 			scenes_to_reload.append(path)
@@ -202,10 +202,10 @@ func get_relevant_godot_files() -> Array[String]:
 func _on_checked_out_branch(checked_out_branch: String):
 	config.set_project_value("checked_out_branch_doc_id", checked_out_branch)
 	sync_patchwork_to_godot()
-	
+
 func _on_local_file_changed(path: String, content: Variant):
 	if _is_relevant_file(path):
-		# todo: do save at head, but the current synced heads are wrong 
+		# todo: do save at head, but the current synced heads are wrong
 		# so we need to fix that first
 		print("saving file: ", path)
 
