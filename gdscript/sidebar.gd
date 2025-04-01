@@ -119,6 +119,10 @@ func update_sync_status() -> void:
 	var checked_out_branch = godot_project.get_checked_out_branch()
 
 
+	# check if doc_sync_states has the checked_out_branch.id
+	if !peer_connection_info.doc_sync_states.has(checked_out_branch.id):
+		return
+
 	var sync_status = peer_connection_info.doc_sync_states[checked_out_branch.id];
 
 	if sync_status.last_acked_heads == checked_out_branch.heads:
@@ -385,10 +389,6 @@ func update_ui() -> void:
 		var label = branch.name
 		var is_checked_out = checked_out_branch && branch.id == checked_out_branch.id
 
-		if branch.is_main:
-			label = label + " 👑"
-			target_branch_picker.select(i)
-
 		branch_picker.add_item(label, i)
 		branch_picker.set_item_metadata(i, branch.id)
 
@@ -397,6 +397,10 @@ func update_ui() -> void:
 
 		target_branch_picker.add_item(label, i)
 		target_branch_picker.set_item_metadata(i, branch.id)
+
+		if branch.is_main:
+			label = label + " 👑"
+			target_branch_picker.select(i)
 
 		# this should not happen, but right now the sync is not working correctly so we need to surface this in the interface
 		if branch.is_not_loaded:
