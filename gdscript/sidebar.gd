@@ -23,6 +23,7 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 @onready var main_diff_container: MarginContainer = %MainDiffContainer
 @onready var merge_preview_message_label: Label = %MergePreviewMessageLabel
 @onready var merge_preview_message_icon: TextureRect = %MergePreviewMessageIcon
+@onready var sync_status_icon: TextureButton = %SyncStatusIcon
 
 const TEMP_DIR = "user://tmp"
 
@@ -42,21 +43,18 @@ func init(plugin: EditorPlugin, godot_project: GodotProject, config: PatchworkCo
 	self.godot_project = godot_project
 	self.plugin = plugin
 	self.config = config
-	
+
+
 func _update_ui_on_branches_changed(_branches: Array):
-	print("Branches changed, updating UI", branches)
 	update_ui()
 
 func _update_ui_on_files_saved():
-	print("Files saved, updating UI")
 	update_ui()
 
 func _update_ui_on_files_changed():
-	print("Files changed, updating UI")
 	update_ui()
 
 func _update_ui_on_branch_checked_out(_branch):
-	print("Branch checked out, updating UI")
 	update_ui()
 
 func _on_resource_saved(path):
@@ -70,7 +68,9 @@ func _ready() -> void:
 	# need to add task_modal as a child to the plugin otherwise process won't be called
 	add_child(task_modal)
 
+	update_sync_status()
 	update_ui()
+
 	# get the class name of the inspector
 	var inspector_class = inspector.get_class()
 	print("Inspector class: ", inspector_class)
@@ -87,6 +87,7 @@ func _ready() -> void:
 		godot_project.connect("saved_changes", self._update_ui_on_files_changed);
 		godot_project.connect("files_changed", self._update_ui_on_files_changed);
 		godot_project.connect("checked_out_branch", self._update_ui_on_branch_checked_out);
+		godot_project.connect("sync_server_connection_info_changed", _on_sync_server_connection_info_changed)
 		
 	var popup = menu_button.get_popup()
 	popup.id_pressed.connect(_on_menu_button_id_pressed)
@@ -100,12 +101,33 @@ func _ready() -> void:
 	cancel_merge_button.pressed.connect(cancel_merge_preview)
 	confirm_merge_button.pressed.connect(confirm_merge_preview)
 
-	# log_main_tscn_button.pressed.connect(func():
-	# 	print("Current MAIN.TCSN")
-	# 	print("=====================================================")
-	# 	#print(godot_project.get_file("res://main.tscn"))
-	# 	print("=====================================================")
-	# )
+
+func _on_sync_server_connection_info_changed(_peer_connection_info: Dictionary) -> void:
+	update_sync_status()
+
+func update_sync_status() -> void:
+	if !godot_project:
+		return
+
+	var peer_connection_info = godot_project.get_sync_server_connection_info()
+
+	print("update sync status", peer_connection_info)
+
+	if !peer_connection_info:
+		return
+
+	var checked_out_branch = godot_project.get_checked_out_branch()
+
+
+	var sync_status = peer_connection_info.doc_sync_states[checked_out_branch.id];
+
+	if sync_status.last_acked_heads == checked_out_branch.heads:
+		sync_status_icon.texture = load("res://addons/patchwork/icons/circle-check.svg")
+		sync_status_icon.tooltip_text = "Fully synced"
+	else:
+		sync_status_icon.texture = load("res://addons/patchwork/icons/circle_sync.svg")
+		sync_status_icon.tooltip_text = "Syncing..."
+
 
 func _on_menu_button_id_pressed(id: int) -> void:
 	match id:
@@ -349,7 +371,6 @@ func update_ui() -> void:
 		return
 
 	var checked_out_branch = godot_project.get_checked_out_branch()
-
 
 	self.branches = godot_project.get_branches()
 

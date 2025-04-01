@@ -1,4 +1,4 @@
-use automerge_repo::RepoError;
+use automerge_repo::{PeerConnectionInfo, RepoError, RepoId};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, Stream};
 use ::safer_ffi::prelude::*;
@@ -32,6 +32,8 @@ use tokio::{net::TcpStream, runtime::Runtime};
 use crate::{doc_utils::SimpleDocReader, godot_project::Branch};
 
 const SERVER_URL: &str = "104.131.179.247:8080";
+
+const SERVER_REPO_ID: &str = "dc15a89b-948d-4d37-9f3f-ec73fa5857c5";
 
 #[derive(Debug, Clone)]
 pub enum InputEvent {
@@ -92,6 +94,10 @@ pub enum OutputEvent {
     },
 
     CompletedShutdown,
+
+    PeerConnectionInfoChanged {
+        peer_connection_info: PeerConnectionInfo,
+    },
 }
 
 enum SubscriptionMessage {
@@ -270,10 +276,21 @@ impl GodotProjectDriver {
             state.subscribe_to_doc_handle(state.branches_metadata_doc_handle.clone());
             state.subscribe_to_doc_handle(state.main_branch_doc_handle.clone());
 
+            let mut sync_server_conn_info_changes = repo_handle.peer_conn_info_changes(RepoId::from(SERVER_REPO_ID)).fuse();
+
             loop {
                 let repo_handle_clone = repo_handle.clone();
 
                 futures::select! {
+
+                    next = sync_server_conn_info_changes.next() => {
+                        if let Some(info) = next {
+
+                            println!("rust: peer connection info changed: {:?}", info);
+                            tx.unbounded_send(OutputEvent::PeerConnectionInfoChanged { peer_connection_info: info.clone() }).unwrap();
+                        };
+                    },
+
                     next = state.requesting_binary_docs.next() => {
                         if let Some((path, result)) = next {
                             match result {

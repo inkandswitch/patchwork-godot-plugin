@@ -31,7 +31,6 @@ func do_task(name: String, task: Callable):
 		)
 	)
 
-
 func _process(_delta: float) -> void:
 	# we need to make a copy of the calls otherwise queued_calls can get called multiple times
 	# I think this is a multi threading issue @nikita?

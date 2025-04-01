@@ -12,13 +12,14 @@ use std::any::Any;
 use std::collections::HashSet;
 use std::io::BufWriter;
 use std::path::PathBuf;
+use std::time::UNIX_EPOCH;
 use std::{collections::HashMap, str::FromStr};
 
 use automerge::{
     patches::TextRepresentation, transaction::Transactable, ChangeHash, ObjType, ReadDoc,
     TextEncoding, ROOT,
 };
-use automerge_repo::{DocHandle, DocumentId};
+use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use godot::classes::ClassDb;
 use godot::classes::EditorFileSystem;
@@ -134,6 +135,7 @@ pub struct GodotProject {
     driver: GodotProjectDriver,
     driver_input_tx: UnboundedSender<InputEvent>,
     driver_output_rx: UnboundedReceiver<OutputEvent>,
+    sync_server_connection_info: Option<PeerConnectionInfo>,
 }
 
 enum ChangeOp {
@@ -163,7 +165,7 @@ impl GodotProject {
     fn shutdown_completed();
 
     #[signal]
-    fn peer_connection_info_changed(peer_connection_info: Dictionary);
+    fn sync_server_connection_info_changed(peer_connection_info: Dictionary);
 
     #[func]
     fn create(
@@ -208,6 +210,7 @@ impl GodotProject {
         Gd::from_init_fn(|base| Self {
             base,
             doc_handles: HashMap::new(),
+            sync_server_connection_info: None,
             branch_states: HashMap::new(),
             checked_out_branch_state,
             project_doc_id: None,
@@ -679,6 +682,16 @@ impl GodotProject {
         }
     }
 
+    #[func]
+    fn get_sync_server_connection_info(&self) -> Variant {
+        match &self.sync_server_connection_info {
+            Some(peer_connection_info) => {
+                peer_connection_info_to_dict(peer_connection_info).to_variant()
+            }
+            None => Variant::nil(),
+        }
+    }
+
     // State api
 
     #[func]
@@ -902,9 +915,10 @@ impl GodotProject {
                 OutputEvent::PeerConnectionInfoChanged {
                     peer_connection_info,
                 } => {
-                    println!(
-                        "rust: PeerConnectionInfoChanged event: {:?}",
-                        peer_connection_info
+                    self.sync_server_connection_info = Some(peer_connection_info.clone());
+                    self.base_mut().emit_signal(
+                        "sync_server_connection_info_changed",
+                        &[peer_connection_info_to_dict(&peer_connection_info).to_variant()],
                     );
                 }
             }
@@ -1945,6 +1959,7 @@ impl INode for GodotProject {
 
         Self {
             base: _base,
+            sync_server_connection_info: None,
             doc_handles: HashMap::new(),
             branch_states: HashMap::new(),
             checked_out_branch_state,
@@ -2008,4 +2023,54 @@ fn branch_state_to_dict(branch_state: &BranchState) -> Dictionary {
     }
 
     branch
+}
+
+fn peer_connection_info_to_dict(peer_connection_info: &PeerConnectionInfo) -> Dictionary {
+    let mut doc_sync_states = Dictionary::new();
+
+    for (doc_id, doc_state) in peer_connection_info.docs.iter() {
+        let last_received = doc_state
+            .last_received
+            .and_then(|t| {
+                t.duration_since(UNIX_EPOCH)
+                    .ok()
+                    .map(|d| d.as_secs().to_variant())
+            })
+            .unwrap_or(Variant::nil());
+
+        let last_sent = doc_state
+            .last_sent
+            .and_then(|t| {
+                t.duration_since(UNIX_EPOCH)
+                    .ok()
+                    .map(|d| d.as_secs().to_variant())
+            })
+            .unwrap_or(Variant::nil());
+
+        let last_sent_heads = doc_state
+            .last_sent_heads
+            .as_ref()
+            .map(|heads| heads_to_array(heads.clone()).to_variant())
+            .unwrap_or(Variant::nil());
+
+        let last_acked_heads = doc_state
+            .last_acked_heads
+            .as_ref()
+            .map(|heads| heads_to_array(heads.clone()).to_variant())
+            .unwrap_or(Variant::nil());
+
+        let _ = doc_sync_states.insert(
+            doc_id.to_string(),
+            dict! {
+                "last_received": last_received,
+                "last_sent": last_sent,
+                "last_sent_heads": last_sent_heads,
+                "last_acked_heads": last_acked_heads,
+            },
+        );
+    }
+
+    dict! {
+        "doc_sync_states": doc_sync_states,
+    }
 }

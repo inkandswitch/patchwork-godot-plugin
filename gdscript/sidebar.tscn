@@ -1,6 +1,7 @@
-[gd_scene load_steps=13 format=3 uid="uid://cxyjgsyba1v85"]
+[gd_scene load_steps=14 format=3 uid="uid://cxyjgsyba1v85"]
 
 [ext_resource type="Script" path="res://addons/patchwork/gdscript/sidebar.gd" id="1_ebh36"]
+[ext_resource type="Texture2D" uid="uid://4c2gr0ggkl2t" path="res://addons/patchwork/icons/circle-alert.svg" id="2_fxo71"]
 [ext_resource type="Texture2D" uid="uid://ymewwqpn0vi4" path="res://addons/patchwork/icons/GuiTabMenuHl.svg" id="2_rfxbe"]
 [ext_resource type="Texture2D" uid="uid://xec6o14n4y2v" path="res://addons/patchwork/icons/person.svg" id="3_m2w8q"]
 [ext_resource type="Theme" uid="uid://hr3cor4s2ov2" path="res://addons/patchwork/gdscript/diff_editor_theme.tres" id="4_7letu"]
@@ -47,17 +48,32 @@ script = ExtResource("1_ebh36")
 [node name="VBoxContainer" type="VBoxContainer" parent="."]
 layout_mode = 2
 
+[node name="HBoxContainer3" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
 [node name="HBoxContainer2" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
 
+[node name="SyncStatusIcon" type="TextureButton" parent="VBoxContainer/HBoxContainer2"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+tooltip_text = "Unknown sync status"
+texture_normal = ExtResource("2_fxo71")
+
 [node name="BranchLabel" type="Label" parent="VBoxContainer/HBoxContainer2"]
 layout_mode = 2
+size_flags_horizontal = 0
 text = "Branch"
 
 [node name="BranchPicker" type="OptionButton" parent="VBoxContainer/HBoxContainer2"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/HBoxContainer2"]
+layout_mode = 2
 
 [node name="MenuButton" type="MenuButton" parent="VBoxContainer/HBoxContainer2"]
 unique_name_in_owner = true
