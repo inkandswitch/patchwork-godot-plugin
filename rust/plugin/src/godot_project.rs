@@ -943,12 +943,11 @@ impl GodotProject {
     fn get_all_changes_between(
         &self,
         old_heads: PackedStringArray,
-        curr_heads: PackedStringArray,
-        resource_importer_getter: Callable, // TODO: This is a hack because our CI is not set up to build the bindings custom for our godot engine
+        curr_heads: PackedStringArray
     ) -> Dictionary {
         let old_heads = array_to_heads(old_heads);
         let new_heads = array_to_heads(curr_heads);
-        self._get_changes_between(old_heads, new_heads, &resource_importer_getter)
+        self._get_changes_between(old_heads, new_heads)
     }
 
     fn get_class_name(&self, script_content: String) -> String {
@@ -1147,8 +1146,7 @@ impl GodotProject {
         &self,
         path: String,
         content: &FileContent,
-        heads: Vec<ChangeHash>,
-        resource_import_getter: &Callable,
+        heads: Vec<ChangeHash>
     ) -> Option<Variant> {
         let temp_dir = format!(
             "res://.patchwork/temp_{}/",
@@ -1172,7 +1170,8 @@ impl GodotProject {
                     &import_file_path,
                     &FileContent::String(import_file_content),
                 );
-                let res = resource_import_getter.call(&[temp_path.to_variant()]);
+
+                let res = ClassDb::singleton().class_call_static("PatchworkEditor", "import_and_load_resource", &[temp_path.to_variant()]);
                 if res.is_nil() {
                     return None;
                 }
@@ -1207,8 +1206,7 @@ impl GodotProject {
         old_content: &Option<FileContent>,
         new_content: &Option<FileContent>,
         old_heads: &Vec<ChangeHash>,
-        curr_heads: &Vec<ChangeHash>,
-        resource_import_getter: &Callable,
+        curr_heads: &Vec<ChangeHash>
     ) -> Dictionary {
         let mut result = dict! {
             "path" : path.to_variant(),
@@ -1221,8 +1219,7 @@ impl GodotProject {
             if let Some(old_resource) = self._get_resource_at(
                 path.clone(),
                 old_content,
-                old_heads.clone(),
-                resource_import_getter,
+                old_heads.clone()
             ) {
                 let _ = result.insert("old_resource", old_resource);
             }
@@ -1231,8 +1228,7 @@ impl GodotProject {
             if let Some(new_resource) = self._get_resource_at(
                 path.clone(),
                 new_content,
-                curr_heads.clone(),
-                resource_import_getter,
+                curr_heads.clone()
             ) {
                 let _ = result.insert("new_resource", new_resource);
             }
@@ -1286,8 +1282,7 @@ impl GodotProject {
         old_content: &Option<FileContent>,
         new_content: &Option<FileContent>,
         old_heads: &Vec<ChangeHash>,
-        curr_heads: &Vec<ChangeHash>,
-        resource_import_getter: &Callable,
+        curr_heads: &Vec<ChangeHash>
     ) -> Dictionary {
         let old_content_type = GodotProject::_get_file_content_variant_type(old_content);
         let new_content_type = GodotProject::_get_file_content_variant_type(new_content);
@@ -1307,8 +1302,7 @@ impl GodotProject {
                 &old_content,
                 &new_content,
                 &old_heads,
-                &curr_heads,
-                resource_import_getter,
+                &curr_heads
             );
         } else if (old_content_type != VariantType::PACKED_BYTE_ARRAY
             && new_content_type != VariantType::PACKED_BYTE_ARRAY)
@@ -1328,8 +1322,7 @@ impl GodotProject {
     fn _get_changes_between(
         &self,
         old_heads: Vec<ChangeHash>,
-        curr_heads: Vec<ChangeHash>,
-        resource_import_getter: &Callable,
+        curr_heads: Vec<ChangeHash>
     ) -> Dictionary {
         let checked_out_branch_state = match self.get_checked_out_branch_state() {
             Some(branch_state) => branch_state,
@@ -1379,8 +1372,7 @@ impl GodotProject {
                         &old_file_content,
                         &new_file_content,
                         &old_heads,
-                        &curr_heads,
-                        resource_import_getter,
+                        &curr_heads
                     ),
                 );
             } else {
@@ -1683,8 +1675,7 @@ impl GodotProject {
                                     old_heads.clone()
                                 } else {
                                     curr_heads.clone()
-                                },
-                                &resource_import_getter,
+                                }
                             );
                             if let Some(resource) = resource {
                                 let _ = loaded_ext_resources.insert(path.clone(), resource);

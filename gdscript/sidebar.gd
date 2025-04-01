@@ -504,8 +504,6 @@ func human_readable_timestamp(timestamp: int) -> String:
 	else:
 		return str(int(diff / 31536000)) + " years ago"
 
-var IMPORT_GETTER = func(path: String): return PatchworkEditor.import_and_load_resource(path)
-
 func update_highlight_changes(diff: Dictionary, checked_out_branch) -> void:
 	var edited_root = EditorInterface.get_edited_scene_root()
 
@@ -552,7 +550,7 @@ func show_diff(heads_before, heads_after):
 	# TODO: handle dependencies of these files
 	# print("heads_before: ", heads_before)
 	# print("heads_after: ", heads_after)
-	var diff = godot_project.get_all_changes_between(PackedStringArray(heads_before), PackedStringArray(heads_after), IMPORT_GETTER)
+	var diff = godot_project.get_all_changes_between(PackedStringArray(heads_before), PackedStringArray(heads_after))
 	inspector.reset()
 	inspector.add_diff(diff)
 	print("Length: ", diff.size())
