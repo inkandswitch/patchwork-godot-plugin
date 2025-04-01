@@ -1,5 +1,6 @@
 #include "patchwork_editor.h"
 #include "diff_result.h"
+#include "editor/plugins/shader_editor_plugin.h"
 #include "missing_resource_container.h"
 
 #include <core/io/json.h>
@@ -7,7 +8,9 @@
 #include <core/variant/variant.h>
 #include <editor/editor_file_system.h>
 #include <editor/editor_inspector.h>
+#include <editor/editor_interface.h>
 #include <editor/editor_undo_redo_manager.h>
+#include <editor/plugins/script_editor_plugin.h>
 #include <scene/resources/packed_scene.h>
 
 PatchworkEditor::PatchworkEditor() {
@@ -91,6 +94,9 @@ void PatchworkEditor::_notification(int p_what) {
 }
 
 bool PatchworkEditor::unsaved_files_open() {
+	if (get_unsaved_scripts().size() > 0) {
+		return true;
+	}
 	auto opened_scenes = EditorNode::get_editor_data().get_edited_scenes();
 	for (int i = 0; i < opened_scenes.size(); i++) {
 		auto id = opened_scenes[i].history_id;
@@ -102,7 +108,7 @@ bool PatchworkEditor::unsaved_files_open() {
 	if (EditorUndoRedoManager::get_singleton()->is_history_unsaved(EditorUndoRedoManager::GLOBAL_HISTORY)) {
 		return true;
 	}
-	// do the same for scripts
+
 	return false;
 }
 
@@ -702,6 +708,29 @@ Ref<Resource> PatchworkEditor::import_and_load_resource(const String &p_path) {
 	return res;
 }
 
+void PatchworkEditor::save_all_scenes_and_scripts() {
+	ShaderEditorPlugin *shader_editor = Object::cast_to<ShaderEditorPlugin>(EditorNode::get_editor_data().get_editor_by_name("Shader"));
+	if (shader_editor) {
+		shader_editor->save_external_data();
+	}
+	save_all_scripts();
+	// save the scenes
+	EditorInterface::get_singleton()->save_all_scenes();
+}
+
+void PatchworkEditor::save_all_scripts() {
+	EditorInterface::get_singleton()->get_script_editor()->save_all_scripts();
+}
+
+PackedStringArray PatchworkEditor::get_unsaved_scripts() {
+	return EditorInterface::get_singleton()->get_script_editor()->get_unsaved_scripts();
+}
+
+void PatchworkEditor::reload_scripts(bool p_refresh_only) {
+	// Call deferred to make sure it runs on the main thread.
+	EditorInterface::get_singleton()->get_script_editor()->reload_scripts(p_refresh_only);
+}
+
 PatchworkEditor *PatchworkEditor::singleton = nullptr;
 
 PatchworkEditor::PatchworkEditor(EditorNode *p_editor) {
@@ -735,4 +764,9 @@ void PatchworkEditor::_bind_methods() {
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_diff_res", "res1", "res2", "options"), &PatchworkEditor::get_diff_res);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_importer_by_name", "name"), &PatchworkEditor::get_importer_by_name);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("import_and_load_resource", "path"), &PatchworkEditor::import_and_load_resource);
+
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("save_all_scenes_and_scripts"), &PatchworkEditor::save_all_scenes_and_scripts);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("save_all_scripts"), &PatchworkEditor::save_all_scripts);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_unsaved_scripts"), &PatchworkEditor::get_unsaved_scripts);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("reload_scripts", "refresh_only"), &PatchworkEditor::reload_scripts);
 }
