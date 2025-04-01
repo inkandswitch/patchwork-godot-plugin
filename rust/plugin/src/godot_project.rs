@@ -1907,7 +1907,7 @@ impl INode for GodotProject {
         let mut user_config_file = ConfigFile::new_gd();
         user_config_file.load("user://patchwork.cfg");
         let branches_metadata_doc_id = project_config_file
-            .get_value("patchwork", "branches_metadata_doc_id")
+            .get_value("patchwork", "project_doc_id")
             .to_string();
         let checked_out_branch_doc_id = project_config_file
             .get_value("patchwork", "checked_out_branch_doc_id")
@@ -1948,7 +1948,7 @@ impl INode for GodotProject {
             checked_out_branch_state
         );
 
-        Self {
+        let mut ret = Self {
             base: _base,
             sync_server_connection_info: None,
             doc_handles: HashMap::new(),
@@ -1958,7 +1958,12 @@ impl INode for GodotProject {
             driver,
             driver_input_tx,
             driver_output_rx,
-        }
+        };
+		// process it a few times to get it to check out the branch
+		ret.process(0.0);
+		ret.process(0.0);
+		ret.process(0.0);
+		ret
     }
 }
 

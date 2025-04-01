@@ -336,3 +336,8 @@ cmake-build-*/
 *.dylib
 *.so
 *.dll
+
+**/_CodeSignature/
+.cargo/.devidentity
+.cargo/.cert-pass
+.cargo/dev-cert.p12

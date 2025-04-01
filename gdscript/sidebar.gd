@@ -109,15 +109,15 @@ func update_sync_status() -> void:
 	if !godot_project:
 		return
 
-	var peer_connection_info = godot_project.get_sync_server_connection_info()
-
-	print("update sync status", peer_connection_info)
-
-	if !peer_connection_info:
+	var checked_out_branch = godot_project.get_checked_out_branch()
+	if !checked_out_branch:
 		return
 
-	var checked_out_branch = godot_project.get_checked_out_branch()
-
+	var peer_connection_info = godot_project.get_sync_server_connection_info()
+	print("update sync status", peer_connection_info)
+	if !peer_connection_info:
+		printerr("no peer connection info")
+		return
 
 	# check if doc_sync_states has the checked_out_branch.id
 	if !peer_connection_info.doc_sync_states.has(checked_out_branch.id):
@@ -375,7 +375,6 @@ func update_ui() -> void:
 		return
 
 	var checked_out_branch = godot_project.get_checked_out_branch()
-
 	self.branches = godot_project.get_branches()
 
 	# update branch pickers
@@ -409,7 +408,7 @@ func update_ui() -> void:
 		if is_checked_out:
 			branch_picker.select(i)
 
-		if checked_out_branch.is_merge_preview && branch.id == checked_out_branch.forked_from:
+		if checked_out_branch && checked_out_branch.is_merge_preview && branch.id == checked_out_branch.forked_from:
 			source_branch_picker.select(i)
 
 	# update history
@@ -440,6 +439,9 @@ func update_ui() -> void:
 	user_button.text = user_name
 
 	# update merge preview
+
+	if !checked_out_branch:
+		return
 
 	merge_preview_modal.visible = checked_out_branch.is_merge_preview
 

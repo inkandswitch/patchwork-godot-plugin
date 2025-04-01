@@ -20,7 +20,7 @@ fn after_build(){
     // is_ok and is 1
     let isCI = env::var("CI").is_ok() && env::var("CI").unwrap() == "1";
     println!("cargo:warning=CI={}", isCI);
-    
+
     // Parse the file contents
     let out_dir = lastbuild.split("OUT_DIR=").nth(1).unwrap().split("\n").next().unwrap();
     let profile = lastbuild.split("PROFILE=").nth(1).unwrap().split("\n").next().unwrap();
@@ -107,7 +107,7 @@ fn after_build(){
     //         panic!("cargo post build failed");
     //     }
     //     // push it back to the target_dirs vector
-    
+
     //     target_dirs.push(new_dir);
     // }
 
@@ -126,7 +126,7 @@ fn after_build(){
         // Copy the library to the platform-specific directory
         println!("cargo:warning=Copying library from {:?} to {:?}", dll_lib_path, platform_dir);
         println!("cargo:warning=Copying library from {:?} to {:?}", a_lib_path, platform_dir);
-        
+
 
         let dll_dest_path = if platform_name == "macos" {
             // it goes in the "macos/libpatchwork_rust_core.macos.framework" directory
@@ -157,6 +157,34 @@ fn after_build(){
         println!("cargo:rerun-if-changed=build.rs");
         println!("cargo:warning=Copied library to {:?}", dll_dest_path);
         println!("cargo:warning=Copied library to {:?}", a_dest_path);
+		// if on macos, run rcodesign
+		if platform_name == "macos" {
+			// framework path
+			//codesign --force --deep --verbose -s "Apple Development: Nikita Zatkovich (RFTZV7M2RV)" macos/libpatchwork_rust_core.macos.framework
+			let framework_path = platform_dir.join(format!("{}.macos.framework", &lib_name));
+			let cwd = crate_dir_path.to_str().unwrap();
+			// check that ".cargo/.devidentity" exists
+			let mut dev_identity_path = Path::new(&crate_dir_path).join(".cargo/.devidentity");
+			if !dev_identity_path.exists() {
+				// try ../../
+				dev_identity_path = Path::new(&crate_dir_path).parent().unwrap().parent().unwrap().join(".cargo/.devidentity");
+				if !dev_identity_path.exists() {
+					println!("cargo:warning=Developer identity file does not exist: {:?}", dev_identity_path);
+					println!("Put the identity (e.g. Apple Development: Nikita Zatkovich (RFTZV7M2RV)) in the .cargo/.devidentity file to enable codesigning");
+					return;
+				}
+			}
+			// load the identity from the file
+			let identity = fs::read_to_string(dev_identity_path).unwrap().trim().to_string();
+			// let mut args = vec!["sign", framework_path.to_str().unwrap(), "--exclude", "**/*.a"];
+			// let output = Command::new("rcodesign").args(&args).current_dir(cwd).output().unwrap();
+			let mut args = vec![ "--force", "--deep", "--verbose", "-s", &identity, framework_path.to_str().unwrap()];
+			println!("cargo:warning=codesigning with identity: {}", &identity);
+			let output = Command::new("codesign").args(&args).current_dir(cwd).output().unwrap();
+
+			println!("cargo:warning=rcodesign output: {}", String::from_utf8_lossy(&output.stdout));
+			println!("cargo:warning=rcodesign error: {}", String::from_utf8_lossy(&output.stderr));
+		}
     }
 }
 
