@@ -110,7 +110,8 @@ func sync_patchwork_to_godot():
 	var files_in_patchwork = godot_project.get_files()
 
 	var files_to_reimport = {}
-
+	var scenes_to_reload = []
+	var reload_scripts = false
 	file_system.disconnect_from_file_system()
 
 	print("sync patchwork -> godot (", files_in_patchwork.size(), ")")
@@ -152,16 +153,29 @@ func sync_patchwork_to_godot():
 			for line in patchwork_content.split("\n"):
 				if line.begins_with("uid="):
 					uid = line.split("=")[1].strip_edges()
+					break
 			add_new_uid(new_path, uid)
 		elif FileAccess.file_exists(path + ".import"):
 			files_to_reimport[path] = true
+		# if it's a script, 
+		elif path.get_extension() == "gd":
+			reload_scripts = true
 		
 		if path.get_extension() == "tscn":
 			# reload scene files to update references
-			EditorInterface.reload_scene_from_path(path)
+			scenes_to_reload.append(path)
+
+	if reload_scripts:
+		PatchworkEditor.reload_scripts(false)
 
 	if files_to_reimport.size() > 0:
 		EditorInterface.get_resource_filesystem().reimport_files(files_to_reimport.keys())
+
+	if scenes_to_reload.size() > 0:
+		for scene_path in scenes_to_reload:
+			EditorInterface.reload_scene_from_path(scene_path)
+
+
 
 	file_system.connect_to_file_system()
 
