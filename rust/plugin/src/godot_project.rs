@@ -98,23 +98,23 @@ enum CheckedOutBranchState {
     CheckedOut(DocumentId),
 }
 
-enum VariantStrValue{
-	Variant(String),
-	ResourcePath(String),
-	SubResourceID(String),
-	ExtResourceID(String),
+enum VariantStrValue {
+    Variant(String),
+    ResourcePath(String),
+    SubResourceID(String),
+    ExtResourceID(String),
 }
 
 // implement the to_string method for this enum
 impl std::fmt::Display for VariantStrValue {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			VariantStrValue::Variant(s) => write!(f, "{}", s),
-			VariantStrValue::ResourcePath(s) => write!(f, "Resource({})", s),
-			VariantStrValue::SubResourceID(s) => write!(f, "SubResource({})", s),
-			VariantStrValue::ExtResourceID(s) => write!(f, "ExtResource({})", s),
-		}
-	}
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VariantStrValue::Variant(s) => write!(f, "{}", s),
+            VariantStrValue::ResourcePath(s) => write!(f, "Resource({})", s),
+            VariantStrValue::SubResourceID(s) => write!(f, "SubResource({})", s),
+            VariantStrValue::ExtResourceID(s) => write!(f, "ExtResource({})", s),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -136,11 +136,10 @@ pub struct GodotProject {
     driver_output_rx: UnboundedReceiver<OutputEvent>,
 }
 
-
-enum ChangeOp{
-	Added,
-	Removed,
-	Modified,
+enum ChangeOp {
+    Added,
+    Removed,
+    Modified,
 }
 
 #[godot_api]
@@ -162,6 +161,9 @@ impl GodotProject {
 
     #[signal]
     fn shutdown_completed();
+
+    #[signal]
+    fn peer_connection_info_changed(peer_connection_info: Dictionary);
 
     #[func]
     fn create(
@@ -896,6 +898,15 @@ impl GodotProject {
                     println!("rust: CompletedShutdown event");
                     self.base_mut().emit_signal("shutdown_completed", &[]);
                 }
+
+                OutputEvent::PeerConnectionInfoChanged {
+                    peer_connection_info,
+                } => {
+                    println!(
+                        "rust: PeerConnectionInfoChanged event: {:?}",
+                        peer_connection_info
+                    );
+                }
             }
         }
     }
@@ -922,48 +933,52 @@ impl GodotProject {
         resource_importer_getter: Callable, // TODO: This is a hack because our CI is not set up to build the bindings custom for our godot engine
     ) -> Dictionary {
         let old_heads = array_to_heads(old_heads);
-		let new_heads = array_to_heads(curr_heads);
-		self._get_changes_between(old_heads, new_heads,  &resource_importer_getter)
-	}
+        let new_heads = array_to_heads(curr_heads);
+        self._get_changes_between(old_heads, new_heads, &resource_importer_getter)
+    }
 
-	fn get_class_name(&self, script_content: String) -> String {
-		// just keep going until we find `class_name <something>`
-		for line in script_content.lines() {
-			if line.trim().starts_with("class_name") {
-				return line.trim().split(" ").nth(1).unwrap().trim().to_string();
-			}
-		}
-		String::new()
-	}
+    fn get_class_name(&self, script_content: String) -> String {
+        // just keep going until we find `class_name <something>`
+        for line in script_content.lines() {
+            if line.trim().starts_with("class_name") {
+                return line.trim().split(" ").nth(1).unwrap().trim().to_string();
+            }
+        }
+        String::new()
+    }
 
-	fn _write_file_content_to_file(&self, path: &String, file_content: &FileContent) {
-		// mkdir -p everything
-		let dir = PathBuf::from(path).parent().unwrap().to_str().unwrap().to_string();
-		// do the mkdir
-		// get the first part "e.g. res:// or user://"
-		let root = path.split("//").nth(0).unwrap_or("").to_string() + "//";
-		let mut dir_access = DirAccess::open(&root);
-		if let Some(mut dir_access) = dir_access {
-			let _ = dir_access.make_dir_recursive(&GString::from(dir));
-		}
+    fn _write_file_content_to_file(&self, path: &String, file_content: &FileContent) {
+        // mkdir -p everything
+        let dir = PathBuf::from(path)
+            .parent()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        // do the mkdir
+        // get the first part "e.g. res:// or user://"
+        let root = path.split("//").nth(0).unwrap_or("").to_string() + "//";
+        let mut dir_access = DirAccess::open(&root);
+        if let Some(mut dir_access) = dir_access {
+            let _ = dir_access.make_dir_recursive(&GString::from(dir));
+        }
 
-		let file = FileAccess::open(path, ModeFlags::WRITE);
-		if let None = file {
-			println!("error opening file: {}", path);
-			return;
-		}
-		let mut file = file.unwrap();
-		// if it's a packedbytearray, write the bytes
-		if let FileContent::Binary(bytes) = file_content {
-			file.store_buffer(&PackedByteArray::from(bytes.as_slice()));
-		} else if let FileContent::String(s) = file_content {
-			file.store_line(&GString::from(s));
-		} else {
-			println!("unsupported variant type!! {:?}", file_content.type_id());
-		}
-		file.close();
-	}
-
+        let file = FileAccess::open(path, ModeFlags::WRITE);
+        if let None = file {
+            println!("error opening file: {}", path);
+            return;
+        }
+        let mut file = file.unwrap();
+        // if it's a packedbytearray, write the bytes
+        if let FileContent::Binary(bytes) = file_content {
+            file.store_buffer(&PackedByteArray::from(bytes.as_slice()));
+        } else if let FileContent::String(s) = file_content {
+            file.store_line(&GString::from(s));
+        } else {
+            println!("unsupported variant type!! {:?}", file_content.type_id());
+        }
+        file.close();
+    }
 
     fn _write_variant_to_file(&self, path: &String, variant: &Variant) {
         // mkdir -p everything
@@ -998,22 +1013,36 @@ impl GodotProject {
         file.close();
     }
 
-	fn get_varstr_value(&self, prop_value: String) -> VariantStrValue {
-		if prop_value.contains("Resource("){
-			let id = prop_value.split("(\"").nth(1).unwrap().split("\")").nth(0).unwrap().trim().to_string();
-			if (prop_value.contains("SubResource(")) {
-				return VariantStrValue::SubResourceID(id);
-			} else if (prop_value.contains("ExtResource(")) {
-				return VariantStrValue::ExtResourceID(id);
-			} else { // Resource()
-				return VariantStrValue::ResourcePath(id);
-			}
-		}
-		// normal variant string
-		return VariantStrValue::Variant(prop_value);
-	}
+    fn get_varstr_value(&self, prop_value: String) -> VariantStrValue {
+        if prop_value.contains("Resource(") {
+            let id = prop_value
+                .split("(\"")
+                .nth(1)
+                .unwrap()
+                .split("\")")
+                .nth(0)
+                .unwrap()
+                .trim()
+                .to_string();
+            if (prop_value.contains("SubResource(")) {
+                return VariantStrValue::SubResourceID(id);
+            } else if (prop_value.contains("ExtResource(")) {
+                return VariantStrValue::ExtResourceID(id);
+            } else {
+                // Resource()
+                return VariantStrValue::ResourcePath(id);
+            }
+        }
+        // normal variant string
+        return VariantStrValue::Variant(prop_value);
+    }
 
-    fn get_diff_dict(old_path: String, new_path:String, old_text: &String, new_text: &String) -> Dictionary {
+    fn get_diff_dict(
+        old_path: String,
+        new_path: String,
+        old_text: &String,
+        new_text: &String,
+    ) -> Dictionary {
         let diff = TextDiff::from_lines(old_text, new_text);
         let mut unified = diff.unified_diff();
         unified.header(old_path.as_str(), new_path.as_str());
@@ -1100,139 +1129,198 @@ impl GodotProject {
         diff_file
     }
 
+    fn _get_resource_at(
+        &self,
+        path: String,
+        content: &FileContent,
+        heads: Vec<ChangeHash>,
+        resource_import_getter: &Callable,
+    ) -> Option<Variant> {
+        let temp_dir = format!(
+            "res://.patchwork/temp_{}/",
+            heads[0].to_string().chars().take(6).collect::<String>()
+        );
+        let temp_path = path.replace("res://", &temp_dir);
+        // append _old or _new to the temp path (i.e. res://thing.<EXT> -> user://temp_123_456/thing_old.<EXT>)
+        self._write_file_content_to_file(&temp_path, content);
+        // get the import file conetnt
+        let import_path = format!("{}.import", path);
+        let import_file_content = self._get_file_at(import_path.clone(), Some(heads.clone()));
+        if let Some(import_file_content) = import_file_content {
+            if let FileContent::String(import_file_content) = import_file_content {
+                let import_file_content = import_file_content.replace("res://", &temp_dir);
+                // regex to replace uid=uid://<...> and uid=uid://<invalid> with uid=uid://<...> and uid=uid://<invalid>
+                let import_file_content =
+                    import_file_content.replace(r#"uid=uid://[^\n]+"#, "uid=uid://<invalid>");
+                // write the import file content to the temp path
+                let import_file_path: String = format!("{}.import", temp_path);
+                self._write_file_content_to_file(
+                    &import_file_path,
+                    &FileContent::String(import_file_content),
+                );
+                let res = resource_import_getter.call(&[temp_path.to_variant()]);
+                if res.is_nil() {
+                    return None;
+                }
+                return Some(res);
+            }
+        }
+        let resource = ResourceLoader::singleton()
+            .load_ex(&GString::from(temp_path))
+            .cache_mode(CacheMode::IGNORE_DEEP)
+            .done();
+        if let Some(resource) = resource {
+            return Some(resource.to_variant());
+        }
+        None
+    }
 
-	fn _get_resource_at(&self, path: String, content: &FileContent, heads: Vec<ChangeHash>, resource_import_getter: &Callable) -> Option<Variant> {
-		let temp_dir = format!( "res://.patchwork/temp_{}/", heads[0].to_string().chars().take(6).collect::<String>());
-		let temp_path = path.replace("res://", &temp_dir);
-		// append _old or _new to the temp path (i.e. res://thing.<EXT> -> user://temp_123_456/thing_old.<EXT>)
-		self._write_file_content_to_file(&temp_path, content);
-		// get the import file conetnt
-		let import_path = format!("{}.import", path);
-		let import_file_content = self._get_file_at(import_path.clone(), Some(heads.clone()));
-		if let Some(import_file_content) = import_file_content {
-			if let FileContent::String(import_file_content) = import_file_content {
-				let import_file_content = import_file_content.replace("res://", &temp_dir);
-				// regex to replace uid=uid://<...> and uid=uid://<invalid> with uid=uid://<...> and uid=uid://<invalid>
-				let import_file_content = import_file_content.replace(r#"uid=uid://[^\n]+"#, "uid=uid://<invalid>");
-				// write the import file content to the temp path
-				let import_file_path: String = format!("{}.import", temp_path);
-				self._write_file_content_to_file(&import_file_path, &FileContent::String(import_file_content));
-				let res = resource_import_getter.call(&[temp_path.to_variant()]);
-				if res.is_nil() {
-					return None;
-				}
-				return Some(res);
-			}
-		}
-		let resource = ResourceLoader::singleton().load_ex(&GString::from(temp_path)).cache_mode(CacheMode::IGNORE_DEEP).done();
-		if let Some(resource) = resource {
-			return Some(resource.to_variant());
-		}
-		None
-	}
+    fn _file_content_to_variant(content: &Option<FileContent>) -> Variant {
+        match content {
+            Some(FileContent::String(s)) => GString::from(s).to_variant(),
+            Some(FileContent::Binary(bytes)) => {
+                PackedByteArray::from(bytes.as_slice()).to_variant()
+            }
+            Some(FileContent::Scene(scene)) => scene.serialize().to_variant(),
+            None => Variant::nil(),
+        }
+    }
 
-	fn _file_content_to_variant(content: &Option<FileContent>) -> Variant {
-		match content {
-			Some(FileContent::String(s)) => GString::from(s).to_variant(),
-			Some(FileContent::Binary(bytes)) => PackedByteArray::from(bytes.as_slice()).to_variant(),
-			Some(FileContent::Scene(scene)) => scene.serialize().to_variant(),
-			None => Variant::nil(),
-		}
-	}
+    fn _get_resource_diff(
+        &self,
+        path: &String,
+        change_type: &str,
+        old_content: &Option<FileContent>,
+        new_content: &Option<FileContent>,
+        old_heads: &Vec<ChangeHash>,
+        curr_heads: &Vec<ChangeHash>,
+        resource_import_getter: &Callable,
+    ) -> Dictionary {
+        let mut result = dict! {
+            "path" : path.to_variant(),
+            "diff_type" : "resource_changed".to_variant(),
+            "change_type" : change_type.to_variant(),
+            "old_content" : GodotProject::_file_content_to_variant(old_content),
+            "new_content" : GodotProject::_file_content_to_variant(new_content),
+        };
+        if let Some(old_content) = old_content {
+            if let Some(old_resource) = self._get_resource_at(
+                path.clone(),
+                old_content,
+                old_heads.clone(),
+                resource_import_getter,
+            ) {
+                let _ = result.insert("old_resource", old_resource);
+            }
+        }
+        if let Some(new_content) = new_content {
+            if let Some(new_resource) = self._get_resource_at(
+                path.clone(),
+                new_content,
+                curr_heads.clone(),
+                resource_import_getter,
+            ) {
+                let _ = result.insert("new_resource", new_resource);
+            }
+        }
+        result
+    }
 
-	fn _get_resource_diff(&self, path: &String, change_type: &str, old_content: &Option<FileContent>, new_content: &Option<FileContent>, old_heads: &Vec<ChangeHash>, curr_heads: &Vec<ChangeHash>, resource_import_getter: &Callable) -> Dictionary {
-		let mut result = dict!{
-			"path" : path.to_variant(),
-			"diff_type" : "resource_changed".to_variant(),
-			"change_type" : change_type.to_variant(),
-			"old_content" : GodotProject::_file_content_to_variant(old_content),
-			"new_content" : GodotProject::_file_content_to_variant(new_content),
-		};
-		if let Some(old_content) = old_content {
-			if let Some(old_resource) = self._get_resource_at(path.clone(), old_content, old_heads.clone(), resource_import_getter) {
-				let _ = result.insert("old_resource", old_resource);
-			}
-		}
-		if let Some(new_content) = new_content {
-			if let Some(new_resource) = self._get_resource_at(path.clone(), new_content, curr_heads.clone(), resource_import_getter) {
-				let _ = result.insert("new_resource", new_resource);
-			}
-		}
-		result
-	}
+    fn _get_text_file_diff(
+        &self,
+        path: &String,
+        change_type: &str,
+        old_content: &Option<FileContent>,
+        new_content: &Option<FileContent>,
+    ) -> Dictionary {
+        let empty_string = String::from("");
+        let old_text = if let Some(FileContent::String(s)) = old_content {
+            &s
+        } else {
+            &empty_string
+        };
+        let new_text = if let Some(FileContent::String(s)) = new_content {
+            &s
+        } else {
+            &empty_string
+        };
+        let diff = GodotProject::get_diff_dict(path.clone(), path.clone(), old_text, new_text);
+        let result = dict! {
+            "path" : path.to_variant(),
+            "change_type" : change_type.to_variant(),
+            "old_content" : if old_text.is_empty() { Variant::nil() } else { old_text.to_variant() },
+            "new_content" : if new_text.is_empty() { Variant::nil() } else { new_text.to_variant() },
+            "text_diff" : diff,
+            "diff_type" : "text_changed".to_variant(),
+        };
+        result
+    }
 
-	fn _get_text_file_diff(&self, path: &String, change_type: &str, old_content: &Option<FileContent>, new_content: &Option<FileContent>) -> Dictionary {
-		let empty_string = String::from("");
-		let old_text = if let Some(FileContent::String(s)) = old_content { &s } else { &empty_string };
-		let new_text = if let Some(FileContent::String(s)) = new_content { &s } else { &empty_string };
-		let diff = GodotProject::get_diff_dict(path.clone(), path.clone(), old_text, new_text);
-		let result = dict!{
-			"path" : path.to_variant(),
-			"change_type" : change_type.to_variant(),
-			"old_content" : if old_text.is_empty() { Variant::nil() } else { old_text.to_variant() },
-			"new_content" : if new_text.is_empty() { Variant::nil() } else { new_text.to_variant() },
-			"text_diff" : diff,
-			"diff_type" : "text_changed".to_variant(),
-		};
-		result
-	}
+    fn _get_file_content_variant_type(content: &Option<FileContent>) -> VariantType {
+        match content {
+            Some(FileContent::String(_)) => VariantType::STRING,
+            Some(FileContent::Binary(_)) => VariantType::PACKED_BYTE_ARRAY,
+            Some(FileContent::Scene(_)) => VariantType::OBJECT,
+            None => VariantType::NIL,
+        }
+    }
 
-
-	fn _get_file_content_variant_type(content: &Option<FileContent>) -> VariantType {
-		match content {
-			Some(FileContent::String(_)) => VariantType::STRING,
-			Some(FileContent::Binary(_)) => VariantType::PACKED_BYTE_ARRAY,
-			Some(FileContent::Scene(_)) => VariantType::OBJECT,
-			None => VariantType::NIL,
-		}
-	}
-
-	fn _get_non_scene_diff(&self, path: &String, change_type: &str, old_content: &Option<FileContent>, new_content: &Option<FileContent>, old_heads: &Vec<ChangeHash>, curr_heads: &Vec<ChangeHash>, resource_import_getter: &Callable) -> Dictionary {
-		let old_content_type = GodotProject::_get_file_content_variant_type(old_content);
-		let new_content_type = GodotProject::_get_file_content_variant_type(new_content);
-		if (change_type == "unchanged") {
-			return dict!{
-				"path" : path.to_variant(),
-				"diff_type" : "file_unchanged".to_variant(),
-				"change_type" : change_type.to_variant(),
-				"old_content": GodotProject::_file_content_to_variant(old_content),
-				"new_content": GodotProject::_file_content_to_variant(new_content),
-			};
-		}
-		if (old_content_type != VariantType::STRING && new_content_type != VariantType::STRING) {
-			return self._get_resource_diff(
-				&path,
-				&change_type,
-				&old_content,
-				&new_content,
-				&old_heads,
-				&curr_heads,
-				resource_import_getter
-			);
-		} else if (old_content_type != VariantType::PACKED_BYTE_ARRAY && new_content_type != VariantType::PACKED_BYTE_ARRAY) {
-			return self._get_text_file_diff(&path, &change_type, &old_content, &new_content);
-		} else {
-			return dict!{
-				"path" : path.to_variant(),
-				"diff_type" : "file_changed".to_variant(),
-				"change_type" : change_type.to_variant(),
-				"old_content" : GodotProject::_file_content_to_variant(&old_content),
-				"new_content" : GodotProject::_file_content_to_variant(&new_content),
-			};
-		}
-	}
+    fn _get_non_scene_diff(
+        &self,
+        path: &String,
+        change_type: &str,
+        old_content: &Option<FileContent>,
+        new_content: &Option<FileContent>,
+        old_heads: &Vec<ChangeHash>,
+        curr_heads: &Vec<ChangeHash>,
+        resource_import_getter: &Callable,
+    ) -> Dictionary {
+        let old_content_type = GodotProject::_get_file_content_variant_type(old_content);
+        let new_content_type = GodotProject::_get_file_content_variant_type(new_content);
+        if (change_type == "unchanged") {
+            return dict! {
+                "path" : path.to_variant(),
+                "diff_type" : "file_unchanged".to_variant(),
+                "change_type" : change_type.to_variant(),
+                "old_content": GodotProject::_file_content_to_variant(old_content),
+                "new_content": GodotProject::_file_content_to_variant(new_content),
+            };
+        }
+        if (old_content_type != VariantType::STRING && new_content_type != VariantType::STRING) {
+            return self._get_resource_diff(
+                &path,
+                &change_type,
+                &old_content,
+                &new_content,
+                &old_heads,
+                &curr_heads,
+                resource_import_getter,
+            );
+        } else if (old_content_type != VariantType::PACKED_BYTE_ARRAY
+            && new_content_type != VariantType::PACKED_BYTE_ARRAY)
+        {
+            return self._get_text_file_diff(&path, &change_type, &old_content, &new_content);
+        } else {
+            return dict! {
+                "path" : path.to_variant(),
+                "diff_type" : "file_changed".to_variant(),
+                "change_type" : change_type.to_variant(),
+                "old_content" : GodotProject::_file_content_to_variant(&old_content),
+                "new_content" : GodotProject::_file_content_to_variant(&new_content),
+            };
+        }
+    }
 
     fn _get_changes_between(
         &self,
         old_heads: Vec<ChangeHash>,
         curr_heads: Vec<ChangeHash>,
-		resource_import_getter: &Callable,
+        resource_import_getter: &Callable,
     ) -> Dictionary {
         let checked_out_branch_state = match self.get_checked_out_branch_state() {
             Some(branch_state) => branch_state,
             None => return Dictionary::new(),
         };
-
 
         let curr_heads = if curr_heads.len() == 0 {
             checked_out_branch_state.synced_heads.clone()
@@ -1240,7 +1328,7 @@ impl GodotProject {
             curr_heads
         };
 
-		// only get the first 6 chars of the hash
+        // only get the first 6 chars of the hash
         let patches = checked_out_branch_state.doc_handle.with_doc(|d| {
             d.diff(
                 &old_heads,
@@ -1248,454 +1336,559 @@ impl GodotProject {
                 TextRepresentation::String(TextEncoding::Utf8CodeUnit),
             )
         });
-		let mut changed_files = get_changed_files_vec(&patches);
-		let mut changed_files_set = HashMap::new();
-		let mut scene_files = Vec::new();
+        let mut changed_files = get_changed_files_vec(&patches);
+        let mut changed_files_set = HashMap::new();
+        let mut scene_files = Vec::new();
 
-		let mut all_diff: HashMap<String, Dictionary> = HashMap::new();
-		// Get old and new content
-		for path in changed_files.iter() {
-			let old_file_content = self._get_file_at(path.clone(), Some(old_heads.clone()));
-			let new_file_content = self._get_file_at(path.clone(), Some(curr_heads.clone()));
-			let old_content_type = GodotProject::_get_file_content_variant_type(&old_file_content);
-			let new_content_type = GodotProject::_get_file_content_variant_type(&new_file_content);
-			let change_type = if old_file_content.is_none() {
-				"added"
-			} else if new_file_content.is_none() {
-				"deleted"
-			} else {
-				"modified"
-			};
-			changed_files_set.insert(path.clone(), change_type.to_string());
-			if old_content_type != VariantType::OBJECT && new_content_type != VariantType::OBJECT {
-				// if both the old and new one are binary, or if one is none and the other is binary, then we can use the resource diff
-				let _ = all_diff.insert(path.clone(), self._get_non_scene_diff(&path, &change_type, &old_file_content, &new_file_content, &old_heads, &curr_heads, resource_import_getter));
-			} else {
-				scene_files.push(path.clone());
-			}
-		}
-		let mut loaded_ext_resources = HashMap::new();
+        let mut all_diff: HashMap<String, Dictionary> = HashMap::new();
+        // Get old and new content
+        for path in changed_files.iter() {
+            let old_file_content = self._get_file_at(path.clone(), Some(old_heads.clone()));
+            let new_file_content = self._get_file_at(path.clone(), Some(curr_heads.clone()));
+            let old_content_type = GodotProject::_get_file_content_variant_type(&old_file_content);
+            let new_content_type = GodotProject::_get_file_content_variant_type(&new_file_content);
+            let change_type = if old_file_content.is_none() {
+                "added"
+            } else if new_file_content.is_none() {
+                "deleted"
+            } else {
+                "modified"
+            };
+            changed_files_set.insert(path.clone(), change_type.to_string());
+            if old_content_type != VariantType::OBJECT && new_content_type != VariantType::OBJECT {
+                // if both the old and new one are binary, or if one is none and the other is binary, then we can use the resource diff
+                let _ = all_diff.insert(
+                    path.clone(),
+                    self._get_non_scene_diff(
+                        &path,
+                        &change_type,
+                        &old_file_content,
+                        &new_file_content,
+                        &old_heads,
+                        &curr_heads,
+                        resource_import_getter,
+                    ),
+                );
+            } else {
+                scene_files.push(path.clone());
+            }
+        }
+        let mut loaded_ext_resources = HashMap::new();
 
+        let mut get_scene_diff = |path: &String| -> Dictionary {
+            let mut result = Dictionary::new();
+            let _ = result.insert("path", path.to_variant());
+            let _ = result.insert("diff_type", "scene_changed".to_variant());
+            let _ = result.insert("change_type", "modified".to_variant());
+            let _ = result.insert("old_content", Variant::nil());
+            let _ = result.insert("new_content", Variant::nil());
+            let mut changed_nodes = Array::new();
+            let mut old_ext_resources = Dictionary::new();
+            let mut new_ext_resources = Dictionary::new();
+            // Get old and new scenes for content comparison
+            let old_scene = match checked_out_branch_state
+                .doc_handle
+                .with_doc(|d: &Automerge| {
+                    godot_parser::GodotScene::hydrate_at(d, &path, &old_heads)
+                }) {
+                Ok(scene) => Some(scene),
+                Err(_) => None,
+            };
 
-		let mut get_scene_diff = |path: &String| -> Dictionary {
-			let mut result = Dictionary::new();
-			let _ = result.insert("path", path.to_variant());
-			let _ = result.insert("diff_type", "scene_changed".to_variant());
-			let _ = result.insert("change_type", "modified".to_variant());
-			let _ = result.insert("old_content", Variant::nil());
-			let _ = result.insert("new_content", Variant::nil());
-			let mut changed_nodes = Array::new();
-			let mut old_ext_resources = Dictionary::new();
-			let mut new_ext_resources = Dictionary::new();
-			// Get old and new scenes for content comparison
-			let old_scene = 
-				match checked_out_branch_state.doc_handle.with_doc(|d: &Automerge|godot_parser::GodotScene::hydrate_at(d, &path, &old_heads)) {
-					Ok(scene) => Some(scene),
-					Err(_) => None,
-				};
-		
-			let new_scene =
-				match checked_out_branch_state.doc_handle.with_doc(|d: &Automerge|godot_parser::GodotScene::hydrate_at(d, &path, &curr_heads)) {
-					Ok(scene) => Some(scene),
-					Err(_) => None,
-				};
-		
-			let patch_path = Vec::from([
-				Prop::Map(String::from("files")),
-				Prop::Map(String::from(path.clone())),
-				Prop::Map(String::from("structured_content")),
-				Prop::Map(String::from("nodes")),
-			]);
-		
-			let ext_resources_path = Vec::from([
-				Prop::Map(String::from("files")),
-				Prop::Map(String::from(path.clone())),
-				Prop::Map(String::from("structured_content")),
-				Prop::Map(String::from("ext_resources")),
-			]);
-		
-			let sub_resources_path = Vec::from([
-				Prop::Map(String::from("files")),
-				Prop::Map(String::from(path.clone())),
-				Prop::Map(String::from("structured_content")),
-				Prop::Map(String::from("sub_resources")),
-			]);
-			let mut changed_ext_resources: HashSet<String> = HashSet::new();
-			let mut all_changed_ext_resource_ids: HashSet<String> = HashSet::new();
-			let mut all_changed_ext_resource_paths: HashSet<String> = HashSet::new();
-			let mut added_ext_resources: HashSet<String> = HashSet::new();
-			let mut deleted_ext_resources: HashSet<String> = HashSet::new();
-		
-			let mut changed_sub_resources: HashSet<String> = HashSet::new();
-			let mut added_sub_resources: HashSet<String> = HashSet::new();
-			let mut deleted_sub_resources: HashSet<String> = HashSet::new();
-			let mut all_changed_sub_resource_ids: HashSet<String> = HashSet::new();
-		
-			let mut changed_node_ids: HashSet<String> = HashSet::new();
-			let mut added_node_ids: HashSet<String> = HashSet::new();
-			let mut deleted_node_ids: HashSet<String> = HashSet::new();
-		
+            let new_scene = match checked_out_branch_state
+                .doc_handle
+                .with_doc(|d: &Automerge| {
+                    godot_parser::GodotScene::hydrate_at(d, &path, &curr_heads)
+                }) {
+                Ok(scene) => Some(scene),
+                Err(_) => None,
+            };
 
-			let mut node_modifications: HashMap<String, Vec<ChangeOp>> = HashMap::new();
+            let patch_path = Vec::from([
+                Prop::Map(String::from("files")),
+                Prop::Map(String::from(path.clone())),
+                Prop::Map(String::from("structured_content")),
+                Prop::Map(String::from("nodes")),
+            ]);
 
-			let mut insert_node_modification = |node_id: &String, change_op: ChangeOp| {
-				let entry = node_modifications.entry(node_id.clone()).or_insert(Vec::new());
-				// if the last change_op is add and the current one is deleted, remove the last one
-				if (matches!(entry.last(), Some(&ChangeOp::Added)) && matches!(change_op, ChangeOp::Removed)) 
-				|| (matches!(entry.last(), Some(&ChangeOp::Removed)) && matches!(change_op, ChangeOp::Added)){
-					entry.pop();
-				} else {
-					entry.push(change_op);
-				}
-			};
+            let ext_resources_path = Vec::from([
+                Prop::Map(String::from("files")),
+                Prop::Map(String::from(path.clone())),
+                Prop::Map(String::from("structured_content")),
+                Prop::Map(String::from("ext_resources")),
+            ]);
 
-			for patch in patches.iter() {
-				match_path(&patch_path, &patch).inspect(
-					|PathWithAction { path, action }| match path.first() {
-						Some((_, Prop::Map(node_id))) => {
-							// hack: only consider nodes where properties changed as changed
-							// this filters out all the parent nodes that don't really change only the child_node_ids change
-							// get second to last instead of last
-							if path.len() > 2 {
-								if let Some((_, Prop::Map(key))) = path.get(path.len() - 2) {
-									if key == "properties" {
-										changed_node_ids.insert(node_id.clone());
-										return;
-									}
-								} 
-							}
-							if let Some((_, Prop::Map(key))) = path.last() {
-								if key != "child_node_ids" {
-									changed_node_ids.insert(node_id.clone());
-									return;
-								}
-							}
-						}
-						_ => {}
-					},
-				);
-				match_path(&ext_resources_path, &patch).inspect(
-					|PathWithAction { path, action }| match path.first() {
-						Some((_, Prop::Map(ext_id))) => {
-							if let Some((_, Prop::Map(key))) = path.last() {
-								if key != "idx" { // ignore idx changes
-									changed_ext_resources.insert(ext_id.clone());
-									all_changed_ext_resource_ids.insert(ext_id.clone());
-								}
-							}
-						}
-						_ => {}
-					},
-				);
-		
-				match_path(&sub_resources_path, &patch).inspect(
-					|PathWithAction { path, action }| match path.first() {
-						Some((_, Prop::Map(sub_id))) => {
-							if path.len() > 2 {
-								if let Some((_, Prop::Map(key))) = path.get(path.len() - 2) {
-									if key == "properties" {
-										changed_sub_resources.insert(sub_id.clone());
-										all_changed_sub_resource_ids.insert(sub_id.clone());
-										return;
-									}
-								} 
-							}
+            let sub_resources_path = Vec::from([
+                Prop::Map(String::from("files")),
+                Prop::Map(String::from(path.clone())),
+                Prop::Map(String::from("structured_content")),
+                Prop::Map(String::from("sub_resources")),
+            ]);
+            let mut changed_ext_resources: HashSet<String> = HashSet::new();
+            let mut all_changed_ext_resource_ids: HashSet<String> = HashSet::new();
+            let mut all_changed_ext_resource_paths: HashSet<String> = HashSet::new();
+            let mut added_ext_resources: HashSet<String> = HashSet::new();
+            let mut deleted_ext_resources: HashSet<String> = HashSet::new();
 
-							if let Some((_, Prop::Map(key))) = path.last() {
-								if key != "idx" { // ignore idx changes
-									changed_sub_resources.insert(sub_id.clone());
-									all_changed_sub_resource_ids.insert(sub_id.clone());
-								}
-							}
-						}
-						_ => {}
-					},
-				);
-			}
-			let mut all_node_ids = HashSet::new();
-			let mut all_sub_resource_ids = HashSet::new();
-			let mut all_ext_resource_ids = HashSet::new();
-			let mut get_depsfn = |scene: Option<GodotScene>, ext_resources: &mut Dictionary| {
-				if let Some(scene) = scene {
-					for (ext_id, ext_resource) in scene.ext_resources.iter() {
-						if changed_files_set.contains_key(&ext_resource.path) {
-							let change_type = changed_files_set.get(&ext_resource.path).unwrap();
-							if change_type == "modified"{
-								changed_ext_resources.insert(ext_id.clone());
-								all_changed_ext_resource_ids.insert(ext_id.clone());
-							}
-						}
-						all_ext_resource_ids.insert(ext_id.clone());
-						let _ = ext_resources.insert(ext_id.clone(), ext_resource.path.clone());
-					}
-					for (node_id, _node) in scene.nodes.iter() {
-						all_node_ids.insert(node_id.clone());
-					}
-					for (sub_id, _sub) in scene.sub_resources.iter() {
-						all_sub_resource_ids.insert(sub_id.clone());
-					}
-				}
-			};
-			// now, we have to iterate through every ext_resource in the old and new scenes and compare their data by recursively calling this function
-			if let Some(old_scene) = old_scene.clone() {
-				get_depsfn(Some(old_scene), &mut old_ext_resources);
-			}
-			if let Some(new_scene) = new_scene.clone() {
-				get_depsfn(Some(new_scene), &mut new_ext_resources);
-			}
+            let mut changed_sub_resources: HashSet<String> = HashSet::new();
+            let mut added_sub_resources: HashSet<String> = HashSet::new();
+            let mut deleted_sub_resources: HashSet<String> = HashSet::new();
+            let mut all_changed_sub_resource_ids: HashSet<String> = HashSet::new();
 
-			for ext_id in all_ext_resource_ids.iter() {
-				let old_has = old_scene.as_ref().map(|scene| scene.ext_resources.get(ext_id).is_some()).unwrap_or(false);
-				let new_has = new_scene.as_ref().map(|scene| scene.ext_resources.get(ext_id).is_some()).unwrap_or(false);
-				// check if the old_scene and the new_scene has the ext_resource to determine if it is added or deleted
-				if old_has && !new_has {
-					deleted_ext_resources.insert(ext_id.clone());
-					all_changed_ext_resource_ids.insert(ext_id.clone());
-				} else if !old_has && new_has {
-					added_ext_resources.insert(ext_id.clone());
-					all_changed_ext_resource_ids.insert(ext_id.clone());
-				}
-			}
+            let mut changed_node_ids: HashSet<String> = HashSet::new();
+            let mut added_node_ids: HashSet<String> = HashSet::new();
+            let mut deleted_node_ids: HashSet<String> = HashSet::new();
 
-			for sub_resource_id in all_sub_resource_ids.iter() {
-				let old_has = old_scene.as_ref().map(|scene| scene.sub_resources.get(sub_resource_id).is_some()).unwrap_or(false);
-				let new_has = new_scene.as_ref().map(|scene| scene.sub_resources.get(sub_resource_id).is_some()).unwrap_or(false);
-				if old_has && !new_has {
-					deleted_sub_resources.insert(sub_resource_id.clone());
-					all_changed_sub_resource_ids.insert(sub_resource_id.clone());
-				} else if !old_has && new_has {
-					added_sub_resources.insert(sub_resource_id.clone());
-					all_changed_sub_resource_ids.insert(sub_resource_id.clone());
-				}
-			}
+            let mut node_modifications: HashMap<String, Vec<ChangeOp>> = HashMap::new();
 
-			let _ = result.insert("old_ext_resources", old_ext_resources);
-			let _ = result.insert("new_ext_resources", new_ext_resources);
+            let mut insert_node_modification = |node_id: &String, change_op: ChangeOp| {
+                let entry = node_modifications
+                    .entry(node_id.clone())
+                    .or_insert(Vec::new());
+                // if the last change_op is add and the current one is deleted, remove the last one
+                if (matches!(entry.last(), Some(&ChangeOp::Added))
+                    && matches!(change_op, ChangeOp::Removed))
+                    || (matches!(entry.last(), Some(&ChangeOp::Removed))
+                        && matches!(change_op, ChangeOp::Added))
+                {
+                    entry.pop();
+                } else {
+                    entry.push(change_op);
+                }
+            };
 
-			let fn_get_class_name = |type_or_instance: &TypeOrInstance, scene: &Option<GodotScene>, content_key: &str| {
-				match type_or_instance {
-					TypeOrInstance::Type(type_name) => type_name.clone(),
-					TypeOrInstance::Instance(instance_id) => {
-						if let Some(scene) = scene {
-							if let Some(ext_resource) = scene.ext_resources.get(instance_id) {
-								return format!("Resource({})", ext_resource.path);
-							}
-						}
-						String::new()
-					}
-				}
-			};
-			
-			let mut fn_get_prop_value = |prop_value: VariantStrValue, scene: &Option<GodotScene>, _is_old: bool| -> Variant {
-				let mut path: Option<String> = None;
-				match prop_value {
-					VariantStrValue::Variant(variant) => {
-						return str_to_var(&variant);
-					},
-					VariantStrValue::ResourcePath(resource_path) => {
-						path = Some(resource_path);
-					},
-					VariantStrValue::SubResourceID(sub_resource_id) => {
-						return format!("<SubResource {} changed>", sub_resource_id).to_variant();
-					},
-					VariantStrValue::ExtResourceID(ext_resource_id) => {
-						path = scene.as_ref().map(|scene| scene.ext_resources.get(&ext_resource_id).map(|ext_resource| ext_resource.path.clone())).unwrap_or(None);
-					}
-				}
-				if let Some(path) = path {
-					// get old_resource or new_resource
-					let all_diff = &all_diff;
-					let diff = all_diff.get(&path);
-					if let Some(diff) = diff {	
-						let resource = if _is_old {
-							diff.get("old_resource")
-						} else {
-							diff.get("new_resource")
-						};
-						if let Some(resource) = resource {
-							return resource;
-						}
-					} 
-					if (!loaded_ext_resources.contains_key(&path)) {
-						// load it
-						let resource_content = self._get_file_at(path.clone(), if _is_old { Some(old_heads.clone()) } else { Some(curr_heads.clone()) });
-						if let Some(resource_content) = resource_content {
-							let resource = self._get_resource_at(path.clone(), &resource_content, if _is_old { old_heads.clone() } else { curr_heads.clone() }, &resource_import_getter);
-							if let Some(resource) = resource {
-								let _ = loaded_ext_resources.insert(path.clone(), resource);
-							}
-						}
-					}
-					if let Some(resource) = loaded_ext_resources.get(&path) {
-						return resource.clone();
-					}
-				}
-				return format!("<ExtResource not found>").to_variant();
-			};
+            for patch in patches.iter() {
+                match_path(&patch_path, &patch).inspect(
+                    |PathWithAction { path, action }| match path.first() {
+                        Some((_, Prop::Map(node_id))) => {
+                            // hack: only consider nodes where properties changed as changed
+                            // this filters out all the parent nodes that don't really change only the child_node_ids change
+                            // get second to last instead of last
+                            if path.len() > 2 {
+                                if let Some((_, Prop::Map(key))) = path.get(path.len() - 2) {
+                                    if key == "properties" {
+                                        changed_node_ids.insert(node_id.clone());
+                                        return;
+                                    }
+                                }
+                            }
+                            if let Some((_, Prop::Map(key))) = path.last() {
+                                if key != "child_node_ids" {
+                                    changed_node_ids.insert(node_id.clone());
+                                    return;
+                                }
+                            }
+                        }
+                        _ => {}
+                    },
+                );
+                match_path(&ext_resources_path, &patch).inspect(
+                    |PathWithAction { path, action }| match path.first() {
+                        Some((_, Prop::Map(ext_id))) => {
+                            if let Some((_, Prop::Map(key))) = path.last() {
+                                if key != "idx" {
+                                    // ignore idx changes
+                                    changed_ext_resources.insert(ext_id.clone());
+                                    all_changed_ext_resource_ids.insert(ext_id.clone());
+                                }
+                            }
+                        }
+                        _ => {}
+                    },
+                );
 
-			let mut get_changed_prop_dict = |prop: String, old_value: VariantStrValue, new_value: VariantStrValue| {
-				return dict!{
-					"name": prop.clone(),
-					"change_type": "modified",
-					"old_value": fn_get_prop_value(old_value, &old_scene, true),
-					"new_value": fn_get_prop_value(new_value, &new_scene, false)
-				}
-			};
-			let mut detect_changed_prop = |prop: String, class_name: &TypeOrInstance, old_prop: Option<String>, new_prop: Option<String>| {
-				let sn_2: StringName = StringName::from(&prop);
-				let default_value = if let TypeOrInstance::Type(class_name) = class_name {
-					ClassDb::singleton().class_get_property_default_value(&StringName::from(class_name), &sn_2).to_string()
-				} else {
-					"".to_string() // Instance properties are always set, regardless of the default value, so this is always empty
-				};
-				let old_prop = old_prop.unwrap_or(default_value.clone());
-				let new_prop = new_prop.unwrap_or(default_value.clone());
-				let old_value = self.get_varstr_value(old_prop.clone());
-				let new_value: VariantStrValue = self.get_varstr_value(new_prop.clone());
-				match (&old_value, &new_value) {
-					(VariantStrValue::SubResourceID(sub_resource_id), VariantStrValue::SubResourceID(new_sub_resource_id)) => {
-						if all_changed_sub_resource_ids.contains(sub_resource_id) || all_changed_sub_resource_ids.contains(new_sub_resource_id) {
-							return Some(get_changed_prop_dict(prop, old_value, new_value));
-						}
-					},
-					(VariantStrValue::ExtResourceID(ext_resource_id), VariantStrValue::ExtResourceID(new_ext_resource_id)) => {
-						if ext_resource_id != new_ext_resource_id || all_changed_ext_resource_ids.contains(ext_resource_id) || all_changed_ext_resource_ids.contains(new_ext_resource_id) {
-							return Some(get_changed_prop_dict(prop, old_value, new_value));
-						}
-					},
-					(VariantStrValue::ResourcePath(resource_path), VariantStrValue::ResourcePath(new_resource_path)) => {
-						if all_changed_ext_resource_paths.contains(resource_path) || all_changed_ext_resource_paths.contains(new_resource_path) {
-							return Some(get_changed_prop_dict(prop, old_value, new_value));
-						} else if (resource_path != new_resource_path) {
-							return Some(get_changed_prop_dict(prop, old_value, new_value));
-						}
-					},
-					(VariantStrValue::Variant(old_variant), VariantStrValue::Variant(new_variant)) => {
-						if old_variant != new_variant {
-							return Some(get_changed_prop_dict(prop, old_value, new_value));
-						}
-					}
-					_ => { // changed type
-						return Some(get_changed_prop_dict(prop, old_value, new_value));
-					}
-				}
-				None
-			};
+                match_path(&sub_resources_path, &patch).inspect(
+                    |PathWithAction { path, action }| match path.first() {
+                        Some((_, Prop::Map(sub_id))) => {
+                            if path.len() > 2 {
+                                if let Some((_, Prop::Map(key))) = path.get(path.len() - 2) {
+                                    if key == "properties" {
+                                        changed_sub_resources.insert(sub_id.clone());
+                                        all_changed_sub_resource_ids.insert(sub_id.clone());
+                                        return;
+                                    }
+                                }
+                            }
 
-			// Handle changed sub resources
-			// let mut changed_sub_resources_list: Array<Dictionary> = Array::new();
-			// for sub_resource_id in changed_sub_resources.iter() {
-			// 	let mut sub_resource_info = Dictionary::new();
-			// 	sub_resource_info.insert("change_type", "modified");
-			// 	sub_resource_info.insert("sub_resource_id", sub_resource_id.clone());
-			// 	changed_sub_resources_list.push(&sub_resource_info);
-			// }
-			for node_id in all_node_ids.iter(){
-				let old_has = old_scene.as_ref().map(|scene| scene.nodes.get(node_id).is_some()).unwrap_or(false);
-				let new_has = new_scene.as_ref().map(|scene| scene.nodes.get(node_id).is_some()).unwrap_or(false);
-				let mut changed_props:Dictionary = Dictionary::new();
+                            if let Some((_, Prop::Map(key))) = path.last() {
+                                if key != "idx" {
+                                    // ignore idx changes
+                                    changed_sub_resources.insert(sub_id.clone());
+                                    all_changed_sub_resource_ids.insert(sub_id.clone());
+                                }
+                            }
+                        }
+                        _ => {}
+                    },
+                );
+            }
+            let mut all_node_ids = HashSet::new();
+            let mut all_sub_resource_ids = HashSet::new();
+            let mut all_ext_resource_ids = HashSet::new();
+            let mut get_depsfn = |scene: Option<GodotScene>, ext_resources: &mut Dictionary| {
+                if let Some(scene) = scene {
+                    for (ext_id, ext_resource) in scene.ext_resources.iter() {
+                        if changed_files_set.contains_key(&ext_resource.path) {
+                            let change_type = changed_files_set.get(&ext_resource.path).unwrap();
+                            if change_type == "modified" {
+                                changed_ext_resources.insert(ext_id.clone());
+                                all_changed_ext_resource_ids.insert(ext_id.clone());
+                            }
+                        }
+                        all_ext_resource_ids.insert(ext_id.clone());
+                        let _ = ext_resources.insert(ext_id.clone(), ext_resource.path.clone());
+                    }
+                    for (node_id, _node) in scene.nodes.iter() {
+                        all_node_ids.insert(node_id.clone());
+                    }
+                    for (sub_id, _sub) in scene.sub_resources.iter() {
+                        all_sub_resource_ids.insert(sub_id.clone());
+                    }
+                }
+            };
+            // now, we have to iterate through every ext_resource in the old and new scenes and compare their data by recursively calling this function
+            if let Some(old_scene) = old_scene.clone() {
+                get_depsfn(Some(old_scene), &mut old_ext_resources);
+            }
+            if let Some(new_scene) = new_scene.clone() {
+                get_depsfn(Some(new_scene), &mut new_ext_resources);
+            }
 
-				if old_has && !new_has {
-					let mut node_info = Dictionary::new();
-					node_info.insert("change_type", "removed");
-					if let Some(scene) = &old_scene {
-						node_info.insert("node_path", scene.get_node_path(&node_id));
-						if let Some(content) = scene.get_node_content(&node_id) {
-							node_info.insert("old_content", content);
-						}
-					}
-					changed_nodes.push(&node_info.to_variant());
-				} else if !old_has && new_has {
-					let mut node_info = Dictionary::new();
-					node_info.insert("change_type", "added");
-					if let Some(scene) = &new_scene {
-						node_info.insert("node_path", scene.get_node_path(&node_id));
-						if let Some(content) = scene.get_node_content(&node_id) {
-							node_info.insert("new_content", content);
-						}
-					}
-					changed_nodes.push(&node_info.to_variant());
-				} else if old_has && new_has && changed_node_ids.contains(node_id) {
-					let mut node_info = Dictionary::new();
-					node_info.insert("change_type", "modified");
-		
-					if let Some(scene) = &new_scene {
-						node_info.insert("node_path", scene.get_node_path(node_id));
-					}
-					let mut old_props = Dictionary::new();
-					let mut new_props = Dictionary::new();
-					let mut old_type: TypeOrInstance = TypeOrInstance::Type(String::new());
-					let mut new_type: TypeOrInstance = TypeOrInstance::Type(String::new());
-					// Get old and new node content
-					if let Some(old_scene) = &old_scene {
-						if let Some(old_node) = old_scene.nodes.get(node_id) {
-							old_type = old_node.type_or_instance.clone();
-						}
-						if let Some(content) = old_scene.get_node_content(node_id) {
-							if let Some(props) = content.get("properties") {
-								old_props = props.to::<Dictionary>();
-							}
-							node_info.insert("old_content", content);
-						}
-					}
-		
-					if let Some(new_scene) = &new_scene {	
-						if let Some(new_node) = new_scene.nodes.get(node_id) {
-							new_type = new_node.type_or_instance.clone();
-						}
-						if let Some(content) = new_scene.get_node_content(node_id) {
-							if let Some(props) = content.get("properties") {
-								new_props = props.to::<Dictionary>();
-							}
-							node_info.insert("new_content", content);
-						}
-					}
-					// old_type and new_type 
-					let old_class_name = fn_get_class_name(&old_type, &old_scene, "old_content");
-					let new_class_name = fn_get_class_name(&new_type, &new_scene, "new_content");
-		
-		
-					if old_class_name != new_class_name {
-						node_info.insert("change_type", "type_changed");
-					} else {
-						let mut props:HashSet<String> = HashSet::new();
-						for (key, _) in old_props.iter_shared() {
-							props.insert(key.to_string());
-						}
-						for (key, _) in new_props.iter_shared() {
-							props.insert(key.to_string());
-						}
-						for prop in props {
-							let old_prop = if let Some(old_prop) = old_props.get(prop.as_str()) {Some(old_prop.to_string())} else {None};
-							let new_prop = if let Some(new_prop) = new_props.get(prop.as_str()) {Some(new_prop.to_string())} else {None};
-							if let Some(changed_prop) = detect_changed_prop(prop.clone(), &new_type, old_prop, new_prop) {
-								let _ = changed_props.insert(prop.clone(), changed_prop);
-							}
-						}
-						if changed_props.len() > 0 {
-							node_info.insert("changed_props", changed_props);
-						}
-						changed_nodes.push(&node_info.to_variant());
-					}
-				}
-			}
+            for ext_id in all_ext_resource_ids.iter() {
+                let old_has = old_scene
+                    .as_ref()
+                    .map(|scene| scene.ext_resources.get(ext_id).is_some())
+                    .unwrap_or(false);
+                let new_has = new_scene
+                    .as_ref()
+                    .map(|scene| scene.ext_resources.get(ext_id).is_some())
+                    .unwrap_or(false);
+                // check if the old_scene and the new_scene has the ext_resource to determine if it is added or deleted
+                if old_has && !new_has {
+                    deleted_ext_resources.insert(ext_id.clone());
+                    all_changed_ext_resource_ids.insert(ext_id.clone());
+                } else if !old_has && new_has {
+                    added_ext_resources.insert(ext_id.clone());
+                    all_changed_ext_resource_ids.insert(ext_id.clone());
+                }
+            }
+
+            for sub_resource_id in all_sub_resource_ids.iter() {
+                let old_has = old_scene
+                    .as_ref()
+                    .map(|scene| scene.sub_resources.get(sub_resource_id).is_some())
+                    .unwrap_or(false);
+                let new_has = new_scene
+                    .as_ref()
+                    .map(|scene| scene.sub_resources.get(sub_resource_id).is_some())
+                    .unwrap_or(false);
+                if old_has && !new_has {
+                    deleted_sub_resources.insert(sub_resource_id.clone());
+                    all_changed_sub_resource_ids.insert(sub_resource_id.clone());
+                } else if !old_has && new_has {
+                    added_sub_resources.insert(sub_resource_id.clone());
+                    all_changed_sub_resource_ids.insert(sub_resource_id.clone());
+                }
+            }
+
+            let _ = result.insert("old_ext_resources", old_ext_resources);
+            let _ = result.insert("new_ext_resources", new_ext_resources);
+
+            let fn_get_class_name = |type_or_instance: &TypeOrInstance,
+                                     scene: &Option<GodotScene>,
+                                     content_key: &str| {
+                match type_or_instance {
+                    TypeOrInstance::Type(type_name) => type_name.clone(),
+                    TypeOrInstance::Instance(instance_id) => {
+                        if let Some(scene) = scene {
+                            if let Some(ext_resource) = scene.ext_resources.get(instance_id) {
+                                return format!("Resource({})", ext_resource.path);
+                            }
+                        }
+                        String::new()
+                    }
+                }
+            };
+
+            let mut fn_get_prop_value = |prop_value: VariantStrValue,
+                                         scene: &Option<GodotScene>,
+                                         _is_old: bool|
+             -> Variant {
+                let mut path: Option<String> = None;
+                match prop_value {
+                    VariantStrValue::Variant(variant) => {
+                        return str_to_var(&variant);
+                    }
+                    VariantStrValue::ResourcePath(resource_path) => {
+                        path = Some(resource_path);
+                    }
+                    VariantStrValue::SubResourceID(sub_resource_id) => {
+                        return format!("<SubResource {} changed>", sub_resource_id).to_variant();
+                    }
+                    VariantStrValue::ExtResourceID(ext_resource_id) => {
+                        path = scene
+                            .as_ref()
+                            .map(|scene| {
+                                scene
+                                    .ext_resources
+                                    .get(&ext_resource_id)
+                                    .map(|ext_resource| ext_resource.path.clone())
+                            })
+                            .unwrap_or(None);
+                    }
+                }
+                if let Some(path) = path {
+                    // get old_resource or new_resource
+                    let all_diff = &all_diff;
+                    let diff = all_diff.get(&path);
+                    if let Some(diff) = diff {
+                        let resource = if _is_old {
+                            diff.get("old_resource")
+                        } else {
+                            diff.get("new_resource")
+                        };
+                        if let Some(resource) = resource {
+                            return resource;
+                        }
+                    }
+                    if (!loaded_ext_resources.contains_key(&path)) {
+                        // load it
+                        let resource_content = self._get_file_at(
+                            path.clone(),
+                            if _is_old {
+                                Some(old_heads.clone())
+                            } else {
+                                Some(curr_heads.clone())
+                            },
+                        );
+                        if let Some(resource_content) = resource_content {
+                            let resource = self._get_resource_at(
+                                path.clone(),
+                                &resource_content,
+                                if _is_old {
+                                    old_heads.clone()
+                                } else {
+                                    curr_heads.clone()
+                                },
+                                &resource_import_getter,
+                            );
+                            if let Some(resource) = resource {
+                                let _ = loaded_ext_resources.insert(path.clone(), resource);
+                            }
+                        }
+                    }
+                    if let Some(resource) = loaded_ext_resources.get(&path) {
+                        return resource.clone();
+                    }
+                }
+                return format!("<ExtResource not found>").to_variant();
+            };
+
+            let mut get_changed_prop_dict =
+                |prop: String, old_value: VariantStrValue, new_value: VariantStrValue| {
+                    return dict! {
+                        "name": prop.clone(),
+                        "change_type": "modified",
+                        "old_value": fn_get_prop_value(old_value, &old_scene, true),
+                        "new_value": fn_get_prop_value(new_value, &new_scene, false)
+                    };
+                };
+            let mut detect_changed_prop =
+                |prop: String,
+                 class_name: &TypeOrInstance,
+                 old_prop: Option<String>,
+                 new_prop: Option<String>| {
+                    let sn_2: StringName = StringName::from(&prop);
+                    let default_value = if let TypeOrInstance::Type(class_name) = class_name {
+                        ClassDb::singleton()
+                            .class_get_property_default_value(&StringName::from(class_name), &sn_2)
+                            .to_string()
+                    } else {
+                        "".to_string() // Instance properties are always set, regardless of the default value, so this is always empty
+                    };
+                    let old_prop = old_prop.unwrap_or(default_value.clone());
+                    let new_prop = new_prop.unwrap_or(default_value.clone());
+                    let old_value = self.get_varstr_value(old_prop.clone());
+                    let new_value: VariantStrValue = self.get_varstr_value(new_prop.clone());
+                    match (&old_value, &new_value) {
+                        (
+                            VariantStrValue::SubResourceID(sub_resource_id),
+                            VariantStrValue::SubResourceID(new_sub_resource_id),
+                        ) => {
+                            if all_changed_sub_resource_ids.contains(sub_resource_id)
+                                || all_changed_sub_resource_ids.contains(new_sub_resource_id)
+                            {
+                                return Some(get_changed_prop_dict(prop, old_value, new_value));
+                            }
+                        }
+                        (
+                            VariantStrValue::ExtResourceID(ext_resource_id),
+                            VariantStrValue::ExtResourceID(new_ext_resource_id),
+                        ) => {
+                            if ext_resource_id != new_ext_resource_id
+                                || all_changed_ext_resource_ids.contains(ext_resource_id)
+                                || all_changed_ext_resource_ids.contains(new_ext_resource_id)
+                            {
+                                return Some(get_changed_prop_dict(prop, old_value, new_value));
+                            }
+                        }
+                        (
+                            VariantStrValue::ResourcePath(resource_path),
+                            VariantStrValue::ResourcePath(new_resource_path),
+                        ) => {
+                            if all_changed_ext_resource_paths.contains(resource_path)
+                                || all_changed_ext_resource_paths.contains(new_resource_path)
+                            {
+                                return Some(get_changed_prop_dict(prop, old_value, new_value));
+                            } else if (resource_path != new_resource_path) {
+                                return Some(get_changed_prop_dict(prop, old_value, new_value));
+                            }
+                        }
+                        (
+                            VariantStrValue::Variant(old_variant),
+                            VariantStrValue::Variant(new_variant),
+                        ) => {
+                            if old_variant != new_variant {
+                                return Some(get_changed_prop_dict(prop, old_value, new_value));
+                            }
+                        }
+                        _ => {
+                            // changed type
+                            return Some(get_changed_prop_dict(prop, old_value, new_value));
+                        }
+                    }
+                    None
+                };
+
+            // Handle changed sub resources
+            // let mut changed_sub_resources_list: Array<Dictionary> = Array::new();
+            // for sub_resource_id in changed_sub_resources.iter() {
+            // 	let mut sub_resource_info = Dictionary::new();
+            // 	sub_resource_info.insert("change_type", "modified");
+            // 	sub_resource_info.insert("sub_resource_id", sub_resource_id.clone());
+            // 	changed_sub_resources_list.push(&sub_resource_info);
+            // }
+            for node_id in all_node_ids.iter() {
+                let old_has = old_scene
+                    .as_ref()
+                    .map(|scene| scene.nodes.get(node_id).is_some())
+                    .unwrap_or(false);
+                let new_has = new_scene
+                    .as_ref()
+                    .map(|scene| scene.nodes.get(node_id).is_some())
+                    .unwrap_or(false);
+                let mut changed_props: Dictionary = Dictionary::new();
+
+                if old_has && !new_has {
+                    let mut node_info = Dictionary::new();
+                    node_info.insert("change_type", "removed");
+                    if let Some(scene) = &old_scene {
+                        node_info.insert("node_path", scene.get_node_path(&node_id));
+                        if let Some(content) = scene.get_node_content(&node_id) {
+                            node_info.insert("old_content", content);
+                        }
+                    }
+                    changed_nodes.push(&node_info.to_variant());
+                } else if !old_has && new_has {
+                    let mut node_info = Dictionary::new();
+                    node_info.insert("change_type", "added");
+                    if let Some(scene) = &new_scene {
+                        node_info.insert("node_path", scene.get_node_path(&node_id));
+                        if let Some(content) = scene.get_node_content(&node_id) {
+                            node_info.insert("new_content", content);
+                        }
+                    }
+                    changed_nodes.push(&node_info.to_variant());
+                } else if old_has && new_has && changed_node_ids.contains(node_id) {
+                    let mut node_info = Dictionary::new();
+                    node_info.insert("change_type", "modified");
+
+                    if let Some(scene) = &new_scene {
+                        node_info.insert("node_path", scene.get_node_path(node_id));
+                    }
+                    let mut old_props = Dictionary::new();
+                    let mut new_props = Dictionary::new();
+                    let mut old_type: TypeOrInstance = TypeOrInstance::Type(String::new());
+                    let mut new_type: TypeOrInstance = TypeOrInstance::Type(String::new());
+                    // Get old and new node content
+                    if let Some(old_scene) = &old_scene {
+                        if let Some(old_node) = old_scene.nodes.get(node_id) {
+                            old_type = old_node.type_or_instance.clone();
+                        }
+                        if let Some(content) = old_scene.get_node_content(node_id) {
+                            if let Some(props) = content.get("properties") {
+                                old_props = props.to::<Dictionary>();
+                            }
+                            node_info.insert("old_content", content);
+                        }
+                    }
+
+                    if let Some(new_scene) = &new_scene {
+                        if let Some(new_node) = new_scene.nodes.get(node_id) {
+                            new_type = new_node.type_or_instance.clone();
+                        }
+                        if let Some(content) = new_scene.get_node_content(node_id) {
+                            if let Some(props) = content.get("properties") {
+                                new_props = props.to::<Dictionary>();
+                            }
+                            node_info.insert("new_content", content);
+                        }
+                    }
+                    // old_type and new_type
+                    let old_class_name = fn_get_class_name(&old_type, &old_scene, "old_content");
+                    let new_class_name = fn_get_class_name(&new_type, &new_scene, "new_content");
+
+                    if old_class_name != new_class_name {
+                        node_info.insert("change_type", "type_changed");
+                    } else {
+                        let mut props: HashSet<String> = HashSet::new();
+                        for (key, _) in old_props.iter_shared() {
+                            props.insert(key.to_string());
+                        }
+                        for (key, _) in new_props.iter_shared() {
+                            props.insert(key.to_string());
+                        }
+                        for prop in props {
+                            let old_prop = if let Some(old_prop) = old_props.get(prop.as_str()) {
+                                Some(old_prop.to_string())
+                            } else {
+                                None
+                            };
+                            let new_prop = if let Some(new_prop) = new_props.get(prop.as_str()) {
+                                Some(new_prop.to_string())
+                            } else {
+                                None
+                            };
+                            if let Some(changed_prop) =
+                                detect_changed_prop(prop.clone(), &new_type, old_prop, new_prop)
+                            {
+                                let _ = changed_props.insert(prop.clone(), changed_prop);
+                            }
+                        }
+                        if changed_props.len() > 0 {
+                            node_info.insert("changed_props", changed_props);
+                        }
+                        changed_nodes.push(&node_info.to_variant());
+                    }
+                }
+            }
             result.insert("changed_nodes", changed_nodes);
-			result
-		};
-		let mut scene_diffs: Vec<(String, Dictionary)> = Vec::new();
-		for file in scene_files.iter() {
-			scene_diffs.push((file.clone(), get_scene_diff(&file)));
-		}
-		for (file, diff) in scene_diffs {
-			let _ = all_diff.insert(file, diff);
-		}
+            result
+        };
+        let mut scene_diffs: Vec<(String, Dictionary)> = Vec::new();
+        for file in scene_files.iter() {
+            scene_diffs.push((file.clone(), get_scene_diff(&file)));
+        }
+        for (file, diff) in scene_diffs {
+            let _ = all_diff.insert(file, diff);
+        }
 
         // If it's a scene file, add node changes
         let mut diff_result = Dictionary::new();
-		for (path, diff) in all_diff {
-			let _ = diff_result.insert(path.clone(), diff);
-		}
-		diff_result
+        for (path, diff) in all_diff {
+            let _ = diff_result.insert(path.clone(), diff);
+        }
+        diff_result
     }
 }
 
