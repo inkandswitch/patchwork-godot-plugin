@@ -116,6 +116,8 @@ func add_color_marker(change_type: String, panel_container: PanelContainer) -> v
 	margin_container.add_child(color_rect)
 	panel_container.add_child(margin_container)
 	var update_color_rect = func():
+		if !is_instance_valid(color_rect):
+			return
 		color_rect.color = get_color_for_change_type(change_type)
 		color_rect.theme_changed.emit()
 		panel_container.queue_redraw()
@@ -392,6 +394,10 @@ func add_diff(diff: Dictionary) -> void:
 
 	
 func reset() -> void:
+	# disconnect from theme changed signal
+	var all_signal_connections = self.theme_changed.get_connections()
+	for connection in all_signal_connections:
+		self.theme_changed.disconnect(connection.callable)
 	for section in sections:
 		section.queue_free()
 	sections.clear()
