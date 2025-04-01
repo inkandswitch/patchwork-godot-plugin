@@ -1,11 +1,11 @@
 [gd_scene load_steps=14 format=3 uid="uid://cxyjgsyba1v85"]
 
-[ext_resource type="Script" path="res://addons/patchwork/gdscript/sidebar.gd" id="1_ebh36"]
+[ext_resource type="Script" uid="uid://bxgybx6gjahju" path="res://addons/patchwork/gdscript/sidebar.gd" id="1_ebh36"]
 [ext_resource type="Texture2D" uid="uid://4c2gr0ggkl2t" path="res://addons/patchwork/icons/circle-alert.svg" id="2_fxo71"]
 [ext_resource type="Texture2D" uid="uid://ymewwqpn0vi4" path="res://addons/patchwork/icons/GuiTabMenuHl.svg" id="2_rfxbe"]
 [ext_resource type="Texture2D" uid="uid://xec6o14n4y2v" path="res://addons/patchwork/icons/person.svg" id="3_m2w8q"]
 [ext_resource type="Theme" uid="uid://hr3cor4s2ov2" path="res://addons/patchwork/gdscript/diff_editor_theme.tres" id="4_7letu"]
-[ext_resource type="Script" path="res://addons/patchwork/gdscript/diff_inspector_container.gd" id="4_uttw7"]
+[ext_resource type="Script" uid="uid://d145i10hos3c6" path="res://addons/patchwork/gdscript/diff_inspector_container.gd" id="4_uttw7"]
 [ext_resource type="Texture2D" uid="uid://bu0h5oa7aoanu" path="res://addons/patchwork/icons/sign-add-svgrepo-com.svg" id="5_iqebc"]
 [ext_resource type="Texture2D" uid="uid://cy3bt4icrwm3w" path="res://addons/patchwork/icons/remove-svgrepo-com.svg" id="6_ha5pl"]
 [ext_resource type="Texture2D" uid="uid://mr0rb0dbfyws" path="res://addons/patchwork/icons/edit-two-svgrepo-com.svg" id="7_o8jin"]

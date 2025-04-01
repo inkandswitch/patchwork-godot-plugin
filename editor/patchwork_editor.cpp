@@ -700,7 +700,7 @@ Ref<Resource> PatchworkEditor::import_and_load_resource(const String &p_path) {
 	List<String> import_variants;
 	List<String> import_options;
 	Variant metadata;
-	err = importer->import(p_path, import_base_path, params, &import_variants, &import_options, &metadata);
+	err = importer->import(ResourceUID::INVALID_ID, p_path, import_base_path, params, &import_variants, &import_options, &metadata);
 	ERR_FAIL_COND_V_MSG(err != OK, {}, "Failed to import resource at path " + p_path);
 	// load the resource
 	auto res = ResourceLoader::load(p_path, "", ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &err);
