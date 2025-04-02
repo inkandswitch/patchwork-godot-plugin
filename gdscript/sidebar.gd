@@ -433,20 +433,21 @@ func update_ui() -> void:
 
 		if "merge_metadata" in change:
 			var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
-		
-			history_list.add_item(change.username + " merged \"" + merged_branch.name + "\" - " + human_readable_timestamp(change.timestamp))
+			var merged_branch_name = merged_branch.name
+			history_list.add_item("↪️ merged \"" + merged_branch_name + "\" (" + change_author + " " + change_timestamp + ")")
 
 		else:
-			history_list.add_item(change_author + " made some changes - " + change_timestamp)
+			history_list.add_item("some changes  (" + change_author + " " + change_timestamp + ")")
 
+	
 	# update context menu
 
 	var menu_popup = menu_button.get_popup()
 
 	menu_popup.clear()
 
-	menu_popup.add_item("Create new branch", CREATE_BRANCH_IDX) # Create new branch menu item
-	menu_popup.add_item("Merge branch", MERGE_BRANCH_IDX)
+	menu_popup.add_item("Createnewbranch", CREATE_BRANCH_IDX) # Create new branch menu item
+	menu_popup.add_item("Mergebranch", MERGE_BRANCH_IDX)
 
 	# update user name
 
@@ -468,7 +469,7 @@ func update_ui() -> void:
 		var target_branch = GodotProject.get_branch_by_id(checked_out_branch.merge_into)
 
 		if checked_out_branch.merge_at != checked_out_branch.forked_at:
-			merge_preview_message_label.text = "Be carful to review your changes and make sure the game is still working correctly before merging. \nThere have been changes to \"" + target_branch.name + "\" since \"" + source_branch.name + "\" was created."
+			merge_preview_message_label.text = "Becarfultoreviewyourchanges and makesurethegame is stillworkingcorrectlybeforemerging.\nThere have been changes to \"" + target_branch.name + "\" since \"" + source_branch.name + "\" was created."
 			merge_preview_message_icon.texture = load("res://addons/patchwork/icons/warning-circle.svg")
 		else:
 			merge_preview_message_label.text = "This branch is safe to merge.\nThere have been no changes to \"" + target_branch.name + "\" since \"" + checked_out_branch.name + "\" was created."
