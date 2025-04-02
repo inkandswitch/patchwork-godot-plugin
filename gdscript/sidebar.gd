@@ -10,7 +10,6 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 @onready var user_button: Button = %UserButton
 @onready var highlight_changes_checkbox: CheckBox = %HighlightChangesCheckbox
 @onready var highlight_changes_checkbox_mp: CheckBox = %HighlightChangesCheckboxMP
-@onready var tab_container: TabContainer = %TabContainer
 @onready var inspector: DiffInspectorContainer = %BigDiffer
 @onready var merge_preview_modal: Control = %MergePreviewModal
 @onready var cancel_merge_button: Button = %CancelMergeButton
@@ -34,7 +33,6 @@ const TEMP_DIR = "user://tmp"
 
 var DEBUG_MODE = false
 
-var branches = []
 var plugin: EditorPlugin
 
 var task_modal: TaskModal = TaskModal.new()
@@ -170,14 +168,14 @@ func _on_user_button_pressed():
 	add_child(dialog)
 	dialog.popup_centered()
 
-func _on_branch_picker_item_selected(index: int) -> void:
-	var selected_branch = branches[index]
+func _on_branch_picker_item_selected(_index: int) -> void:
+	var selected_branch = branch_picker.get_item_metadata(_index)
 
 	# reset selection in branch picker in case checkout_branch fails
 	# once branch is actually checked out, the branch picker will update
 	update_ui()
 
-	if selected_branch.is_not_loaded:
+	if "is_not_loaded" in selected_branch && selected_branch.is_not_loaded:
 		# Show warning dialog that branch is not synced correctly
 		var dialog = AcceptDialog.new()
 		dialog.title = "Branch Not Available"
@@ -275,6 +273,12 @@ func create_new_branch() -> void:
 
 		var branch_name_input = LineEdit.new()
 		branch_name_input.placeholder_text = "Branch name"
+
+		var user_name = PatchworkConfig.get_user_value("user_name", "")
+		if !user_name:
+			user_name = "Anonymous"
+
+		branch_name_input.text = user_name + "'s remix"
 		dialog.add_child(branch_name_input)
 
 		# Position line edit in dialog
@@ -284,9 +288,6 @@ func create_new_branch() -> void:
 		# Make dialog big enough for line edit
 		dialog.size = Vector2(220, 100)
 
-
-		# Disable create button if title is empty
-		dialog.get_ok_button().disabled = true
 		branch_name_input.text_changed.connect(func(new_text: String):
 			if new_text.strip_edges() == "":
 				dialog.get_ok_button().disabled = true
@@ -386,41 +387,10 @@ func fold_section(section_header: Button, section_body: Control):
 
 func update_ui() -> void:
 	var checked_out_branch = GodotProject.get_checked_out_branch()
-	self.branches = GodotProject.get_branches()
 
 	# update branch pickers
 
-	branch_picker.clear()
-	source_branch_picker.clear()
-	target_branch_picker.clear()
-
-	for i in range(branches.size()):
-		var branch = branches[i]
-		var label = branch.name
-		var is_checked_out = checked_out_branch && branch.id == checked_out_branch.id
-
-		branch_picker.add_item(label, i)
-		branch_picker.set_item_metadata(i, branch.id)
-
-		source_branch_picker.add_item(label, i)
-		source_branch_picker.set_item_metadata(i, branch.id)
-
-		target_branch_picker.add_item(label, i)
-		target_branch_picker.set_item_metadata(i, branch.id)
-
-		if branch.is_main:
-			label = label + " 👑"
-			target_branch_picker.select(i)
-
-		# this should not happen, but right now the sync is not working correctly so we need to surface this in the interface
-		if branch.is_not_loaded:
-			branch_picker.set_item_icon(i, load("res://addons/patchwork/icons/warning.svg"))
-
-		if is_checked_out:
-			branch_picker.select(i)
-
-		if checked_out_branch && checked_out_branch.is_merge_preview && branch.id == checked_out_branch.forked_from:
-			source_branch_picker.select(i)
+	update_branch_picker()
 
 	# update history
 
@@ -453,7 +423,7 @@ func update_ui() -> void:
 
 	if checked_out_branch.is_main:
 		merge_button.disabled = true
-		merge_button.tooltip_text = "Can't merge main because it's the root of all other branches"
+		merge_button.tooltip_text = "Can't merge main because it's not a remix of another branch"
 	else:
 		merge_button.disabled = false
 		merge_button.tooltip_text = ""
@@ -517,6 +487,78 @@ func update_ui() -> void:
 
 
 		update_highlight_changes(diff, checked_out_branch)
+
+func update_branch_picker() -> void:
+	var checked_out_branch = GodotProject.get_checked_out_branch()
+
+	branch_picker.clear()
+
+	var all_branches = GodotProject.get_branches()
+	var main_branch = GodotProject.get_main_branch()
+
+	add_branch_with_forks(main_branch, all_branches, checked_out_branch.id)
+
+	var selected_index = branch_picker.get_item_index(checked_out_branch.id)
+	branch_picker.select(selected_index)
+
+	branch_picker.select(checked_out_branch.id)
+
+	for i in range(branch_picker.get_child_count()):
+		var child = branch_picker.get_child(i)
+		if child.get_metadata().id == checked_out_branch.id:
+			branch_picker.select(i)
+			break
+
+func add_branch_with_forks(branch: Dictionary, all_branches: Array, selected_branch_id: String, indentation: String = "", is_last: bool = false) -> void:
+	var label
+	if branch.is_main:
+		label = branch.name
+	else:
+		var connection
+		if is_last:
+			connection = "└─ "
+		else:
+			connection = "├─ "
+
+		label = indentation + connection + branch.name
+
+
+	var branch_index = branch_picker.get_item_count()
+	branch_picker.add_item(label, branch_index)
+
+	# this should not happen, but right now the sync is not working correctly so we need to surface this in the interface
+	if branch.is_not_loaded:
+		branch_picker.set_item_icon(branch_index, load("res://addons/patchwork/icons/warning.svg"))
+
+	branch_picker.set_item_metadata(branch_index, branch)
+
+	if branch.id == selected_branch_id:
+		branch_picker.select(branch_index)
+
+	var new_indentation = ""
+	if branch.is_main:
+		new_indentation = ""
+	else:
+		if is_last:
+			new_indentation = indentation + "    "
+		else:
+			new_indentation = indentation + "│   "
+
+
+	var forked_off_branches = []
+	for other_branch in all_branches:
+		if !("forked_from" in other_branch):
+			continue
+
+		if other_branch.forked_from != branch.id:
+			continue
+
+		forked_off_branches.append(other_branch)
+
+	for child_index in range(forked_off_branches.size()):
+		var forked_off_branch = forked_off_branches[child_index]
+		var is_last_child = child_index == forked_off_branches.size() - 1
+		add_branch_with_forks(forked_off_branch, all_branches, selected_branch_id, new_indentation, is_last_child)
 
 func human_readable_timestamp(timestamp: int) -> String:
 	var now = Time.get_unix_time_from_system() * 1000 # Convert to ms
