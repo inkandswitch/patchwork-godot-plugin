@@ -431,10 +431,13 @@ func update_ui() -> void:
 		var change_author = change.username
 		var change_timestamp = human_readable_timestamp(change.timestamp)
 
-		print("change: ", change)
+		if "merge_metadata" in change:
+			var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
+		
+			history_list.add_item(change.username + " merged \"" + merged_branch.name + "\" - " + human_readable_timestamp(change.timestamp))
 
-
-		history_list.add_item(change_author + " - " + change_timestamp)
+		else:
+			history_list.add_item(change_author + " made some changes - " + change_timestamp)
 
 	# update context menu
 

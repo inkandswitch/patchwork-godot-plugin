@@ -12,6 +12,7 @@ use crate::godot_parser::GodotScene;
 use crate::godot_project::{ForkInfo, MergeInfo};
 use crate::utils::{
     commit_with_attribution_and_timestamp, print_branch_state, print_doc, CommitMetadata,
+    MergeMetadata,
 };
 use crate::{
     godot_parser,
@@ -806,6 +807,47 @@ impl DriverState {
                         let _ = target_branch_doc.merge(source_branch_doc);
                     });
             });
+
+        // if the branch has some merge_info we know that it's a merge preview branch
+        let merge_metadata = if source_branch_state.merge_info.is_some() {
+            let original_branch_state = self
+                .branch_states
+                .get(&source_branch_state.fork_info.as_ref().unwrap().forked_from)
+                .unwrap();
+
+            Some(MergeMetadata {
+                merged_branch_id: original_branch_state.doc_handle.document_id().to_string(),
+                merged_at_heads: original_branch_state.synced_heads.clone(),
+                forked_at_heads: original_branch_state
+                    .fork_info
+                    .as_ref()
+                    .unwrap()
+                    .forked_at
+                    .clone(),
+            })
+        } else {
+            // todo: implement this case
+            None
+        };
+
+        if let Some(merge_metadata) = merge_metadata {
+            target_branch_state.doc_handle.with_doc_mut(|d| {
+                let mut tx = d.transaction();
+
+                // do a dummy change that we can attach some metadata to
+                let changed = tx.get_int(&ROOT, "_changed").unwrap_or(0);
+                let _ = tx.put(ROOT, "_changed", changed + 1);
+
+                commit_with_attribution_and_timestamp(
+                    tx,
+                    &CommitMetadata {
+                        username: self.user_name.clone(),
+                        branch_id: Some(target_branch_doc_id.to_string()),
+                        merge_metadata: Some(merge_metadata),
+                    },
+                );
+            });
+        }
     }
 
     fn update_branch_doc_state(&mut self, branch_doc_handle: DocHandle) {

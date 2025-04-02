@@ -404,8 +404,8 @@ impl GodotProject {
 
                     if let Some(merge_metadata) = metadata.merge_metadata {
                         let merge_metadata_dict = dict! {
-                            "merge_branch_id": GString::from(merge_metadata.merge_branch_id).to_variant(),
-                            "merge_at_heads": merge_metadata.merge_at_heads.iter().map(|h| GString::from(h.to_string())).collect::<PackedStringArray>().to_variant(),
+                            "merged_branch_id": GString::from(merge_metadata.merged_branch_id).to_variant(),
+                            "merged_at_heads": merge_metadata.merged_at_heads.iter().map(|h| GString::from(h.to_string())).collect::<PackedStringArray>().to_variant(),
                             "forked_at_heads": merge_metadata.forked_at_heads.iter().map(|h| GString::from(h.to_string())).collect::<PackedStringArray>().to_variant(),
                         };
 

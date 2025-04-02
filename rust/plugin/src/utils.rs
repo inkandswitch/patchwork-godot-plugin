@@ -83,14 +83,14 @@ pub(crate) fn print_doc(message: &str, doc_handle: &DocHandle) {
     println!("rust: {:?}: {:?}", message, checked_out_doc_json);
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct MergeMetadata {
-    pub merge_branch_id: String,
-    pub merge_at_heads: Vec<ChangeHash>,
+    pub merged_branch_id: String,
+    pub merged_at_heads: Vec<ChangeHash>,
     pub forked_at_heads: Vec<ChangeHash>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct CommitMetadata {
     pub username: Option<String>,
     pub branch_id: Option<String>,
