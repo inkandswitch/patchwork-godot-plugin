@@ -28,6 +28,7 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 @onready var history_section_body: Control = %HistorySectionBody
 @onready var diff_section_header: Button = %DiffSectionHeader
 @onready var diff_section_body: Control = %DiffSectionBody
+@onready var branch_picker_cover: Button = %BranchPickerCover
 
 const TEMP_DIR = "user://tmp"
 
@@ -495,6 +496,8 @@ func update_branch_picker() -> void:
 
 	var all_branches = GodotProject.get_branches()
 	var main_branch = GodotProject.get_main_branch()
+
+	branch_picker_cover.text = checked_out_branch.name
 
 	add_branch_with_forks(main_branch, all_branches, checked_out_branch.id)
 
