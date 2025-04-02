@@ -1,10 +1,11 @@
-[gd_scene load_steps=14 format=3 uid="uid://cxyjgsyba1v85"]
+[gd_scene load_steps=19 format=3 uid="uid://cxyjgsyba1v85"]
 
 [ext_resource type="Script" uid="uid://bxgybx6gjahju" path="res://addons/patchwork/gdscript/sidebar.gd" id="1_ebh36"]
 [ext_resource type="Texture2D" uid="uid://4c2gr0ggkl2t" path="res://addons/patchwork/icons/circle-alert.svg" id="2_fxo71"]
 [ext_resource type="Texture2D" uid="uid://ymewwqpn0vi4" path="res://addons/patchwork/icons/GuiTabMenuHl.svg" id="2_rfxbe"]
 [ext_resource type="Texture2D" uid="uid://xec6o14n4y2v" path="res://addons/patchwork/icons/person.svg" id="3_m2w8q"]
 [ext_resource type="Theme" uid="uid://hr3cor4s2ov2" path="res://addons/patchwork/gdscript/diff_editor_theme.tres" id="4_7letu"]
+[ext_resource type="Texture2D" uid="uid://blu0iomxyyu3k" path="res://addons/patchwork/icons/collapsable-open.svg" id="4_of6ia"]
 [ext_resource type="Script" uid="uid://d145i10hos3c6" path="res://addons/patchwork/gdscript/diff_inspector_container.gd" id="4_uttw7"]
 [ext_resource type="Texture2D" uid="uid://bu0h5oa7aoanu" path="res://addons/patchwork/icons/sign-add-svgrepo-com.svg" id="5_iqebc"]
 [ext_resource type="Texture2D" uid="uid://cy3bt4icrwm3w" path="res://addons/patchwork/icons/remove-svgrepo-com.svg" id="6_ha5pl"]
@@ -12,7 +13,19 @@
 [ext_resource type="Texture2D" uid="uid://b3jhx5bvcdswo" path="res://addons/patchwork/icons/warning-circle.svg" id="9_p7w5p"]
 [ext_resource type="Texture2D" uid="uid://4obywo8ddx25" path="res://addons/patchwork/icons/arrow.svg" id="9_xrl6o"]
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ftank"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_of6ia"]
+bg_color = Color(0.129412, 0.14902, 0.180392, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_qb0q7"]
+bg_color = Color(0.219608, 0.239216, 0.266667, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_o4fec"]
+bg_color = Color(0.219608, 0.239216, 0.266667, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_42yji"]
+bg_color = Color(0.156863, 0.176471, 0.207843, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_0tnfe"]
 content_margin_left = 4.0
 content_margin_top = 4.0
 content_margin_right = 4.0
@@ -71,6 +84,10 @@ text = "Branch"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+selected = 0
+item_count = 1
+popup/item_0/text = "main"
+popup/item_0/id = 0
 
 [node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/HBoxContainer2"]
 layout_mode = 2
@@ -80,99 +97,103 @@ unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("2_rfxbe")
 icon_alignment = 1
+item_count = 2
+popup/item_0/text = "Create new branch"
+popup/item_0/id = 1
+popup/item_1/text = "Merge branch"
+popup/item_1/id = 2
 
 [node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
 modulate = Color(1, 1, 1, 0)
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="TabContainer" type="TabContainer" parent="VBoxContainer"]
-unique_name_in_owner = true
+[node name="PanelContainer" type="PanelContainer" parent="VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
-current_tab = 0
+theme_override_styles/panel = SubResource("StyleBoxFlat_of6ia")
 
-[node name="History" type="TabBar" parent="VBoxContainer/TabContainer"]
+[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer/PanelContainer"]
 layout_mode = 2
-metadata/_tab_index = 0
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
 
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/TabContainer/History"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-
-[node name="HSeparator2" type="HSeparator" parent="VBoxContainer/TabContainer/History/VBoxContainer"]
-visible = false
-modulate = Color(1, 1, 1, 0)
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer"]
 layout_mode = 2
-theme_override_constants/separation = 16
 
-[node name="HistoryList" type="ItemList" parent="VBoxContainer/TabContainer/History/VBoxContainer"]
+[node name="HistorySectionHeader" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_styles/focus = SubResource("StyleBoxFlat_qb0q7")
+theme_override_styles/hover = SubResource("StyleBoxFlat_o4fec")
+theme_override_styles/normal = SubResource("StyleBoxFlat_42yji")
+text = "History"
+icon = ExtResource("4_of6ia")
+alignment = 0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="HistoryList" type="ItemList" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 item_count = 2
-item_0/text = "asdfasdf"
-item_1/text = "asdfsd"
+item_0/text = "5edd589 - Paul@main - 1 seconds ago"
+item_1/text = "362be7a - Paul@main - 0 seconds ago"
 
-[node name="Diff" type="TabBar" parent="VBoxContainer/TabContainer"]
-visible = false
+[node name="DiffSectionHeader" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
-metadata/_tab_index = 1
+text = "Changes"
+icon = ExtResource("4_of6ia")
+alignment = 0
 
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/TabContainer/Diff"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_constants/separation = 8
-
-[node name="HSeparator" type="HSeparator" parent="VBoxContainer/TabContainer/Diff/VBoxContainer"]
-modulate = Color(1, 1, 1, 0)
+[node name="VBoxContainer2" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
 layout_mode = 2
-theme_override_constants/separation = 8
+size_flags_vertical = 3
 
-[node name="HighlightChangesCheckbox" type="CheckBox" parent="VBoxContainer/TabContainer/Diff/VBoxContainer"]
+[node name="HighlightChangesCheckbox" type="CheckBox" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/VBoxContainer2"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Highlight changes"
 
-[node name="MainDiffContainer" type="MarginContainer" parent="VBoxContainer/TabContainer/Diff/VBoxContainer"]
+[node name="MainDiffContainer" type="MarginContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/VBoxContainer2"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="BigDiffer" type="DiffInspector" parent="VBoxContainer/TabContainer/Diff/VBoxContainer/MainDiffContainer"]
+[node name="BigDiffer" type="DiffInspector" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/VBoxContainer2/MainDiffContainer"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 size_flags_vertical = 3
 theme = ExtResource("4_7letu")
-theme_override_styles/panel = SubResource("StyleBoxFlat_ftank")
+theme_override_styles/panel = SubResource("StyleBoxFlat_0tnfe")
 script = ExtResource("4_uttw7")
 added_icon = ExtResource("5_iqebc")
 removed_icon = ExtResource("6_ha5pl")
 modified_icon = ExtResource("7_o8jin")
 metadata/_custom_type_script = "uid://d145i10hos3c6"
 
-[node name="DifferMainVBox" type="VBoxContainer" parent="VBoxContainer/TabContainer/Diff/VBoxContainer/MainDiffContainer/BigDiffer"]
+[node name="DifferMainVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/VBoxContainer2/MainDiffContainer/BigDiffer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
 [node name="HSeparator2" type="HSeparator" parent="VBoxContainer"]
+modulate = Color(1, 1, 1, 0)
 layout_mode = 2
 theme_override_constants/separation = 16
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
 
-[node name="Logg" type="Label" parent="VBoxContainer/HBoxContainer"]
+[node name="LoggedInLabel" type="Label" parent="VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 10
 text = "Logged in as "
@@ -181,6 +202,7 @@ text = "Logged in as "
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
+text = "Paul"
 icon = ExtResource("3_m2w8q")
 
 [node name="ConfirmationDialog" type="ConfirmationDialog" parent="."]
@@ -249,6 +271,10 @@ theme_override_constants/separation = 8
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+selected = 0
+item_count = 1
+popup/item_0/text = "main"
+popup/item_0/id = 0
 
 [node name="TextureRect" type="TextureRect" parent="MergePreviewModal/MarginContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
@@ -258,6 +284,10 @@ texture = ExtResource("9_xrl6o")
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+selected = 0
+item_count = 1
+popup/item_0/text = "main"
+popup/item_0/id = 0
 
 [node name="HighlightChangesCheckboxMP" type="CheckBox" parent="MergePreviewModal/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true

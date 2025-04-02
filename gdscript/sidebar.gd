@@ -91,7 +91,6 @@ func _on_sync_server_connection_info_changed(_peer_connection_info: Dictionary) 
 	update_sync_status()
 
 func update_sync_status() -> void:
-
 	var checked_out_branch = GodotProject.get_checked_out_branch()
 	if !checked_out_branch:
 		return
@@ -357,7 +356,6 @@ func confirm_merge_preview():
 	)
 
 func update_ui() -> void:
-
 	var checked_out_branch = GodotProject.get_checked_out_branch()
 	self.branches = GodotProject.get_branches()
 
