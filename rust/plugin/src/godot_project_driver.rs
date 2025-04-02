@@ -2,6 +2,7 @@ use automerge_repo::{PeerConnectionInfo, RepoError, RepoId};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, Stream};
 use ::safer_ffi::prelude::*;
+use tokio::task::JoinHandle;
 use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
@@ -87,7 +88,7 @@ pub enum OutputEvent {
     BranchStateChanged {
         branch_state: BranchState,
         trigger_reload: bool,
-    },    
+    },
 
     CompletedCreateBranch {
         branch_doc_id: DocumentId,
@@ -113,7 +114,7 @@ enum SubscriptionMessage {
 #[derive(Debug, Clone)]
 pub struct BinaryDocState {
     doc_handle: Option<DocHandle>, // is null if the binary doc is being requested but not loaded yet
-    path: String,    
+    path: String,
 }
 
 #[derive(Debug, Clone)]
@@ -129,7 +130,7 @@ pub struct BranchStateMergeInfo {
 }
 
 #[derive(Debug, Clone)]
-pub struct BranchState {    
+pub struct BranchState {
     pub name: String,
     pub doc_handle: DocHandle,
     pub linked_doc_ids: HashSet<DocumentId>,
@@ -153,7 +154,7 @@ struct DriverState {
 
     main_branch_doc_handle: DocHandle,
     branches_metadata_doc_handle: DocHandle,
-    
+
     binary_doc_states: HashMap<DocumentId, BinaryDocState>,
     branch_states: HashMap<DocumentId, BranchState>,
 
@@ -173,6 +174,9 @@ struct DriverState {
 pub struct GodotProjectDriver {
     runtime: Runtime,
     repo_handle: RepoHandle,
+
+	connection_thread: Option<JoinHandle<()>>,
+	spawned_thread: Option<JoinHandle<()>>,
 }
 
 impl GodotProjectDriver {
@@ -188,30 +192,45 @@ impl GodotProjectDriver {
         let repo = Repo::new(None, Box::new(storage));
         let repo_handle = repo.run();
 
-        return Self {            
+        return Self {
             runtime,
             repo_handle,
+            connection_thread: None,
+            spawned_thread: None,
         };
     }
 
     pub fn spawn(
-        &self,
+        &mut self,
         rx: UnboundedReceiver<InputEvent>,
         tx: UnboundedSender<OutputEvent>,
         branches_metadata_doc_id: Option<DocumentId>,
         user_name: Option<String>,
     ) {
-        // Spawn connection task
-        self.spawn_connection_task();
+		if self.connection_thread.is_some() || self.spawned_thread.is_some() {
+			println!("driver already spawned");
+			return;
+		}
+
+		self.connection_thread = Some(self.spawn_connection_task());
 
         // Spawn sync task for all doc handles
-        self.spawn_driver_task(rx, tx, branches_metadata_doc_id, &user_name);
+        self.spawned_thread = Some(self.spawn_driver_task(rx, tx, branches_metadata_doc_id, &user_name));
     }
 
-    fn spawn_connection_task(&self) {
+	pub fn teardown(&mut self) {
+		if let Some(connection_thread) = self.connection_thread.take() {
+			connection_thread.abort();
+		}
+		if let Some(spawned_thread) = self.spawned_thread.take() {
+			spawned_thread.abort();
+		}
+	}
+
+    fn spawn_connection_task(&self) -> JoinHandle<()> {
         let repo_handle_clone = self.repo_handle.clone();
 
-        self.runtime.spawn(async move {
+        return self.runtime.spawn(async move {
             println!("start a client");
 
             // Start a client.
@@ -245,23 +264,23 @@ impl GodotProjectDriver {
         tx: UnboundedSender<OutputEvent>,
         branches_metadata_doc_id: Option<DocumentId>,
         user_name: &Option<String>,
-    ) {
+    ) -> JoinHandle<()> {
         let repo_handle = self.repo_handle.clone();
         let user_name = user_name.clone();
 
-        self.runtime.spawn(async move {
+        return self.runtime.spawn(async move {
             // destructure project doc handles
             let ProjectDocHandles { branches_metadata_doc_handle, main_branch_doc_handle } = init_project_doc_handles(&repo_handle, &branches_metadata_doc_id, &user_name).await;
 
             tx.unbounded_send(OutputEvent::Initialized { project_doc_id: branches_metadata_doc_handle.document_id() }).unwrap();
 
-            let mut state = DriverState {                
+            let mut state = DriverState {
                 tx: tx.clone(),
-                repo_handle: repo_handle.clone(),            
+                repo_handle: repo_handle.clone(),
                 user_name: user_name.clone(),
                 main_branch_doc_handle: main_branch_doc_handle.clone(),
                 binary_doc_states: HashMap::new(),
-                branch_states: HashMap::new(),                                
+                branch_states: HashMap::new(),
                 branches_metadata_doc_handle,
                 pending_branch_doc_ids: HashSet::new(),
                 pending_binary_doc_ids: HashSet::new(),
@@ -300,7 +319,7 @@ impl GodotProjectDriver {
                                 Err(e) => {
                                     println!("error requesting binary doc: {:?}", e);
                                 }
-                            }                        
+                            }
                         }
                     },
 
@@ -308,7 +327,7 @@ impl GodotProjectDriver {
                         if let Some((branch_name, result)) = next {
                             match result {
                                 Ok(doc_handle) => {
-                                    state.pending_branch_doc_ids.remove(&doc_handle.document_id());                                
+                                    state.pending_branch_doc_ids.remove(&doc_handle.document_id());
                                     state.update_branch_doc_state(doc_handle.clone());
                                     state.subscribe_to_doc_handle(doc_handle.clone());
                                     println!("rust: added branch doc: {:?}", branch_name);
@@ -330,9 +349,9 @@ impl GodotProjectDriver {
                                 tx.unbounded_send(OutputEvent::NewDocHandle { doc_handle: doc_handle.clone(), doc_handle_type: DocHandleType::Unknown }).unwrap();
                                 doc_handle
                             },
-                        };      
+                        };
 
-                        let document_id = doc_handle.document_id();                    
+                        let document_id = doc_handle.document_id();
 
                         // branches metadata doc changed
                         if document_id == state.branches_metadata_doc_handle.document_id() {
@@ -340,7 +359,7 @@ impl GodotProjectDriver {
 
                             // check if there are new branches that haven't loaded yet
                             for (branch_id_str, branch) in branches.iter() {
-                                let branch_id = DocumentId::from_str(branch_id_str).unwrap();                            
+                                let branch_id = DocumentId::from_str(branch_id_str).unwrap();
                                 let branch_name = branch.name.clone();
 
                                 if !state.branch_states.contains_key(&branch_id) && !state.pending_branch_doc_ids.contains(&branch_id) {
@@ -375,10 +394,10 @@ impl GodotProjectDriver {
 
                             InputEvent::MergeBranch { source_branch_doc_id, target_branch_doc_id } => {
                                 state.merge_branch(source_branch_doc_id, target_branch_doc_id);
-                            },                        
+                            },
 
                             InputEvent::SaveFiles { branch_doc_handle, files, heads} => {
-                                state.save_files(branch_doc_handle, files, heads);                                                           
+                                state.save_files(branch_doc_handle, files, heads);
                             }
 
                             InputEvent::StartShutdown => {
@@ -394,10 +413,10 @@ impl GodotProjectDriver {
                             InputEvent::SetUserName { name } => {
                                 state.user_name = Some(name.clone());
                             }
-                        };                    
+                        };
                     }
                 }
-            }    
+            }
         });
     }
 }
@@ -424,7 +443,7 @@ async fn init_project_doc_handles (repo_handle: &RepoHandle, branches_metadata_d
             let branches_metadata: BranchesMetadataDoc = branches_metadata_doc_handle.with_doc(|d| hydrate(d).unwrap_or_else(|_| {
                 panic!("failed init, can't hydrate metadata doc");
             }));
-        
+
             let main_branch_doc_handle: DocHandle =
                 repo_handle.request_document(DocumentId::from_str(&branches_metadata.main_doc_id).unwrap()).await.unwrap_or_else(|_| {
                     panic!("failed init, can't load main branchs doc");
@@ -497,19 +516,19 @@ impl DriverState {
     fn create_branch(&mut self, name: String) {
         let new_branch_handle = clone_doc(&self.repo_handle, &self.main_branch_doc_handle);
 
-        let branch = Branch { 
-            name: name.clone(), 
-            id: new_branch_handle.document_id().to_string(),         
-            fork_info: Some(ForkInfo { 
-                forked_from: self.main_branch_doc_handle.document_id().to_string(), 
-                forked_at: self.main_branch_doc_handle.with_doc(|d| d.get_heads()).iter().map(|h| h.to_string()).collect() 
-            }), 
-            merge_info: None 
+        let branch = Branch {
+            name: name.clone(),
+            id: new_branch_handle.document_id().to_string(),
+            fork_info: Some(ForkInfo {
+                forked_from: self.main_branch_doc_handle.document_id().to_string(),
+                forked_at: self.main_branch_doc_handle.with_doc(|d| d.get_heads()).iter().map(|h| h.to_string()).collect()
+            }),
+            merge_info: None
         };
 
         self.tx.unbounded_send(OutputEvent::CompletedCreateBranch {
             branch_doc_id: new_branch_handle.document_id(),
-        }).unwrap();  
+        }).unwrap();
 
         self.branches_metadata_doc_handle.with_doc_mut(|d| {
             let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
@@ -520,17 +539,17 @@ impl DriverState {
             let _ = reconcile(&mut tx, branches_metadata);
             commit_with_attribution_and_timestamp(tx, &self.user_name, &Some(name));
         });
-  
+
     }
 
-    fn create_merge_preview_branch(&mut self, source_branch_doc_id: DocumentId, target_branch_doc_id: DocumentId) {    
+    fn create_merge_preview_branch(&mut self, source_branch_doc_id: DocumentId, target_branch_doc_id: DocumentId) {
         println!("driver: create merge preview branch");
 
         let source_branch_state = self.branch_states.get(&source_branch_doc_id).unwrap();
         let target_branch_state = self.branch_states.get(&target_branch_doc_id).unwrap();
 
         let merge_preview_branch_doc_handle = self.repo_handle.new_document();
-        
+
         source_branch_state.doc_handle.with_doc_mut(|source_branch_doc| {
             merge_preview_branch_doc_handle.with_doc_mut(|merge_preview_branch_doc| {
                 let _ = merge_preview_branch_doc.merge(source_branch_doc);
@@ -543,9 +562,9 @@ impl DriverState {
             });
         });
 
-        let branch = Branch { 
-            name: format!("{} <- {}", target_branch_state.name, source_branch_state.name),         
-            id: merge_preview_branch_doc_handle.document_id().to_string(), 
+        let branch = Branch {
+            name: format!("{} <- {}", target_branch_state.name, source_branch_state.name),
+            id: merge_preview_branch_doc_handle.document_id().to_string(),
             fork_info: Some(ForkInfo {
                 forked_from: source_branch_doc_id.to_string(),
                 forked_at: source_branch_state.synced_heads.iter().map(|h| h.to_string()).collect(),
@@ -554,7 +573,7 @@ impl DriverState {
                 merge_into: target_branch_doc_id.to_string(),
                 merge_at: target_branch_state.synced_heads.iter().map(|h| h.to_string()).collect(),
             }),
-        };   
+        };
 
         self.branches_metadata_doc_handle.with_doc_mut(|d| {
             let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
@@ -568,10 +587,10 @@ impl DriverState {
 
         self.tx.unbounded_send(OutputEvent::CompletedCreateBranch {
             branch_doc_id: merge_preview_branch_doc_handle.document_id(),
-        }).unwrap();  
+        }).unwrap();
 
     }
-    
+
     // delete branch isn't fully implemented right now deletes are not propagated to the frontend
     // right now this is just useful to clean up merge preview branches
     fn delete_branch(&mut self, branch_doc_id: DocumentId) {
@@ -591,7 +610,7 @@ impl DriverState {
         branch_doc_handle: DocHandle,
         file_entries: Vec<(String, FileContent)>,
         heads: Option<Vec<ChangeHash>>,
-    ) {    
+    ) {
         let branch_doc_state = self.branch_states.get(&branch_doc_handle.document_id()).unwrap().clone();
 
         let mut binary_entries: Vec<(String, DocHandle)> = Vec::new();
@@ -599,7 +618,7 @@ impl DriverState {
         let mut scene_entries: Vec<(String, &GodotScene)> = Vec::new();
 
 
-        for (path, content) in file_entries.iter() {                
+        for (path, content) in file_entries.iter() {
             match content {
                 FileContent::Binary(content) => {
                     let binary_doc_handle = self.repo_handle.new_document();
@@ -664,7 +683,7 @@ impl DriverState {
                 };
                 let _ = tx.update_text(&content_key, &content);
 
-                             
+
             }
 
             // write scene entries to doc
@@ -685,14 +704,14 @@ impl DriverState {
             commit_with_attribution_and_timestamp(tx, &self.user_name, &Some(branch_doc_state.name.clone()));
         });
 
-    
+
         // update heads in frontend
         self.heads_in_frontend.insert(branch_doc_handle.document_id(), branch_doc_handle.with_doc(|d| d.get_heads()));
 
         println!("rust: save {:?}",self.heads_in_frontend);
     }
 
-    fn merge_branch(&mut self, source_branch_doc_id: DocumentId, target_branch_doc_id: DocumentId)  {    
+    fn merge_branch(&mut self, source_branch_doc_id: DocumentId, target_branch_doc_id: DocumentId)  {
         let source_branch_state = self.branch_states.get(&source_branch_doc_id).unwrap();
         let target_branch_state = self.branch_states.get(&target_branch_doc_id).unwrap();
 
@@ -700,13 +719,13 @@ impl DriverState {
             target_branch_state.doc_handle.with_doc_mut(|target_branch_doc| {
                 let _ = target_branch_doc.merge(source_branch_doc);
             });
-        });    
+        });
     }
 
     fn update_branch_doc_state (&mut self, branch_doc_handle: DocHandle) {
         let branch_state = match self.branch_states.get_mut(&branch_doc_handle.document_id()) {
             Some(branch_state) => branch_state,
-            None => {          
+            None => {
                 let branch = self.get_branches_metadata().branches.get(&branch_doc_handle.document_id().to_string()).unwrap().clone();
 
                 self.branch_states.insert(branch_doc_handle.document_id().clone(), BranchState {
@@ -734,7 +753,7 @@ impl DriverState {
             }
         };
 
-        let linked_docs = get_linked_docs_of_branch(&branch_doc_handle);    
+        let linked_docs = get_linked_docs_of_branch(&branch_doc_handle);
 
         // load binary docs if not already loaded
         for (path, doc_id) in linked_docs.iter() {
@@ -747,7 +766,7 @@ impl DriverState {
             let path = path.clone();
             self.requesting_binary_docs.push(self.repo_handle.request_document(doc_id.clone()).map(|doc_handle| {
                 (path, doc_handle)
-            }).boxed());        
+            }).boxed());
         }
 
         // update linked doc ids
@@ -765,7 +784,7 @@ impl DriverState {
             self.tx.unbounded_send(OutputEvent::BranchStateChanged {
                 branch_state: branch_state.clone(),
                 trigger_reload: !does_frontend_have_branch_at_heads(&self.heads_in_frontend, &branch_state.doc_handle, &branch_state.synced_heads),
-            }).unwrap();            
+            }).unwrap();
         }
     }
 
@@ -778,7 +797,7 @@ impl DriverState {
 
 
         let _ = &self.tx.unbounded_send(OutputEvent::NewDocHandle { doc_handle: binary_doc_handle.clone(), doc_handle_type: DocHandleType::Binary }).unwrap();
-        
+
         // println!("add_binary_doc_handle {:?} {:?}", path, binary_doc_handle.document_id());
 
         // check all branch states that link to this doc
@@ -788,7 +807,7 @@ impl DriverState {
                 let missing_binary_doc_ids = get_missing_binary_doc_ids(&branch_state, &self.binary_doc_states);
 
                 // check if all linked docs have been loaded
-                if missing_binary_doc_ids.is_empty() {                                                                                             
+                if missing_binary_doc_ids.is_empty() {
                     branch_state.synced_heads = branch_state.doc_handle.with_doc(|d| d.get_heads());
                     self.tx.unbounded_send(OutputEvent::BranchStateChanged {
                         branch_state: branch_state.clone(),

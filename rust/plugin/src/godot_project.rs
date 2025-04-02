@@ -21,7 +21,7 @@ use automerge::{
 };
 use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
-use godot::classes::{ClassDb, Engine};
+use godot::classes::{ClassDb, EditorPlugin, Engine, IEditorPlugin};
 use godot::classes::EditorFileSystem;
 use godot::classes::EditorInterface;
 use godot::classes::Image;
@@ -125,14 +125,14 @@ struct GodotProjectState {
 }
 
 #[derive(GodotClass)]
-#[class(no_init, base=Node)]
+#[class(base=Node, tool)]
 pub struct GodotProject {
     base: Base<Node>,
     doc_handles: HashMap<DocumentId, DocHandle>,
     branch_states: HashMap<DocumentId, BranchState>,
     checked_out_branch_state: CheckedOutBranchState,
     project_doc_id: Option<DocumentId>,
-    driver: GodotProjectDriver,
+    driver: Option<GodotProjectDriver>,
     driver_input_tx: UnboundedSender<InputEvent>,
     driver_output_rx: UnboundedReceiver<OutputEvent>,
     sync_server_connection_info: Option<PeerConnectionInfo>,
@@ -166,59 +166,6 @@ impl GodotProject {
 
     #[signal]
     fn sync_server_connection_info_changed(peer_connection_info: Dictionary);
-
-    #[func]
-    fn create(
-        storage_folder_path: String,
-        branches_metadata_doc_id: String, // empty string to create a new project
-        checked_out_branch_doc_id: String, // empty string to check out the main branch of the newly created project
-        maybe_user_name: String,
-    ) -> Gd<Self> {
-        println!("rust: CREATE !!!! {:?}", storage_folder_path);
-
-        let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
-        let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
-
-        let branches_metadata_doc_id = match DocumentId::from_str(&branches_metadata_doc_id) {
-            Ok(doc_id) => Some(doc_id),
-            Err(e) => None,
-        };
-
-        let driver = GodotProjectDriver::create(storage_folder_path);
-
-        driver.spawn(
-            driver_input_rx,
-            driver_output_tx,
-            branches_metadata_doc_id,
-            if maybe_user_name == "" {
-                None
-            } else {
-                Some(maybe_user_name)
-            },
-        );
-
-        let checked_out_branch_state = match DocumentId::from_str(&checked_out_branch_doc_id) {
-            Ok(doc_id) => CheckedOutBranchState::CheckingOut(doc_id),
-            Err(_) => CheckedOutBranchState::NothingCheckedOut,
-        };
-
-        println!(
-            "initial checked out branch state: {:?}",
-            checked_out_branch_state
-        );
-
-        Gd::from_init_fn(|base| Self {
-            base,
-            doc_handles: HashMap::new(),
-            sync_server_connection_info: None,
-            branch_states: HashMap::new(),
-            checked_out_branch_state,
-            project_doc_id: None,
-            driver,
-            driver_input_tx,
-            driver_output_rx,
-        })
-    }
 
     // PUBLIC API
 
@@ -370,7 +317,7 @@ impl GodotProject {
     }
 
 	#[func]
-	fn get_singleton() -> Gd<Self> {
+	pub fn get_singleton() -> Gd<Self> {
 		Engine::singleton().get_singleton(&StringName::from("GodotProject")).unwrap().cast::<Self>()
 	}
 
@@ -633,7 +580,7 @@ impl GodotProject {
         let branch_state = match self.branch_states.get(&branch_doc_id) {
             Some(branch_state) => branch_state,
             None => {
-                panic!("couldn't checkout branch, branch doc id not found");
+                panic!("couldn't checkout basdfasdfrdfsfsdanch, branch doc id not found");
             }
         };
 
@@ -1900,6 +1847,9 @@ impl GodotProject {
         }
         diff_result
     }
+
+
+
 }
 
 
@@ -1909,22 +1859,15 @@ static mut GODOT_PROJECT: Option<GodotProject> = None;
 #[godot_api]
 impl INode for GodotProject {
     fn init(_base: Base<Node>) -> Self {
-        let storage_folder_path =
-            String::from(ProjectSettings::singleton().globalize_path("res://.patchwork"));
-        let mut project_config_file = ConfigFile::new_gd();
+        let mut project_config_file: Gd<ConfigFile> = ConfigFile::new_gd();
         project_config_file.load("res://patchwork.cfg");
-        let mut user_config_file = ConfigFile::new_gd();
-        user_config_file.load("user://patchwork.cfg");
         let branches_metadata_doc_id = project_config_file
             .get_value("patchwork", "project_doc_id")
             .to_string();
         let checked_out_branch_doc_id = project_config_file
             .get_value("patchwork", "checked_out_branch_doc_id")
             .to_string();
-        let maybe_user_name = user_config_file
-            .get_value("patchwork", "user_name")
-            .to_string();
-        println!("rust: INIT singleton!!!! {:?}", storage_folder_path);
+        println!("rust: INIT ssdgasdgsdasdasdgsgasdgsdagasdsdgasdgadsgasdagdsgadgasgasdgadsgasdgadsgasdasgdingleton!!!! {:?}", branches_metadata_doc_id);
 
         let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
         let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
@@ -1933,19 +1876,6 @@ impl INode for GodotProject {
             Ok(doc_id) => Some(doc_id),
             Err(e) => None,
         };
-
-        let driver = GodotProjectDriver::create(storage_folder_path);
-
-        driver.spawn(
-            driver_input_rx,
-            driver_output_tx,
-            branches_metadata_doc_id,
-            if maybe_user_name == "" {
-                None
-            } else {
-                Some(maybe_user_name)
-            },
-        );
 
         let checked_out_branch_state = match DocumentId::from_str(&checked_out_branch_doc_id) {
             Ok(doc_id) => CheckedOutBranchState::CheckingOut(doc_id),
@@ -1963,17 +1893,53 @@ impl INode for GodotProject {
             doc_handles: HashMap::new(),
             branch_states: HashMap::new(),
             checked_out_branch_state,
-            project_doc_id: None,
-            driver,
+            project_doc_id: branches_metadata_doc_id,
+            driver: None,
             driver_input_tx,
-            driver_output_rx,
+            driver_output_rx
         };
 		// process it a few times to get it to check out the branch
-		ret.process(0.0);
-		ret.process(0.0);
-		ret.process(0.0);
 		ret
 
+    }
+
+	fn enter_tree(&mut self) {
+		println!("** GodotProject: enter_tree");
+		let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
+        let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
+		self.driver_input_tx = driver_input_tx;
+		self.driver_output_rx = driver_output_rx;
+        let mut user_config_file: Gd<ConfigFile> = ConfigFile::new_gd();
+        user_config_file.load("user://patchwork.cfg");
+
+        let storage_folder_path =
+            String::from(ProjectSettings::singleton().globalize_path("res://.patchwork"));
+		let mut driver: GodotProjectDriver = GodotProjectDriver::create(storage_folder_path);
+        let maybe_user_name: String = user_config_file
+            .get_value("patchwork", "user_name")
+            .to_string();
+
+        driver.spawn(
+            driver_input_rx,
+            driver_output_tx,
+            self.project_doc_id.clone(),
+            if maybe_user_name == "" {
+                None
+            } else {
+                Some(maybe_user_name)
+            },
+        );
+		self.driver = Some(driver);
+
+        // Perform typical plugin operations here.
+    }
+
+    fn exit_tree(&mut self) {
+		println!("** GodotProject: exit_tree");
+		if let Some(mut driver) = self.driver.take() {
+			driver.teardown();
+		}
+        // Perform typical plugin operations here.
     }
 
     fn process(&mut self, _delta: f64) {
@@ -2096,6 +2062,26 @@ impl INode for GodotProject {
     }
 }
 
+#[derive(GodotClass)]
+#[class(init, base=EditorPlugin, tool)]
+pub struct GodotProjectPlugin {
+    base: Base<EditorPlugin>
+}
+
+#[godot_api]
+impl IEditorPlugin for GodotProjectPlugin {
+    fn enter_tree(&mut self) {
+		println!("** GodotProjectPlugin: enter_tree");
+		let godot_project_singleton: Gd<GodotProject> = GodotProject::get_singleton();
+		self.base_mut().add_child(&godot_project_singleton);
+    }
+
+    fn exit_tree(&mut self) {
+		println!("** GodotProjectPlugin: exit_tree");
+        self.base_mut().remove_child(&GodotProject::get_singleton());
+    }
+}
+
 #[derive(Debug, Clone)]
 struct PathWithAction {
     path: Vec<(ObjId, Prop)>,
@@ -2149,6 +2135,9 @@ fn branch_state_to_dict(branch_state: &BranchState) -> Dictionary {
 
     branch
 }
+
+
+
 
 fn peer_connection_info_to_dict(peer_connection_info: &PeerConnectionInfo) -> Dictionary {
     let mut doc_sync_states = Dictionary::new();
