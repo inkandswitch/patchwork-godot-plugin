@@ -498,17 +498,6 @@ func update_branch_picker() -> void:
 
 	add_branch_with_forks(main_branch, all_branches, checked_out_branch.id)
 
-	var selected_index = branch_picker.get_item_index(checked_out_branch.id)
-	branch_picker.select(selected_index)
-
-	branch_picker.select(checked_out_branch.id)
-
-	for i in range(branch_picker.get_child_count()):
-		var child = branch_picker.get_child(i)
-		if child.get_metadata().id == checked_out_branch.id:
-			branch_picker.select(i)
-			break
-
 func add_branch_with_forks(branch: Dictionary, all_branches: Array, selected_branch_id: String, indentation: String = "", is_last: bool = false) -> void:
 	var label
 	if branch.is_main:
