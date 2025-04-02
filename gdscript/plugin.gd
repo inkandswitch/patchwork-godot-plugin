@@ -1,7 +1,6 @@
 @tool
 extends EditorPlugin
 
-var config: PatchworkConfig
 var file_system: FileSystem
 var sidebar
 
@@ -24,7 +23,6 @@ func _enter_tree() -> void:
 	# need to add task_modal as a child to the plugin otherwise process won't be called
 	add_child(task_modal)
 
-	config = PatchworkConfig.new();
 	file_system = FileSystem.new(self)
 
 	task_modal.start_task("Loading Patchwork")
@@ -42,7 +40,7 @@ func _enter_tree() -> void:
 	sidebar = preload("res://addons/patchwork/gdscript/sidebar.tscn").instantiate()
 	print("sidebar instantiated ", sidebar)
 
-	sidebar.init(self, config)
+	sidebar.init()
 	add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
 
 
@@ -50,21 +48,17 @@ func init_godot_project():
 	var storage_folder_path = ProjectSettings.globalize_path("res://.patchwork")
 
 	print("init_godot_project()")
-	var project_doc_id = config.get_project_value("project_doc_id", "")
-	var checked_out_branch_doc_id = config.get_project_value("checked_out_branch_doc_id", "")
-	var user_name = config.get_user_value("user_name", "")
-
 	print("wait for checked out branch")
 	var checked_out_branch = GodotProject.get_checked_out_branch()
 	if checked_out_branch == null:
 		print("checked out branch is null, waiting for signal...")
 		await GodotProject.checked_out_branch
 
-	config.set_project_value("checked_out_branch_doc_id", GodotProject.get_checked_out_branch().id)
+	PatchworkConfig.set_project_value("checked_out_branch_doc_id", GodotProject.get_checked_out_branch().id)
 
 	print("*** Patchwork Godot Project initialized! ***")
-	if !project_doc_id:
-		config.set_project_value("project_doc_id", GodotProject.get_project_doc_id())
+	if !PatchworkConfig.get_project_value("project_doc_id", ""):
+		PatchworkConfig.set_project_value("project_doc_id", GodotProject.get_project_doc_id())
 		sync_godot_to_patchwork()
 	else:
 		sync_patchwork_to_godot()
@@ -192,7 +186,7 @@ func get_relevant_godot_files() -> Array[String]:
 	return ret
 
 func _on_checked_out_branch(checked_out_branch: String):
-	config.set_project_value("checked_out_branch_doc_id", checked_out_branch)
+	PatchworkConfig.set_project_value("checked_out_branch_doc_id", checked_out_branch)
 	sync_patchwork_to_godot()
 
 func _on_local_file_changed(path: String, content: Variant):

@@ -28,7 +28,6 @@ const TEMP_DIR = "user://tmp"
 
 var branches = []
 var plugin: EditorPlugin
-var config: PatchworkConfig
 
 var task_modal: TaskModal = TaskModal.new()
 
@@ -37,10 +36,8 @@ var highlight_changes = false
 const CREATE_BRANCH_IDX = 1
 const MERGE_BRANCH_IDX = 2
 
-func init(plugin: EditorPlugin, config: PatchworkConfig) -> void:
+func init() -> void:
 	print("Sidebar initialized!")
-	self.plugin = plugin
-	self.config = config
 
 
 func _update_ui_on_branches_changed(_branches: Array):
@@ -54,12 +51,6 @@ func _update_ui_on_files_changed():
 
 func _update_ui_on_branch_checked_out(_branch):
 	update_ui()
-
-func _on_resource_saved(path):
-	print("Resource saved: %s" % [path])
-
-func _on_scene_saved(path):
-	print("Scene saved: %s" % [path])
 
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
@@ -75,10 +66,6 @@ func _ready() -> void:
 	inspector.get_script()
 	# @Paul: I think somewhere besides the plugin sidebar gets instantiated. Is this something godot does?
 	# to paper over this we check if plugin and godot_project are set
-
-	if plugin:
-		plugin.connect("resource_saved", self._on_resource_saved)
-		plugin.connect("scene_saved", self._on_scene_saved)
 
 	if GodotProject.get_singleton():
 		GodotProject.connect("branches_changed", self._update_ui_on_branches_changed);
@@ -143,7 +130,7 @@ func _on_user_button_pressed():
 
 	var line_edit = LineEdit.new()
 	line_edit.placeholder_text = "User name"
-	line_edit.text = config.get_user_value("user_name", "")
+	line_edit.text = PatchworkConfig.get_user_value("user_name", "")
 	dialog.add_child(line_edit)
 
 	# Position line edit in dialog
@@ -161,7 +148,7 @@ func _on_user_button_pressed():
 			var new_user_name = line_edit.text.strip_edges()
 
 			print(new_user_name)
-			config.set_user_value("user_name", new_user_name)
+			PatchworkConfig.set_user_value("user_name", new_user_name)
 			GodotProject.set_user_name(new_user_name)
 
 		update_ui()
@@ -431,7 +418,7 @@ func update_ui() -> void:
 
 	# update user name
 
-	var user_name = config.get_user_value("user_name", "")
+	var user_name = PatchworkConfig.get_user_value("user_name", "")
 
 	user_button.text = user_name
 

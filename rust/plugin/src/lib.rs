@@ -1,11 +1,22 @@
+mod patchwork_config;
 use godot::{classes::{ClassDb, Engine}, init::EditorRunBehavior, meta::ParamType, prelude::*};
 use godot_project::GodotProject;
-
+use patchwork_config::PatchworkConfig;
 struct MyExtension;
-const SINGLETON_NAME: &str = "GodotProject";
+
+
+fn unregister_singleton(singleton_name: &str) {
+	if (Engine::singleton().has_singleton(singleton_name)) {
+		let my_singleton = Engine::singleton().get_singleton(singleton_name);
+		Engine::singleton().unregister_singleton(singleton_name);
+		if let Some(my_singleton) = my_singleton {
+			my_singleton.free();
+		}
+	}
+}
+
 #[gdextension]
 unsafe impl ExtensionLibrary for MyExtension {
-
 	fn editor_run_behavior() -> EditorRunBehavior {
 		EditorRunBehavior::ToolClassesOnly
 	}
@@ -13,14 +24,13 @@ unsafe impl ExtensionLibrary for MyExtension {
 	fn on_level_init(level: InitLevel) {
         if level == InitLevel::Scene {
 			println!("** on_level_init: Scene");
-			if (Engine::singleton().has_singleton(&StringName::from(SINGLETON_NAME))) {
-				Engine::singleton().unregister_singleton(&StringName::from(SINGLETON_NAME));
-				if let Some(my_singleton) = Engine::singleton().get_singleton(&StringName::from(SINGLETON_NAME)) {
-					my_singleton.free();
-				}
-			}
+			Engine::singleton().register_singleton(
+				"PatchworkConfig",
+				&PatchworkConfig::new_alloc(),
+			);
+
             Engine::singleton().register_singleton(
-                SINGLETON_NAME,
+                "GodotProject",
                 &GodotProject::new_alloc(),
             );
         } else if level == InitLevel::Editor {
@@ -34,18 +44,8 @@ unsafe impl ExtensionLibrary for MyExtension {
 		}
         if level == InitLevel::Scene {
 			println!("** on_level_deinit: Scene");
-            let mut engine = Engine::singleton();
-            let singleton_name = SINGLETON_NAME;
-
-            if let Some(my_singleton) = engine.get_singleton(singleton_name) {
-                // Unregistering from Godot, and freeing  from memory is required ddsafds
-                // to avoid memory leaks, warnings, and hot reloading problems.
-                engine.unregister_singleton(singleton_name);
-                my_singleton.free();
-            } else {
-                // You can either recover, or panic from here.
-                godot_error!("Failed to get singleton");
-            }
+            unregister_singleton("GodotProject");
+			unregister_singleton("PatchworkConfig");
         }
     }
 }

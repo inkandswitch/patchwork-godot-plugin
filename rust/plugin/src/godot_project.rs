@@ -33,6 +33,7 @@ use godot::prelude::*;
 use crate::godot_parser::{self, GodotScene, TypeOrInstance};
 use crate::godot_project_driver::{BranchState, DocHandleType};
 use crate::patches::{get_changed_files, get_changed_files_vec};
+use crate::patchwork_config::PatchworkConfig;
 use crate::utils::{array_to_heads, heads_to_array, parse_automerge_url};
 use crate::{
     doc_utils::SimpleDocReader,
@@ -1848,7 +1849,38 @@ impl GodotProject {
         diff_result
     }
 
+	fn _start_driver(&mut self) {
+		if self.driver.is_some() {
+			return;
+		}
+		let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
+        let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
+		self.driver_input_tx = driver_input_tx;
+		self.driver_output_rx = driver_output_rx;
 
+        let storage_folder_path =
+            String::from(ProjectSettings::singleton().globalize_path("res://.patchwork"));
+		let mut driver: GodotProjectDriver = GodotProjectDriver::create(storage_folder_path);
+        let maybe_user_name: String = PatchworkConfig::singleton().bind().get_user_value(GString::from("user_name"), "".to_variant()).to_string();
+        driver.spawn(
+            driver_input_rx,
+            driver_output_tx,
+            self.project_doc_id.clone(),
+            if maybe_user_name == "" {
+                None
+            } else {
+                Some(maybe_user_name)
+            },
+        );
+		self.driver = Some(driver);
+
+	}
+
+	fn _stop_driver(&mut self) {
+		if let Some(mut driver) = self.driver.take() {
+			driver.teardown();
+		}
+	}
 
 }
 
@@ -1859,19 +1891,13 @@ static mut GODOT_PROJECT: Option<GodotProject> = None;
 #[godot_api]
 impl INode for GodotProject {
     fn init(_base: Base<Node>) -> Self {
-        let mut project_config_file: Gd<ConfigFile> = ConfigFile::new_gd();
-        project_config_file.load("res://patchwork.cfg");
-        let branches_metadata_doc_id = project_config_file
-            .get_value("patchwork", "project_doc_id")
-            .to_string();
-        let checked_out_branch_doc_id = project_config_file
-            .get_value("patchwork", "checked_out_branch_doc_id")
-            .to_string();
-        println!("rust: INIT ssdgasdgsdasdasdgsgasdgsdagasdsdgasdgadsgasdagdsgadgasgasdgadsgasdgadsgasdasgdingleton!!!! {:?}", branches_metadata_doc_id);
 
         let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
         let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
 
+		let branches_metadata_doc_id: String = PatchworkConfig::singleton().bind().get_project_value(GString::from("project_doc_id"), "".to_variant()).to_string();
+        let checked_out_branch_doc_id = PatchworkConfig::singleton().bind().get_project_value(GString::from("checked_out_branch_doc_id"), "".to_variant()).to_string();
+		println!("rust: INIT {:?}", branches_metadata_doc_id);
         let branches_metadata_doc_id = match DocumentId::from_str(&branches_metadata_doc_id) {
             Ok(doc_id) => Some(doc_id),
             Err(e) => None,
@@ -1905,40 +1931,13 @@ impl INode for GodotProject {
 
 	fn enter_tree(&mut self) {
 		println!("** GodotProject: enter_tree");
-		let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
-        let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
-		self.driver_input_tx = driver_input_tx;
-		self.driver_output_rx = driver_output_rx;
-        let mut user_config_file: Gd<ConfigFile> = ConfigFile::new_gd();
-        user_config_file.load("user://patchwork.cfg");
-
-        let storage_folder_path =
-            String::from(ProjectSettings::singleton().globalize_path("res://.patchwork"));
-		let mut driver: GodotProjectDriver = GodotProjectDriver::create(storage_folder_path);
-        let maybe_user_name: String = user_config_file
-            .get_value("patchwork", "user_name")
-            .to_string();
-
-        driver.spawn(
-            driver_input_rx,
-            driver_output_tx,
-            self.project_doc_id.clone(),
-            if maybe_user_name == "" {
-                None
-            } else {
-                Some(maybe_user_name)
-            },
-        );
-		self.driver = Some(driver);
-
+		self._start_driver();
         // Perform typical plugin operations here.
     }
 
     fn exit_tree(&mut self) {
 		println!("** GodotProject: exit_tree");
-		if let Some(mut driver) = self.driver.take() {
-			driver.teardown();
-		}
+		self._stop_driver();
         // Perform typical plugin operations here.
     }
 
