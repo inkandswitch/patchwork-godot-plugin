@@ -6,7 +6,6 @@ extends MarginContainer
 
 const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_inspector_container.gd")
 @onready var branch_picker: OptionButton = %BranchPicker
-@onready var menu_button: MenuButton = %MenuButton
 @onready var history_list: ItemList = %HistoryList
 @onready var user_button: Button = %UserButton
 @onready var highlight_changes_checkbox: CheckBox = %HighlightChangesCheckbox
@@ -23,6 +22,8 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 @onready var merge_preview_message_label: Label = %MergePreviewMessageLabel
 @onready var merge_preview_message_icon: TextureRect = %MergePreviewMessageIcon
 @onready var sync_status_icon: TextureButton = %SyncStatusIcon
+@onready var fork_button: Button = %ForkButton
+@onready var merge_button: Button = %MergeButton
 
 @onready var history_section_header: Button = %HistorySectionHeader
 @onready var history_section_body: Control = %HistorySectionBody
@@ -30,6 +31,8 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 @onready var diff_section_body: Control = %DiffSectionBody
 
 const TEMP_DIR = "user://tmp"
+
+var DEBUG_MODE = false
 
 var branches = []
 var plugin: EditorPlugin
@@ -79,8 +82,10 @@ func _ready() -> void:
 		GodotProject.connect("checked_out_branch", self._update_ui_on_branch_checked_out);
 		GodotProject.connect("sync_server_connection_info_changed", _on_sync_server_connection_info_changed)
 
-	var popup = menu_button.get_popup()
-	popup.id_pressed.connect(_on_menu_button_id_pressed)
+
+	merge_button.pressed.connect(create_merge_preview_branch)
+	fork_button.pressed.connect(create_new_branch)
+
 	user_button.pressed.connect(_on_user_button_pressed)
 	branch_picker.item_selected.connect(_on_branch_picker_item_selected)
 	target_branch_picker.item_selected.connect(_on_target_branch_picker_item_selected)
@@ -431,23 +436,28 @@ func update_ui() -> void:
 		var change_author = change.username
 		var change_timestamp = human_readable_timestamp(change.timestamp)
 
+		var prefix = ""
+		
+		if DEBUG_MODE:
+			prefix = change.hash.substr(0, 8) + " - "
+
 		if "merge_metadata" in change:
 			var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
 			var merged_branch_name = merged_branch.name
-			history_list.add_item("↪️ merged \"" + merged_branch_name + "\" (" + change_author + " " + change_timestamp + ")")
+			history_list.add_item(prefix + "↪️ merged \"" + merged_branch_name + "\" branch - by " + change_author + " " + change_timestamp)
 
 		else:
-			history_list.add_item("some changes  (" + change_author + " " + change_timestamp + ")")
-
+			history_list.add_item(prefix + "some changes -  by " + change_author + " " + change_timestamp + "")
 	
-	# update context menu
+	# update action buttons
 
-	var menu_popup = menu_button.get_popup()
-
-	menu_popup.clear()
-
-	menu_popup.add_item("Createnewbranch", CREATE_BRANCH_IDX) # Create new branch menu item
-	menu_popup.add_item("Mergebranch", MERGE_BRANCH_IDX)
+	if checked_out_branch.is_main:
+		merge_button.disabled = true
+		merge_button.tooltip_text = "Can't merge main because it's the root of all other branches"
+	else:
+		merge_button.disabled = false
+		merge_button.tooltip_text = ""
+	
 
 	# update user name
 
@@ -496,6 +506,10 @@ func update_ui() -> void:
 		else:
 			heads_before = checked_out_branch.forked_at
 			heads_after = checked_out_branch.heads
+
+
+		print("heads_before: ", heads_before)
+		print("heads_after: ", heads_after)
 
 		var diff = update_properties_diff(heads_before, heads_after)
 

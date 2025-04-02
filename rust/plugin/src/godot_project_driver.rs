@@ -11,8 +11,7 @@ use tokio::task::JoinHandle;
 use crate::godot_parser::GodotScene;
 use crate::godot_project::{ForkInfo, MergeInfo};
 use crate::utils::{
-    commit_with_attribution_and_timestamp, print_branch_state, print_doc, CommitMetadata,
-    MergeMetadata,
+    commit_with_attribution_and_timestamp, print_branch_state, CommitMetadata, MergeMetadata,
 };
 use crate::{
     godot_parser,
@@ -42,6 +41,7 @@ const SERVER_REPO_ID: &str = "dc15a89b-948d-4d37-9f3f-ec73fa5857c5";
 pub enum InputEvent {
     CreateBranch {
         name: String,
+        source_branch_doc_id: DocumentId,
     },
 
     CreateMergePreviewBranch {
@@ -389,8 +389,8 @@ impl GodotProjectDriver {
                     message = rx.select_next_some() => {
 
                         match message {
-                            InputEvent::CreateBranch { name } => {
-                                state.create_branch(name.clone());
+                            InputEvent::CreateBranch { name, source_branch_doc_id } => {
+                                state.create_branch(name.clone(), source_branch_doc_id.clone());
                             },
 
                             InputEvent::CreateMergePreviewBranch { source_branch_doc_id, target_branch_doc_id } => {
@@ -540,16 +540,22 @@ async fn init_project_doc_handles(
 }
 
 impl DriverState {
-    fn create_branch(&mut self, name: String) {
-        let new_branch_handle = clone_doc(&self.repo_handle, &self.main_branch_doc_handle);
+    fn create_branch(&mut self, name: String, source_branch_doc_id: DocumentId) {
+        let source_branch_doc_handle = self
+            .branch_states
+            .get(&source_branch_doc_id)
+            .unwrap()
+            .doc_handle
+            .clone();
+
+        let new_branch_handle = clone_doc(&self.repo_handle, &source_branch_doc_handle);
 
         let branch = Branch {
             name: name.clone(),
             id: new_branch_handle.document_id().to_string(),
             fork_info: Some(ForkInfo {
-                forked_from: self.main_branch_doc_handle.document_id().to_string(),
-                forked_at: self
-                    .main_branch_doc_handle
+                forked_from: source_branch_doc_id.to_string(),
+                forked_at: source_branch_doc_handle
                     .with_doc(|d| d.get_heads())
                     .iter()
                     .map(|h| h.to_string())

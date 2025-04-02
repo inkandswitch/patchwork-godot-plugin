@@ -1,8 +1,7 @@
-[gd_scene load_steps=19 format=3 uid="uid://cxyjgsyba1v85"]
+[gd_scene load_steps=18 format=3 uid="uid://cxyjgsyba1v85"]
 
 [ext_resource type="Script" uid="uid://bxgybx6gjahju" path="res://addons/patchwork/gdscript/sidebar.gd" id="1_ebh36"]
 [ext_resource type="Texture2D" uid="uid://4c2gr0ggkl2t" path="res://addons/patchwork/icons/circle-alert.svg" id="2_fxo71"]
-[ext_resource type="Texture2D" uid="uid://ymewwqpn0vi4" path="res://addons/patchwork/icons/GuiTabMenuHl.svg" id="2_rfxbe"]
 [ext_resource type="Texture2D" uid="uid://xec6o14n4y2v" path="res://addons/patchwork/icons/person.svg" id="3_m2w8q"]
 [ext_resource type="Theme" uid="uid://hr3cor4s2ov2" path="res://addons/patchwork/gdscript/diff_editor_theme.tres" id="4_7letu"]
 [ext_resource type="Texture2D" uid="uid://blu0iomxyyu3k" path="res://addons/patchwork/icons/collapsable-open.svg" id="4_of6ia"]
@@ -25,7 +24,7 @@ bg_color = Color(0.219608, 0.239216, 0.266667, 1)
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_42yji"]
 bg_color = Color(0.156863, 0.176471, 0.207843, 1)
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_0tnfe"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_8on0n"]
 content_margin_left = 4.0
 content_margin_top = 4.0
 content_margin_right = 4.0
@@ -85,23 +84,24 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
-item_count = 1
+item_count = 2
 popup/item_0/text = "main"
 popup/item_0/id = 0
+popup/item_1/text = "another"
+popup/item_1/id = 1
 
 [node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/HBoxContainer2"]
 layout_mode = 2
 
-[node name="MenuButton" type="MenuButton" parent="VBoxContainer/HBoxContainer2"]
+[node name="ForkButton" type="Button" parent="VBoxContainer/HBoxContainer2"]
 unique_name_in_owner = true
 layout_mode = 2
-icon = ExtResource("2_rfxbe")
-icon_alignment = 1
-item_count = 2
-popup/item_0/text = "Create new branch"
-popup/item_0/id = 1
-popup/item_1/text = "Merge branch"
-popup/item_1/id = 2
+text = "Remix"
+
+[node name="MergeButton" type="Button" parent="VBoxContainer/HBoxContainer2"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Merge"
 
 [node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
 modulate = Color(1, 1, 1, 0)
@@ -142,9 +142,11 @@ size_flags_vertical = 3
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-item_count = 2
-item_0/text = "5edd589 - Paul@main - 1 seconds ago"
-item_1/text = "362be7a - Paul@main - 0 seconds ago"
+item_count = 4
+item_0/text = "some changes -  by Paul 17 minutes ago"
+item_1/text = "↪️ merged \"another\" branch - by Paul 25 minutes ago"
+item_2/text = "some changes -  by Paul 29 minutes ago"
+item_3/text = "some changes -  by Paul 29 minutes ago"
 
 [node name="DiffSectionHeader" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
@@ -174,7 +176,7 @@ visible = false
 layout_mode = 2
 size_flags_vertical = 3
 theme = ExtResource("4_7letu")
-theme_override_styles/panel = SubResource("StyleBoxFlat_0tnfe")
+theme_override_styles/panel = SubResource("StyleBoxFlat_8on0n")
 script = ExtResource("4_uttw7")
 added_icon = ExtResource("5_iqebc")
 removed_icon = ExtResource("6_ha5pl")
@@ -274,9 +276,11 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
-item_count = 1
+item_count = 2
 popup/item_0/text = "main"
 popup/item_0/id = 0
+popup/item_1/text = "another"
+popup/item_1/id = 1
 
 [node name="TextureRect" type="TextureRect" parent="MergePreviewModal/MarginContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
@@ -287,9 +291,11 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
-item_count = 1
+item_count = 2
 popup/item_0/text = "main"
 popup/item_0/id = 0
+popup/item_1/text = "another"
+popup/item_1/id = 1
 
 [node name="HighlightChangesCheckboxMP" type="CheckBox" parent="MergePreviewModal/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true

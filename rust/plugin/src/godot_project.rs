@@ -572,8 +572,18 @@ impl GodotProject {
 
     #[func]
     fn create_branch(&mut self, name: String) {
+        let source_branch_doc_id = match &self.get_checked_out_branch_state() {
+            Some(branch_state) => branch_state.doc_handle.document_id(),
+            None => {
+                panic!("couldn't create branch, no checked out branch");
+            }
+        };
+
         self.driver_input_tx
-            .unbounded_send(InputEvent::CreateBranch { name })
+            .unbounded_send(InputEvent::CreateBranch {
+                name,
+                source_branch_doc_id,
+            })
             .unwrap();
 
         self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut;
