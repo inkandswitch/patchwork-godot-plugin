@@ -1,31 +1,32 @@
+use ::safer_ffi::prelude::*;
 use automerge_repo::{PeerConnectionInfo, RepoError, RepoId};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, Stream};
-use ::safer_ffi::prelude::*;
-use tokio::task::JoinHandle;
 use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
-use std::{
-    collections::HashMap,
-    str::FromStr,
-};
+use std::{collections::HashMap, str::FromStr};
+use tokio::task::JoinHandle;
 
 use crate::godot_parser::GodotScene;
 use crate::godot_project::{ForkInfo, MergeInfo};
-use crate::utils::{commit_with_attribution_and_timestamp, print_branch_state, print_doc};
-use crate::{godot_project::{BranchesMetadataDoc, GodotProjectDoc, FileContent}, godot_parser, utils::get_linked_docs_of_branch};
+use crate::utils::{
+    commit_with_attribution_and_timestamp, print_branch_state, print_doc, CommitMetadata,
+};
+use crate::{
+    godot_parser,
+    godot_project::{BranchesMetadataDoc, FileContent, GodotProjectDoc},
+    utils::get_linked_docs_of_branch,
+};
 use automerge::{
-    patches::TextRepresentation, transaction::Transactable, ChangeHash, ObjType,
-    PatchLog, ReadDoc, TextEncoding, ROOT,
+    patches::TextRepresentation, transaction::Transactable, ChangeHash, ObjType, PatchLog, ReadDoc,
+    TextEncoding, ROOT,
 };
-use automerge_repo::{
-    tokio::FsStorage, ConnDirection, DocHandle, DocumentId, Repo, RepoHandle,
-};
-use autosurgeon::{ hydrate, reconcile};
+use automerge_repo::{tokio::FsStorage, ConnDirection, DocHandle, DocumentId, Repo, RepoHandle};
+use autosurgeon::{hydrate, reconcile};
 use futures::{
     channel::mpsc::{UnboundedReceiver, UnboundedSender},
-     StreamExt,
+    StreamExt,
 };
 
 use tokio::{net::TcpStream, runtime::Runtime};
@@ -161,11 +162,17 @@ struct DriverState {
     pending_branch_doc_ids: HashSet<DocumentId>,
     pending_binary_doc_ids: HashSet<DocumentId>,
 
-    requesting_binary_docs: FuturesUnordered<Pin<Box<dyn Future<Output = (String, Result<DocHandle, RepoError>)> + Send>>>,
-    requesting_branch_docs: FuturesUnordered<Pin<Box<dyn Future<Output = (String, Result<DocHandle, RepoError>)> + Send>>>,
+    requesting_binary_docs: FuturesUnordered<
+        Pin<Box<dyn Future<Output = (String, Result<DocHandle, RepoError>)> + Send>>,
+    >,
+    requesting_branch_docs: FuturesUnordered<
+        Pin<Box<dyn Future<Output = (String, Result<DocHandle, RepoError>)> + Send>>,
+    >,
 
     subscribed_doc_ids: HashSet<DocumentId>,
-    all_doc_changes: futures::stream::SelectAll<std::pin::Pin<Box<dyn Stream<Item = SubscriptionMessage> + Send>>>,
+    all_doc_changes: futures::stream::SelectAll<
+        std::pin::Pin<Box<dyn Stream<Item = SubscriptionMessage> + Send>>,
+    >,
 
     // heads that the frontend has for each branch doc
     heads_in_frontend: HashMap<DocumentId, Vec<ChangeHash>>,
@@ -175,8 +182,8 @@ pub struct GodotProjectDriver {
     runtime: Runtime,
     repo_handle: RepoHandle,
 
-	connection_thread: Option<JoinHandle<()>>,
-	spawned_thread: Option<JoinHandle<()>>,
+    connection_thread: Option<JoinHandle<()>>,
+    spawned_thread: Option<JoinHandle<()>>,
 }
 
 impl GodotProjectDriver {
@@ -207,25 +214,26 @@ impl GodotProjectDriver {
         branches_metadata_doc_id: Option<DocumentId>,
         user_name: Option<String>,
     ) {
-		if self.connection_thread.is_some() || self.spawned_thread.is_some() {
-			println!("driver already spawned");
-			return;
-		}
+        if self.connection_thread.is_some() || self.spawned_thread.is_some() {
+            println!("driver already spawned");
+            return;
+        }
 
-		self.connection_thread = Some(self.spawn_connection_task());
+        self.connection_thread = Some(self.spawn_connection_task());
 
         // Spawn sync task for all doc handles
-        self.spawned_thread = Some(self.spawn_driver_task(rx, tx, branches_metadata_doc_id, &user_name));
+        self.spawned_thread =
+            Some(self.spawn_driver_task(rx, tx, branches_metadata_doc_id, &user_name));
     }
 
-	pub fn teardown(&mut self) {
-		if let Some(connection_thread) = self.connection_thread.take() {
-			connection_thread.abort();
-		}
-		if let Some(spawned_thread) = self.spawned_thread.take() {
-			spawned_thread.abort();
-		}
-	}
+    pub fn teardown(&mut self) {
+        if let Some(connection_thread) = self.connection_thread.take() {
+            connection_thread.abort();
+        }
+        if let Some(spawned_thread) = self.spawned_thread.take() {
+            spawned_thread.abort();
+        }
+    }
 
     fn spawn_connection_task(&self) -> JoinHandle<()> {
         let repo_handle_clone = self.repo_handle.clone();
@@ -421,42 +429,49 @@ impl GodotProjectDriver {
     }
 }
 
-
-
 struct ProjectDocHandles {
     branches_metadata_doc_handle: DocHandle,
     main_branch_doc_handle: DocHandle,
 }
 
-async fn init_project_doc_handles (repo_handle: &RepoHandle, branches_metadata_doc_id: &Option<DocumentId>, user_name: &Option<String>) -> ProjectDocHandles  {
+async fn init_project_doc_handles(
+    repo_handle: &RepoHandle,
+    branches_metadata_doc_id: &Option<DocumentId>,
+    user_name: &Option<String>,
+) -> ProjectDocHandles {
     match branches_metadata_doc_id {
-
         // load existing project
-
         Some(doc_id) => {
             println!("rust: loading existing project: {:?}", doc_id);
 
-            let branches_metadata_doc_handle = repo_handle.request_document(doc_id.clone()).await.unwrap_or_else(|e| {
-                panic!("failed init, can't load branches metadata doc: {:?}", e);
-            });
+            let branches_metadata_doc_handle = repo_handle
+                .request_document(doc_id.clone())
+                .await
+                .unwrap_or_else(|e| {
+                    panic!("failed init, can't load branches metadata doc: {:?}", e);
+                });
 
-            let branches_metadata: BranchesMetadataDoc = branches_metadata_doc_handle.with_doc(|d| hydrate(d).unwrap_or_else(|_| {
-                panic!("failed init, can't hydrate metadata doc");
-            }));
+            let branches_metadata: BranchesMetadataDoc =
+                branches_metadata_doc_handle.with_doc(|d| {
+                    hydrate(d).unwrap_or_else(|_| {
+                        panic!("failed init, can't hydrate metadata doc");
+                    })
+                });
 
-            let main_branch_doc_handle: DocHandle =
-                repo_handle.request_document(DocumentId::from_str(&branches_metadata.main_doc_id).unwrap()).await.unwrap_or_else(|_| {
+            let main_branch_doc_handle: DocHandle = repo_handle
+                .request_document(DocumentId::from_str(&branches_metadata.main_doc_id).unwrap())
+                .await
+                .unwrap_or_else(|_| {
                     panic!("failed init, can't load main branchs doc");
                 });
 
             return ProjectDocHandles {
                 branches_metadata_doc_handle: branches_metadata_doc_handle.clone(),
                 main_branch_doc_handle: main_branch_doc_handle.clone(),
-            }
+            };
         }
 
         // create new project
-
         None => {
             println!("rust: creating new project");
 
@@ -471,7 +486,14 @@ async fn init_project_doc_handles (repo_handle: &RepoHandle, branches_metadata_d
                         state: HashMap::new(),
                     },
                 );
-                commit_with_attribution_and_timestamp(tx, &user_name, &Some(String::from("main")));
+                commit_with_attribution_and_timestamp(
+                    tx,
+                    &CommitMetadata {
+                        username: user_name.clone(),
+                        branch_id: Some(main_branch_doc_handle.document_id().to_string()),
+                        merge_metadata: None,
+                    },
+                );
             });
 
             let main_branch_doc_id = main_branch_doc_handle.document_id().to_string();
@@ -498,21 +520,25 @@ async fn init_project_doc_handles (repo_handle: &RepoHandle, branches_metadata_d
                         branches: branches_clone,
                     },
                 );
-                commit_with_attribution_and_timestamp(tx, &user_name, &Some(String::from("main")));
+                commit_with_attribution_and_timestamp(
+                    tx,
+                    &CommitMetadata {
+                        username: user_name.clone(),
+                        branch_id: None,
+                        merge_metadata: None,
+                    },
+                );
             });
 
             return ProjectDocHandles {
                 branches_metadata_doc_handle: branches_metadata_doc_handle.clone(),
                 main_branch_doc_handle: main_branch_doc_handle.clone(),
-            }
+            };
         }
     }
 }
 
-
-
 impl DriverState {
-
     fn create_branch(&mut self, name: String) {
         let new_branch_handle = clone_doc(&self.repo_handle, &self.main_branch_doc_handle);
 
@@ -521,28 +547,43 @@ impl DriverState {
             id: new_branch_handle.document_id().to_string(),
             fork_info: Some(ForkInfo {
                 forked_from: self.main_branch_doc_handle.document_id().to_string(),
-                forked_at: self.main_branch_doc_handle.with_doc(|d| d.get_heads()).iter().map(|h| h.to_string()).collect()
+                forked_at: self
+                    .main_branch_doc_handle
+                    .with_doc(|d| d.get_heads())
+                    .iter()
+                    .map(|h| h.to_string())
+                    .collect(),
             }),
-            merge_info: None
+            merge_info: None,
         };
 
-        self.tx.unbounded_send(OutputEvent::CompletedCreateBranch {
-            branch_doc_id: new_branch_handle.document_id(),
-        }).unwrap();
+        self.tx
+            .unbounded_send(OutputEvent::CompletedCreateBranch {
+                branch_doc_id: new_branch_handle.document_id(),
+            })
+            .unwrap();
 
         self.branches_metadata_doc_handle.with_doc_mut(|d| {
             let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
             let mut tx = d.transaction();
-            branches_metadata
-                .branches
-                .insert(branch.id.clone(), branch);
+            branches_metadata.branches.insert(branch.id.clone(), branch);
             let _ = reconcile(&mut tx, branches_metadata);
-            commit_with_attribution_and_timestamp(tx, &self.user_name, &Some(name));
+            commit_with_attribution_and_timestamp(
+                tx,
+                &CommitMetadata {
+                    username: self.user_name.clone(),
+                    branch_id: None,
+                    merge_metadata: None,
+                },
+            );
         });
-
     }
 
-    fn create_merge_preview_branch(&mut self, source_branch_doc_id: DocumentId, target_branch_doc_id: DocumentId) {
+    fn create_merge_preview_branch(
+        &mut self,
+        source_branch_doc_id: DocumentId,
+        target_branch_doc_id: DocumentId,
+    ) {
         println!("driver: create merge preview branch");
 
         let source_branch_state = self.branch_states.get(&source_branch_doc_id).unwrap();
@@ -550,45 +591,66 @@ impl DriverState {
 
         let merge_preview_branch_doc_handle = self.repo_handle.new_document();
 
-        source_branch_state.doc_handle.with_doc_mut(|source_branch_doc| {
-            merge_preview_branch_doc_handle.with_doc_mut(|merge_preview_branch_doc| {
-                let _ = merge_preview_branch_doc.merge(source_branch_doc);
+        source_branch_state
+            .doc_handle
+            .with_doc_mut(|source_branch_doc| {
+                merge_preview_branch_doc_handle.with_doc_mut(|merge_preview_branch_doc| {
+                    let _ = merge_preview_branch_doc.merge(source_branch_doc);
+                });
             });
-        });
 
-        target_branch_state.doc_handle.with_doc_mut(|target_branch_doc| {
-            merge_preview_branch_doc_handle.with_doc_mut(|merge_preview_branch_doc| {
-                let _ = merge_preview_branch_doc.merge(target_branch_doc);
+        target_branch_state
+            .doc_handle
+            .with_doc_mut(|target_branch_doc| {
+                merge_preview_branch_doc_handle.with_doc_mut(|merge_preview_branch_doc| {
+                    let _ = merge_preview_branch_doc.merge(target_branch_doc);
+                });
             });
-        });
 
         let branch = Branch {
-            name: format!("{} <- {}", target_branch_state.name, source_branch_state.name),
+            name: format!(
+                "{} <- {}",
+                target_branch_state.name, source_branch_state.name
+            ),
             id: merge_preview_branch_doc_handle.document_id().to_string(),
             fork_info: Some(ForkInfo {
                 forked_from: source_branch_doc_id.to_string(),
-                forked_at: source_branch_state.synced_heads.iter().map(|h| h.to_string()).collect(),
+                forked_at: source_branch_state
+                    .synced_heads
+                    .iter()
+                    .map(|h| h.to_string())
+                    .collect(),
             }),
             merge_info: Some(MergeInfo {
                 merge_into: target_branch_doc_id.to_string(),
-                merge_at: target_branch_state.synced_heads.iter().map(|h| h.to_string()).collect(),
+                merge_at: target_branch_state
+                    .synced_heads
+                    .iter()
+                    .map(|h| h.to_string())
+                    .collect(),
             }),
         };
 
         self.branches_metadata_doc_handle.with_doc_mut(|d| {
             let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
             let mut tx = d.transaction();
-            branches_metadata
-                .branches
-                .insert(branch.id.clone(), branch);
+            branches_metadata.branches.insert(branch.id.clone(), branch);
             let _ = reconcile(&mut tx, branches_metadata);
-            commit_with_attribution_and_timestamp(tx, &self.user_name, &None);
+            commit_with_attribution_and_timestamp(
+                tx,
+                &CommitMetadata {
+                    username: self.user_name.clone(),
+                    branch_id: Some(source_branch_doc_id.to_string()),
+                    merge_metadata: None,
+                },
+            );
         });
 
-        self.tx.unbounded_send(OutputEvent::CompletedCreateBranch {
-            branch_doc_id: merge_preview_branch_doc_handle.document_id(),
-        }).unwrap();
-
+        self.tx
+            .unbounded_send(OutputEvent::CompletedCreateBranch {
+                branch_doc_id: merge_preview_branch_doc_handle.document_id(),
+            })
+            .unwrap();
     }
 
     // delete branch isn't fully implemented right now deletes are not propagated to the frontend
@@ -599,9 +661,18 @@ impl DriverState {
         self.branches_metadata_doc_handle.with_doc_mut(|d| {
             let mut tx = d.transaction();
             let mut branches_metadata: BranchesMetadataDoc = hydrate(&mut tx).unwrap();
-            branches_metadata.branches.remove(&branch_doc_id.to_string());
+            branches_metadata
+                .branches
+                .remove(&branch_doc_id.to_string());
             let _ = reconcile(&mut tx, branches_metadata);
-            commit_with_attribution_and_timestamp(tx, &self.user_name, &None);
+            commit_with_attribution_and_timestamp(
+                tx,
+                &CommitMetadata {
+                    username: self.user_name.clone(),
+                    branch_id: None,
+                    merge_metadata: None,
+                },
+            );
         });
     }
 
@@ -611,12 +682,15 @@ impl DriverState {
         file_entries: Vec<(String, FileContent)>,
         heads: Option<Vec<ChangeHash>>,
     ) {
-        let branch_doc_state = self.branch_states.get(&branch_doc_handle.document_id()).unwrap().clone();
+        let branch_doc_state = self
+            .branch_states
+            .get(&branch_doc_handle.document_id())
+            .unwrap()
+            .clone();
 
         let mut binary_entries: Vec<(String, DocHandle)> = Vec::new();
         let mut text_entries: Vec<(String, &String)> = Vec::new();
         let mut scene_entries: Vec<(String, &GodotScene)> = Vec::new();
-
 
         for (path, content) in file_entries.iter() {
             match content {
@@ -625,26 +699,31 @@ impl DriverState {
                     binary_doc_handle.with_doc_mut(|d| {
                         let mut tx = d.transaction();
                         let _ = tx.put(ROOT, "content", content.clone());
-                        commit_with_attribution_and_timestamp(tx, &self.user_name, &Some(branch_doc_state.name.clone()));
+                        commit_with_attribution_and_timestamp(
+                            tx,
+                            &CommitMetadata {
+                                username: self.user_name.clone(),
+                                branch_id: None,
+                                merge_metadata: None,
+                            },
+                        );
                     });
 
                     self.add_binary_doc_handle(path, &binary_doc_handle);
                     binary_entries.push((path.clone(), binary_doc_handle));
                 }
-                FileContent::String(content) =>  {
+                FileContent::String(content) => {
                     text_entries.push((path.clone(), content));
-                },
+                }
                 FileContent::Scene(godot_scene) => {
                     scene_entries.push((path.clone(), godot_scene));
-                },
+                }
             }
         }
         branch_doc_handle.with_doc_mut(|d| {
             let mut tx = match heads {
                 Some(heads) => d.transaction_at(
-                    PatchLog::inactive(TextRepresentation::String(
-                        TextEncoding::Utf8CodeUnit,
-                    )),
+                    PatchLog::inactive(TextRepresentation::String(TextEncoding::Utf8CodeUnit)),
                     &heads,
                 ),
                 None => d.transaction(),
@@ -652,20 +731,16 @@ impl DriverState {
 
             let files = tx.get_obj_id(ROOT, "files").unwrap();
 
-
             // write text entries to doc
             for (path, content) in text_entries {
-
                 // get existing file url or create new one
                 let file_entry = match tx.get(&files, &path) {
-                    Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => {
-                        file_entry
-                    }
+                    Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
                     _ => tx.put_object(&files, &path, ObjType::Map).unwrap(),
                 };
 
-                 // delete url in file entry if it previously had one
-                 if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
+                // delete url in file entry if it previously had one
+                if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
                     let _ = tx.delete(&file_entry, "url");
                 }
 
@@ -682,8 +757,6 @@ impl DriverState {
                         .unwrap(),
                 };
                 let _ = tx.update_text(&content_key, &content);
-
-
             }
 
             // write scene entries to doc
@@ -701,55 +774,87 @@ impl DriverState {
                 );
             }
 
-            commit_with_attribution_and_timestamp(tx, &self.user_name, &Some(branch_doc_state.name.clone()));
+            commit_with_attribution_and_timestamp(
+                tx,
+                &CommitMetadata {
+                    username: self.user_name.clone(),
+                    branch_id: Some(branch_doc_state.doc_handle.document_id().to_string()),
+                    merge_metadata: None,
+                },
+            );
         });
 
-
         // update heads in frontend
-        self.heads_in_frontend.insert(branch_doc_handle.document_id(), branch_doc_handle.with_doc(|d| d.get_heads()));
+        self.heads_in_frontend.insert(
+            branch_doc_handle.document_id(),
+            branch_doc_handle.with_doc(|d| d.get_heads()),
+        );
 
-        println!("rust: save {:?}",self.heads_in_frontend);
+        println!("rust: save {:?}", self.heads_in_frontend);
     }
 
-    fn merge_branch(&mut self, source_branch_doc_id: DocumentId, target_branch_doc_id: DocumentId)  {
+    fn merge_branch(&mut self, source_branch_doc_id: DocumentId, target_branch_doc_id: DocumentId) {
         let source_branch_state = self.branch_states.get(&source_branch_doc_id).unwrap();
         let target_branch_state = self.branch_states.get(&target_branch_doc_id).unwrap();
 
-        source_branch_state.doc_handle.with_doc_mut(|source_branch_doc| {
-            target_branch_state.doc_handle.with_doc_mut(|target_branch_doc| {
-                let _ = target_branch_doc.merge(source_branch_doc);
+        source_branch_state
+            .doc_handle
+            .with_doc_mut(|source_branch_doc| {
+                target_branch_state
+                    .doc_handle
+                    .with_doc_mut(|target_branch_doc| {
+                        let _ = target_branch_doc.merge(source_branch_doc);
+                    });
             });
-        });
     }
 
-    fn update_branch_doc_state (&mut self, branch_doc_handle: DocHandle) {
+    fn update_branch_doc_state(&mut self, branch_doc_handle: DocHandle) {
         let branch_state = match self.branch_states.get_mut(&branch_doc_handle.document_id()) {
             Some(branch_state) => branch_state,
             None => {
-                let branch = self.get_branches_metadata().branches.get(&branch_doc_handle.document_id().to_string()).unwrap().clone();
+                let branch = self
+                    .get_branches_metadata()
+                    .branches
+                    .get(&branch_doc_handle.document_id().to_string())
+                    .unwrap()
+                    .clone();
 
-                self.branch_states.insert(branch_doc_handle.document_id().clone(), BranchState {
-                    name: branch.name.clone(),
-                    doc_handle: branch_doc_handle.clone(),
-                    linked_doc_ids: HashSet::new(),
-                    synced_heads: Vec::new(),
-                    fork_info: match branch.fork_info {
-                        Some(fork_info) => Some(BranchStateForkInfo {
-                            forked_from: DocumentId::from_str(&fork_info.forked_from).unwrap(),
-                            forked_at: fork_info.forked_at.iter().map(|h| ChangeHash::from_str(h).unwrap()).collect(),
-                        }),
-                        None => None,
+                self.branch_states.insert(
+                    branch_doc_handle.document_id().clone(),
+                    BranchState {
+                        name: branch.name.clone(),
+                        doc_handle: branch_doc_handle.clone(),
+                        linked_doc_ids: HashSet::new(),
+                        synced_heads: Vec::new(),
+                        fork_info: match branch.fork_info {
+                            Some(fork_info) => Some(BranchStateForkInfo {
+                                forked_from: DocumentId::from_str(&fork_info.forked_from).unwrap(),
+                                forked_at: fork_info
+                                    .forked_at
+                                    .iter()
+                                    .map(|h| ChangeHash::from_str(h).unwrap())
+                                    .collect(),
+                            }),
+                            None => None,
+                        },
+                        merge_info: match branch.merge_info {
+                            Some(merge_info) => Some(BranchStateMergeInfo {
+                                merge_into: DocumentId::from_str(&merge_info.merge_into).unwrap(),
+                                merge_at: merge_info
+                                    .merge_at
+                                    .iter()
+                                    .map(|h| ChangeHash::from_str(h).unwrap())
+                                    .collect(),
+                            }),
+                            None => None,
+                        },
+                        is_main: branch_doc_handle.document_id()
+                            == self.main_branch_doc_handle.document_id(),
                     },
-                    merge_info: match branch.merge_info {
-                        Some(merge_info) => Some(BranchStateMergeInfo {
-                            merge_into: DocumentId::from_str(&merge_info.merge_into).unwrap(),
-                            merge_at: merge_info.merge_at.iter().map(|h| ChangeHash::from_str(h).unwrap()).collect(),
-                        }),
-                        None => None,
-                    },
-                    is_main: branch_doc_handle.document_id() == self.main_branch_doc_handle.document_id(),
-                });
-                self.branch_states.get_mut(&branch_doc_handle.document_id()).unwrap()
+                );
+                self.branch_states
+                    .get_mut(&branch_doc_handle.document_id())
+                    .unwrap()
             }
         };
 
@@ -757,22 +862,28 @@ impl DriverState {
 
         // load binary docs if not already loaded
         for (path, doc_id) in linked_docs.iter() {
-            if self.binary_doc_states.get(&doc_id).is_some() || self.pending_binary_doc_ids.contains(&doc_id) {
+            if self.binary_doc_states.get(&doc_id).is_some()
+                || self.pending_binary_doc_ids.contains(&doc_id)
+            {
                 continue;
             }
 
             self.pending_binary_doc_ids.insert(doc_id.clone());
 
             let path = path.clone();
-            self.requesting_binary_docs.push(self.repo_handle.request_document(doc_id.clone()).map(|doc_handle| {
-                (path, doc_handle)
-            }).boxed());
+            self.requesting_binary_docs.push(
+                self.repo_handle
+                    .request_document(doc_id.clone())
+                    .map(|doc_handle| (path, doc_handle))
+                    .boxed(),
+            );
         }
 
         // update linked doc ids
         branch_state.linked_doc_ids = linked_docs.values().cloned().collect();
 
-        let missing_binary_doc_ids = get_missing_binary_doc_ids(&branch_state, &self.binary_doc_states);
+        let missing_binary_doc_ids =
+            get_missing_binary_doc_ids(&branch_state, &self.binary_doc_states);
 
         // check if all linked docs have been loaded
         if missing_binary_doc_ids.is_empty() {
@@ -780,39 +891,60 @@ impl DriverState {
 
             print_branch_state("branch doc state immediately loaded", &branch_state);
 
-
-            self.tx.unbounded_send(OutputEvent::BranchStateChanged {
-                branch_state: branch_state.clone(),
-                trigger_reload: !does_frontend_have_branch_at_heads(&self.heads_in_frontend, &branch_state.doc_handle, &branch_state.synced_heads),
-            }).unwrap();
+            self.tx
+                .unbounded_send(OutputEvent::BranchStateChanged {
+                    branch_state: branch_state.clone(),
+                    trigger_reload: !does_frontend_have_branch_at_heads(
+                        &self.heads_in_frontend,
+                        &branch_state.doc_handle,
+                        &branch_state.synced_heads,
+                    ),
+                })
+                .unwrap();
         }
     }
 
-
     fn add_binary_doc_handle(&mut self, path: &String, binary_doc_handle: &DocHandle) {
-        self.binary_doc_states.insert(binary_doc_handle.document_id().clone(), BinaryDocState {
-            doc_handle: Some(binary_doc_handle.clone()),
-            path: path.clone(),
-        });
+        self.binary_doc_states.insert(
+            binary_doc_handle.document_id().clone(),
+            BinaryDocState {
+                doc_handle: Some(binary_doc_handle.clone()),
+                path: path.clone(),
+            },
+        );
 
-
-        let _ = &self.tx.unbounded_send(OutputEvent::NewDocHandle { doc_handle: binary_doc_handle.clone(), doc_handle_type: DocHandleType::Binary }).unwrap();
+        let _ = &self
+            .tx
+            .unbounded_send(OutputEvent::NewDocHandle {
+                doc_handle: binary_doc_handle.clone(),
+                doc_handle_type: DocHandleType::Binary,
+            })
+            .unwrap();
 
         // println!("add_binary_doc_handle {:?} {:?}", path, binary_doc_handle.document_id());
 
         // check all branch states that link to this doc
         for branch_state in self.branch_states.values_mut() {
-            if branch_state.linked_doc_ids.contains(&binary_doc_handle.document_id()) {
-
-                let missing_binary_doc_ids = get_missing_binary_doc_ids(&branch_state, &self.binary_doc_states);
+            if branch_state
+                .linked_doc_ids
+                .contains(&binary_doc_handle.document_id())
+            {
+                let missing_binary_doc_ids =
+                    get_missing_binary_doc_ids(&branch_state, &self.binary_doc_states);
 
                 // check if all linked docs have been loaded
                 if missing_binary_doc_ids.is_empty() {
                     branch_state.synced_heads = branch_state.doc_handle.with_doc(|d| d.get_heads());
-                    self.tx.unbounded_send(OutputEvent::BranchStateChanged {
-                        branch_state: branch_state.clone(),
-                        trigger_reload: !does_frontend_have_branch_at_heads(&self.heads_in_frontend, &branch_state.doc_handle, &branch_state.synced_heads),
-                    }).unwrap();
+                    self.tx
+                        .unbounded_send(OutputEvent::BranchStateChanged {
+                            branch_state: branch_state.clone(),
+                            trigger_reload: !does_frontend_have_branch_at_heads(
+                                &self.heads_in_frontend,
+                                &branch_state.doc_handle,
+                                &branch_state.synced_heads,
+                            ),
+                        })
+                        .unwrap();
 
                     // println!("rust: branch state loaded {:?} {:?}", branch_state.doc_handle.document_id(), branch_state.synced_heads);
                 } else {
@@ -822,28 +954,27 @@ impl DriverState {
         }
     }
 
-
     pub fn subscribe_to_doc_handle(&mut self, doc_handle: DocHandle) {
         if self.subscribed_doc_ids.contains(&doc_handle.document_id()) {
             return;
         }
 
         self.subscribed_doc_ids.insert(doc_handle.document_id());
-        self.all_doc_changes.push(handle_changes(doc_handle.clone()).boxed());
-        self.all_doc_changes.push(futures::stream::once(async move {
-            SubscriptionMessage::Added { doc_handle }
-        }).boxed());
+        self.all_doc_changes
+            .push(handle_changes(doc_handle.clone()).boxed());
+        self.all_doc_changes.push(
+            futures::stream::once(async move { SubscriptionMessage::Added { doc_handle } }).boxed(),
+        );
     }
 
     fn get_branches_metadata(&self) -> BranchesMetadataDoc {
-        let branches_metadata : BranchesMetadataDoc = self
+        let branches_metadata: BranchesMetadataDoc = self
             .branches_metadata_doc_handle
             .with_doc(|d| hydrate(d).unwrap());
 
-        return branches_metadata
+        return branches_metadata;
     }
 }
-
 
 fn clone_doc(repo_handle: &RepoHandle, doc_handle: &DocHandle) -> DocHandle {
     let new_doc_handle = repo_handle.new_document();
@@ -868,25 +999,46 @@ fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = Subscription
         });
 
         Some((
-            SubscriptionMessage::Changed { doc_handle: doc_handle.clone(), diff },
+            SubscriptionMessage::Changed {
+                doc_handle: doc_handle.clone(),
+                diff,
+            },
             doc_handle,
         ))
     })
 }
 
-fn get_missing_binary_doc_ids(branch_state: &BranchState, binary_doc_states: &HashMap<DocumentId, BinaryDocState>) -> Vec<DocumentId> {
-    branch_state.linked_doc_ids.iter().filter(|doc_id| {
-        binary_doc_states.get(doc_id)
-        .map_or(true, |binary_doc_state| {
-            binary_doc_state.doc_handle.as_ref()
-            .map_or(true, |handle| handle.with_doc(|d| d.get_heads().is_empty()))
+fn get_missing_binary_doc_ids(
+    branch_state: &BranchState,
+    binary_doc_states: &HashMap<DocumentId, BinaryDocState>,
+) -> Vec<DocumentId> {
+    branch_state
+        .linked_doc_ids
+        .iter()
+        .filter(|doc_id| {
+            binary_doc_states
+                .get(doc_id)
+                .map_or(true, |binary_doc_state| {
+                    binary_doc_state
+                        .doc_handle
+                        .as_ref()
+                        .map_or(true, |handle| handle.with_doc(|d| d.get_heads().is_empty()))
+                })
         })
-    }).cloned().collect::<Vec<_>>()
+        .cloned()
+        .collect::<Vec<_>>()
 }
 
-fn does_frontend_have_branch_at_heads (heads_in_frontend: &HashMap<DocumentId, Vec<ChangeHash>>, branch_doc_handle: &DocHandle, heads: &Vec<ChangeHash>) -> bool {
-
-    println!("rust: does_frontend_have_branch_at_heads {:?}  {:?}", branch_doc_handle.document_id(), heads_in_frontend);
+fn does_frontend_have_branch_at_heads(
+    heads_in_frontend: &HashMap<DocumentId, Vec<ChangeHash>>,
+    branch_doc_handle: &DocHandle,
+    heads: &Vec<ChangeHash>,
+) -> bool {
+    println!(
+        "rust: does_frontend_have_branch_at_heads {:?}  {:?}",
+        branch_doc_handle.document_id(),
+        heads_in_frontend
+    );
 
     if let Some(synced_heads) = heads_in_frontend.get(&branch_doc_handle.document_id()) {
         println!("rust: compare heads {:?} {:?}", synced_heads, heads);

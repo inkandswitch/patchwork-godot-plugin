@@ -422,12 +422,19 @@ func update_ui() -> void:
 	var history = GodotProject.get_changes()
 	history_list.clear()
 
-	for change in history:
-		var change_hash = change.hash.substr(0, 7)
-		var change_author = change.user_name
+	for i in range(history.size() - 1, -1, -1):
+		var change = history[i]
+
+		if change.branch_id != checked_out_branch.id:
+			continue
+
+		var change_author = change.username
 		var change_timestamp = human_readable_timestamp(change.timestamp)
 
-		history_list.add_item(change_hash + " - " + change_author + " - " + change_timestamp)
+		print("change: ", change)
+
+
+		history_list.add_item(change_author + " - " + change_timestamp)
 
 	# update context menu
 

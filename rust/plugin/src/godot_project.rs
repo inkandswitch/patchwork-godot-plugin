@@ -34,7 +34,7 @@ use crate::godot_parser::{self, GodotScene, TypeOrInstance};
 use crate::godot_project_driver::{BranchState, DocHandleType};
 use crate::patches::{get_changed_files, get_changed_files_vec};
 use crate::patchwork_config::PatchworkConfig;
-use crate::utils::{array_to_heads, heads_to_array, parse_automerge_url};
+use crate::utils::{array_to_heads, heads_to_array, parse_automerge_url, CommitMetadata};
 use crate::{
     doc_utils::SimpleDocReader,
     godot_project_driver::{GodotProjectDriver, InputEvent, OutputEvent},
@@ -381,11 +381,39 @@ impl GodotProject {
             .to_vec()
             .iter()
             .map(|c| {
-                dict! {
+                let a = c.message();
+
+                let mut commit_dict = dict! {
                     "hash": GString::from(c.hash().to_string()).to_variant(),
-                    "user_name": GString::from(c.message().unwrap_or(&String::new())).to_variant(),
                     "timestamp": c.timestamp(),
+                };
+
+                if let Some(metadata) = c
+                    .message()
+                    .and_then(|m| serde_json::from_str::<CommitMetadata>(&m).ok())
+                {
+                    if let Some(username) = metadata.username {
+                        let _ =
+                            commit_dict.insert("username", GString::from(username).to_variant());
+                    }
+
+                    if let Some(branch_id) = metadata.branch_id {
+                        let _ =
+                            commit_dict.insert("branch_id", GString::from(branch_id).to_variant());
+                    }
+
+                    if let Some(merge_metadata) = metadata.merge_metadata {
+                        let merge_metadata_dict = dict! {
+                            "merge_branch_id": GString::from(merge_metadata.merge_branch_id).to_variant(),
+                            "merge_at_heads": merge_metadata.merge_at_heads.iter().map(|h| GString::from(h.to_string())).collect::<PackedStringArray>().to_variant(),
+                            "forked_at_heads": merge_metadata.forked_at_heads.iter().map(|h| GString::from(h.to_string())).collect::<PackedStringArray>().to_variant(),
+                        };
+
+                        let _ = commit_dict.insert("merge_metadata", merge_metadata_dict);
+                    }
                 }
+
+                commit_dict
             })
             .collect::<Array<Dictionary>>()
     }

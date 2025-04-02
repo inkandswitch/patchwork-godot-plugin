@@ -11,6 +11,8 @@ use automerge::{
 };
 use automerge_repo::{DocHandle, DocumentId, RepoHandle};
 use godot::builtin::{Array, GString, PackedStringArray};
+use serde::{Deserialize, Serialize};
+use serde_json::Serializer;
 
 pub(crate) fn get_linked_docs_of_branch(
     branch_doc_handle: &DocHandle,
@@ -81,27 +83,27 @@ pub(crate) fn print_doc(message: &str, doc_handle: &DocHandle) {
     println!("rust: {:?}: {:?}", message, checked_out_doc_json);
 }
 
-pub(crate) fn commit_with_attribution_and_timestamp(
-    tx: Transaction,
-    name: &Option<String>,
-    branch: &Option<String>,
-) {
+#[derive(Serialize, Deserialize)]
+pub struct MergeMetadata {
+    pub merge_branch_id: String,
+    pub merge_at_heads: Vec<ChangeHash>,
+    pub forked_at_heads: Vec<ChangeHash>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CommitMetadata {
+    pub username: Option<String>,
+    pub branch_id: Option<String>,
+    pub merge_metadata: Option<MergeMetadata>,
+}
+
+pub(crate) fn commit_with_attribution_and_timestamp(tx: Transaction, metadata: &CommitMetadata) {
     let timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
         .as_millis() as i64;
 
-    let mut message: String = String::new();
-
-    if let Some(name) = name {
-        message = name.clone();
-    } else {
-        message = "anonymous".to_string();
-    }
-
-    if let Some(branch) = branch {
-        message = format!("{}@{}", message, branch);
-    }
+    let message = serde_json::json!(metadata).to_string();
 
     tx.commit_with(
         CommitOptions::default()
