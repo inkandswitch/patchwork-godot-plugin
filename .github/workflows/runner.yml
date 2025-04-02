@@ -30,6 +30,8 @@ jobs:
   editor-builds:
     name: 📝 Editor All Platforms
     uses: ./.github/workflows/all_editor_builds.yml
+    secrets: inherit
+
   macos-plugin-builds:
     name: 🍎 macOS
     uses: ./.github/workflows/macos_builds.yml
@@ -86,4 +88,4 @@ jobs:
         with:
           path: ws/patchwork-godot-plugin.zip
           name: patchwork-godot-plugin
-          
+
