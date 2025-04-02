@@ -422,7 +422,7 @@ func update_ui() -> void:
 	
 	# update action buttons
 
-	if checked_out_branch.is_main:
+	if checked_out_branch && checked_out_branch.is_main:
 		merge_button.disabled = true
 		merge_button.tooltip_text = "Can't merge main because it's not a remix of another branch"
 	else:
@@ -491,6 +491,9 @@ func update_ui() -> void:
 
 func update_branch_picker() -> void:
 	var checked_out_branch = GodotProject.get_checked_out_branch()
+
+	if !checked_out_branch:
+		return
 
 	branch_picker.clear()
 
