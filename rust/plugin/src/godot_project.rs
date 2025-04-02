@@ -21,7 +21,7 @@ use automerge::{
 };
 use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
-use godot::classes::ClassDb;
+use godot::classes::{ClassDb, EditorPlugin, Engine, IEditorPlugin};
 use godot::classes::EditorFileSystem;
 use godot::classes::EditorInterface;
 use godot::classes::Image;
@@ -33,6 +33,7 @@ use godot::prelude::*;
 use crate::godot_parser::{self, GodotScene, TypeOrInstance};
 use crate::godot_project_driver::{BranchState, DocHandleType};
 use crate::patches::{get_changed_files, get_changed_files_vec};
+use crate::patchwork_config::PatchworkConfig;
 use crate::utils::{array_to_heads, heads_to_array, parse_automerge_url};
 use crate::{
     doc_utils::SimpleDocReader,
@@ -125,14 +126,14 @@ struct GodotProjectState {
 }
 
 #[derive(GodotClass)]
-#[class(no_init, base=Node)]
+#[class(base=Node, tool)]
 pub struct GodotProject {
     base: Base<Node>,
     doc_handles: HashMap<DocumentId, DocHandle>,
     branch_states: HashMap<DocumentId, BranchState>,
     checked_out_branch_state: CheckedOutBranchState,
     project_doc_id: Option<DocumentId>,
-    driver: GodotProjectDriver,
+    driver: Option<GodotProjectDriver>,
     driver_input_tx: UnboundedSender<InputEvent>,
     driver_output_rx: UnboundedReceiver<OutputEvent>,
     sync_server_connection_info: Option<PeerConnectionInfo>,
@@ -166,59 +167,6 @@ impl GodotProject {
 
     #[signal]
     fn sync_server_connection_info_changed(peer_connection_info: Dictionary);
-
-    #[func]
-    fn create(
-        storage_folder_path: String,
-        branches_metadata_doc_id: String, // empty string to create a new project
-        checked_out_branch_doc_id: String, // empty string to check out the main branch of the newly created project
-        maybe_user_name: String,
-    ) -> Gd<Self> {
-        println!("rust: CREATE !!!! {:?}", storage_folder_path);
-
-        let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
-        let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
-
-        let branches_metadata_doc_id = match DocumentId::from_str(&branches_metadata_doc_id) {
-            Ok(doc_id) => Some(doc_id),
-            Err(e) => None,
-        };
-
-        let driver = GodotProjectDriver::create(storage_folder_path);
-
-        driver.spawn(
-            driver_input_rx,
-            driver_output_tx,
-            branches_metadata_doc_id,
-            if maybe_user_name == "" {
-                None
-            } else {
-                Some(maybe_user_name)
-            },
-        );
-
-        let checked_out_branch_state = match DocumentId::from_str(&checked_out_branch_doc_id) {
-            Ok(doc_id) => CheckedOutBranchState::CheckingOut(doc_id),
-            Err(_) => CheckedOutBranchState::NothingCheckedOut,
-        };
-
-        println!(
-            "initial checked out branch state: {:?}",
-            checked_out_branch_state
-        );
-
-        Gd::from_init_fn(|base| Self {
-            base,
-            doc_handles: HashMap::new(),
-            sync_server_connection_info: None,
-            branch_states: HashMap::new(),
-            checked_out_branch_state,
-            project_doc_id: None,
-            driver,
-            driver_input_tx,
-            driver_output_rx,
-        })
-    }
 
     // PUBLIC API
 
@@ -368,6 +316,11 @@ impl GodotProject {
 
         // try to read file as scene
     }
+
+	#[func]
+	pub fn get_singleton() -> Gd<Self> {
+		Engine::singleton().get_singleton(&StringName::from("GodotProject")).unwrap().cast::<Self>()
+	}
 
     #[func]
     fn get_changed_files(&self, heads: PackedStringArray) -> PackedStringArray {
@@ -628,7 +581,7 @@ impl GodotProject {
         let branch_state = match self.branch_states.get(&branch_doc_id) {
             Some(branch_state) => branch_state,
             None => {
-                panic!("couldn't checkout branch, branch doc id not found");
+                panic!("couldn't checkout basdfasdfrdfsfsdanch, branch doc id not found");
             }
         };
 
@@ -804,126 +757,6 @@ impl GodotProject {
         })
     }
 
-    // needs to be called every frame to process the internal events
-    #[func]
-    fn process(&mut self, _delta: f64) {
-        while let Ok(Some(event)) = self.driver_output_rx.try_next() {
-            match event {
-                OutputEvent::NewDocHandle {
-                    doc_handle,
-                    doc_handle_type,
-                } => {
-                    if doc_handle_type == DocHandleType::Binary {
-                        println!(
-                            "rust: NewBinaryDocHandle !!!! {} {} changes",
-                            doc_handle.document_id(),
-                            doc_handle.with_doc(|d| d.get_heads().len())
-                        );
-                    }
-
-                    self.doc_handles
-                        .insert(doc_handle.document_id(), doc_handle.clone());
-                }
-                OutputEvent::BranchStateChanged {
-                    branch_state,
-                    trigger_reload,
-                } => {
-                    self.branch_states
-                        .insert(branch_state.doc_handle.document_id(), branch_state.clone());
-
-                    let branches = self
-                        .get_branches()
-                        .iter_shared()
-                        .map(|branch| branch.to_variant())
-                        .collect::<Array<Variant>>()
-                        .to_variant();
-
-                    self.base_mut().emit_signal("branches_changed", &[branches]);
-
-                    let mut active_branch_state: Option<BranchState> = None;
-                    let mut checking_out_new_branch = false;
-
-                    match &self.checked_out_branch_state {
-                        CheckedOutBranchState::NothingCheckedOut => {
-                            // check out main branch if we haven't checked out anything yet
-                            if branch_state.is_main {
-                                checking_out_new_branch = true;
-
-                                self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(
-                                    branch_state.doc_handle.document_id(),
-                                );
-                                active_branch_state = Some(branch_state.clone());
-                            }
-                        }
-                        CheckedOutBranchState::CheckingOut(branch_doc_id) => {
-                            active_branch_state = self.branch_states.get(&branch_doc_id).cloned();
-                            checking_out_new_branch = true;
-                        }
-                        CheckedOutBranchState::CheckedOut(branch_doc_id) => {
-                            active_branch_state = self.branch_states.get(&branch_doc_id).cloned();
-                        }
-                    }
-
-                    // only trigger update if checked out branch is fully synced
-                    if let Some(active_branch_state) = active_branch_state {
-                        if active_branch_state.is_synced() {
-                            if checking_out_new_branch {
-                                println!(
-                                    "rust: TRIGGER checked out new branch: {}",
-                                    active_branch_state.name
-                                );
-
-                                self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(
-                                    active_branch_state.doc_handle.document_id(),
-                                );
-
-                                self.base_mut().emit_signal(
-                                    "checked_out_branch",
-                                    &[branch_state
-                                        .doc_handle
-                                        .document_id()
-                                        .to_string()
-                                        .to_variant()
-                                        .to_variant()],
-                                );
-                            } else {
-                                if trigger_reload {
-                                    println!("rust: TRIGGER files changed: {}", branch_state.name);
-                                    self.base_mut().emit_signal("files_changed", &[]);
-                                } else {
-                                    println!("rust: TRIGGER saved changes: {}", branch_state.name);
-                                    self.base_mut().emit_signal("saved_changes", &[]);
-                                }
-                            }
-                        }
-                    }
-                }
-                OutputEvent::Initialized { project_doc_id } => {
-                    self.project_doc_id = Some(project_doc_id);
-                }
-
-                OutputEvent::CompletedCreateBranch { branch_doc_id } => {
-                    self.checked_out_branch_state =
-                        CheckedOutBranchState::CheckingOut(branch_doc_id);
-                }
-
-                OutputEvent::CompletedShutdown => {
-                    println!("rust: CompletedShutdown event");
-                    self.base_mut().emit_signal("shutdown_completed", &[]);
-                }
-
-                OutputEvent::PeerConnectionInfoChanged {
-                    peer_connection_info,
-                } => {
-                    self.sync_server_connection_info = Some(peer_connection_info.clone());
-                    self.base_mut().emit_signal(
-                        "sync_server_connection_info_changed",
-                        &[peer_connection_info_to_dict(&peer_connection_info).to_variant()],
-                    );
-                }
-            }
-        }
-    }
 
     fn get_checked_out_branch_state(&self) -> Option<BranchState> {
         match &self.checked_out_branch_state {
@@ -943,12 +776,11 @@ impl GodotProject {
     fn get_all_changes_between(
         &self,
         old_heads: PackedStringArray,
-        curr_heads: PackedStringArray,
-        resource_importer_getter: Callable, // TODO: This is a hack because our CI is not set up to build the bindings custom for our godot engine
+        curr_heads: PackedStringArray
     ) -> Dictionary {
         let old_heads = array_to_heads(old_heads);
         let new_heads = array_to_heads(curr_heads);
-        self._get_changes_between(old_heads, new_heads, &resource_importer_getter)
+        self._get_changes_between(old_heads, new_heads)
     }
 
     fn get_class_name(&self, script_content: String) -> String {
@@ -1147,8 +979,7 @@ impl GodotProject {
         &self,
         path: String,
         content: &FileContent,
-        heads: Vec<ChangeHash>,
-        resource_import_getter: &Callable,
+        heads: Vec<ChangeHash>
     ) -> Option<Variant> {
         let temp_dir = format!(
             "res://.patchwork/temp_{}/",
@@ -1172,7 +1003,8 @@ impl GodotProject {
                     &import_file_path,
                     &FileContent::String(import_file_content),
                 );
-                let res = resource_import_getter.call(&[temp_path.to_variant()]);
+
+                let res = ClassDb::singleton().class_call_static("PatchworkEditor", "import_and_load_resource", &[temp_path.to_variant()]);
                 if res.is_nil() {
                     return None;
                 }
@@ -1207,8 +1039,7 @@ impl GodotProject {
         old_content: &Option<FileContent>,
         new_content: &Option<FileContent>,
         old_heads: &Vec<ChangeHash>,
-        curr_heads: &Vec<ChangeHash>,
-        resource_import_getter: &Callable,
+        curr_heads: &Vec<ChangeHash>
     ) -> Dictionary {
         let mut result = dict! {
             "path" : path.to_variant(),
@@ -1221,8 +1052,7 @@ impl GodotProject {
             if let Some(old_resource) = self._get_resource_at(
                 path.clone(),
                 old_content,
-                old_heads.clone(),
-                resource_import_getter,
+                old_heads.clone()
             ) {
                 let _ = result.insert("old_resource", old_resource);
             }
@@ -1231,8 +1061,7 @@ impl GodotProject {
             if let Some(new_resource) = self._get_resource_at(
                 path.clone(),
                 new_content,
-                curr_heads.clone(),
-                resource_import_getter,
+                curr_heads.clone()
             ) {
                 let _ = result.insert("new_resource", new_resource);
             }
@@ -1286,8 +1115,7 @@ impl GodotProject {
         old_content: &Option<FileContent>,
         new_content: &Option<FileContent>,
         old_heads: &Vec<ChangeHash>,
-        curr_heads: &Vec<ChangeHash>,
-        resource_import_getter: &Callable,
+        curr_heads: &Vec<ChangeHash>
     ) -> Dictionary {
         let old_content_type = GodotProject::_get_file_content_variant_type(old_content);
         let new_content_type = GodotProject::_get_file_content_variant_type(new_content);
@@ -1307,8 +1135,7 @@ impl GodotProject {
                 &old_content,
                 &new_content,
                 &old_heads,
-                &curr_heads,
-                resource_import_getter,
+                &curr_heads
             );
         } else if (old_content_type != VariantType::PACKED_BYTE_ARRAY
             && new_content_type != VariantType::PACKED_BYTE_ARRAY)
@@ -1328,8 +1155,7 @@ impl GodotProject {
     fn _get_changes_between(
         &self,
         old_heads: Vec<ChangeHash>,
-        curr_heads: Vec<ChangeHash>,
-        resource_import_getter: &Callable,
+        curr_heads: Vec<ChangeHash>
     ) -> Dictionary {
         let checked_out_branch_state = match self.get_checked_out_branch_state() {
             Some(branch_state) => branch_state,
@@ -1379,8 +1205,7 @@ impl GodotProject {
                         &old_file_content,
                         &new_file_content,
                         &old_heads,
-                        &curr_heads,
-                        resource_import_getter,
+                        &curr_heads
                     ),
                 );
             } else {
@@ -1683,8 +1508,7 @@ impl GodotProject {
                                     old_heads.clone()
                                 } else {
                                     curr_heads.clone()
-                                },
-                                &resource_import_getter,
+                                }
                             );
                             if let Some(resource) = resource {
                                 let _ = loaded_ext_resources.insert(path.clone(), resource);
@@ -1904,70 +1728,249 @@ impl GodotProject {
         }
         diff_result
     }
-}
 
-#[godot_api]
-impl INode for GodotProject {
-    fn init(_base: Base<Node>) -> Self {
+	fn _start_driver(&mut self) {
+		if self.driver.is_some() {
+			return;
+		}
+		let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
+        let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
+		self.driver_input_tx = driver_input_tx;
+		self.driver_output_rx = driver_output_rx;
+
         let storage_folder_path =
             String::from(ProjectSettings::singleton().globalize_path("res://.patchwork"));
-        let mut project_config_file = ConfigFile::new_gd();
-        project_config_file.load("res://patchwork.cfg");
-        let mut user_config_file = ConfigFile::new_gd();
-        user_config_file.load("user://patchwork.cfg");
-        let branches_metadata_doc_id = project_config_file
-            .get_value("patchwork", "branches_metadata_doc_id")
-            .to_string();
-        let checked_out_branch_doc_id = project_config_file
-            .get_value("patchwork", "checked_out_branch_doc_id")
-            .to_string();
-        let maybe_user_name = user_config_file
-            .get_value("patchwork", "user_name")
-            .to_string();
-        println!("rust: INIT !!!! {:?}", storage_folder_path);
-
-        let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
-        let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
-
-        let branches_metadata_doc_id = match DocumentId::from_str(&branches_metadata_doc_id) {
-            Ok(doc_id) => Some(doc_id),
-            Err(e) => None,
-        };
-
-        let driver = GodotProjectDriver::create(storage_folder_path);
-
+		let mut driver: GodotProjectDriver = GodotProjectDriver::create(storage_folder_path);
+        let maybe_user_name: String = PatchworkConfig::singleton().bind().get_user_value(GString::from("user_name"), "".to_variant()).to_string();
         driver.spawn(
             driver_input_rx,
             driver_output_tx,
-            branches_metadata_doc_id,
+            self.project_doc_id.clone(),
             if maybe_user_name == "" {
                 None
             } else {
                 Some(maybe_user_name)
             },
         );
+		self.driver = Some(driver);
 
-        let checked_out_branch_state = match DocumentId::from_str(&checked_out_branch_doc_id) {
+	}
+
+	fn start(&mut self) {
+		let project_doc_id: String = PatchworkConfig::singleton().bind().get_project_value(GString::from("project_doc_id"), "".to_variant()).to_string();
+        let checked_out_branch_doc_id = PatchworkConfig::singleton().bind().get_project_value(GString::from("checked_out_branch_doc_id"), "".to_variant()).to_string();
+		println!("rust: START {:?}", project_doc_id);
+        self.project_doc_id = match DocumentId::from_str(&project_doc_id) {
+            Ok(doc_id) => Some(doc_id),
+            Err(e) => None,
+        };
+
+        self.checked_out_branch_state = match DocumentId::from_str(&checked_out_branch_doc_id) {
             Ok(doc_id) => CheckedOutBranchState::CheckingOut(doc_id),
             Err(_) => CheckedOutBranchState::NothingCheckedOut,
         };
 
         println!(
             "initial checked out branch state: {:?}",
-            checked_out_branch_state
+            self.checked_out_branch_state
         );
 
-        Self {
+		self._start_driver();
+	}
+
+	fn _stop_driver(&mut self) {
+		if let Some(mut driver) = self.driver.take() {
+			driver.teardown();
+		}
+	}
+
+	fn stop(&mut self) {
+		self._stop_driver();
+		self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut;
+		self.sync_server_connection_info = None;
+		self.project_doc_id = None;
+		self.doc_handles.clear();
+		self.branch_states.clear();
+	}
+}
+
+
+// static singleton variable
+static mut GODOT_PROJECT: Option<GodotProject> = None;
+
+#[godot_api]
+impl INode for GodotProject {
+    fn init(_base: Base<Node>) -> Self {
+
+        let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
+        let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
+
+
+        let mut ret = Self {
             base: _base,
             sync_server_connection_info: None,
             doc_handles: HashMap::new(),
             branch_states: HashMap::new(),
-            checked_out_branch_state,
+            checked_out_branch_state : CheckedOutBranchState::NothingCheckedOut,
             project_doc_id: None,
-            driver,
+            driver: None,
             driver_input_tx,
-            driver_output_rx,
+            driver_output_rx
+        };
+		// process it a few times to get it to check out the branch
+		ret
+
+    }
+
+	fn enter_tree(&mut self) {
+		println!("** GodotProject: enter_tree");
+		self.start();
+        // Perform typical plugin operations here.
+    }
+
+    fn exit_tree(&mut self) {
+		println!("** GodotProject: exit_tree");
+		self.stop();
+        // Perform typical plugin operations here.
+    }
+
+    fn process(&mut self, _delta: f64) {
+        while let Ok(Some(event)) = self.driver_output_rx.try_next() {
+            match event {
+                OutputEvent::NewDocHandle {
+                    doc_handle,
+                    doc_handle_type,
+                } => {
+                    if doc_handle_type == DocHandleType::Binary {
+                        println!(
+                            "rust: NewBinaryDocHandle !!!! {} {} changes",
+                            doc_handle.document_id(),
+                            doc_handle.with_doc(|d| d.get_heads().len())
+                        );
+                    }
+
+                    self.doc_handles
+                        .insert(doc_handle.document_id(), doc_handle.clone());
+                }
+                OutputEvent::BranchStateChanged {
+                    branch_state,
+                    trigger_reload,
+                } => {
+                    self.branch_states
+                        .insert(branch_state.doc_handle.document_id(), branch_state.clone());
+
+                    let branches = self
+                        .get_branches()
+                        .iter_shared()
+                        .map(|branch| branch.to_variant())
+                        .collect::<Array<Variant>>()
+                        .to_variant();
+
+                    self.base_mut().emit_signal("branches_changed", &[branches]);
+
+                    let mut active_branch_state: Option<BranchState> = None;
+                    let mut checking_out_new_branch = false;
+
+                    match &self.checked_out_branch_state {
+                        CheckedOutBranchState::NothingCheckedOut => {
+                            // check out main branch if we haven't checked out anything yet
+                            if branch_state.is_main {
+                                checking_out_new_branch = true;
+
+                                self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(
+                                    branch_state.doc_handle.document_id(),
+                                );
+                                active_branch_state = Some(branch_state.clone());
+                            }
+                        }
+                        CheckedOutBranchState::CheckingOut(branch_doc_id) => {
+                            active_branch_state = self.branch_states.get(&branch_doc_id).cloned();
+                            checking_out_new_branch = true;
+                        }
+                        CheckedOutBranchState::CheckedOut(branch_doc_id) => {
+                            active_branch_state = self.branch_states.get(&branch_doc_id).cloned();
+                        }
+                    }
+
+                    // only trigger update if checked out branch is fully synced
+                    if let Some(active_branch_state) = active_branch_state {
+                        if active_branch_state.is_synced() {
+                            if checking_out_new_branch {
+                                println!(
+                                    "rust: TRIGGER checked out new branch: {}",
+                                    active_branch_state.name
+                                );
+
+                                self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(
+                                    active_branch_state.doc_handle.document_id(),
+                                );
+
+                                self.base_mut().emit_signal(
+                                    "checked_out_branch",
+                                    &[branch_state
+                                        .doc_handle
+                                        .document_id()
+                                        .to_string()
+                                        .to_variant()
+                                        .to_variant()],
+                                );
+                            } else {
+                                if trigger_reload {
+                                    println!("rust: TRIGGER files changed: {}", branch_state.name);
+                                    self.base_mut().emit_signal("files_changed", &[]);
+                                } else {
+                                    println!("rust: TRIGGER saved changes: {}", branch_state.name);
+                                    self.base_mut().emit_signal("saved_changes", &[]);
+                                }
+                            }
+                        }
+                    }
+                }
+                OutputEvent::Initialized { project_doc_id } => {
+                    self.project_doc_id = Some(project_doc_id);
+                }
+
+                OutputEvent::CompletedCreateBranch { branch_doc_id } => {
+                    self.checked_out_branch_state =
+                        CheckedOutBranchState::CheckingOut(branch_doc_id);
+                }
+
+                OutputEvent::CompletedShutdown => {
+                    println!("rust: CompletedShutdown event");
+                    self.base_mut().emit_signal("shutdown_completed", &[]);
+                }
+
+                OutputEvent::PeerConnectionInfoChanged {
+                    peer_connection_info,
+                } => {
+                    self.sync_server_connection_info = Some(peer_connection_info.clone());
+                    self.base_mut().emit_signal(
+                        "sync_server_connection_info_changed",
+                        &[peer_connection_info_to_dict(&peer_connection_info).to_variant()],
+                    );
+                }
+            }
         }
+    }
+}
+
+#[derive(GodotClass)]
+#[class(init, base=EditorPlugin, tool)]
+pub struct GodotProjectPlugin {
+    base: Base<EditorPlugin>
+}
+
+#[godot_api]
+impl IEditorPlugin for GodotProjectPlugin {
+    fn enter_tree(&mut self) {
+		println!("** GodotProjectPlugin: enter_tree");
+		let godot_project_singleton: Gd<GodotProject> = GodotProject::get_singleton();
+		self.base_mut().add_child(&godot_project_singleton);
+    }
+
+    fn exit_tree(&mut self) {
+		println!("** GodotProjectPlugin: exit_tree");
+        self.base_mut().remove_child(&GodotProject::get_singleton());
     }
 }
 
@@ -2024,6 +2027,9 @@ fn branch_state_to_dict(branch_state: &BranchState) -> Dictionary {
 
     branch
 }
+
+
+
 
 fn peer_connection_info_to_dict(peer_connection_info: &PeerConnectionInfo) -> Dictionary {
     let mut doc_sync_states = Dictionary::new();

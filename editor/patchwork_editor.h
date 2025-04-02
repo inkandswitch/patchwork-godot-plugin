@@ -20,6 +20,7 @@ class PatchworkEditor : public Node {
 private:
 	EditorNode *editor = nullptr;
 	static PatchworkEditor *singleton;
+	static void _editor_init_callback_static();
 
 protected:
 	void _notification(int p_what);
@@ -54,6 +55,12 @@ public:
 	static Ref<ResourceImporter> get_importer_by_name(const String &p_name);
 	static Ref<Resource> import_and_load_resource(const String &p_path);
 	static bool deep_equals(Variant a, Variant b, bool exclude_non_storage = true);
+
+	static bool is_editor_importing();
+	static void save_all_scenes_and_scripts();
+	static void save_all_scripts();
+	static PackedStringArray get_unsaved_scripts();
+	static void reload_scripts(bool b_refresh_only = false);
 };
 
 #endif // PATCHWORK_EDITOR_H

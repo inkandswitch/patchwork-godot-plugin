@@ -15,9 +15,10 @@ func _init(editor_plugin: EditorPlugin):
 		file_contents[path] = get_file(path)
 
 	# listen to file system
-	var file_system = editor_plugin.get_editor_interface().get_resource_filesystem()
-	connect_to_file_system()
+	var file_system: EditorFileSystem = editor_plugin.get_editor_interface().get_resource_filesystem()
 	
+	connect_to_file_system()
+
 func connect_to_file_system():
 	var file_system = editor_plugin.get_editor_interface().get_resource_filesystem()
 	file_system.connect("filesystem_changed", _on_filesystem_changed)
@@ -33,7 +34,7 @@ func ignore_changes(callback: Callable) -> void:
 	_ignore_changes = true
 	callback.call()
 	_ignore_changes = false
-	
+
 func stop():
 	var file_system = editor_plugin.get_editor_interface().get_resource_filesystem()
 
@@ -47,16 +48,16 @@ func check_has_file_changed(file_path: String, content: Variant) -> void:
 	if not editor_plugin._is_relevant_file(file_path):
 		return
 	var stored_content = file_contents.get(file_path)
-	
+
 	# Handle case where file is new
 	if stored_content == null:
 		file_contents[file_path] = content
 		file_changed.emit(file_path, content)
 		return
-		
+
 	# Compare contents based on type
 	var has_changed = _is_content_equal(content, stored_content)
-	
+
 	if has_changed:
 		file_contents[file_path] = content
 		file_changed.emit(file_path, content)
@@ -81,12 +82,12 @@ func list_all_files() -> Array[String]:
 func _scan_directory_for_files(dir: DirAccess, current_path: String, files: Array[String]) -> void:
 	dir.list_dir_begin()
 	var file_name = dir.get_next()
-	
+
 	while file_name != "":
 		if file_name == "." or file_name == "..":
 			file_name = dir.get_next()
 			continue
-			
+
 		var full_path = current_path.path_join(file_name)
 		if not editor_plugin._is_relevant_file(full_path):
 			file_name = dir.get_next()
@@ -97,7 +98,7 @@ func _scan_directory_for_files(dir: DirAccess, current_path: String, files: Arra
 				_scan_directory_for_files(sub_dir, full_path, files)
 		else:
 			files.append(full_path)
-			
+
 		file_name = dir.get_next()
 
 
@@ -141,7 +142,7 @@ func is_binary_string(bytes_to_check: PackedByteArray) -> bool:
 				# Check for NULL bytes last
 				return true
 		return false
-	
+
 func is_binary(file) -> bool:
 	# Read first chunk to detect if binary
 	var test_bytes = file.get_buffer(min(8000, file.get_length()))
@@ -199,11 +200,14 @@ func save_file(path: String, content: Variant) -> void:
 ## FILE SYSTEM CHANGED
 
 func _on_filesystem_changed():
+	# wait until the editor finishes importing resources
+	if PatchworkEditor.is_editor_importing():
+		return
 	_scan_for_changes()
 
 func _on_resources_reloaded(resources: Array):
 	for path in resources:
-			_check_file_changes(path)
+		_check_file_changes(path)
 
 func _scan_for_changes():
 	var dir = DirAccess.open("res://")
@@ -214,12 +218,12 @@ func _scan_directory(dir: DirAccess, current_path: String):
 	# Recursively scan directories for files
 	dir.list_dir_begin()
 	var file_name = dir.get_next()
-	
+
 	while file_name != "":
 			if file_name == "." or file_name == "..":
 					file_name = dir.get_next()
 					continue
-					
+
 			var full_path = current_path.path_join(file_name)
 			if not editor_plugin._is_relevant_file(full_path):
 				file_name = dir.get_next()
@@ -231,7 +235,7 @@ func _scan_directory(dir: DirAccess, current_path: String):
 							_scan_directory(sub_dir, full_path)
 			else:
 					_check_file_changes(full_path)
-					
+
 			file_name = dir.get_next()
 
 func _check_file_changes(file_path: String):

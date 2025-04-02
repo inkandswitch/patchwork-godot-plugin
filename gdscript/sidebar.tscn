@@ -1,18 +1,18 @@
 [gd_scene load_steps=14 format=3 uid="uid://cxyjgsyba1v85"]
 
-[ext_resource type="Script" path="res://addons/patchwork/gdscript/sidebar.gd" id="1_ebh36"]
+[ext_resource type="Script" uid="uid://bxgybx6gjahju" path="res://addons/patchwork/gdscript/sidebar.gd" id="1_ebh36"]
 [ext_resource type="Texture2D" uid="uid://4c2gr0ggkl2t" path="res://addons/patchwork/icons/circle-alert.svg" id="2_fxo71"]
 [ext_resource type="Texture2D" uid="uid://ymewwqpn0vi4" path="res://addons/patchwork/icons/GuiTabMenuHl.svg" id="2_rfxbe"]
 [ext_resource type="Texture2D" uid="uid://xec6o14n4y2v" path="res://addons/patchwork/icons/person.svg" id="3_m2w8q"]
 [ext_resource type="Theme" uid="uid://hr3cor4s2ov2" path="res://addons/patchwork/gdscript/diff_editor_theme.tres" id="4_7letu"]
-[ext_resource type="Script" path="res://addons/patchwork/gdscript/diff_inspector_container.gd" id="4_uttw7"]
+[ext_resource type="Script" uid="uid://d145i10hos3c6" path="res://addons/patchwork/gdscript/diff_inspector_container.gd" id="4_uttw7"]
 [ext_resource type="Texture2D" uid="uid://bu0h5oa7aoanu" path="res://addons/patchwork/icons/sign-add-svgrepo-com.svg" id="5_iqebc"]
 [ext_resource type="Texture2D" uid="uid://cy3bt4icrwm3w" path="res://addons/patchwork/icons/remove-svgrepo-com.svg" id="6_ha5pl"]
 [ext_resource type="Texture2D" uid="uid://mr0rb0dbfyws" path="res://addons/patchwork/icons/edit-two-svgrepo-com.svg" id="7_o8jin"]
 [ext_resource type="Texture2D" uid="uid://b3jhx5bvcdswo" path="res://addons/patchwork/icons/warning-circle.svg" id="9_p7w5p"]
 [ext_resource type="Texture2D" uid="uid://4obywo8ddx25" path="res://addons/patchwork/icons/arrow.svg" id="9_xrl6o"]
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_i54cd"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ftank"]
 content_margin_left = 4.0
 content_margin_top = 4.0
 content_margin_right = 4.0
@@ -147,18 +147,17 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="BigDiffer" type="ScrollContainer" parent="VBoxContainer/TabContainer/Diff/VBoxContainer/MainDiffContainer"]
+[node name="BigDiffer" type="DiffInspector" parent="VBoxContainer/TabContainer/Diff/VBoxContainer/MainDiffContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 theme = ExtResource("4_7letu")
-theme_override_styles/panel = SubResource("StyleBoxFlat_i54cd")
-follow_focus = true
+theme_override_styles/panel = SubResource("StyleBoxFlat_ftank")
 script = ExtResource("4_uttw7")
 added_icon = ExtResource("5_iqebc")
 removed_icon = ExtResource("6_ha5pl")
 modified_icon = ExtResource("7_o8jin")
-modified_color = Color(0.933333, 0.643137, 0.352941, 1)
+metadata/_custom_type_script = "uid://d145i10hos3c6"
 
 [node name="DifferMainVBox" type="VBoxContainer" parent="VBoxContainer/TabContainer/Diff/VBoxContainer/MainDiffContainer/BigDiffer"]
 unique_name_in_owner = true

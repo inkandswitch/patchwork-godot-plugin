@@ -1,7 +1,7 @@
 use std::env;
 use std::fs;
 use std::path::Path;
-
+mod post_build;
 
 fn write_build_info(){
     let out_dir: String = env::var("OUT_DIR").unwrap();

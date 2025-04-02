@@ -1,6 +1,6 @@
 @tool
 class_name DiffInspectorContainer
-extends ScrollContainer
+extends DiffInspector
 
 @export var added_icon: Texture2D
 @export var removed_icon: Texture2D
@@ -74,7 +74,7 @@ func _on_button_pressed() -> void:
 func update_property_editor(editor_property) -> void:
 	editor_property.set_read_only(true)
 	editor_property.update_property()
-	editor_property.update_editor_property_status()
+	editor_property._update_editor_property_status()
 	editor_property.update_cache()
 
 func getDeletedNodes() -> Array:
@@ -116,6 +116,8 @@ func add_color_marker(change_type: String, panel_container: PanelContainer) -> v
 	margin_container.add_child(color_rect)
 	panel_container.add_child(margin_container)
 	var update_color_rect = func():
+		if !is_instance_valid(color_rect):
+			return
 		color_rect.color = get_color_for_change_type(change_type)
 		color_rect.theme_changed.emit()
 		panel_container.queue_redraw()
@@ -144,7 +146,7 @@ func get_prop_editor(fake_object: MissingResource, prop_name: String, prop_value
 	print("!!! fake_object prop value: ", fake_object.get(prop_name))
 	if prop_label == null:
 		prop_label = snake_case_to_human_readable(prop_name)
-	var editor_property: DiffInspectorProperty = DiffInspector.instantiate_property_editor(fake_object, prop_name, false)
+	var editor_property: DiffInspectorProperty = DiffInspector.instance_property_diff(fake_object, prop_name, false)
 	editor_property.set_object_and_property(fake_object, prop_name)
 	update_property_editor(editor_property)
 	var panel_container: PanelContainer = PanelContainer.new()
@@ -392,6 +394,10 @@ func add_diff(diff: Dictionary) -> void:
 
 	
 func reset() -> void:
+	# disconnect from theme changed signal
+	var all_signal_connections = self.theme_changed.get_connections()
+	for connection in all_signal_connections:
+		self.theme_changed.disconnect(connection.callable)
 	for section in sections:
 		section.queue_free()
 	sections.clear()
