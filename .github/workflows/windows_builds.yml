@@ -19,6 +19,12 @@ jobs:
         with:
           arch: ${{ matrix.arch }}
           # features: ${{ matrix.features.feature }},${{ matrix.precision }}-${{ matrix.dimensions.feature }}
+      - name: Restore Cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/target
+          key: ${{ runner.arch }}-patchwork_rust_plugin_windows-${{ github.ref }}-${{ github.sha }}
+
       - name: Copy to bin
         shell: sh
         run: |
@@ -26,6 +32,12 @@ jobs:
           mkdir -p rust/plugin/windows
           mv target/release/patchwork_rust_core.dll rust/plugin/windows/patchwork_rust_core.windows.${{ matrix.arch }}.dll
           mv target/release/patchwork_rust_core.lib rust/plugin/windows/patchwork_rust_core.windows.${{ matrix.arch }}.lib
+      - name: Save Cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/target
+          key: ${{ runner.arch }}-patchwork_rust_plugin_windows-${{ github.ref }}-${{ github.sha }}
+
       - name: Upload
         uses: actions/upload-artifact@v4
         with:

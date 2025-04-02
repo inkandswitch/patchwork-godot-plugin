@@ -27,6 +27,13 @@ jobs:
           sudo apt-get install gcc-multilib g++-multilib libc6-dev-i386
           # Arm64 and arm32
           sudo apt install gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf
+
+      - name: Restore Cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/target
+          key: ${{ runner.arch }}-patchwork_rust_plugin_linux-${{ github.ref }}-${{ github.sha }}
+
       - name: Build
         uses: ./.github/actions/build-plugin
         with:
@@ -38,6 +45,11 @@ jobs:
           mkdir -p rust/plugin/linux
           mv target/release/libpatchwork_rust_core.so rust/plugin/linux/libpatchwork_rust_core.linux.${{ matrix.arch }}.so
           mv target/release/libpatchwork_rust_core.a rust/plugin/linux/libpatchwork_rust_core.linux.${{ matrix.arch }}.a
+      - name: Save Cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/target
+          key: ${{ runner.arch }}-patchwork_rust_plugin_linux-${{ github.ref }}-${{ github.sha }}
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
@@ -52,4 +64,4 @@ jobs:
           path: |
             rust/plugin/linux/*.a
           if-no-files-found: error
-    
+
