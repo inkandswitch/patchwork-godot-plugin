@@ -254,6 +254,9 @@ func ensure_user_has_no_unsaved_files(message: String, callback: Callable):
 
 func checkout_branch(branch_id: String) -> void:
 	var branch = GodotProject.get_branch_by_id(branch_id)
+	if (!branch):
+		popup_box(self, $ErrorDialog, "Branch not found", "Error")
+		return
 
 	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before checking out another branch.", func():
 		task_modal.do_task(
