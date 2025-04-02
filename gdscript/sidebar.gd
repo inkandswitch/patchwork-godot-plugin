@@ -4,7 +4,6 @@ extends MarginContainer
 # Godot 3.x: something.connect("signal_name", self, "_on_signal_name")
 # Godot 4.x: something.connect("signal_name", self._on_signal_name)
 
-var godot_project: GodotProject
 const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_inspector_container.gd")
 @onready var branch_picker: OptionButton = %BranchPicker
 @onready var menu_button: MenuButton = %MenuButton
@@ -38,9 +37,8 @@ var highlight_changes = false
 const CREATE_BRANCH_IDX = 1
 const MERGE_BRANCH_IDX = 2
 
-func init(plugin: EditorPlugin, godot_project: GodotProject, config: PatchworkConfig) -> void:
+func init(plugin: EditorPlugin, config: PatchworkConfig) -> void:
 	print("Sidebar initialized!")
-	self.godot_project = godot_project
 	self.plugin = plugin
 	self.config = config
 
@@ -82,12 +80,12 @@ func _ready() -> void:
 		plugin.connect("resource_saved", self._on_resource_saved)
 		plugin.connect("scene_saved", self._on_scene_saved)
 
-	if godot_project:
-		godot_project.connect("branches_changed", self._update_ui_on_branches_changed);
-		godot_project.connect("saved_changes", self._update_ui_on_files_changed);
-		godot_project.connect("files_changed", self._update_ui_on_files_changed);
-		godot_project.connect("checked_out_branch", self._update_ui_on_branch_checked_out);
-		godot_project.connect("sync_server_connection_info_changed", _on_sync_server_connection_info_changed)
+	if GodotProject.get_singleton():
+		GodotProject.connect("branches_changed", self._update_ui_on_branches_changed);
+		GodotProject.connect("saved_changes", self._update_ui_on_files_changed);
+		GodotProject.connect("files_changed", self._update_ui_on_files_changed);
+		GodotProject.connect("checked_out_branch", self._update_ui_on_branch_checked_out);
+		GodotProject.connect("sync_server_connection_info_changed", _on_sync_server_connection_info_changed)
 
 	var popup = menu_button.get_popup()
 	popup.id_pressed.connect(_on_menu_button_id_pressed)
@@ -106,14 +104,12 @@ func _on_sync_server_connection_info_changed(_peer_connection_info: Dictionary) 
 	update_sync_status()
 
 func update_sync_status() -> void:
-	if !godot_project:
-		return
 
-	var checked_out_branch = godot_project.get_checked_out_branch()
+	var checked_out_branch = GodotProject.get_checked_out_branch()
 	if !checked_out_branch:
 		return
 
-	var peer_connection_info = godot_project.get_sync_server_connection_info()
+	var peer_connection_info = GodotProject.get_sync_server_connection_info()
 	print("update sync status", peer_connection_info)
 	if !peer_connection_info:
 		printerr("no peer connection info")
@@ -166,7 +162,7 @@ func _on_user_button_pressed():
 
 			print(new_user_name)
 			config.set_user_value("user_name", new_user_name)
-			godot_project.set_user_name(new_user_name)
+			GodotProject.set_user_name(new_user_name)
 
 		update_ui()
 		dialog.queue_free()
@@ -257,16 +253,16 @@ func ensure_user_has_no_unsaved_files(message: String, callback: Callable):
 		callback.call()
 
 func checkout_branch(branch_id: String) -> void:
-	var branch = godot_project.get_branch_by_id(branch_id)
+	var branch = GodotProject.get_branch_by_id(branch_id)
 
 	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before checking out another branch.", func():
 		task_modal.do_task(
 			"Checking out branch \"%s\"" % [branch.name],
 			func():
-				godot_project.checkout_branch(branch_id)
+				GodotProject.checkout_branch(branch_id)
 
-				if godot_project.get_checked_out_branch().id != branch_id:
-					await godot_project.checked_out_branch
+				if GodotProject.get_checked_out_branch().id != branch_id:
+					await GodotProject.checked_out_branch
 		)
 	)
 
@@ -305,9 +301,9 @@ func create_new_branch() -> void:
 			dialog.queue_free()
 
 			task_modal.do_task("Creating new branch \"%s\"" % [new_branch_name], func():
-				godot_project.create_branch(new_branch_name)
+				GodotProject.create_branch(new_branch_name)
 
-				await godot_project.checked_out_branch
+				await GodotProject.checked_out_branch
 			)
 		)
 
@@ -330,52 +326,50 @@ func move_inspector_to_main() -> void:
 		inspector.visible = true
 
 func create_merge_preview_branch():
-	var checked_out_branch = godot_project.get_checked_out_branch()
+	var checked_out_branch = GodotProject.get_checked_out_branch()
 	if checked_out_branch.is_main:
 		popup_box(self, $ErrorDialog, "Can't merge the main branch!", "Error")
 		return
 
 	var source_branch_doc_id = checked_out_branch.id
-	var target_branch_doc_id = godot_project.get_main_branch().id
+	var target_branch_doc_id = GodotProject.get_main_branch().id
 
 	task_modal.do_task("Creating merge preview", func():
-		godot_project.create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id)
+		GodotProject.create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id)
 
-		await godot_project.checked_out_branch
+		await GodotProject.checked_out_branch
 	)
 
 func cancel_merge_preview():
 	task_modal.do_task("Cancel merge preview", func():
-		var checked_out_branch = godot_project.get_checked_out_branch()
+		var checked_out_branch = GodotProject.get_checked_out_branch()
 
-		godot_project.delete_branch(checked_out_branch.id)
-		godot_project.checkout_branch(checked_out_branch.forked_from)
+		GodotProject.delete_branch(checked_out_branch.id)
+		GodotProject.checkout_branch(checked_out_branch.forked_from)
 	)
 
 
 func confirm_merge_preview():
-	var checked_out_branch = godot_project.get_checked_out_branch()
+	var checked_out_branch = GodotProject.get_checked_out_branch()
 
 	var source_branch_doc_id = checked_out_branch.id
 	var target_branch_doc_id = checked_out_branch.merge_into
 
-	var original_source_branch = godot_project.get_branch_by_id(checked_out_branch.forked_from)
-	var target_branch = godot_project.get_branch_by_id(checked_out_branch.merge_into)
+	var original_source_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from)
+	var target_branch = GodotProject.get_branch_by_id(checked_out_branch.merge_into)
 
 	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before merging.", func():
 		popup_box(self, $ConfirmationDialog, "Are you sure you want to merge \"%s\" into \"%s\" ?" % [original_source_branch.name, target_branch.name], "Merge Branch", func():
 			task_modal.do_task("Merging \"%s\" into \"%s\"" % [original_source_branch.name, target_branch.name], func():
-				godot_project.merge_branch(source_branch_doc_id, target_branch_doc_id)
+				GodotProject.merge_branch(source_branch_doc_id, target_branch_doc_id)
 			)
 		)
 	)
 
 func update_ui() -> void:
-	if !godot_project:
-		return
 
-	var checked_out_branch = godot_project.get_checked_out_branch()
-	self.branches = godot_project.get_branches()
+	var checked_out_branch = GodotProject.get_checked_out_branch()
+	self.branches = GodotProject.get_branches()
 
 	# update branch pickers
 
@@ -413,7 +407,7 @@ func update_ui() -> void:
 
 	# update history
 
-	var history = godot_project.get_changes()
+	var history = GodotProject.get_changes()
 	history_list.clear()
 
 	for change in history:
@@ -448,8 +442,8 @@ func update_ui() -> void:
 	if checked_out_branch.is_merge_preview:
 		move_inspector_to_merge_preview()
 
-		var source_branch = godot_project.get_branch_by_id(checked_out_branch.forked_from)
-		var target_branch = godot_project.get_branch_by_id(checked_out_branch.merge_into)
+		var source_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from)
+		var target_branch = GodotProject.get_branch_by_id(checked_out_branch.merge_into)
 
 		if checked_out_branch.merge_at != checked_out_branch.forked_at:
 			merge_preview_message_label.text = "Be carful to review your changes and make sure the game is still working correctly before merging. \nThere have been changes to \"" + target_branch.name + "\" since \"" + source_branch.name + "\" was created."
@@ -528,14 +522,14 @@ var prev_heads_before
 var prev_heads_after
 var last_diff: Dictionary = {}
 func update_properties_diff(heads_before, heads_after) -> Dictionary:
-	var checked_out_branch = godot_project.get_checked_out_branch()
+	var checked_out_branch = GodotProject.get_checked_out_branch()
 
 	if (!inspector):
 		return last_diff
 	if (!checked_out_branch):
 		return last_diff
 
-	var change: Array[Dictionary] = godot_project.get_changes()
+	var change: Array[Dictionary] = GodotProject.get_changes()
 	if (change.size() < 2):
 		return last_diff
 
@@ -552,7 +546,7 @@ func show_diff(heads_before, heads_after):
 	# TODO: handle dependencies of these files
 	# print("heads_before: ", heads_before)
 	# print("heads_after: ", heads_after)
-	var diff = godot_project.get_all_changes_between(PackedStringArray(heads_before), PackedStringArray(heads_after))
+	var diff = GodotProject.get_all_changes_between(PackedStringArray(heads_before), PackedStringArray(heads_after))
 	inspector.reset()
 	inspector.add_diff(diff)
 	print("Length: ", diff.size())

@@ -731,6 +731,24 @@ void PatchworkEditor::reload_scripts(bool p_refresh_only) {
 	EditorInterface::get_singleton()->get_script_editor()->reload_scripts(p_refresh_only);
 }
 
+// GDExt doesn't support EditorNode in the bindings for some reason.
+Node *PatchworkEditor::get_editor_node() {
+	return EditorNode::get_singleton();
+}
+
+void PatchworkEditor::_editor_init_callback_static() {
+	for (auto &callback : editor_init_callbacks) {
+		callback.call();
+	}
+	editor_init_callbacks.clear();
+}
+
+void PatchworkEditor::add_editor_init_callback(const Callable &p_callable) {
+	editor_init_callbacks.push_back(p_callable);
+	EditorNode::add_init_callback(_editor_init_callback_static);
+}
+
+Vector<Callable> PatchworkEditor::editor_init_callbacks;
 PatchworkEditor *PatchworkEditor::singleton = nullptr;
 
 PatchworkEditor::PatchworkEditor(EditorNode *p_editor) {
@@ -769,4 +787,6 @@ void PatchworkEditor::_bind_methods() {
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("save_all_scripts"), &PatchworkEditor::save_all_scripts);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_unsaved_scripts"), &PatchworkEditor::get_unsaved_scripts);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("reload_scripts", "refresh_only"), &PatchworkEditor::reload_scripts);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_editor_node"), &PatchworkEditor::get_editor_node);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("add_editor_init_callback", "callable"), &PatchworkEditor::add_editor_init_callback);
 }

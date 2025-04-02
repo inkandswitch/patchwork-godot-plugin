@@ -21,7 +21,7 @@ use automerge::{
 };
 use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
-use godot::classes::ClassDb;
+use godot::classes::{ClassDb, Engine};
 use godot::classes::EditorFileSystem;
 use godot::classes::EditorInterface;
 use godot::classes::Image;
@@ -368,6 +368,11 @@ impl GodotProject {
 
         // try to read file as scene
     }
+
+	#[func]
+	fn get_singleton() -> Gd<Self> {
+		Engine::singleton().get_singleton(&StringName::from("GodotProject")).unwrap().cast::<Self>()
+	}
 
     #[func]
     fn get_changed_files(&self, heads: PackedStringArray) -> PackedStringArray {
@@ -805,125 +810,125 @@ impl GodotProject {
     }
 
     // needs to be called every frame to process the internal events
-    #[func]
-    fn process(&mut self, _delta: f64) {
-        while let Ok(Some(event)) = self.driver_output_rx.try_next() {
-            match event {
-                OutputEvent::NewDocHandle {
-                    doc_handle,
-                    doc_handle_type,
-                } => {
-                    if doc_handle_type == DocHandleType::Binary {
-                        println!(
-                            "rust: NewBinaryDocHandle !!!! {} {} changes",
-                            doc_handle.document_id(),
-                            doc_handle.with_doc(|d| d.get_heads().len())
-                        );
-                    }
+    // #[func]
+    // fn process(&mut self, _delta: f64) {
+    //     while let Ok(Some(event)) = self.driver_output_rx.try_next() {
+    //         match event {
+    //             OutputEvent::NewDocHandle {
+    //                 doc_handle,
+    //                 doc_handle_type,
+    //             } => {
+    //                 if doc_handle_type == DocHandleType::Binary {
+    //                     println!(
+    //                         "rust: NewBinaryDocHandle !!!! {} {} changes",
+    //                         doc_handle.document_id(),
+    //                         doc_handle.with_doc(|d| d.get_heads().len())
+    //                     );
+    //                 }
 
-                    self.doc_handles
-                        .insert(doc_handle.document_id(), doc_handle.clone());
-                }
-                OutputEvent::BranchStateChanged {
-                    branch_state,
-                    trigger_reload,
-                } => {
-                    self.branch_states
-                        .insert(branch_state.doc_handle.document_id(), branch_state.clone());
+    //                 self.doc_handles
+    //                     .insert(doc_handle.document_id(), doc_handle.clone());
+    //             }
+    //             OutputEvent::BranchStateChanged {
+    //                 branch_state,
+    //                 trigger_reload,
+    //             } => {
+    //                 self.branch_states
+    //                     .insert(branch_state.doc_handle.document_id(), branch_state.clone());
 
-                    let branches = self
-                        .get_branches()
-                        .iter_shared()
-                        .map(|branch| branch.to_variant())
-                        .collect::<Array<Variant>>()
-                        .to_variant();
+    //                 let branches = self
+    //                     .get_branches()
+    //                     .iter_shared()
+    //                     .map(|branch| branch.to_variant())
+    //                     .collect::<Array<Variant>>()
+    //                     .to_variant();
 
-                    self.base_mut().emit_signal("branches_changed", &[branches]);
+    //                 self.base_mut().emit_signal("branches_changed", &[branches]);
 
-                    let mut active_branch_state: Option<BranchState> = None;
-                    let mut checking_out_new_branch = false;
+    //                 let mut active_branch_state: Option<BranchState> = None;
+    //                 let mut checking_out_new_branch = false;
 
-                    match &self.checked_out_branch_state {
-                        CheckedOutBranchState::NothingCheckedOut => {
-                            // check out main branch if we haven't checked out anything yet
-                            if branch_state.is_main {
-                                checking_out_new_branch = true;
+    //                 match &self.checked_out_branch_state {
+    //                     CheckedOutBranchState::NothingCheckedOut => {
+    //                         // check out main branch if we haven't checked out anything yet
+    //                         if branch_state.is_main {
+    //                             checking_out_new_branch = true;
 
-                                self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(
-                                    branch_state.doc_handle.document_id(),
-                                );
-                                active_branch_state = Some(branch_state.clone());
-                            }
-                        }
-                        CheckedOutBranchState::CheckingOut(branch_doc_id) => {
-                            active_branch_state = self.branch_states.get(&branch_doc_id).cloned();
-                            checking_out_new_branch = true;
-                        }
-                        CheckedOutBranchState::CheckedOut(branch_doc_id) => {
-                            active_branch_state = self.branch_states.get(&branch_doc_id).cloned();
-                        }
-                    }
+    //                             self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(
+    //                                 branch_state.doc_handle.document_id(),
+    //                             );
+    //                             active_branch_state = Some(branch_state.clone());
+    //                         }
+    //                     }
+    //                     CheckedOutBranchState::CheckingOut(branch_doc_id) => {
+    //                         active_branch_state = self.branch_states.get(&branch_doc_id).cloned();
+    //                         checking_out_new_branch = true;
+    //                     }
+    //                     CheckedOutBranchState::CheckedOut(branch_doc_id) => {
+    //                         active_branch_state = self.branch_states.get(&branch_doc_id).cloned();
+    //                     }
+    //                 }
 
-                    // only trigger update if checked out branch is fully synced
-                    if let Some(active_branch_state) = active_branch_state {
-                        if active_branch_state.is_synced() {
-                            if checking_out_new_branch {
-                                println!(
-                                    "rust: TRIGGER checked out new branch: {}",
-                                    active_branch_state.name
-                                );
+    //                 // only trigger update if checked out branch is fully synced
+    //                 if let Some(active_branch_state) = active_branch_state {
+    //                     if active_branch_state.is_synced() {
+    //                         if checking_out_new_branch {
+    //                             println!(
+    //                                 "rust: TRIGGER checked out new branch: {}",
+    //                                 active_branch_state.name
+    //                             );
 
-                                self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(
-                                    active_branch_state.doc_handle.document_id(),
-                                );
+    //                             self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(
+    //                                 active_branch_state.doc_handle.document_id(),
+    //                             );
 
-                                self.base_mut().emit_signal(
-                                    "checked_out_branch",
-                                    &[branch_state
-                                        .doc_handle
-                                        .document_id()
-                                        .to_string()
-                                        .to_variant()
-                                        .to_variant()],
-                                );
-                            } else {
-                                if trigger_reload {
-                                    println!("rust: TRIGGER files changed: {}", branch_state.name);
-                                    self.base_mut().emit_signal("files_changed", &[]);
-                                } else {
-                                    println!("rust: TRIGGER saved changes: {}", branch_state.name);
-                                    self.base_mut().emit_signal("saved_changes", &[]);
-                                }
-                            }
-                        }
-                    }
-                }
-                OutputEvent::Initialized { project_doc_id } => {
-                    self.project_doc_id = Some(project_doc_id);
-                }
+    //                             self.base_mut().emit_signal(
+    //                                 "checked_out_branch",
+    //                                 &[branch_state
+    //                                     .doc_handle
+    //                                     .document_id()
+    //                                     .to_string()
+    //                                     .to_variant()
+    //                                     .to_variant()],
+    //                             );
+    //                         } else {
+    //                             if trigger_reload {
+    //                                 println!("rust: TRIGGER files changed: {}", branch_state.name);
+    //                                 self.base_mut().emit_signal("files_changed", &[]);
+    //                             } else {
+    //                                 println!("rust: TRIGGER saved changes: {}", branch_state.name);
+    //                                 self.base_mut().emit_signal("saved_changes", &[]);
+    //                             }
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //             OutputEvent::Initialized { project_doc_id } => {
+    //                 self.project_doc_id = Some(project_doc_id);
+    //             }
 
-                OutputEvent::CompletedCreateBranch { branch_doc_id } => {
-                    self.checked_out_branch_state =
-                        CheckedOutBranchState::CheckingOut(branch_doc_id);
-                }
+    //             OutputEvent::CompletedCreateBranch { branch_doc_id } => {
+    //                 self.checked_out_branch_state =
+    //                     CheckedOutBranchState::CheckingOut(branch_doc_id);
+    //             }
 
-                OutputEvent::CompletedShutdown => {
-                    println!("rust: CompletedShutdown event");
-                    self.base_mut().emit_signal("shutdown_completed", &[]);
-                }
+    //             OutputEvent::CompletedShutdown => {
+    //                 println!("rust: CompletedShutdown event");
+    //                 self.base_mut().emit_signal("shutdown_completed", &[]);
+    //             }
 
-                OutputEvent::PeerConnectionInfoChanged {
-                    peer_connection_info,
-                } => {
-                    self.sync_server_connection_info = Some(peer_connection_info.clone());
-                    self.base_mut().emit_signal(
-                        "sync_server_connection_info_changed",
-                        &[peer_connection_info_to_dict(&peer_connection_info).to_variant()],
-                    );
-                }
-            }
-        }
-    }
+    //             OutputEvent::PeerConnectionInfoChanged {
+    //                 peer_connection_info,
+    //             } => {
+    //                 self.sync_server_connection_info = Some(peer_connection_info.clone());
+    //                 self.base_mut().emit_signal(
+    //                     "sync_server_connection_info_changed",
+    //                     &[peer_connection_info_to_dict(&peer_connection_info).to_variant()],
+    //                 );
+    //             }
+    //         }
+    //     }
+    // }
 
     fn get_checked_out_branch_state(&self) -> Option<BranchState> {
         match &self.checked_out_branch_state {
@@ -1897,6 +1902,10 @@ impl GodotProject {
     }
 }
 
+
+// static singleton variable
+static mut GODOT_PROJECT: Option<GodotProject> = None;
+
 #[godot_api]
 impl INode for GodotProject {
     fn init(_base: Base<Node>) -> Self {
@@ -1915,7 +1924,7 @@ impl INode for GodotProject {
         let maybe_user_name = user_config_file
             .get_value("patchwork", "user_name")
             .to_string();
-        println!("rust: INIT !!!! {:?}", storage_folder_path);
+        println!("rust: INIT singleton!!!! {:?}", storage_folder_path);
 
         let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
         let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
@@ -1964,6 +1973,126 @@ impl INode for GodotProject {
 		ret.process(0.0);
 		ret.process(0.0);
 		ret
+
+    }
+
+    fn process(&mut self, _delta: f64) {
+        while let Ok(Some(event)) = self.driver_output_rx.try_next() {
+            match event {
+                OutputEvent::NewDocHandle {
+                    doc_handle,
+                    doc_handle_type,
+                } => {
+                    if doc_handle_type == DocHandleType::Binary {
+                        println!(
+                            "rust: NewBinaryDocHandle !!!! {} {} changes",
+                            doc_handle.document_id(),
+                            doc_handle.with_doc(|d| d.get_heads().len())
+                        );
+                    }
+
+                    self.doc_handles
+                        .insert(doc_handle.document_id(), doc_handle.clone());
+                }
+                OutputEvent::BranchStateChanged {
+                    branch_state,
+                    trigger_reload,
+                } => {
+                    self.branch_states
+                        .insert(branch_state.doc_handle.document_id(), branch_state.clone());
+
+                    let branches = self
+                        .get_branches()
+                        .iter_shared()
+                        .map(|branch| branch.to_variant())
+                        .collect::<Array<Variant>>()
+                        .to_variant();
+
+                    self.base_mut().emit_signal("branches_changed", &[branches]);
+
+                    let mut active_branch_state: Option<BranchState> = None;
+                    let mut checking_out_new_branch = false;
+
+                    match &self.checked_out_branch_state {
+                        CheckedOutBranchState::NothingCheckedOut => {
+                            // check out main branch if we haven't checked out anything yet
+                            if branch_state.is_main {
+                                checking_out_new_branch = true;
+
+                                self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(
+                                    branch_state.doc_handle.document_id(),
+                                );
+                                active_branch_state = Some(branch_state.clone());
+                            }
+                        }
+                        CheckedOutBranchState::CheckingOut(branch_doc_id) => {
+                            active_branch_state = self.branch_states.get(&branch_doc_id).cloned();
+                            checking_out_new_branch = true;
+                        }
+                        CheckedOutBranchState::CheckedOut(branch_doc_id) => {
+                            active_branch_state = self.branch_states.get(&branch_doc_id).cloned();
+                        }
+                    }
+
+                    // only trigger update if checked out branch is fully synced
+                    if let Some(active_branch_state) = active_branch_state {
+                        if active_branch_state.is_synced() {
+                            if checking_out_new_branch {
+                                println!(
+                                    "rust: TRIGGER checked out new branch: {}",
+                                    active_branch_state.name
+                                );
+
+                                self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(
+                                    active_branch_state.doc_handle.document_id(),
+                                );
+
+                                self.base_mut().emit_signal(
+                                    "checked_out_branch",
+                                    &[branch_state
+                                        .doc_handle
+                                        .document_id()
+                                        .to_string()
+                                        .to_variant()
+                                        .to_variant()],
+                                );
+                            } else {
+                                if trigger_reload {
+                                    println!("rust: TRIGGER files changed: {}", branch_state.name);
+                                    self.base_mut().emit_signal("files_changed", &[]);
+                                } else {
+                                    println!("rust: TRIGGER saved changes: {}", branch_state.name);
+                                    self.base_mut().emit_signal("saved_changes", &[]);
+                                }
+                            }
+                        }
+                    }
+                }
+                OutputEvent::Initialized { project_doc_id } => {
+                    self.project_doc_id = Some(project_doc_id);
+                }
+
+                OutputEvent::CompletedCreateBranch { branch_doc_id } => {
+                    self.checked_out_branch_state =
+                        CheckedOutBranchState::CheckingOut(branch_doc_id);
+                }
+
+                OutputEvent::CompletedShutdown => {
+                    println!("rust: CompletedShutdown event");
+                    self.base_mut().emit_signal("shutdown_completed", &[]);
+                }
+
+                OutputEvent::PeerConnectionInfoChanged {
+                    peer_connection_info,
+                } => {
+                    self.sync_server_connection_info = Some(peer_connection_info.clone());
+                    self.base_mut().emit_signal(
+                        "sync_server_connection_info_changed",
+                        &[peer_connection_info_to_dict(&peer_connection_info).to_variant()],
+                    );
+                }
+            }
+        }
     }
 }
 

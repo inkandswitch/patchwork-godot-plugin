@@ -1,7 +1,6 @@
 @tool
 extends EditorPlugin
 
-var godot_project # : GodotProject
 var config: PatchworkConfig
 var file_system: FileSystem
 var sidebar
@@ -19,9 +18,7 @@ func add_new_uid(path: String, uid: String):
 		ResourceUID.set_id(id, path)
 
 func _process(_delta: float) -> void:
-	if godot_project:
-		godot_project.process(_delta)
-
+	pass
 
 func _enter_tree() -> void:
 	# need to add task_modal as a child to the plugin otherwise process won't be called
@@ -36,7 +33,7 @@ func _enter_tree() -> void:
 
 	task_modal.end_task("Loading Patchwork")
 
-	print("checked out branch: ", godot_project.get_checked_out_branch())
+	print("checked out branch: ", GodotProject.get_checked_out_branch())
 
 	# listen for file changes once we have initialized the godot project
 	file_system.connect("file_changed", _on_local_file_changed)
@@ -45,7 +42,7 @@ func _enter_tree() -> void:
 	sidebar = preload("res://addons/patchwork/gdscript/sidebar.tscn").instantiate()
 	print("sidebar instantiated ", sidebar)
 
-	sidebar.init(self, godot_project, config)
+	sidebar.init(self, config)
 	add_control_to_dock(DOCK_SLOT_RIGHT_UL, sidebar)
 
 
@@ -57,31 +54,26 @@ func init_godot_project():
 	var checked_out_branch_doc_id = config.get_project_value("checked_out_branch_doc_id", "")
 	var user_name = config.get_user_value("user_name", "")
 
-	godot_project = GodotProject.create(storage_folder_path, project_doc_id, checked_out_branch_doc_id, user_name)
-
-	if godot_project == null:
-		print("Failed to create GodotProject instance.")
-		return
-
-
 	print("wait for checked out branch")
+	var checked_out_branch = GodotProject.get_checked_out_branch()
+	if checked_out_branch == null:
+		print("checked out branch is null, waiting for signal...")
+		await GodotProject.checked_out_branch
 
-	await godot_project.checked_out_branch
-
-	config.set_project_value("checked_out_branch_doc_id", godot_project.get_checked_out_branch().id)
+	config.set_project_value("checked_out_branch_doc_id", GodotProject.get_checked_out_branch().id)
 
 	print("*** Patchwork Godot Project initialized! ***")
 	if !project_doc_id:
-		config.set_project_value("project_doc_id", godot_project.get_project_doc_id())
+		config.set_project_value("project_doc_id", GodotProject.get_project_doc_id())
 		sync_godot_to_patchwork()
 	else:
 		sync_patchwork_to_godot()
 
-	godot_project.connect("files_changed", func():
+	GodotProject.connect("files_changed", func():
 		print("files changed!!!!")
 		sync_patchwork_to_godot()
 	)
-	godot_project.checked_out_branch.connect(_on_checked_out_branch)
+	GodotProject.checked_out_branch.connect(_on_checked_out_branch)
 	print("end init_godot_project()")
 
 func sync_godot_to_patchwork():
@@ -96,9 +88,9 @@ func sync_godot_to_patchwork():
 
 	print("saved ", files_to_save.size(), " file(s) to patchwork")
 
-	godot_project.save_files(files_to_save)
+	GodotProject.save_files(files_to_save)
 
-	last_synced_heads = godot_project.get_heads()
+	last_synced_heads = GodotProject.get_heads()
 
 func sync_patchwork_to_godot():
 	var start_time = Time.get_ticks_msec()
@@ -107,7 +99,7 @@ func sync_patchwork_to_godot():
 		print("unsaved files open, not syncing")
 		return
 
-	var files_in_patchwork = godot_project.get_files()
+	var files_in_patchwork = GodotProject.get_files()
 
 	var files_to_reimport = {}
 	var scenes_to_reload = []
@@ -209,17 +201,17 @@ func _on_local_file_changed(path: String, content: Variant):
 		# so we need to fix that first
 		print("saving file: ", path)
 
-		godot_project.save_file(path, content)
-		last_synced_heads = godot_project.get_heads()
+		GodotProject.save_file(path, content)
+		last_synced_heads = GodotProject.get_heads()
 
 func _exit_tree() -> void:
 	print("exit patchwork!!!")
 	if sidebar:
 		remove_control_from_docks(sidebar)
 
-	if is_instance_valid(godot_project):
-		pass
-		# godot_project.shutdown();
+	# if is_instance_valid(GodotProject):
+	# 	pass
+		# GodotProject.shutdown();
 
 	if file_system:
 		file_system.stop()
