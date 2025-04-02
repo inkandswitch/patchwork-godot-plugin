@@ -25,26 +25,23 @@ jobs:
       - name: Copy to bin
         shell: sh
         run: |
-          
           mkdir -p rust/plugin/macos/libpatchwork_rust_core.macos.framework
           mv target/release/libpatchwork_rust_core.dylib rust/plugin/macos/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.dylib
           mv target/release/libpatchwork_rust_core.arm64.a rust/plugin/macos/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.arm64.a
           mv target/release/libpatchwork_rust_core.x86_64.a rust/plugin/macos/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.x86_64.a
           ls -la rust/plugin/macos/libpatchwork_rust_core.macos.framework
-          
 
-      # TODO: ENABLE THIS!!!
-      # - name: Mac Sign
-      #   uses: ./.github/actions/macos-sign
-      #   with:
-      #     FRAMEWORK_PATH: rust/plugin/libpatchwork_rust_core.macos.framework
-      #     SIGN_FLAGS: "--deep"
-      #     APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
-      #     APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
-      #     APPLE_DEV_PASSWORD: ${{ secrets.APPLE_DEV_PASSWORD }}
-      #     APPLE_DEV_ID: ${{ secrets.APPLE_DEV_ID }}
-      #     APPLE_DEV_TEAM_ID: ${{ secrets.APPLE_DEV_TEAM_ID }}
-      #     APPLE_DEV_APP_ID: ${{ secrets.APPLE_DEV_APP_ID }}
+      - name: Mac Sign
+        uses: ./.github/actions/macos-sign
+        with:
+          FRAMEWORK_PATH: ${{ github.workspace }}/rust/plugin/macos/libpatchwork_rust_core.macos.framework
+          SIGN_FLAGS: "--deep"
+          APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          APPLE_DEV_PASSWORD: ${{ secrets.APPLE_DEV_PASSWORD }}
+          APPLE_DEV_ID: ${{ secrets.APPLE_DEV_ID }}
+          APPLE_DEV_TEAM_ID: ${{ secrets.APPLE_DEV_TEAM_ID }}
+          APPLE_DEV_APP_ID: ${{ secrets.APPLE_DEV_APP_ID }}
       - name: Upload
         uses: actions/upload-artifact@v4
         with:

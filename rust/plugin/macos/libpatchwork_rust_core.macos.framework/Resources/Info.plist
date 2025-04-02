@@ -1,27 +1,35 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleExecutable</key>
-	<string>libpatchwork_rust_core.dylib</string>
-	<key>CFBundleIdentifier</key>
-	<string>com.inkandswitch.patchworkgodot</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>libpatchwork_rust_core.macos.dylib</string>
 	<key>CFBundleName</key>
 	<string>Patchwork Godot Plugin</string>
+	<key>CFBundleDisplayName</key>
+	<string>Patchwork Godot Plugin</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.inkandswitch.test.patchworkgodot</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright (c) 2024-present Ink and Switch, LLC.</string>
+	<key>CFBundleVersion</key>
+	<string>0.1.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
 	<key>CFBundlePackageType</key>
 	<string>FMWK</string>
-	<key>CFBundleShortVersionString</key>
-	<string>1.0.0</string>
 	<key>CFBundleSupportedPlatforms</key>
 	<array>
 		<string>MacOSX</string>
 	</array>
-    <key>NSHumanReadableCopyright</key>
-	<string>Copyright (c) 2024-present Ink and Switch, LLC.</string>
-	<key>CFBundleVersion</key>
-	<string>1.0.0</string>
+	<key>CSResourcesFileMapped</key>
+	<true/>
+	<key>DTPlatformName</key>
+	<string>macosx</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>10.12</string>
 </dict>
