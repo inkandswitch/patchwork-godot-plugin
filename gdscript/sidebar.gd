@@ -24,6 +24,11 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 @onready var merge_preview_message_icon: TextureRect = %MergePreviewMessageIcon
 @onready var sync_status_icon: TextureButton = %SyncStatusIcon
 
+@onready var history_section_header: Button = %HistorySectionHeader
+@onready var history_section_body: Control = %HistorySectionBody
+@onready var diff_section_header: Button = %DiffSectionHeader
+@onready var diff_section_body: Control = %DiffSectionBody
+
 const TEMP_DIR = "user://tmp"
 
 var branches = []
@@ -85,6 +90,9 @@ func _ready() -> void:
 	highlight_changes_checkbox_mp.toggled.connect(_on_highlight_changes_checkbox_toggled)
 	cancel_merge_button.pressed.connect(cancel_merge_preview)
 	confirm_merge_button.pressed.connect(confirm_merge_preview)
+
+	history_section_header.pressed.connect(func(): toggle_section(history_section_header, history_section_body))
+	diff_section_header.pressed.connect(func(): toggle_section(diff_section_header, diff_section_body))
 
 
 func _on_sync_server_connection_info_changed(_peer_connection_info: Dictionary) -> void:
@@ -354,6 +362,22 @@ func confirm_merge_preview():
 			)
 		)
 	)
+
+func toggle_section(section_header: Button, section_body: Control):
+	if section_body.visible:
+		section_header.icon = load("res://addons/patchwork/icons/collapsable-closed.svg")
+		section_body.visible = false
+	else:
+		section_header.icon = load("res://addons/patchwork/icons/collapsable-open.svg")
+		section_body.visible = true
+
+func unfold_section(section_header: Button, section_body: Control):
+	section_header.icon = load("res://addons/patchwork/icons/collapsable-open.svg")
+	section_body.visible = true
+
+func fold_section(section_header: Button, section_body: Control):
+	section_header.icon = load("res://addons/patchwork/icons/collapsable-closed.svg")
+	section_body.visible = false
 
 func update_ui() -> void:
 	var checked_out_branch = GodotProject.get_checked_out_branch()

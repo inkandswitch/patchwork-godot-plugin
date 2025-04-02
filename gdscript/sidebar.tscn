@@ -133,11 +133,12 @@ text = "History"
 icon = ExtResource("4_of6ia")
 alignment = 0
 
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
+[node name="HistorySectionBody" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="HistoryList" type="ItemList" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/VBoxContainer"]
+[node name="HistoryList" type="ItemList" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/HistorySectionBody"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
@@ -152,21 +153,22 @@ text = "Changes"
 icon = ExtResource("4_of6ia")
 alignment = 0
 
-[node name="VBoxContainer2" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
+[node name="DiffSectionBody" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="HighlightChangesCheckbox" type="CheckBox" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/VBoxContainer2"]
+[node name="HighlightChangesCheckbox" type="CheckBox" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/DiffSectionBody"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Highlight changes"
 
-[node name="MainDiffContainer" type="MarginContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/VBoxContainer2"]
+[node name="MainDiffContainer" type="MarginContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/DiffSectionBody"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="BigDiffer" type="DiffInspector" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/VBoxContainer2/MainDiffContainer"]
+[node name="BigDiffer" type="DiffInspector" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/DiffSectionBody/MainDiffContainer"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
@@ -179,7 +181,7 @@ removed_icon = ExtResource("6_ha5pl")
 modified_icon = ExtResource("7_o8jin")
 metadata/_custom_type_script = "uid://d145i10hos3c6"
 
-[node name="DifferMainVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/VBoxContainer2/MainDiffContainer/BigDiffer"]
+[node name="DifferMainVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/DiffSectionBody/MainDiffContainer/BigDiffer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
