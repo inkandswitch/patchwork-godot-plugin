@@ -341,3 +341,5 @@ cmake-build-*/
 .cargo/.devidentity
 .cargo/.cert-pass
 .cargo/dev-cert.p12
+.cargo/*.p12
+.cargo/*.base64

@@ -43,14 +43,14 @@ jobs:
         shell: sh
         run: |
           mkdir -p rust/plugin/linux
-          mv target/release/libpatchwork_rust_core.so rust/plugin/linux/libpatchwork_rust_core.linux.${{ matrix.arch }}.so
+          cp target/release/libpatchwork_rust_core.so rust/plugin/linux/libpatchwork_rust_core.linux.${{ matrix.arch }}.so
           ls -la rust/plugin/linux
       - name: Copy static lib
         if: ${{ matrix.include-static-libs }}
         shell: sh
         run: |
           mkdir -p rust/plugin/linux
-          mv target/release/libpatchwork_rust_core.a rust/plugin/linux/libpatchwork_rust_core.linux.${{ matrix.arch }}.a
+          cp target/release/libpatchwork_rust_core.a rust/plugin/linux/libpatchwork_rust_core.linux.${{ matrix.arch }}.a
           ls -la rust/plugin/linux
       - name: Save Cache
         uses: ./.github/actions/save-plugin-cache
