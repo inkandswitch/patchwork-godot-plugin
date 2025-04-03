@@ -240,7 +240,9 @@ jobs:
           cd artifacts/windows
           zip -r9  "../patchwork_editor-${{ github.ref_name }}-windows.zip" *
           cd ../..
-          mv "artifacts/macos/patchwork_editor.universal.zip" "artifacts/patchwork_editor-${{ github.ref_name }}-macos.zip"
+          cd artifacts/macos
+          zip -r9  "../patchwork_editor-${{ github.ref_name }}-macos.zip" *
+          cd ../..
           cd artifacts/linux
           zip -r9  "../patchwork_editor-${{ github.ref_name }}-linux.zip" *
       - name: Release
