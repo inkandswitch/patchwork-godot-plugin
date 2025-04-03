@@ -101,7 +101,6 @@ static func remove_highlight(root: Node):
 	var highlight_changes_layer_container = root.get_node_or_null("PatchworkHighlightChangesLayerContainer")
 
 	if highlight_changes_layer_container:
-		print("removing highlight")
 		root.remove_child(highlight_changes_layer_container)
 		highlight_changes_layer_container.queue_free()
 
