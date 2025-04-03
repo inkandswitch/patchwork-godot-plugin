@@ -40,4 +40,3 @@ serde = { version = "1.0", features = ["derive"] }
 [build-dependencies]
 cbindgen = "^0.27"
 cargo-post = "0.1.7"
-apple-codesign = "0.22.0"
