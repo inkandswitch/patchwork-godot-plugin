@@ -1,0 +1,37 @@
+name: Restore Plugin Build Cache
+description: Restore Plugin Build Cache.
+inputs:
+  cache-name:
+    description: The cache base name (job name by default).
+    default: ${{ github.job }}
+  cache-path:
+    description: The cache path.
+    default: ${{ github.workspace }}/target
+
+runs:
+  using: composite
+  steps:
+    - name: Restore cache
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ inputs.cache-path }}
+        key: ${{ inputs.cache-name }}-${{ github.base_ref }}-${{ github.ref }}-${{ github.sha }}
+
+        # We try to match an existing cache to restore from it. Each potential key is checked against
+        # all existing caches as a prefix. E.g. 'linux-template-minimal' would match any cache that
+        # starts with "linux-template-minimal", such as "linux-template-minimal-master-refs/heads/master-6588a4a29af1621086feac0117d5d4d37af957fd".
+        #
+        # We check these prefixes in this order:
+        #
+        #   1. The exact match, including the base branch, the commit reference, and the SHA hash of the commit.
+        #   2. A partial match for the same base branch and the same commit reference.
+        #   3. A partial match for the same base branch and the base branch commit reference.
+        #   4. A partial match for the same base branch only (not ideal, matches any PR with the same base branch).
+
+        restore-keys: |
+         ${{ inputs.cache-name }}-${{ github.base_ref }}-${{ github.ref }}-${{ github.sha }}
+         ${{ inputs.cache-name }}-${{ github.base_ref }}-${{ github.ref }}
+         ${{ inputs.cache-name }}-${{ github.base_ref }}
+         ${{ inputs.cache-name }}-${{ github.ref }}-${{ github.sha }}
+         ${{ inputs.cache-name }}-${{ github.ref }}
+         ${{ inputs.cache-name }}

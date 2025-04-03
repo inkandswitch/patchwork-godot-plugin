@@ -19,10 +19,9 @@ jobs:
 
       # restore cache
       - name: Restore Cache
-        uses: actions/cache@v4
+        uses: ./.github/actions/restore-plugin-cache
         with:
-          path: ${{ github.workspace }}/target
-          key: ${{ runner.arch }}-patchwork_rust_plugin_macos-${{ github.ref }}-${{ github.sha }}
+          cache-name: patchwork_rust_plugin_macos-${{ matrix.arch }}
 
       - name: Build
         uses: ./.github/actions/build-plugin
@@ -40,10 +39,9 @@ jobs:
           ls -la rust/plugin/macos/libpatchwork_rust_core.macos.framework
 
       - name: Save Cache
-        uses: actions/cache@v4
+        uses: ./.github/actions/save-plugin-cache
         with:
-          path: ${{ github.workspace }}/target
-          key: ${{ runner.arch }}-patchwork_rust_plugin_macos-${{ github.ref }}-${{ github.sha }}
+          cache-name: patchwork_rust_plugin_macos-${{ matrix.arch }}
 
       - name: Mac Sign
         uses: ./.github/actions/macos-sign

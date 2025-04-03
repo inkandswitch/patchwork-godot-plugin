@@ -1,0 +1,18 @@
+name: Save Plugin Build Cache
+description: Save Plugin Build Cache.
+inputs:
+  cache-name:
+    description: The cache base name (job name by default).
+    default: ${{ github.job }}
+  cache-path:
+    description: The cache path.
+    default: ${{ github.workspace }}/target
+
+runs:
+  using: composite
+  steps:
+    - name: Save cache
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ inputs.cache-path }}
+        key: ${{ inputs.cache-name }}-${{ github.base_ref }}-${{ github.ref }}-${{ github.sha }}
