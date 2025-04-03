@@ -10,6 +10,7 @@ jobs:
       fail-fast: false
       matrix:
         arch: ["x86_64-unknown-linux-gnu"] # , "i686-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "armv7-unknown-linux-gnueabihf"
+        include-static-libs: [false]
 
     steps:
       - uses: actions/checkout@v4
@@ -43,7 +44,14 @@ jobs:
         run: |
           mkdir -p rust/plugin/linux
           mv target/release/libpatchwork_rust_core.so rust/plugin/linux/libpatchwork_rust_core.linux.${{ matrix.arch }}.so
+          ls -la rust/plugin/linux
+      - name: Copy static lib
+        if: ${{ matrix.include-static-libs }}
+        shell: sh
+        run: |
+          mkdir -p rust/plugin/linux
           mv target/release/libpatchwork_rust_core.a rust/plugin/linux/libpatchwork_rust_core.linux.${{ matrix.arch }}.a
+          ls -la rust/plugin/linux
       - name: Save Cache
         uses: ./.github/actions/save-plugin-cache
         with:
