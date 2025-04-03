@@ -15,10 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Restore Cache
-        uses: ./.github/actions/restore-plugin-cache
-        with:
-          cache-name: patchwork_rust_plugin_windows-${{ matrix.arch }}
-
+        uses: Swatinem/rust-cache@v2
       - name: Build
         uses: ./.github/actions/build-plugin
         with:
@@ -39,10 +36,7 @@ jobs:
           mkdir -p rust/plugin/windows
           cp target/release/patchwork_rust_core.lib rust/plugin/windows/patchwork_rust_core.windows.${{ matrix.arch }}.lib
           ls -la rust/plugin/windows
-      - name: Save Cache
-        uses: ./.github/actions/save-plugin-cache
-        with:
-          cache-name: patchwork_rust_plugin_windows-${{ matrix.arch }}
+
       - name: Upload
         uses: actions/upload-artifact@v4
         with:

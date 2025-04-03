@@ -20,10 +20,7 @@ jobs:
 
       # restore cache
       - name: Restore Cache
-        uses: ./.github/actions/restore-plugin-cache
-        with:
-          cache-name: patchwork_rust_plugin_macos-${{ matrix.arch }}
-
+        uses: Swatinem/rust-cache@v2
       - name: Build
         uses: ./.github/actions/build-plugin
         with:
@@ -45,11 +42,6 @@ jobs:
           cp target/release/libpatchwork_rust_core.arm64.a rust/plugin/macos/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.arm64.a
           cp target/release/libpatchwork_rust_core.x86_64.a rust/plugin/macos/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.x86_64.a
           ls -la rust/plugin/macos/libpatchwork_rust_core.macos.framework
-
-      - name: Save Cache
-        uses: ./.github/actions/save-plugin-cache
-        with:
-          cache-name: patchwork_rust_plugin_macos-${{ matrix.arch }}
 
       - name: Mac Sign
         uses: ./.github/actions/macos-sign

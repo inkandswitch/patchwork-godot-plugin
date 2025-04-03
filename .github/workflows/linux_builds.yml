@@ -30,10 +30,7 @@ jobs:
           sudo apt install gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf
 
       - name: Restore Cache
-        uses: ./.github/actions/restore-plugin-cache
-        with:
-          cache-name: patchwork_rust_plugin_linux-${{ matrix.arch }}
-
+        uses: Swatinem/rust-cache@v2
       - name: Build
         uses: ./.github/actions/build-plugin
         with:
@@ -52,10 +49,6 @@ jobs:
           mkdir -p rust/plugin/linux
           cp target/release/libpatchwork_rust_core.a rust/plugin/linux/libpatchwork_rust_core.linux.${{ matrix.arch }}.a
           ls -la rust/plugin/linux
-      - name: Save Cache
-        uses: ./.github/actions/save-plugin-cache
-        with:
-          cache-name: patchwork_rust_plugin_linux-${{ matrix.arch }}
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
