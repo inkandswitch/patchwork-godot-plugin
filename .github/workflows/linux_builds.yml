@@ -31,6 +31,9 @@ jobs:
 
       - name: Restore Cache
         uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: patchwork_rust_plugin_linux-${{ matrix.arch }}
+
       - name: Build
         uses: ./.github/actions/build-plugin
         with:

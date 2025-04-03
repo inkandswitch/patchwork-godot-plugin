@@ -16,6 +16,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Restore Cache
         uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: patchwork_rust_plugin_windows-${{ matrix.arch }}
       - name: Build
         uses: ./.github/actions/build-plugin
         with:
