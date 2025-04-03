@@ -1,3 +1,7 @@
 # make the default target the lib target
 [alias]
 b = "post build"
+[target.armv7-unknown-linux-gnueabihf]
+linker = "arm-linux-gnueabihf-gcc"
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
