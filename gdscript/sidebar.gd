@@ -469,6 +469,9 @@ func update_ui() -> void:
 			heads_after = checked_out_branch.heads
 
 
+		print("heads_before: ", heads_before)
+		print("heads_after: ", heads_after)
+
 		var diff = update_properties_diff(heads_before, heads_after)
 
 		inspector.visible = true
@@ -578,6 +581,7 @@ func update_highlight_changes(diff: Dictionary, checked_out_branch) -> void:
 				if scene_changes:
 					HighlightChangesLayer.highlight_changes(edited_root, scene_changes)
 		else:
+			print("removing highlight")
 			HighlightChangesLayer.remove_highlight(edited_root)
 
 

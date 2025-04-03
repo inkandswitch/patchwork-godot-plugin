@@ -94,20 +94,13 @@ func sync_patchwork_to_godot():
 		return
 
 	var files_in_patchwork = GodotProject.get_files()
-	var files_in_godot = get_relevant_godot_files()
 
+	var files_to_reimport = {}
 	var scenes_to_reload = []
 	var reload_scripts = false
 	file_system.disconnect_from_file_system()
 
 	print("sync patchwork -> godot (", files_in_patchwork.size(), ")")
-
-	var files_to_reimport = {}
-
-	# Delete files that exist in Godot but not in Patchwork
-	for path in files_in_godot:
-		if not files_in_patchwork.has(path):
-			file_system.delete_file(path)
 
 	for path in files_in_patchwork:
 		var patchwork_content = files_in_patchwork[path]
@@ -169,7 +162,6 @@ func sync_patchwork_to_godot():
 			EditorInterface.reload_scene_from_path(scene_path)
 
 
-	EditorInterface.get_resource_filesystem().scan()
 
 	file_system.connect_to_file_system()
 
