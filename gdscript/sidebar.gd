@@ -126,14 +126,6 @@ func update_sync_status() -> void:
 		sync_status_icon.tooltip_text = "Syncing..."
 
 
-func _on_menu_button_id_pressed(id: int) -> void:
-	match id:
-		CREATE_BRANCH_IDX:
-			create_new_branch()
-
-		MERGE_BRANCH_IDX:
-			create_merge_preview_branch()
-
 func _on_user_button_pressed():
 	var dialog = ConfirmationDialog.new()
 	dialog.title = "Set User Name"
@@ -327,8 +319,10 @@ func create_merge_preview_branch():
 		popup_box(self, $ErrorDialog, "Can't merge the main branch!", "Error")
 		return
 
+	var forked_from_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from)
+
 	var source_branch_doc_id = checked_out_branch.id
-	var target_branch_doc_id = GodotProject.get_main_branch().id
+	var target_branch_doc_id = forked_from_branch.id
 
 	task_modal.do_task("Creating merge preview", func():
 		GodotProject.create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id)
@@ -444,7 +438,7 @@ func update_ui() -> void:
 		if source_branch && target_branch:
 			merge_preview_source_label.text = source_branch.name
 			merge_preview_target_label.text = target_branch.name
-			merge_preview_title.text = "Preview of " + target_branch.name
+			merge_preview_title.text = "Preview of \"" + target_branch.name + "\""
 
 			if checked_out_branch.merge_at != checked_out_branch.forked_at:
 				merge_preview_message_label.text = "Becarfultoreviewyourchanges and makesurethegame is stillworkingcorrectlybeforemerging.\nThere have been changes to \"" + target_branch.name + "\" since \"" + source_branch.name + "\" was created."

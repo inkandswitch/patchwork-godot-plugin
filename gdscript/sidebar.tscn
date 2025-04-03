@@ -25,14 +25,6 @@ bg_color = Color(0.219608, 0.239216, 0.266667, 1)
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_42yji"]
 bg_color = Color(0.156863, 0.176471, 0.207843, 1)
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_nb8ns"]
-content_margin_left = 8.0
-content_margin_top = 8.0
-content_margin_right = 8.0
-content_margin_bottom = 8.0
-bg_color = Color(0.323009, 0.365738, 0.435143, 1)
-shadow_size = 2
-
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_0tnfe"]
 content_margin_left = 4.0
 content_margin_top = 4.0
@@ -44,6 +36,14 @@ corner_radius_top_right = 3
 corner_radius_bottom_right = 3
 corner_radius_bottom_left = 3
 corner_detail = 5
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_nb8ns"]
+content_margin_left = 8.0
+content_margin_top = 8.0
+content_margin_right = 8.0
+content_margin_bottom = 8.0
+bg_color = Color(0.323009, 0.365738, 0.435143, 1)
+shadow_size = 2
 
 [node name="Patchwork" type="MarginContainer"]
 anchors_preset = 15
@@ -92,7 +92,7 @@ unique_name_in_owner = true
 z_index = 1
 z_as_relative = false
 layout_mode = 2
-text = "main <- More coins"
+text = "More coins"
 icon = ExtResource("7_qb0q7")
 alignment = 0
 
@@ -112,16 +112,14 @@ stretch_mode = 4
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-selected = 0
-item_count = 4
+selected = 2
+item_count = 3
 popup/item_0/text = "main"
 popup/item_0/id = 0
-popup/item_1/text = "├─ Dark mode"
+popup/item_1/text = "└─ Paul's remix"
 popup/item_1/id = 1
-popup/item_2/text = "│   └─ More coins"
+popup/item_2/text = "    └─ More coins"
 popup/item_2/id = 2
-popup/item_3/text = "└─ jumping enemies"
-popup/item_3/id = 3
 
 [node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/HBoxContainer2"]
 layout_mode = 2
@@ -176,6 +174,8 @@ size_flags_vertical = 3
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
+item_count = 1
+item_0/text = "some changes -  by Paul 2 minutes ago"
 
 [node name="DiffSectionHeader" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
@@ -197,6 +197,24 @@ text = "Highlight changes in scene"
 [node name="MainDiffContainer" type="MarginContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/DiffSectionBody"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_vertical = 3
+
+[node name="BigDiffer" type="DiffInspector" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/DiffSectionBody/MainDiffContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme = ExtResource("4_7letu")
+theme_override_styles/panel = SubResource("StyleBoxFlat_0tnfe")
+script = ExtResource("4_uttw7")
+added_icon = ExtResource("5_iqebc")
+removed_icon = ExtResource("6_ha5pl")
+modified_icon = ExtResource("7_o8jin")
+metadata/_custom_type_script = "uid://d145i10hos3c6"
+
+[node name="DifferMainVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/DiffSectionBody/MainDiffContainer/BigDiffer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
 size_flags_vertical = 3
 
 [node name="HSeparator2" type="HSeparator" parent="VBoxContainer"]
@@ -225,6 +243,7 @@ icon = ExtResource("3_m2w8q")
 
 [node name="MergePreviewModal" type="PanelContainer" parent="."]
 unique_name_in_owner = true
+visible = false
 z_index = 4
 layout_mode = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_nb8ns")
@@ -247,7 +266,7 @@ theme_override_constants/separation = 8
 [node name="MergePreviewTitle" type="Label" parent="MergePreviewModal/MarginContainer/VBoxContainer/HBoxContainer3"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Preview of $Target"
+text = "Preview of \"Paul's remix\""
 
 [node name="CancelMergeButton" type="Button" parent="MergePreviewModal/MarginContainer/VBoxContainer/HBoxContainer3"]
 unique_name_in_owner = true
@@ -294,7 +313,7 @@ stretch_mode = 3
 [node name="MergePreviewTargetLabel" type="Label" parent="MergePreviewModal/MarginContainer/VBoxContainer/HBoxContainer/MarginContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "main"
+text = "Paul's remix"
 
 [node name="TextureRect" type="TextureRect" parent="MergePreviewModal/MarginContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
@@ -344,7 +363,7 @@ stretch_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 text = "Becarfultoreviewyourchanges and makesurethegame is stillworkingcorrectlybeforemerging.
-There have been changes to \"main\" since \"Dark mode\" was created."
+There have been changes to \"Paul's remix\" since \"More coins\" was created."
 
 [node name="HSeparator3" type="HSeparator" parent="MergePreviewModal/MarginContainer/VBoxContainer"]
 modulate = Color(1, 1, 1, 0)
@@ -359,24 +378,6 @@ text = "Highlight changes in scene"
 [node name="MergePreviewDiffContainer" type="MarginContainer" parent="MergePreviewModal/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_vertical = 3
-
-[node name="BigDiffer" type="DiffInspector" parent="MergePreviewModal/MarginContainer/VBoxContainer/MergePreviewDiffContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_vertical = 3
-theme = ExtResource("4_7letu")
-theme_override_styles/panel = SubResource("StyleBoxFlat_0tnfe")
-script = ExtResource("4_uttw7")
-added_icon = ExtResource("5_iqebc")
-removed_icon = ExtResource("6_ha5pl")
-modified_icon = ExtResource("7_o8jin")
-metadata/_custom_type_script = "uid://d145i10hos3c6"
-
-[node name="DifferMainVBox" type="VBoxContainer" parent="MergePreviewModal/MarginContainer/VBoxContainer/MergePreviewDiffContainer/BigDiffer"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
 size_flags_vertical = 3
 
 [node name="HBoxContainer2" type="HBoxContainer" parent="MergePreviewModal/MarginContainer/VBoxContainer"]
