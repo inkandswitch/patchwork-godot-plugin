@@ -1,0 +1,40 @@
+[gd_scene load_steps=3 format=3 uid="uid://b853277vwgxxm"]
+
+[ext_resource type="Script" uid="uid://bsvqjddqcc6vw" path="res://addons/patchwork/gdscript/sticky_note.gd" id="1_rpp8a"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_rpp8a"]
+bg_color = Color(1, 0.862745, 0, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1, 0.858824, 0, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+shadow_color = Color(0, 0, 0, 0.0666667)
+shadow_size = 2
+shadow_offset = Vector2(2, 2)
+
+[node name="StickyNote" type="Node2D"]
+script = ExtResource("1_rpp8a")
+
+[node name="PanelContainer" type="PanelContainer" parent="."]
+offset_left = -263.0
+offset_top = -222.0
+offset_right = 262.0
+offset_bottom = 230.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_rpp8a")
+metadata/_edit_use_anchors_ = true
+
+[node name="Content" type="Label" parent="."]
+unique_name_in_owner = true
+offset_left = -247.0
+offset_top = -204.0
+offset_right = 239.0
+offset_bottom = 218.0
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 30
+autowrap_mode = 2
+metadata/_edit_use_anchors_ = true
