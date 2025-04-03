@@ -14,8 +14,9 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 @onready var merge_preview_modal: Control = %MergePreviewModal
 @onready var cancel_merge_button: Button = %CancelMergeButton
 @onready var confirm_merge_button: Button = %ConfirmMergeButton
-@onready var target_branch_picker: OptionButton = %TargetBranchPicker
-@onready var source_branch_picker: OptionButton = %SourceBranchPicker
+@onready var merge_preview_title: Label = %MergePreviewTitle
+@onready var merge_preview_source_label: Label = %MergePreviewSourceLabel
+@onready var merge_preview_target_label: Label = %MergePreviewTargetLabel
 @onready var merge_preview_diff_container: MarginContainer = %MergePreviewDiffContainer
 @onready var main_diff_container: MarginContainer = %MainDiffContainer
 @onready var merge_preview_message_label: Label = %MergePreviewMessageLabel
@@ -87,8 +88,6 @@ func _ready() -> void:
 
 	user_button.pressed.connect(_on_user_button_pressed)
 	branch_picker.item_selected.connect(_on_branch_picker_item_selected)
-	target_branch_picker.item_selected.connect(_on_target_branch_picker_item_selected)
-	source_branch_picker.item_selected.connect(_on_source_branch_picker_item_selected)
 
 	highlight_changes_checkbox.toggled.connect(_on_highlight_changes_checkbox_toggled)
 	highlight_changes_checkbox_mp.toggled.connect(_on_highlight_changes_checkbox_toggled)
@@ -193,13 +192,6 @@ func _on_branch_picker_item_selected(_index: int) -> void:
 
 	checkout_branch(selected_branch.id)
 
-func _on_target_branch_picker_item_selected(index: int) -> void:
-	print("not implemented")
-	update_ui()
-
-func _on_source_branch_picker_item_selected(index: int) -> void:
-	print("not implemented")
-	update_ui()
 
 func _on_highlight_changes_checkbox_toggled(pressed: bool) -> void:
 	highlight_changes = pressed
@@ -449,18 +441,22 @@ func update_ui() -> void:
 		var source_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from)
 		var target_branch = GodotProject.get_branch_by_id(checked_out_branch.merge_into)
 
-		if checked_out_branch.merge_at != checked_out_branch.forked_at:
-			merge_preview_message_label.text = "Becarfultoreviewyourchanges and makesurethegame is stillworkingcorrectlybeforemerging.\nThere have been changes to \"" + target_branch.name + "\" since \"" + source_branch.name + "\" was created."
-			merge_preview_message_icon.texture = load("res://addons/patchwork/icons/warning-circle.svg")
-		else:
-			merge_preview_message_label.text = "This branch is safe to merge.\nThere have been no changes to \"" + target_branch.name + "\" since \"" + checked_out_branch.name + "\" was created."
-			merge_preview_message_icon.texture = load("res://addons/patchwork/icons/checkmark-circle.svg")
+		if source_branch && target_branch:
+			merge_preview_source_label.text = source_branch.name
+			merge_preview_target_label.text = target_branch.name
+			merge_preview_title.text = "Preview of " + target_branch.name
+
+			if checked_out_branch.merge_at != checked_out_branch.forked_at:
+				merge_preview_message_label.text = "Becarfultoreviewyourchanges and makesurethegame is stillworkingcorrectlybeforemerging.\nThere have been changes to \"" + target_branch.name + "\" since \"" + source_branch.name + "\" was created."
+				merge_preview_message_icon.texture = load("res://addons/patchwork/icons/warning-circle.svg")
+			else:
+				merge_preview_message_label.text = "This branch is safe to merge.\nThere have been no changes to \"" + target_branch.name + "\" since \"" + checked_out_branch.name + "\" was created."
+				merge_preview_message_icon.texture = load("res://addons/patchwork/icons/checkmark-circle.svg")
 
 	else:
 		move_inspector_to_main()
 
 	# DIFF
-
 
 	# show no diff for main branch
 	if checked_out_branch.is_main:
@@ -490,18 +486,21 @@ func update_ui() -> void:
 		update_highlight_changes(diff, checked_out_branch)
 
 func update_branch_picker() -> void:
+	branch_picker.clear()
+
 	var checked_out_branch = GodotProject.get_checked_out_branch()
 
 	if !checked_out_branch:
 		return
 
-	branch_picker.clear()
-
-	var all_branches = GodotProject.get_branches()
 	var main_branch = GodotProject.get_main_branch()
 
-	branch_picker_cover.text = checked_out_branch.name
+	if !main_branch:
+		return
 
+	var all_branches = GodotProject.get_branches()
+
+	branch_picker_cover.text = checked_out_branch.name
 	add_branch_with_forks(main_branch, all_branches, checked_out_branch.id)
 
 func add_branch_with_forks(branch: Dictionary, all_branches: Array, selected_branch_id: String, indentation: String = "", is_last: bool = false) -> void:
