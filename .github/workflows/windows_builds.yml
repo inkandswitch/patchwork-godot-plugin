@@ -10,7 +10,7 @@ jobs:
       fail-fast: false
       matrix:
         # ARM32 Is not officially supported yet, you need to self build rust target.
-        arch: ["x86_64-pc-windows-msvc"] #, , "i686-pc-windows-msvc", "aarch64-pc-windows-msvc", "thumbv7a-pc-windows-msvc"]
+        arch: ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"] #, , "i686-pc-windows-msvc", "aarch64-pc-windows-msvc", "thumbv7a-pc-windows-msvc"]
         include-static-libs: [false]
     steps:
       - uses: actions/checkout@v4
