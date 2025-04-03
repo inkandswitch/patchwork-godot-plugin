@@ -41,14 +41,7 @@ jobs:
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: patchwork-godot-dylib-windows-${{ matrix.arch }}
+          name: patchwork-godot-windows-${{ matrix.arch }}
           path: |
-            rust/plugin/windows/*.dll
-          if-no-files-found: error
-      - name: Upload Static
-        uses: actions/upload-artifact@v4
-        with:
-          name: patchwork-godot-static-windows-${{ matrix.arch }}
-          path: |
-            rust/plugin/windows/*.lib
+            rust/plugin/windows/*
           if-no-files-found: error

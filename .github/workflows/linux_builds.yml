@@ -53,15 +53,8 @@ jobs:
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: patchwork-godot-dylib-linux-${{ matrix.arch}}
+          name: patchwork-godot-linux-${{ matrix.arch}}
           path: |
-            rust/plugin/linux/*.so
-          if-no-files-found: error
-      - name: Upload Static
-        uses: actions/upload-artifact@v4
-        with:
-          name: patchwork-godot-static-linux-${{ matrix.arch}}
-          path: |
-            rust/plugin/linux/*.a
+            rust/plugin/linux/*
           if-no-files-found: error
 
