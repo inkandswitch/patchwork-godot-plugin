@@ -13,6 +13,7 @@ jobs:
       fail-fast: false
       matrix:
         arch:  ["x86_64-apple-darwin"]
+        include-static-libs: [false]
 
     steps:
       - uses: actions/checkout@v4
@@ -34,6 +35,13 @@ jobs:
         run: |
           mkdir -p rust/plugin/macos/libpatchwork_rust_core.macos.framework
           mv target/release/libpatchwork_rust_core.dylib rust/plugin/macos/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.dylib
+          ls -la rust/plugin/macos/libpatchwork_rust_core.macos.framework
+
+      - name: Copy static libs
+        if: ${{ matrix.include-static-libs }}
+        shell: sh
+        run: |
+          mkdir -p rust/plugin/macos/libpatchwork_rust_core.macos.framework
           mv target/release/libpatchwork_rust_core.arm64.a rust/plugin/macos/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.arm64.a
           mv target/release/libpatchwork_rust_core.x86_64.a rust/plugin/macos/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.x86_64.a
           ls -la rust/plugin/macos/libpatchwork_rust_core.macos.framework
