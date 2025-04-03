@@ -8,7 +8,7 @@ env:
   GODOT_BASE_BRANCH: master
   # Change the README too
   GODOT_MAIN_SYNC_REF: 4.4
-  SCONSFLAGS: verbose=yes warnings=all werror=no module_text_server_fb_enabled=yes minizip=yes deprecated=yes debug_symbols=no
+  SCONSFLAGS: verbose=yes warnings=all werror=no module_text_server_fb_enabled=yes minizip=yes deprecated=yes debug_symbols=no module_patchwork_editor_enabled=yes
   SCONSFLAGS_TEMPLATE: no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no
   SCONS_CACHE_MSVC_CONFIG: true
 
@@ -47,7 +47,7 @@ jobs:
             id: macos-editor
             platform: macos
             target: editor
-            sconsflags: debug_symbols=no tests=yes use_volk=no vulkan_sdk_path=$VULKAN_SDK_PATH use_lto=yes generate_bundle=yes
+            sconsflags: debug_symbols=no tests=yes use_volk=no vulkan_sdk_path=$VULKAN_SDK_PATH use_lto=yes
             bin: ./bin/godot.macos.editor.arm64
 
     steps:
@@ -107,6 +107,7 @@ jobs:
         uses: ./.github/actions/godot-build
         if: matrix.platform == 'macos' && matrix.target == 'editor'
         with:
+          # generate the bundle on this one; generate_bundle automatically lipos the binaries
           sconsflags: arch=arm64 ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }} generate_bundle=yes
           platform: ${{ matrix.platform }}
           target: editor
@@ -116,11 +117,9 @@ jobs:
       - name: cleanup macos
         if: matrix.platform == 'macos' && matrix.target == 'editor'
         shell: bash
-        # lipo -create ./bin/godot.macos.${{ matrix.target }}.x86_64 ./bin/godot.macos.${{ matrix.target }}.arm64 -output ./bin/godot.macos.${{ matrix.target }}.universal
         run: |
-          rm ./bin/godot.macos.${{ matrix.target }}.x86_64 ./bin/godot.macos.${{ matrix.target }}.arm64
-          strip bin/godot.*
-          chmod +x bin/godot.*
+          rm -f ./bin/godot.macos.${{ matrix.target }}.x86_64 ./bin/godot.macos.${{ matrix.target }}.arm64
+          chmod +x bin/godot_macos_editor.app/Contents/MacOS/Godot
 
       - name: Save Godot build cache
         # if: success() || (steps.restore-cache.outputs.cache-hit == 'false' && (steps.compile-editor.outcome != 'skipped' || steps.compile-template.outcome != 'skipped'))
@@ -130,22 +129,24 @@ jobs:
         continue-on-error: true
 
       - name: Prepare artifact
+      # Stripping the debug symbols screws up lipo'd binaries on macos, so don't do it
+        if: matrix.platform != 'macos'
         uses: ./.github/actions/godot-prepare-artifact
 
-      # TODO: Enable this!!!
-      # - name: Mac Sign
-      #   if: matrix.platform == 'macos' && matrix.target == 'editor'
-      #   uses: ./.github/actions/macos-sign
-      #   with:
-      #     FRAMEWORK_PATH: ${{ github.workspace }}/bin/godot_macos_editor.app
-      #     SIGN_FLAGS: "--deep --force --options=runtime --entitlements ${{ github.workspace }}/misc/dist/macos/editor.entitlements"
-      #     APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
-      #     APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
-      #     APPLE_DEV_PASSWORD: ${{ secrets.APPLE_DEV_PASSWORD }}
-      #     APPLE_DEV_ID: ${{ secrets.APPLE_DEV_ID }}
-      #     APPLE_DEV_TEAM_ID: ${{ secrets.APPLE_DEV_TEAM_ID }}
-      #     APPLE_DEV_APP_ID: ${{ secrets.APPLE_DEV_APP_ID }}
-
+      - name: Mac Sign
+        if: matrix.platform == 'macos' && matrix.target == 'editor'
+        uses: ./.github/actions/macos-sign
+        with:
+          FRAMEWORK_PATH: ${{ github.workspace }}/bin/godot_macos_editor.app
+          SIGN_FLAGS: "--deep --force --options=runtime --entitlements ${{ github.workspace }}/misc/dist/macos/editor.entitlements"
+          APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          APPLE_DEV_PASSWORD: ${{ secrets.APPLE_DEV_PASSWORD }}
+          APPLE_DEV_ID: ${{ secrets.APPLE_DEV_ID }}
+          APPLE_DEV_TEAM_ID: ${{ secrets.APPLE_DEV_TEAM_ID }}
+          APPLE_DEV_APP_ID: ${{ secrets.APPLE_DEV_APP_ID }}
+          # TODO: change this to com.inkandswitch.patchworkgodoteditor after I&S dev cert is set up
+          BUNDLE_IDENTIFIER_OVERRIDE: "com.inkandswitch.test.patchworkgodoteditor"
 
       - uses: actions/upload-artifact@v4
         if: matrix.id != 'linux-sanitizers'

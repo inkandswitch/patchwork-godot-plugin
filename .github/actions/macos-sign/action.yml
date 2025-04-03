@@ -1,18 +1,18 @@
-# This file incorporates work covered by the following copyright and permission notice:  
-# 
+# This file incorporates work covered by the following copyright and permission notice:
+#
 #     Copyright (c) Mikael Hermansson and Godot Jolt contributors.
 #     Copyright (c) Dragos Daian.
-# 
+#
 #     Permission is hereby granted, free of charge, to any person obtaining a copy of
 #     this software and associated documentation files (the "Software"), to deal in
 #     the Software without restriction, including without limitation the rights to
 #     use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
 #     the Software, and to permit persons to whom the Software is furnished to do so,
 #     subject to the following conditions:
-# 
+#
 #     The above copyright notice and this permission notice shall be included in all
 #     copies or substantial portions of the Software.
-# 
+#
 #     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 #     IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
 #     FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
@@ -49,6 +49,11 @@ inputs:
     required: true
     description: |
       Certificate name from get info -> Common name . Eg. Developer ID Application: Common Name (1ABCD23EFG)
+  BUNDLE_IDENTIFIER_OVERRIDE:
+    required: false
+    description: |
+      If provided, this will override the bundle identifier used for signing.
+      Eg. com.inkandswitch.patchwork.editor
 outputs:
   zip_path:
     value: ${{ steps.sign.outputs.path }}
@@ -137,17 +142,56 @@ runs:
 
       security set-key-partition-list -S "apple-tool:,apple:" -s -k $KeychainPassword $Keychain
 
+      Write-Output "Unlocking keychain permanently..."
+
+      security set-keychain-settings $Keychain
+
       $Framework = "${{ inputs.FRAMEWORK_PATH }}"
-      $SignFlags = "${{ inputs.SIGN_FLAGS }}"
+
+      $BundleIdOverride = "${{ inputs.BUNDLE_IDENTIFIER_OVERRIDE }}"
+      $SignFlagsString = "${{ inputs.SIGN_FLAGS }}"
+      # expand the sign flags so it doesn't get passed as a single string unless it's empty
+      if ($SignFlagsString) {
+        $SignFlags = $SignFlagsString.Split(" ")
+      } else {
+        $SignFlags = @()
+      }
+      Write-Output "Extra Sign flags: $SignFlags"
+
+      $SignFlags += "--verify"
+      $SignFlags += "--timestamp"
+      $SignFlags += "--verbose"
+      # if BUNDLE_IDENTIFIER_OVERRIDE is set, set the identifier flag in the codesign command
+      if ($BundleIdOverride) {
+        Write-Output "Overriding bundle identifier..."
+        $SignFlags += "--identifier"
+        $SignFlags += $BundleIdOverride
+      } else {
+        Write-Output "No bundle identifier override provided, using identifier from Info.plist"
+      }
+
       $Archive = [IO.Path]::ChangeExtension((New-TemporaryFile), "zip")
 
       Write-Output "Signing '$Framework'..."
+      Write-Output "command: $CodesignPath $SignFlags --sign $DeveloperIdApplication $Framework"
+      & $CodesignPath $SignFlags --sign $DeveloperIdApplication "$Framework"
 
-      & $CodesignPath --verify --timestamp --verbose "$SignFlags" --sign $DeveloperIdApplication "$Framework"
+      # bomb out if the signing fails
+      if ($LASTEXITCODE -ne 0) {
+        Write-Output "Signing failed"
+        Write-Output "Signing output:"
+        & $CodesignPath --verify -dvvv "$Framework"
+        exit 1
+      }
+
 
       Write-Output "Verifying signing..."
 
       & $CodesignPath --verify -dvvv "$Framework"
+      if ($LASTEXITCODE -ne 0) {
+        Write-Output "Verifying signing failed"
+        exit 1
+      }
 
       Get-ChildItem -Force -Recurse -Path "$Framework"
 
