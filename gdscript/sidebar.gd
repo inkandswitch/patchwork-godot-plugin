@@ -401,10 +401,10 @@ func update_ui() -> void:
 		if "merge_metadata" in change:
 			var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
 			var merged_branch_name = merged_branch.name
-			history_list.add_item(prefix + "↪️ merged \"" + merged_branch_name + "\" branch - by " + change_author + " " + change_timestamp)
+			history_list.add_item(prefix + "↪️ " + change_author + " merged \"" + merged_branch_name + "\" branch - " + change_timestamp)
 
 		else:
-			history_list.add_item(prefix + "some changes -  by " + change_author + " " + change_timestamp + "")
+			history_list.add_item(prefix + change_author + " made some changes - " + change_timestamp + "")
 	
 	# update action buttons
 
@@ -440,11 +440,11 @@ func update_ui() -> void:
 			merge_preview_target_label.text = target_branch.name
 			merge_preview_title.text = "Preview of \"" + target_branch.name + "\""
 
-			if checked_out_branch.merge_at != checked_out_branch.forked_at:
-				merge_preview_message_label.text = "Becarfultoreviewyourchanges and makesurethegame is stillworkingcorrectlybeforemerging.\nThere have been changes to \"" + target_branch.name + "\" since \"" + source_branch.name + "\" was created."
+			if source_branch.forked_at != target_branch.heads:
+				merge_preview_message_label.text = "\"" + target_branch.name + "\" has changed since \"" + source_branch.name + "\" was created.\nBe careful and review your changes before merging."
 				merge_preview_message_icon.texture = load("res://addons/patchwork/icons/warning-circle.svg")
 			else:
-				merge_preview_message_label.text = "This branch is safe to merge.\nThere have been no changes to \"" + target_branch.name + "\" since \"" + checked_out_branch.name + "\" was created."
+				merge_preview_message_label.text = "This branch is safe to merge.\n \"" + target_branch.name + "\" hasn't changed since \"" + source_branch.name + "\" was created."
 				merge_preview_message_icon.texture = load("res://addons/patchwork/icons/checkmark-circle.svg")
 
 	else:
