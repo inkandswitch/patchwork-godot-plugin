@@ -471,7 +471,7 @@ func update_sync_status() -> void:
 	# unknown sync status
 	if !peer_connection_info.doc_sync_states.has(checked_out_branch.id):
 		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
-		sync_status_icon.tooltip_text = "Unknown sync status"
+		sync_status_icon.tooltip_text = "Disconnected - some unsynced changes"
 
 		# mark all history items as grayed out
 		for i in range(history_list.get_item_count()):
@@ -522,7 +522,7 @@ func update_sync_status() -> void:
 			sync_status_icon.tooltip_text = "Syncing"
 		else:
 			sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
-			sync_status_icon.tooltip_text = "Unknown sync status"
+			sync_status_icon.tooltip_text = "Disconnected - %s unsynced changes" % [max_history_entry_index - synced_up_until_index]
 
 
 func update_branch_picker() -> void:

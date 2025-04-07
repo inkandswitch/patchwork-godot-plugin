@@ -172,34 +172,7 @@ size_flags_vertical = 3
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-item_count = 27
-item_0/text = "Paul made some changes - 1 minutes ago"
-item_1/text = "Paul made some changes - 1 minutes ago"
-item_2/text = "Paul made some changes - 2 minutes ago"
-item_3/text = "Paul made some changes - 2 minutes ago"
-item_4/text = "Paul made some changes - 6 minutes ago"
-item_5/text = "Paul made some changes - 8 minutes ago"
-item_6/text = "Paul made some changes - 9 minutes ago"
-item_7/text = "Paul made some changes - 9 minutes ago"
-item_8/text = "Paul made some changes - 10 minutes ago"
-item_9/text = "Paul made some changes - 11 minutes ago"
-item_10/text = "Paul made some changes - 11 minutes ago"
-item_11/text = "Paul made some changes - 13 minutes ago"
-item_12/text = "Paul made some changes - 13 minutes ago"
-item_13/text = "Paul made some changes - 13 minutes ago"
-item_14/text = "Paul made some changes - 24 minutes ago"
-item_15/text = "Paul made some changes - 24 minutes ago"
-item_16/text = "Paul made some changes - 24 minutes ago"
-item_17/text = "Paul made some changes - 24 minutes ago"
-item_18/text = "Paul made some changes - 24 minutes ago"
-item_19/text = "Paul made some changes - 24 minutes ago"
-item_20/text = "Paul made some changes - 24 minutes ago"
-item_21/text = "Paul made some changes - 24 minutes ago"
-item_22/text = "Paul made some changes - 24 minutes ago"
-item_23/text = "Paul made some changes - 24 minutes ago"
-item_24/text = "Paul made some changes - 24 minutes ago"
-item_25/text = "Paul made some changes - 24 minutes ago"
-item_26/text = "Paul made some changes - 24 minutes ago"
+
 
 [node name="DiffSectionHeader" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
