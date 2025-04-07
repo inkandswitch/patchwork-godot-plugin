@@ -33,8 +33,8 @@ use tokio::{net::TcpStream, runtime::Runtime};
 
 use crate::{doc_utils::SimpleDocReader, godot_project::Branch};
 
-// const SERVER_URL: &str = "104.131.179.247:8080";
-const SERVER_URL: &str = "0.0.0.0:8080";
+const SERVER_URL: &str = "104.131.179.247:8080";
+//const SERVER_URL: &str = "0.0.0.0:8080";
 
 const SERVER_REPO_ID: &str = "sync-server";
 
