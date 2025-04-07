@@ -471,11 +471,11 @@ func update_sync_status() -> void:
 	# unknown sync status
 	if !peer_connection_info.doc_sync_states.has(checked_out_branch.id):
 		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
-		sync_status_icon.tooltip_text = "Disconnected - some unsynced changes"
+		sync_status_icon.tooltip_text = "Disconnected - might have unsynced changes"
 
 		# mark all history items as grayed out
 		for i in range(history_list.get_item_count()):
-			history_list.set_item_custom_fg_color(i, Color(0.75, 0.75, 0.75))
+			history_list.set_item_custom_fg_color(i, Color(0.5, 0.5, 0.5))
 		return
 
 	var sync_status = peer_connection_info.doc_sync_states[checked_out_branch.id];
@@ -508,11 +508,11 @@ func update_sync_status() -> void:
 		var max_history_entry_index = history_list.get_item_count() - 1
 
 		if found_matching_change:
-			for i in max_history_entry_index:
+			for i in range(history_list.get_item_count()):
 				if synced_up_until_index >= (max_history_entry_index - i):
 					history_list.set_item_custom_fg_color(i, Color(1, 1, 1))
 				else:
-					history_list.set_item_custom_fg_color(i, Color(0.75, 0.75, 0.75))
+					history_list.set_item_custom_fg_color(i, Color(0.5, 0.5, 0.5))
 
 
 		print("synced_up_until_index: ", synced_up_until_index, " - ", found_matching_change)
@@ -523,10 +523,16 @@ func update_sync_status() -> void:
 		else:
 			sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
 
+			var unsynced_changes_count
 			if found_matching_change:
-				sync_status_icon.tooltip_text = "Disconnected - %s unsynced changes" % [max_history_entry_index - synced_up_until_index]
+				unsynced_changes_count = max_history_entry_index - synced_up_until_index
 			else:
-				sync_status_icon.tooltip_text = "Disconnected - unknown sync status"
+				unsynced_changes_count = history_list.get_item_count()
+
+			if unsynced_changes_count == 1:
+				sync_status_icon.tooltip_text = "Disconnected - 1 unsynced change"
+			else:
+				sync_status_icon.tooltip_text = "Disconnected - %s unsynced changes" % [unsynced_changes_count]
 
 
 func update_branch_picker() -> void:
