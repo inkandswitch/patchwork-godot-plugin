@@ -107,22 +107,23 @@ func update_sync_status() -> void:
 		return
 
 	var peer_connection_info = GodotProject.get_sync_server_connection_info()
-	print("update sync status", peer_connection_info)
 	if !peer_connection_info:
 		printerr("no peer connection info")
 		return
 
 	# check if doc_sync_states has the checked_out_branch.id
 	if !peer_connection_info.doc_sync_states.has(checked_out_branch.id):
+		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
+		sync_status_icon.tooltip_text = "Unknown sync status"
 		return
 
 	var sync_status = peer_connection_info.doc_sync_states[checked_out_branch.id];
 
 	if sync_status.last_acked_heads == checked_out_branch.heads:
-		sync_status_icon.texture = load("res://addons/patchwork/icons/circle-check.svg")
+		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-check.svg")
 		sync_status_icon.tooltip_text = "Fully synced"
 	else:
-		sync_status_icon.texture = load("res://addons/patchwork/icons/circle_sync.svg")
+		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-sync.svg")
 		sync_status_icon.tooltip_text = "Syncing..."
 
 
@@ -374,6 +375,9 @@ func fold_section(section_header: Button, section_body: Control):
 
 func update_ui() -> void:
 	var checked_out_branch = GodotProject.get_checked_out_branch()
+
+	# update sync status
+	update_sync_status()
 
 	# update branch pickers
 

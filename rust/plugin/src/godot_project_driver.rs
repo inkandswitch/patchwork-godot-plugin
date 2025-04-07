@@ -35,7 +35,7 @@ use crate::{doc_utils::SimpleDocReader, godot_project::Branch};
 
 const SERVER_URL: &str = "104.131.179.247:8080";
 
-const SERVER_REPO_ID: &str = "dc15a89b-948d-4d37-9f3f-ec73fa5857c5";
+const SERVER_REPO_ID: &str = "sync-server";
 
 #[derive(Debug, Clone)]
 pub enum InputEvent {
@@ -313,8 +313,6 @@ impl GodotProjectDriver {
 
                     next = sync_server_conn_info_changes.next() => {
                         if let Some(info) = next {
-
-                            println!("rust: peer connection info changed: {:?}", info);
                             tx.unbounded_send(OutputEvent::PeerConnectionInfoChanged { peer_connection_info: info.clone() }).unwrap();
                         };
                     },
