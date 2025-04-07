@@ -243,28 +243,34 @@ impl GodotProjectDriver {
         return self.runtime.spawn(async move {
             println!("start a client");
 
-            // Start a client.
-            let stream = loop {
+            loop {
                 // Try to connect to a peer
-                let res = TcpStream::connect(SERVER_URL).await;
-                if let Err(e) = res {
-                    println!("error connecting: {:?}", e);
+                println!("Attempting to connect to {}", SERVER_URL);
+                let stream_result = TcpStream::connect(SERVER_URL).await;
+
+                if let Err(e) = stream_result {
+                    println!("Error connecting: {:?}", e);
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                     continue;
                 }
-                break res.unwrap();
-            };
 
-            println!("connect repo");
+                let stream = stream_result.unwrap();
+                println!("Connection established, connecting repo");
 
-            if let Err(e) = repo_handle_clone
-                .connect_tokio_io(SERVER_URL, stream, ConnDirection::Outgoing)
-                .await
-            {
-                println!("Failed to connect: {:?}", e);
-                return;
+                match repo_handle_clone
+                    .connect_tokio_io(SERVER_URL, stream, ConnDirection::Outgoing)
+                    .await
+                {
+                    Ok(_) => {
+                        println!("Connected successfully!");
+                    }
+                    Err(e) => {
+                        println!("Failed to connect: {:?}", e);
+                    }
+                }
+
+                // Continue the loop to reconnect if disconnected
             }
-
-            println!("connected successfully!");
         });
     }
 
