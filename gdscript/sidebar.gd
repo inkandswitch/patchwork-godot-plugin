@@ -522,7 +522,11 @@ func update_sync_status() -> void:
 			sync_status_icon.tooltip_text = "Syncing"
 		else:
 			sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
-			sync_status_icon.tooltip_text = "Disconnected - %s unsynced changes" % [max_history_entry_index - synced_up_until_index]
+
+			if found_matching_change:
+				sync_status_icon.tooltip_text = "Disconnected - %s unsynced changes" % [max_history_entry_index - synced_up_until_index]
+			else:
+				sync_status_icon.tooltip_text = "Disconnected - unknown sync status"
 
 
 func update_branch_picker() -> void:
