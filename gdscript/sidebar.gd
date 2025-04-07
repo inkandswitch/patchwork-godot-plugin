@@ -123,8 +123,12 @@ func update_sync_status() -> void:
 		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-check.svg")
 		sync_status_icon.tooltip_text = "Fully synced"
 	else:
-		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-sync.svg")
-		sync_status_icon.tooltip_text = "Syncing..."
+		if peer_connection_info.is_connected:
+			sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-sync.svg")
+			sync_status_icon.tooltip_text = "Syncing..."
+		else:
+			sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
+			sync_status_icon.tooltip_text = "Unknown sync status"
 
 
 func _on_user_button_pressed():

@@ -12,7 +12,7 @@ use std::any::Any;
 use std::collections::HashSet;
 use std::io::BufWriter;
 use std::path::PathBuf;
-use std::time::UNIX_EPOCH;
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::HashMap, str::FromStr};
 
 use automerge::{
@@ -1987,10 +1987,39 @@ impl INode for GodotProject {
                 OutputEvent::PeerConnectionInfoChanged {
                     peer_connection_info,
                 } => {
-                    self.sync_server_connection_info = Some(peer_connection_info.clone());
+                    let new_sync_server_connection_info = match self
+                        .sync_server_connection_info
+                        .as_mut()
+                    {
+                        None => {
+                            self.sync_server_connection_info = Some(peer_connection_info.clone());
+                            peer_connection_info
+                        }
+
+                        Some(sync_server_connection_info) => {
+                            sync_server_connection_info.last_received =
+                                peer_connection_info.last_received;
+                            sync_server_connection_info.last_sent = peer_connection_info.last_sent;
+
+                            peer_connection_info
+                                .docs
+                                .iter()
+                                .for_each(|(doc_id, doc_state)| {
+                                    sync_server_connection_info
+                                        .docs
+                                        .insert(doc_id.clone(), doc_state.clone());
+                                });
+
+                            peer_connection_info
+                        }
+                    };
+
                     self.base_mut().emit_signal(
                         "sync_server_connection_info_changed",
-                        &[peer_connection_info_to_dict(&peer_connection_info).to_variant()],
+                        &[
+                            peer_connection_info_to_dict(&new_sync_server_connection_info)
+                                .to_variant(),
+                        ],
                     );
                 }
             }
@@ -2078,20 +2107,12 @@ fn peer_connection_info_to_dict(peer_connection_info: &PeerConnectionInfo) -> Di
     for (doc_id, doc_state) in peer_connection_info.docs.iter() {
         let last_received = doc_state
             .last_received
-            .and_then(|t| {
-                t.duration_since(UNIX_EPOCH)
-                    .ok()
-                    .map(|d| d.as_secs().to_variant())
-            })
+            .map(system_time_to_variant)
             .unwrap_or(Variant::nil());
 
         let last_sent = doc_state
             .last_sent
-            .and_then(|t| {
-                t.duration_since(UNIX_EPOCH)
-                    .ok()
-                    .map(|d| d.as_secs().to_variant())
-            })
+            .map(system_time_to_variant)
             .unwrap_or(Variant::nil());
 
         let last_sent_heads = doc_state
@@ -2117,7 +2138,29 @@ fn peer_connection_info_to_dict(peer_connection_info: &PeerConnectionInfo) -> Di
         );
     }
 
+    let last_received = peer_connection_info
+        .last_received
+        .map(system_time_to_variant)
+        .unwrap_or(Variant::nil());
+
+    let last_sent = peer_connection_info
+        .last_sent
+        .map(system_time_to_variant)
+        .unwrap_or(Variant::nil());
+
+    let is_connected = !last_received.is_nil();
+
     dict! {
         "doc_sync_states": doc_sync_states,
+        "last_received": last_received,
+        "last_sent": last_sent,
+        "is_connected": is_connected,
     }
+}
+
+fn system_time_to_variant(time: SystemTime) -> Variant {
+    time.duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs().to_variant())
+        .unwrap_or(Variant::nil())
 }
