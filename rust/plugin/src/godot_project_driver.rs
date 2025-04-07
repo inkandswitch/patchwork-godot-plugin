@@ -33,8 +33,8 @@ use tokio::{net::TcpStream, runtime::Runtime};
 
 use crate::{doc_utils::SimpleDocReader, godot_project::Branch};
 
-const SERVER_URL: &str = "104.131.179.247:8080";
-//const SERVER_URL: &str = "0.0.0.0:8080";
+// const SERVER_URL: &str = "104.131.179.247:8080";
+const SERVER_URL: &str = "0.0.0.0:8080";
 
 const SERVER_REPO_ID: &str = "sync-server";
 
@@ -243,34 +243,28 @@ impl GodotProjectDriver {
         return self.runtime.spawn(async move {
             println!("start a client");
 
-            loop {
+            // Start a client.
+            let stream = loop {
                 // Try to connect to a peer
-                println!("Attempting to connect to {}", SERVER_URL);
-                let stream_result = TcpStream::connect(SERVER_URL).await;
-
-                if let Err(e) = stream_result {
-                    println!("Error connecting: {:?}", e);
-                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                let res = TcpStream::connect(SERVER_URL).await;
+                if let Err(e) = res {
+                    println!("error connecting: {:?}", e);
                     continue;
                 }
+                break res.unwrap();
+            };
 
-                let stream = stream_result.unwrap();
-                println!("Connection established, connecting repo");
+            println!("connect repo");
 
-                match repo_handle_clone
-                    .connect_tokio_io(SERVER_URL, stream, ConnDirection::Outgoing)
-                    .await
-                {
-                    Ok(_) => {
-                        println!("Connected successfully!");
-                    }
-                    Err(e) => {
-                        println!("Failed to connect: {:?}", e);
-                    }
-                }
-
-                // Continue the loop to reconnect if disconnected
+            if let Err(e) = repo_handle_clone
+                .connect_tokio_io(SERVER_URL, stream, ConnDirection::Outgoing)
+                .await
+            {
+                println!("Failed to connect: {:?}", e);
+                return;
             }
+
+            println!("connected successfully!");
         });
     }
 

@@ -2005,6 +2005,27 @@ impl INode for GodotProject {
                                 .docs
                                 .iter()
                                 .for_each(|(doc_id, doc_state)| {
+                                    // let had_previously_heads = sync_server_connection_info
+                                    //     .docs
+                                    //     .get(doc_id)
+                                    //     .is_some_and(|doc_state| {
+                                    //         doc_state
+                                    //             .clone()
+                                    //             .last_acked_heads
+                                    //             .is_some_and(|heads| heads.len() > 0)
+                                    //     });
+
+                                    // // don't overwrite the doc state if it had previously had heads
+                                    // // but now doesn't have any heads
+                                    // if had_previously_heads
+                                    //     && doc_state
+                                    //         .clone()
+                                    //         .last_acked_heads
+                                    //         .is_some_and(|heads| heads.len() == 0)
+                                    // {
+                                    //     return;
+                                    // }
+
                                     sync_server_connection_info
                                         .docs
                                         .insert(doc_id.clone(), doc_state.clone());

@@ -33,7 +33,7 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 
 const TEMP_DIR = "user://tmp"
 
-var DEBUG_MODE = false
+var DEBUG_MODE = true
 
 var plugin: EditorPlugin
 
@@ -65,7 +65,6 @@ func _ready() -> void:
 	# need to add task_modal as a child to the plugin otherwise process won't be called
 	add_child(task_modal)
 
-	update_sync_status()
 	update_ui()
 
 	# get the class name of the inspector
@@ -99,37 +98,7 @@ func _ready() -> void:
 
 
 func _on_sync_server_connection_info_changed(_peer_connection_info: Dictionary) -> void:
-	update_sync_status()
-
-func update_sync_status() -> void:
-	var checked_out_branch = GodotProject.get_checked_out_branch()
-	if !checked_out_branch:
-		return
-
-	var peer_connection_info = GodotProject.get_sync_server_connection_info()
-	if !peer_connection_info:
-		printerr("no peer connection info")
-		return
-
-	# check if doc_sync_states has the checked_out_branch.id
-	if !peer_connection_info.doc_sync_states.has(checked_out_branch.id):
-		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
-		sync_status_icon.tooltip_text = "Unknown sync status"
-		return
-
-	var sync_status = peer_connection_info.doc_sync_states[checked_out_branch.id];
-
-	if sync_status.last_acked_heads == checked_out_branch.heads:
-		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-check.svg")
-		sync_status_icon.tooltip_text = "Fully synced"
-	else:
-		if peer_connection_info.is_connected:
-			sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-sync.svg")
-			sync_status_icon.tooltip_text = "Syncing..."
-		else:
-			sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
-			sync_status_icon.tooltip_text = "Unknown sync status"
-
+	update_ui()
 
 func _on_user_button_pressed():
 	var dialog = ConfirmationDialog.new()
@@ -188,7 +157,6 @@ func _on_branch_picker_item_selected(_index: int) -> void:
 		return
 
 	checkout_branch(selected_branch.id)
-
 
 func _on_highlight_changes_checkbox_toggled(pressed: bool) -> void:
 	highlight_changes = pressed
@@ -380,8 +348,6 @@ func fold_section(section_header: Button, section_body: Control):
 func update_ui() -> void:
 	var checked_out_branch = GodotProject.get_checked_out_branch()
 
-	# update sync status
-	update_sync_status()
 
 	# update branch pickers
 
@@ -410,10 +376,15 @@ func update_ui() -> void:
 			var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
 			var merged_branch_name = merged_branch.name
 			history_list.add_item(prefix + "↪️ " + change_author + " merged \"" + merged_branch_name + "\" branch - " + change_timestamp)
+			history_list.set_item_metadata(history_list.get_item_count() - 1, change.hash)
 
 		else:
 			history_list.add_item(prefix + change_author + " made some changes - " + change_timestamp + "")
 	
+
+	# update sync status
+	update_sync_status()
+
 	# update action buttons
 
 	if checked_out_branch && checked_out_branch.is_main:
@@ -486,6 +457,73 @@ func update_ui() -> void:
 
 
 		update_highlight_changes(diff, checked_out_branch)
+
+func update_sync_status() -> void:
+	var checked_out_branch = GodotProject.get_checked_out_branch()
+	if !checked_out_branch:
+		return
+
+	var peer_connection_info = GodotProject.get_sync_server_connection_info()
+	if !peer_connection_info:
+		printerr("no peer connection info")
+		return
+
+	# unknown sync status
+	if !peer_connection_info.doc_sync_states.has(checked_out_branch.id):
+		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
+		sync_status_icon.tooltip_text = "Unknown sync status"
+
+		# mark all history items as grayed out
+		for i in range(history_list.get_item_count()):
+			history_list.set_item_custom_fg_color(i, Color(0.75, 0.75, 0.75))
+		return
+
+	var sync_status = peer_connection_info.doc_sync_states[checked_out_branch.id];
+
+	print("sync_status: ", sync_status.last_acked_heads)
+
+	# fully synced
+	if sync_status.last_acked_heads == checked_out_branch.heads:
+		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-check.svg")
+		sync_status_icon.tooltip_text = "Fully synced"
+
+		# mark all history items as synced
+		for i in range(history_list.get_item_count()):
+			history_list.set_item_custom_fg_color(i, Color(1, 1, 1))
+
+
+	# partially synced
+	else:
+		# find the point until which the history is synced
+		var changes = GodotProject.get_changes()
+		var synced_up_until_index = 0;
+		var found_matching_change = false
+		for change in changes:
+			if sync_status.last_acked_heads.has(change.hash):
+				found_matching_change = true
+				break
+			synced_up_until_index += 1;
+
+
+		var max_history_entry_index = history_list.get_item_count() - 1
+
+		if found_matching_change:
+			for i in max_history_entry_index:
+				if synced_up_until_index >= (max_history_entry_index - i):
+					history_list.set_item_custom_fg_color(i, Color(1, 1, 1))
+				else:
+					history_list.set_item_custom_fg_color(i, Color(0.75, 0.75, 0.75))
+
+
+		print("synced_up_until_index: ", synced_up_until_index, " - ", found_matching_change)
+
+		if peer_connection_info.is_connected:
+			sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-sync.svg")
+			sync_status_icon.tooltip_text = "Syncing"
+		else:
+			sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
+			sync_status_icon.tooltip_text = "Unknown sync status"
+
 
 func update_branch_picker() -> void:
 	branch_picker.clear()
@@ -589,7 +627,6 @@ func update_highlight_changes(diff: Dictionary, checked_out_branch) -> void:
 				if scene_changes:
 					HighlightChangesLayer.highlight_changes(edited_root, scene_changes)
 		else:
-			print("removing highlight")
 			HighlightChangesLayer.remove_highlight(edited_root)
 
 
