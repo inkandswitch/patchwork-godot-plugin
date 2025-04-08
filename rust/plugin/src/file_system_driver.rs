@@ -1,3 +1,4 @@
+use core::str;
 use std::path::PathBuf;
 use std::sync::Arc;
 use futures::{
@@ -5,7 +6,7 @@ use futures::{
     StreamExt,
 };
 use rlimit::{setrlimit, Resource};
-use tokio::time::{sleep, Duration};
+use tokio::{task::JoinHandle, time::{sleep, Duration}};
 use notify::{Watcher, RecursiveMode, Config, Event, EventHandler};
 // if on macos, use kqueue, otherwise use recommended
 #[cfg(target_os = "macos")]
@@ -20,8 +21,9 @@ use std::io::{Read, Write};
 use ya_md5::{Md5Hasher, Hash, Md5Error};
 use tokio::sync::Mutex;
 use glob::Pattern;
+use std::io;
 
-use crate::godot_project::FileContent;
+use crate::{godot_parser::{parse_scene, recognize_scene, GodotScene}, godot_project::FileContent};
 
 // Custom event handler that bridges between std::sync::mpsc and futures::channel::mpsc
 struct UnboundedEventHandler {
@@ -37,8 +39,8 @@ impl EventHandler for UnboundedEventHandler {
 
 #[derive(Debug)]
 pub enum FileSystemEvent {
-    FileCreated(PathBuf),
-    FileModified(PathBuf),
+    FileCreated(PathBuf, FileContent),
+    FileModified(PathBuf, FileContent),
     FileDeleted(PathBuf),
 }
 
@@ -53,24 +55,12 @@ pub struct FileSystemDriver {
     watch_path: PathBuf,
     file_hashes: Arc<Mutex<HashMap<PathBuf, String>>>,
     ignore_globs: Vec<Pattern>,
+	output_rx: UnboundedReceiver<FileSystemEvent>,
+	input_tx: UnboundedSender<FileSystemUpdateEvent>,
+	handle: JoinHandle<()>,
 }
 
 impl FileSystemDriver {
-    pub fn new(watch_path: PathBuf, ignore_globs: Vec<String>) -> Self {
-
-        // Convert string globs to Pattern objects
-        let ignore_patterns: Vec<Pattern> = ignore_globs
-            .into_iter()
-            .filter_map(|glob_str| Pattern::new(&glob_str).ok())
-            .collect();
-
-        Self {
-            watch_path,
-            file_hashes: Arc::new(Mutex::new(HashMap::new())),
-            ignore_globs: ignore_patterns,
-        }
-    }
-
     // Check if a path should be ignored based on glob patterns
     fn should_ignore(path: &PathBuf, ignore_globs: &[Pattern]) -> bool {
         let path_str = path.to_string_lossy();
@@ -93,6 +83,64 @@ impl FileSystemDriver {
             Err(_) => None,
         }
     }
+
+	fn is_file_binary(path: &PathBuf) -> bool {
+		if !path.is_file() {
+			return false;
+		}
+
+		let mut file = match File::open(path) {
+			Ok(file) => file,
+			Err(_) => return false,
+		};
+
+		// check the first 8000 bytes for a null byte
+		let mut buffer = [0; 8000];
+        if file.read(&mut buffer).is_err() {
+            return false;
+        }
+		return Self::is_buf_binary(&buffer);
+	}
+
+	fn is_buf_binary(buf: &[u8]) -> bool {
+		buf.iter().take(8000).filter(|&b| *b == 0).count() > 0
+	}
+
+	fn buf_to_file_content(buf: Vec<u8>) -> FileContent {
+		// check the first 8000 bytes (or the entire file if it's less than 8000 bytes) for a null byte
+		if Self::is_buf_binary(&buf) {
+			return FileContent::Binary(buf);
+		}
+		let str = str::from_utf8(&buf);
+		if str.is_err() {
+			return FileContent::Binary(buf);
+		}
+        let string = str.unwrap().to_string();
+        // check if the file is a scene or a tres
+        if recognize_scene(&string) {
+            let scene = parse_scene(&string);
+            if scene.is_ok() {
+                return FileContent::Scene(scene.unwrap());
+            }
+        }
+        FileContent::String(string)
+	}
+
+	// get the buffer and hash of a file
+	fn get_buffer_and_hash(path: &PathBuf) -> Result<(Vec<u8>, String), io::Error> {
+		if !path.is_file() {
+			return Err(io::Error::new(io::ErrorKind::Other, "Not a file"));
+		}
+		let buf = std::fs::read(path);
+		if buf.is_err() {
+			return Err(io::Error::new(io::ErrorKind::Other, "Failed to read file"));
+		}
+		let buf = buf.unwrap();
+		let hash = Md5Hasher::hash_slice(&buf);
+		let hash_str = format!("{}", hash);
+		Ok((buf, hash_str))
+	}
+
 
     fn _initialize_file_hashes(watch_path: &PathBuf, file_hashes: &mut tokio::sync::MutexGuard<'_, HashMap<PathBuf, String>>, sym_links: &mut HashMap<PathBuf, PathBuf>, ignore_globs: &[Pattern]) {
         if let Ok(entries) = std::fs::read_dir(watch_path) {
@@ -192,13 +240,13 @@ impl FileSystemDriver {
         output_tx: &UnboundedSender<FileSystemEvent>,
         ignore_globs: &[Pattern],
         sym_links: &mut HashMap<PathBuf, PathBuf>,
-    ) {
+    ) -> Result<(), notify::Error> {
         // Process symlinks and get the actual path
         let path = if let Ok(metadata) = std::fs::metadata(&path) {
             if metadata.is_symlink() {
                 let target = std::fs::read_link(&path).unwrap();
                 sym_links.insert(path.clone(), target);
-                path
+                path.clone()
             } else {
                 Self::desymlinkify(&path, sym_links)
             }
@@ -208,47 +256,51 @@ impl FileSystemDriver {
 
         // Skip if path matches any ignore pattern
         if Self::should_ignore(&path, ignore_globs) {
-            return;
+            return Ok(());
         }
 
         if path.is_file() {
-            let new_hash = Self::calculate_file_hash(&path);
-
-            if let Some(new_hash) = new_hash {
-                let mut file_hashes = file_hashes.lock().await;
-                if file_hashes.contains_key(&path) {
-                    let old_hash = file_hashes.get(&path).unwrap();
-                    if old_hash != &new_hash {
-                        file_hashes.insert(path.clone(), new_hash);
-                        output_tx.unbounded_send(FileSystemEvent::FileModified(path)).ok();
-                    }
-                } else {
-                    // If the file is newly created, we want to emit a created event
-                    file_hashes.insert(path.clone(), new_hash);
-                    output_tx.unbounded_send(FileSystemEvent::FileCreated(path)).ok();
-                }
-            }
+			let result = Self::get_buffer_and_hash(&path);
+			if result.is_err() {
+				println!("rust: failed to get file content for {:?}", path);
+				return Err(notify::Error::new(notify::ErrorKind::Generic("Failed to get file content".to_string())));
+			}
+			let (content, new_hash) = result.unwrap();
+			let mut file_hashes: tokio::sync::MutexGuard<'_, HashMap<PathBuf, String>> = file_hashes.lock().await;
+			if file_hashes.contains_key(&path) {
+				let old_hash = file_hashes.get(&path).unwrap();
+				if old_hash != &new_hash {
+					output_tx.unbounded_send(FileSystemEvent::FileModified(path, Self::buf_to_file_content(content))).ok();
+				}
+			} else {
+				// If the file is newly created, we want to emit a created event
+				file_hashes.insert(path.clone(), new_hash);
+				output_tx.unbounded_send(FileSystemEvent::FileCreated(path, Self::buf_to_file_content(content))).ok();
+			}
         }
+		Ok(())
     }
 
-
-
-    pub async fn start(&self,
-        output_tx: UnboundedSender<FileSystemEvent>,
-        mut input_rx: UnboundedReceiver<FileSystemUpdateEvent>) {
-
+    pub async fn spawn(watch_path: PathBuf, ignore_globs: Vec<String>) -> Self {
         // if macos, increase ulimit to 100000000
         if cfg!(target_os = "macos") {
             setrlimit(Resource::NOFILE, 100000000, 100000000).unwrap();
         }
 
-        let watch_path = self.watch_path.clone();
-        let file_hashes = self.file_hashes.clone();
-        let ignore_globs = self.ignore_globs.clone();
-        let mut sym_links = HashMap::new();
-
+        let ignore_globs: Vec<Pattern> = ignore_globs
+            .into_iter()
+            .filter_map(|glob_str| Pattern::new(&glob_str).ok())
+            .collect();
+		let ig = ignore_globs.clone();
+		let fh: Arc<Mutex<HashMap<PathBuf, String>>> = Arc::new(Mutex::new(HashMap::new()));
+        let mut syml = HashMap::new();
+		let wp: PathBuf = watch_path.clone();
+		let (output_tx, output_rx) = futures::channel::mpsc::unbounded();
+		let (input_tx, mut input_rx) = futures::channel::mpsc::unbounded();
+		let file_hashes = fh.clone();
+		let mut sym_links = syml.clone();
         // Spawn the file system watcher in a separate task
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             Self::initialize_file_hashes(&watch_path, &file_hashes, &mut sym_links, &ignore_globs).await;
 
             // Create a futures channel for notify events
@@ -280,13 +332,16 @@ impl FileSystemDriver {
                                     ..
                                 } => {
                                     for path in paths {
-                                        Self::handle_file_event(
-                                            path,
+                                        let result = Self::handle_file_event(
+                                            path.clone(),
                                             &file_hashes,
                                             &output_tx,
                                             &ignore_globs,
                                             &mut sym_links,
                                         ).await;
+                                        if result.is_err() {
+                                            println!("rust: failed to handle file event {:?}", result);
+                                        }
                                     }
                                 }
                                 notify::Event {
@@ -295,8 +350,8 @@ impl FileSystemDriver {
                                     ..
                                 } => {
                                     for path in paths {
-                                        Self::handle_file_event(
-                                            path,
+                                        let result = Self::handle_file_event(
+                                            path.clone(),
                                             &file_hashes,
                                             &output_tx,
                                             &ignore_globs,
@@ -387,12 +442,51 @@ impl FileSystemDriver {
                 }
             }
         });
+		Self {
+			watch_path: wp,
+			file_hashes: fh,
+			ignore_globs: ig,
+			output_rx,
+			input_tx,
+			handle,
+		}
     }
 
-    pub async fn stop(&self) {
-        // The watcher will be dropped when the task is dropped
-        // No explicit cleanup needed
-    }
+	pub async fn new_file(&self, path: PathBuf, content: FileContent) {
+		self.input_tx.unbounded_send(FileSystemUpdateEvent::FileCreated(path, content)).ok();
+	}
+
+	pub async fn modify_file(&self, path: PathBuf, content: FileContent) {
+		self.input_tx.unbounded_send(FileSystemUpdateEvent::FileModified(path, content)).ok();
+	}
+
+	pub async fn delete_file(&self, path: PathBuf) {
+		self.input_tx.unbounded_send(FileSystemUpdateEvent::FileDeleted(path)).ok();
+	}
+
+	pub fn try_next(&mut self) -> Option<FileSystemEvent> {
+		let res: Result<Option<FileSystemEvent>, futures::channel::mpsc::TryRecvError> = self.output_rx.try_next();
+		if res.is_err() {
+			return None;
+		}
+		res.unwrap()
+	}
+
+	pub async fn next(&mut self) -> Option<FileSystemEvent> {
+		self.output_rx.next().await
+	}
+
+	pub async fn next_timeout(&mut self, timeout: Duration) -> Option<FileSystemEvent> {
+		let res = tokio::time::timeout(timeout, self.output_rx.next()).await;
+		if res.is_err() {
+			return None;
+		}
+		res.unwrap()
+	}
+
+	pub async fn stop(&self) {
+		self.handle.abort();
+	}
 }
 
 #[cfg(test)]
@@ -401,7 +495,7 @@ mod tests {
     use super::*;
     use std::fs::File;
     use std::io::Write;
-    use std::path;
+    use std::{future, path};
     use tempfile::tempdir;
     use tokio::sync::mpsc;
     use std::path::Path;
@@ -436,13 +530,8 @@ mod tests {
         let dir_path = dir.path().to_path_buf();
 
         // Create the file system driver
-        let driver = FileSystemDriver::new(dir_path.clone(), vec![]);
+        let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec![]).await;
 
-        // Create channels for input and output events
-        let (output_tx, mut output_rx) = futures::channel::mpsc::unbounded();
-        let (input_tx, input_rx) = futures::channel::mpsc::unbounded();
-
-        driver.start(output_tx, input_rx).await;
 
         // Give the watcher time to initialize
         sleep(Duration::from_millis(2000)).await;
@@ -457,10 +546,11 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         // Wait for the create event
-        if let Some(event) = output_rx.next().await {
+        if let Some(event) = driver.next_timeout(Duration::from_millis(100)).await {
             match event {
-                FileSystemEvent::FileCreated(path) => {
+                FileSystemEvent::FileCreated(path, content) => {
                     assert_eq!(path, test_file);
+                    assert_eq!(content, FileContent::String("test content".to_string()));
                 }
                 _ => panic!("Unexpected event"),
             }
@@ -474,10 +564,11 @@ mod tests {
         }
         sleep(Duration::from_millis(100)).await;
 
-        if let Some(event) = output_rx.next().await {
+        if let Some(event) = driver.next_timeout(Duration::from_millis(100)).await {
             match event {
-                FileSystemEvent::FileCreated(path) => {
+                FileSystemEvent::FileCreated(path, content) => {
                     assert_eq!(path, test_file2);
+                    assert_eq!(content, FileContent::String("test content".to_string()));
                 }
                 _ => panic!("Unexpected event"),
             }
@@ -491,10 +582,11 @@ mod tests {
         }
 
         // Wait for the modify event
-        if let Some(event) = output_rx.next().await {
+        if let Some(event) = driver.next_timeout(Duration::from_millis(100)).await {
             match event {
-                FileSystemEvent::FileModified(path) => {
+                FileSystemEvent::FileModified(path, content) => {
                     assert_eq!(normalize_path(&dir_path, &path), normalize_path(&dir_path, &test_file));
+                    assert_eq!(content, FileContent::String("modified content".to_string()));
                 }
                 _ => panic!("Unexpected event"),
             }
@@ -509,8 +601,7 @@ mod tests {
 
         // Wait for the delete event
         // have it timeout after 100ms
-        let timeout = tokio::time::timeout(Duration::from_millis(100), output_rx.next());
-        if let Ok(Some(event)) = timeout.await {
+        if let Some(event) = driver.next_timeout(Duration::from_millis(100)).await {
             match event {
                 FileSystemEvent::FileDeleted(path) => {
                     assert_eq!(normalize_path(&dir_path, &path), normalize_path(&dir_path, &test_file));
@@ -537,13 +628,7 @@ mod tests {
         };
 
         // Create the file system driver with ignore globs
-        let driver = FileSystemDriver::new(dir_path.clone(), vec!["*.tmp".to_string()]);
-
-        // Create channels for input and output events
-        let (output_tx, mut output_rx) = futures::channel::mpsc::unbounded();
-        let (input_tx, input_rx) = futures::channel::mpsc::unbounded();
-
-        driver.start(output_tx, input_rx).await;
+        let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec!["*.tmp".to_string()]).await;
 
         // Give the watcher time to initialize
         sleep(Duration::from_millis(100)).await;
@@ -558,10 +643,11 @@ mod tests {
 
 
         // Wait for the create event (should only be for the non-ignored file)
-        if let Ok(Some(event)) = output_rx.try_next() {
+        if let Some(event) = driver.try_next() {
             match event {
-                FileSystemEvent::FileCreated(path) => {
+                FileSystemEvent::FileCreated(path, content) => {
                     assert_eq!(normalize_path(&dir_path, &path), normalize_path(&dir_path, &test_file));
+                    assert_eq!(content, FileContent::String("test content".to_string()));
                 }
                 _ => panic!("Unexpected event"),
             }
@@ -573,7 +659,7 @@ mod tests {
 
         sleep(Duration::from_millis(100)).await;
 
-        if let Ok(Some(event)) = output_rx.try_next() {
+        if let Some(event) = driver.next_timeout(Duration::from_millis(100)).await {
             panic!("Unexpected event {:?}", event);
         }
 
@@ -589,9 +675,9 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         // Wait for the modify event (should only be for the non-ignored file)
-        if let Ok(Some(event)) = output_rx.try_next() {
+        if let Some(event) = driver.next_timeout(Duration::from_millis(100)).await {
             match event {
-                FileSystemEvent::FileModified(path) => {
+                FileSystemEvent::FileModified(path, content) => {
                     assert_eq!(normalize_path(&dir_path, &path), normalize_path(&dir_path, &test_file));
                 }
                 _ => panic!("Unexpected event"),
@@ -605,7 +691,7 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         // Wait for the delete event (should only be for the non-ignored file)
-        if let Ok(Some(event)) = output_rx.try_next() {
+        if let Some(event) = driver.next_timeout(Duration::from_millis(100)).await {
             match event {
                 FileSystemEvent::FileDeleted(path) => {
                     assert_eq!(normalize_path(&dir_path, &path), normalize_path(&dir_path, &test_file));
@@ -618,7 +704,7 @@ mod tests {
         std::fs::remove_file(&ignored_file).unwrap();
 
         // try_next should return None
-        assert!(output_rx.try_next().is_err());
+        assert!(driver.try_next().is_none());
 
     }
 
@@ -631,13 +717,7 @@ mod tests {
         let actual_path = dir_path.canonicalize().unwrap();
 
         // Create the file system driver
-        let driver = FileSystemDriver::new(dir_path.clone(), vec![]);
-
-        // Create channels for input and output events
-        let (output_tx, mut output_rx) = futures::channel::mpsc::unbounded();
-        let (input_tx, input_rx) = futures::channel::mpsc::unbounded();
-
-        driver.start(output_tx, input_rx).await;
+        let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec![]).await;
 
         // Give the watcher time to initialize
         sleep(Duration::from_millis(100)).await;
@@ -645,51 +725,41 @@ mod tests {
         let modified_content = "modified content";
         // Create a file via update event
         let test_file = dir_path.join("test.txt");
-        input_tx.unbounded_send(FileSystemUpdateEvent::FileCreated(
-            test_file.clone(),
-            FileContent::String(test_content.to_string()),
-        )).unwrap();
+        driver.new_file(test_file.clone(), FileContent::String(test_content.to_string())).await;
         // sleep
         sleep(Duration::from_millis(100)).await;
         // check that there's no event for the file created
-        assert!(output_rx.try_next().is_err());
+        assert!(driver.try_next().is_none());
 
         // check that the file exists and contains the test_content
         assert!(test_file.exists());
         assert_eq!(std::fs::read_to_string(&test_file).unwrap(), test_content);
         // modify the file
-        input_tx.unbounded_send(FileSystemUpdateEvent::FileModified(
-            test_file.clone(),
-            FileContent::String(modified_content.to_string()),
-        )).unwrap();
+        driver.modify_file(test_file.clone(), FileContent::String(modified_content.to_string())).await;
         sleep(Duration::from_millis(100)).await;
 
         // check that there's no event for the file modified
-        assert!(output_rx.try_next().is_err());
+        assert!(driver.try_next().is_none());
         // check that the file exists and contains the modified_content
         assert!(test_file.exists());
         assert_eq!(std::fs::read_to_string(&test_file).unwrap(), modified_content);
         // delete the file
-        input_tx.unbounded_send(FileSystemUpdateEvent::FileDeleted(
-            test_file.clone(),
-        )).unwrap();
+        driver.delete_file(test_file.clone()).await;
         sleep(Duration::from_millis(100)).await;
         // check that there's no event for the file modified
-        assert!(output_rx.try_next().is_err());
+        assert!(driver.try_next().is_none());
 
         // check that the file does not exist
         assert!(!test_file.exists());
     }
+
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn test_file_system_large_number_of_files() {
         // we want to have at least 1000 files in the directory to test that we actually do raise the ulimit
         let dir = tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let driver = FileSystemDriver::new(dir_path.clone(), vec![]);
-        let (output_tx, mut output_rx) = futures::channel::mpsc::unbounded();
-        let (input_tx, input_rx) = futures::channel::mpsc::unbounded();
-        driver.start(output_tx, input_rx).await;
+        let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec![]).await;
         // give the watcher time to initialize
         sleep(Duration::from_millis(100)).await;
         // create 1000 files
@@ -711,24 +781,26 @@ mod tests {
         // now check to see if we have 1000 events
         let mut found_paths = HashSet::new();
         let mut count = 0;
-        let mut timeout = tokio::time::timeout(Duration::from_millis(1000), output_rx.next());
-        while let Ok(event) = timeout.await {
-            assert!(event.is_some());
-            let event = event.unwrap();
-            let event_path = if let FileSystemEvent::FileCreated(path) = event {
+        while let Some(event) = driver.next_timeout(Duration::from_millis(1000)).await {
+            let event_path = if let FileSystemEvent::FileCreated(path, _) = event {
                 path
             } else {
-                if let FileSystemEvent::FileModified(path) = event{
-                    found_paths.insert(path);
-                    timeout = tokio::time::timeout(Duration::from_millis(1000), output_rx.next());
-                    continue;
-                }
                 panic!("Unexpected event type {:?}", event);
             };
             found_paths.insert(event_path);
-            timeout = tokio::time::timeout(Duration::from_millis(1000), output_rx.next());
+            count += 1;
         }
-        // assert that the number of found paths is equal to the number of test paths
-        assert_eq!(found_paths.len(), test_paths.len());
+        assert_eq!(count, 1000);
+        for path in test_paths {
+            assert!(found_paths.contains(&path));
+        }
     }
+
+    // #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    // // run the test_file_system_large_number_of_files test 100 times
+    // async fn test_file_system_large_number_of_files_100() {
+    //     for _ in 0..100 {
+    //         test_file_system_large_number_of_files().await;
+    //     }
+    // }
 }

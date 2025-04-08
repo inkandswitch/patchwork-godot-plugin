@@ -1142,6 +1142,25 @@ pub struct SceneMetadata {
     pub resource_type: String,
 }
 
+pub fn recognize_scene(source: &String) -> bool {
+	// go line by line until we find a line that does not start with a comment (i.e. ;) and is not empty
+	for line in source.lines() {
+		let trimmed = line.trim();
+		if !trimmed.starts_with(";") && !trimmed.is_empty() {
+			// check if the line starts with "[gd_resource" or "[gd_scene"
+			if trimmed.starts_with("["){
+				let line_after_bracket = &trimmed[1..].trim();
+				if line_after_bracket.starts_with("gd_resource") || line_after_bracket.starts_with("gd_scene") {
+					return true;
+				}
+			}
+			// gd_resource and gd_scene have to be the first non-comment, non-empty line; if we find another line that is not a comment or empty, we can return false
+			break;
+		}
+	}
+	false
+}
+
 pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
     let mut parser = Parser::new();
     parser
@@ -1158,11 +1177,11 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
             // Query for section attributes and paths
             let query = "(section
                 (identifier) @section_id
-                (attribute 
-                    (identifier) @attr_key 
+                (attribute
+                    (identifier) @attr_key
                     (_) @attr_value)*
-                (property 
-                    (path) @prop_key 
+                (property
+                    (path) @prop_key
                     (_) @prop_value)*
             )";
             let query =
