@@ -631,6 +631,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "779ae4bf7e8421cf91c0b3b64e7e8b40b862fba4d393f59150042de7c4965a94"
 
 [[package]]
+name = "glob"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8d1add55171497b4705a648c6b583acafb01d58050a51727785f0b2c8e0a2b2"
+
+[[package]]
 name = "godot"
 version = "0.2.4"
 source = "git+https://github.com/godot-rust/gdext?branch=master#a752851b2a6be7dfb79fe8046daa316ccfcad88b"
@@ -1037,6 +1043,7 @@ dependencies = [
  "cargo-post",
  "cbindgen",
  "futures",
+ "glob",
  "godot",
  "notify",
  "pretty_assertions",
@@ -1050,6 +1057,7 @@ dependencies = [
  "tree-sitter",
  "tree-sitter-godot-resource",
  "uuid",
+ "yet-another-md5",
 ]
 
 [[package]]
@@ -2133,6 +2141,16 @@ name = "yansi"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfe53a6657fd280eaa890a3bc59152892ffa3e30101319d168b781ed6529b049"
+
+[[package]]
+name = "yet-another-md5"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bba9e0849c3974605f963b44cb18cb138184e4455f9533986ec35aa469c57ea7"
+dependencies = [
+ "log",
+ "thiserror",
+]
 
 [[package]]
 name = "zerocopy"

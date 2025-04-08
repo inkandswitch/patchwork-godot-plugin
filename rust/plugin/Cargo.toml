@@ -37,6 +37,8 @@ similar = { version = "2.4.0", features = ["unicode"] }
 notify = "5.2.0"
 # patchwork_rust_post_build_script = { path = "patchwork_rust_post_build_script" }
 serde = { version = "1.0", features = ["derive"] }
+yet-another-md5 = "2.0.0"
+glob = "0.3.1"
 
 [build-dependencies]
 cbindgen = "^0.27"
