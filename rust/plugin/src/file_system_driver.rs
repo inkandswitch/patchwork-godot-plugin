@@ -46,8 +46,7 @@ pub enum FileSystemEvent {
 
 #[derive(Debug)]
 pub enum FileSystemUpdateEvent {
-    FileCreated(PathBuf, FileContent),
-    FileModified(PathBuf, FileContent),
+    FileSaved(PathBuf, FileContent),
     FileDeleted(PathBuf),
 }
 
@@ -57,7 +56,9 @@ pub struct FileSystemDriver {
     ignore_globs: Vec<Pattern>,
 	output_rx: UnboundedReceiver<FileSystemEvent>,
 	input_tx: UnboundedSender<FileSystemUpdateEvent>,
+    watcher: Arc<Mutex<WatcherImpl>>,
 	handle: JoinHandle<()>,
+
 }
 
 impl FileSystemDriver {
@@ -180,45 +181,35 @@ impl FileSystemDriver {
     // Write file content to disk
     fn write_file_content(path: &PathBuf, content: &FileContent) -> std::io::Result<String> {
         // Check if the file exists
-        let file_exists = path.exists();
-
-        // Open the file with the appropriate mode
-        let mut file = if file_exists {
-            // If file exists, open it for writing (truncate)
-            File::options().write(true).truncate(true).open(path)?
-        } else {
-            // If file doesn't exist, create it
-            File::create(path)?
-        };
-
+		let mut _temp_text: Option<String> = None;
         // Write the content based on its type
-        match content {
+		let buf: &[u8] = match content {
             FileContent::String(text) => {
-                let hash = Md5Hasher::hash_slice(text.as_bytes());
-                let hash_str = format!("{}", hash);
-                if let Ok(_) = file.write_all(text.as_bytes()) {
-                    return Ok(hash_str);
-                }
+                text.as_bytes()
             }
             FileContent::Binary(data) => {
-                let hash = Md5Hasher::hash_slice(data);
-                let hash_str = format!("{}", hash);
-                if let Ok(_) = file.write_all(data) {
-                    return Ok(hash_str);
-                }
+                data
             }
             FileContent::Scene(scene) => {
-                let text = scene.serialize();
-                let hash = Md5Hasher::hash_slice(text.as_bytes());
-                let hash_str = format!("{}", hash);
-                if let Ok(_) = file.write_all(text.as_bytes()) {
-                    return Ok(hash_str);
-                }
+                _temp_text = Some(scene.serialize());
+                _temp_text.as_ref().unwrap().as_bytes()
             }
-        }
-        Err(std::io::Error::new(std::io::ErrorKind::Other, "Failed to write file"))
-
-    }
+        };
+		let hash = Md5Hasher::hash_slice(buf).to_string();
+		// Open the file with the appropriate mode
+		let mut file = if path.exists() {
+			// If file exists, open it for writing (truncate)
+			File::options().write(true).truncate(true).open(path)?
+		} else {
+			// If file doesn't exist, create it
+			File::create(path)?
+		};
+		let result = file.write_all(buf);
+		if result.is_err() {
+			return Err(std::io::Error::new(std::io::ErrorKind::Other, "Failed to write file"));
+		}
+		Ok(hash)
+	}
 
 
     pub fn desymlinkify(path: &PathBuf, sym_links: &HashMap<PathBuf, PathBuf>) -> PathBuf {
@@ -281,6 +272,49 @@ impl FileSystemDriver {
 		Ok(())
     }
 
+    async fn handle_file_update(
+        path: PathBuf,
+		content: FileContent,
+        file_hashes: &Arc<Mutex<HashMap<PathBuf, String>>>,
+        ignore_globs: &[Pattern],
+    ) -> Result<(), notify::Error> {
+		// Skip if path matches any ignore pattern
+		if Self::should_ignore(&path, &ignore_globs) {
+			return Ok(());
+		}
+
+		// Write the file content to disk
+		if let Ok(hash_str) = Self::write_file_content(&path, &content) {
+			let mut file_hashes = file_hashes.lock().await;
+			file_hashes.insert(path.clone(), hash_str);
+		} else {
+			return Err(notify::Error::new(notify::ErrorKind::Generic("Failed to write file".to_string())));
+		}
+		Ok(())
+    }
+
+    async fn handle_delete_update(
+        path: PathBuf,
+        file_hashes: &Arc<Mutex<HashMap<PathBuf, String>>>,
+        ignore_globs: &[Pattern],
+    ) -> Result<(), notify::Error> {
+                                // Skip if path matches any ignore pattern
+        if Self::should_ignore(&path, &ignore_globs) {
+            return Ok(());
+        }
+
+		// Delete the file from disk
+		if std::fs::remove_file(&path.canonicalize().unwrap()).is_ok() {
+			// Remove the hash from our tracking
+			let mut file_hashes = file_hashes.lock().await;
+			file_hashes.remove(&path);
+
+		} else {
+            return Err(notify::Error::new(notify::ErrorKind::Generic("Failed to delete file".to_string())));
+        }
+        Ok(())
+    }
+
     pub async fn spawn(watch_path: PathBuf, ignore_globs: Vec<String>) -> Self {
         // if macos, increase ulimit to 100000000
         if cfg!(target_os = "macos") {
@@ -300,25 +334,28 @@ impl FileSystemDriver {
 		let file_hashes = fh.clone();
 		let mut sym_links = syml.clone();
         // Spawn the file system watcher in a separate task
+        // Create a futures channel for notify events
+        let (notify_tx, mut notify_rx) = futures::channel::mpsc::unbounded();
+
+        // Create a custom event handler that uses the UnboundedSender
+        let event_handler = UnboundedEventHandler {
+            sender: notify_tx,
+        };
+
+        // Create the watcher with our custom event handler
+        // don't canonicalize the path
+
+
+        // Start watching the directory
+
+        // make an arc mutable
+        let watcher_arc = Arc::new(Mutex::new(WatcherImpl::new(event_handler, Config::default().with_follow_symlinks(false)).unwrap()));
+        {
+            let mut watcher = watcher_arc.lock().await;
+            watcher.watch(&watch_path, RecursiveMode::Recursive).unwrap();
+        }
         let handle = tokio::spawn(async move {
             Self::initialize_file_hashes(&watch_path, &file_hashes, &mut sym_links, &ignore_globs).await;
-
-            // Create a futures channel for notify events
-            let (notify_tx, mut notify_rx) = futures::channel::mpsc::unbounded();
-
-            // Create a custom event handler that uses the UnboundedSender
-            let event_handler = UnboundedEventHandler {
-                sender: notify_tx,
-            };
-
-            // Create the watcher with our custom event handler
-            // don't canonicalize the path
-
-            let mut watcher = WatcherImpl::new(event_handler, Config::default().with_follow_symlinks(false)).unwrap();
-
-            // Start watching the directory
-            watcher.watch(&watch_path, RecursiveMode::Recursive).unwrap();
-
             // Process both file system events and update events
             loop {
                 tokio::select! {
@@ -357,6 +394,9 @@ impl FileSystemDriver {
                                             &ignore_globs,
                                             &mut sym_links,
                                         ).await;
+										if result.is_err() {
+											println!("rust: failed to handle file event {:?}", result);
+										}
                                     }
                                 }
                                 notify::Event {
@@ -392,49 +432,17 @@ impl FileSystemDriver {
                     // Handle update events
                     Some(event) = input_rx.next() => {
                         match event {
-                            FileSystemUpdateEvent::FileCreated(path, content) => {
-                                // Skip if path matches any ignore pattern
-                                if Self::should_ignore(&path, &ignore_globs) {
-                                    continue;
-                                }
-
-                                // Write the file content to disk
-                                if let Ok(hash_str) = Self::write_file_content(&path, &content) {
-                                    let mut file_hashes = file_hashes.lock().await;
-                                    file_hashes.insert(path.clone(), hash_str);
-                                } else {
-                                    println!("rust: failed to write file {:?}", path);
-                                }
-                            }
-                            FileSystemUpdateEvent::FileModified(path, content) => {
-                                // Skip if path matches any ignore pattern
-                                if Self::should_ignore(&path, &ignore_globs) {
-                                    continue;
-                                }
-
-                                // Write the file content to disk
-                                if let Ok(hash_str) = Self::write_file_content(&path, &content) {
-                                    let mut file_hashes = file_hashes.lock().await;
-                                    file_hashes.insert(path.clone(), hash_str);
-                                } else {
-                                    println!("rust: failed to write file {:?}", path);
-                                }
+                            FileSystemUpdateEvent::FileSaved(path, content) => {
+								let result = Self::handle_file_update(path, content, &file_hashes, &ignore_globs).await;
+								if result.is_err() {
+									println!("rust: failed to handle file update {:?}", result);
+								}
                             }
                             FileSystemUpdateEvent::FileDeleted(path) => {
-                                // Skip if path matches any ignore pattern
-                                if Self::should_ignore(&path, &ignore_globs) {
-                                    continue;
-                                }
-
-                                // Delete the file from disk
-                                if std::fs::remove_file(&path.canonicalize().unwrap()).is_ok() {
-                                    // Remove the hash from our tracking
-                                    let mut file_hashes = file_hashes.lock().await;
-                                    file_hashes.remove(&path);
-
-                                } else {
-                                    println!("rust: failed to delete file {:?}", path);
-                                }
+								let result = Self::handle_delete_update(path, &file_hashes, &ignore_globs).await;
+								if result.is_err() {
+									println!("rust: failed to handle file delete {:?}", result);
+								}
                             }
                         }
                     },
@@ -448,21 +456,47 @@ impl FileSystemDriver {
 			ignore_globs: ig,
 			output_rx,
 			input_tx,
+            watcher: watcher_arc,
 			handle,
 		}
     }
 
-	pub async fn new_file(&self, path: PathBuf, content: FileContent) {
-		self.input_tx.unbounded_send(FileSystemUpdateEvent::FileCreated(path, content)).ok();
+
+	async fn stop_watching_path(&self, path: &PathBuf) {
+		let _ = self.watcher.lock().await.unwatch(path);
 	}
 
-	pub async fn modify_file(&self, path: PathBuf, content: FileContent) {
-		self.input_tx.unbounded_send(FileSystemUpdateEvent::FileModified(path, content)).ok();
+	async fn start_watching_path(&self, path: &PathBuf) {
+		let _ = self.watcher.lock().await.watch(path, RecursiveMode::Recursive);
 	}
 
-	pub async fn delete_file(&self, path: PathBuf) {
+	pub fn save_file_async(&self, path: PathBuf, content: FileContent) {
+		self.input_tx.unbounded_send(FileSystemUpdateEvent::FileSaved(path, content)).ok();
+	}
+
+	pub fn delete_file_async(&self, path: PathBuf) {
 		self.input_tx.unbounded_send(FileSystemUpdateEvent::FileDeleted(path)).ok();
 	}
+
+	pub async fn save_file(&self, path: PathBuf, content: FileContent) -> Result<(), notify::Error> {
+		if (path.exists()) {
+			self.stop_watching_path(&path).await;
+			let result = Self::handle_file_update(path.clone(), content, &self.file_hashes, &self.ignore_globs).await;
+			self.start_watching_path(&path).await;
+			return result;
+		}
+		Self::handle_file_update(path.clone(), content, &self.file_hashes, &self.ignore_globs).await
+	}
+
+	pub async fn delete_file(&self, path: PathBuf) -> Result<(), notify::Error> {
+		if (!path.exists()) {
+			return Err(notify::Error::new(notify::ErrorKind::Generic("File does not exist".to_string())));
+		}
+		self.stop_watching_path(&path).await;
+		let result = Self::handle_delete_update(path.clone(), &self.file_hashes, &self.ignore_globs).await;
+		return result;
+	}
+
 
 	pub fn try_next(&mut self) -> Option<FileSystemEvent> {
 		let res: Result<Option<FileSystemEvent>, futures::channel::mpsc::TryRecvError> = self.output_rx.try_next();
@@ -725,7 +759,8 @@ mod tests {
         let modified_content = "modified content";
         // Create a file via update event
         let test_file = dir_path.join("test.txt");
-        driver.new_file(test_file.clone(), FileContent::String(test_content.to_string())).await;
+        let result = driver.save_file(test_file.clone(), FileContent::String(test_content.to_string())).await;
+		assert!(result.is_ok());
         // sleep
         sleep(Duration::from_millis(100)).await;
         // check that there's no event for the file created
@@ -735,7 +770,8 @@ mod tests {
         assert!(test_file.exists());
         assert_eq!(std::fs::read_to_string(&test_file).unwrap(), test_content);
         // modify the file
-        driver.modify_file(test_file.clone(), FileContent::String(modified_content.to_string())).await;
+        let result = driver.save_file(test_file.clone(), FileContent::String(modified_content.to_string())).await;
+		assert!(result.is_ok());
         sleep(Duration::from_millis(100)).await;
 
         // check that there's no event for the file modified
@@ -744,7 +780,8 @@ mod tests {
         assert!(test_file.exists());
         assert_eq!(std::fs::read_to_string(&test_file).unwrap(), modified_content);
         // delete the file
-        driver.delete_file(test_file.clone()).await;
+        let result = driver.delete_file(test_file.clone()).await;
+		assert!(result.is_ok());
         sleep(Duration::from_millis(100)).await;
         // check that there's no event for the file modified
         assert!(driver.try_next().is_none());
