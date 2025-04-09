@@ -14,7 +14,7 @@ use std::io::BufWriter;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::HashMap, str::FromStr};
-
+use crate::file_utils::FileContent;
 use automerge::{
     patches::TextRepresentation, transaction::Transactable, ChangeHash, ObjType, ReadDoc,
     TextEncoding, ROOT,
@@ -86,12 +86,7 @@ pub struct Branch {
     pub merge_info: Option<MergeInfo>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum FileContent {
-    String(String),
-    Binary(Vec<u8>),
-    Scene(GodotScene),
-}
+
 
 #[derive(Debug, Clone)]
 enum CheckedOutBranchState {

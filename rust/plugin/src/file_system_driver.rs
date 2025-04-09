@@ -24,8 +24,9 @@ use ya_md5::{Md5Hasher, Hash, Md5Error};
 use tokio::sync::Mutex;
 use glob::Pattern;
 use std::io;
+use crate::file_utils::{calculate_file_hash, get_buffer_and_hash, FileContent};
 
-use crate::{godot_parser::{parse_scene, recognize_scene, GodotScene}, godot_project::FileContent};
+use crate::{godot_parser::{parse_scene, recognize_scene, GodotScene}};
 
 // static const var for debounce time
 const DEBOUNCE_TIME: u64 = 100;
@@ -83,112 +84,6 @@ impl FileSystemTask {
         self.ignore_globs.iter().any(|pattern| pattern.matches(&path_str))
     }
 
-    // Calculate MD5 hash of a file
-    fn calculate_file_hash(path: &PathBuf) -> Option<String> {
-        if !path.is_file() {
-            return None;
-        }
-
-        let mut file = match File::open(path) {
-            Ok(file) => file,
-            Err(_) => return None,
-        };
-
-        match Md5Hasher::hash(&mut file) {
-            Ok(hash) => Some(format!("{}", hash)),
-            Err(_) => None,
-        }
-    }
-
-	fn is_file_binary(path: &PathBuf) -> bool {
-		if !path.is_file() {
-			return false;
-		}
-
-		let mut file = match File::open(path) {
-			Ok(file) => file,
-			Err(_) => return false,
-		};
-
-		// check the first 8000 bytes for a null byte
-		let mut buffer = [0; 8000];
-        if file.read(&mut buffer).is_err() {
-            return false;
-        }
-		return Self::is_buf_binary(&buffer);
-	}
-
-	fn is_buf_binary(buf: &[u8]) -> bool {
-		buf.iter().take(8000).filter(|&b| *b == 0).count() > 0
-	}
-
-	// get the buffer and hash of a file
-	fn get_buffer_and_hash(path: &PathBuf) -> Result<(Vec<u8>, String), io::Error> {
-		if !path.is_file() {
-			return Err(io::Error::new(io::ErrorKind::Other, "Not a file"));
-		}
-		let buf = std::fs::read(path);
-		if buf.is_err() {
-			return Err(io::Error::new(io::ErrorKind::Other, "Failed to read file"));
-		}
-		let buf = buf.unwrap();
-		let hash = Md5Hasher::hash_slice(&buf);
-		let hash_str = format!("{}", hash);
-		Ok((buf, hash_str))
-	}
-
-	// Write file content to disk
-	fn write_file_content(path: &PathBuf, content: &FileContent) -> std::io::Result<String> {
-		// Check if the file exists
-		let mut _temp_text: Option<String> = None;
-		// Write the content based on its type
-		let buf: &[u8] = match content {
-			FileContent::String(text) => {
-				text.as_bytes()
-			}
-			FileContent::Binary(data) => {
-				data
-			}
-			FileContent::Scene(scene) => {
-				_temp_text = Some(scene.serialize());
-				_temp_text.as_ref().unwrap().as_bytes()
-			}
-		};
-		let hash = Md5Hasher::hash_slice(buf).to_string();
-		// Open the file with the appropriate mode
-		let mut file = if path.exists() {
-			// If file exists, open it for writing (truncate)
-			File::options().write(true).truncate(true).open(path)?
-		} else {
-			// If file doesn't exist, create it
-			File::create(path)?
-		};
-		let result = file.write_all(buf);
-		if result.is_err() {
-			return Err(std::io::Error::new(std::io::ErrorKind::Other, "Failed to write file"));
-		}
-		Ok(hash)
-	}
-
-	fn buf_to_file_content(buf: Vec<u8>) -> FileContent {
-		// check the first 8000 bytes (or the entire file if it's less than 8000 bytes) for a null byte
-		if Self::is_buf_binary(&buf) {
-			return FileContent::Binary(buf);
-		}
-		let str = str::from_utf8(&buf);
-		if str.is_err() {
-			return FileContent::Binary(buf);
-		}
-		let string = str.unwrap().to_string();
-		// check if the file is a scene or a tres
-		if recognize_scene(&string) {
-			let scene = parse_scene(&string);
-			if scene.is_ok() {
-				return FileContent::Scene(scene.unwrap());
-			}
-		}
-		FileContent::String(string)
-	}
 
     fn _initialize_file_hashes(&self, watch_path: &PathBuf, file_hashes: &mut tokio::sync::MutexGuard<'_, HashMap<PathBuf, String>>, sym_links: &mut HashMap<PathBuf, PathBuf>) {
         if let Ok(entries) = std::fs::read_dir(watch_path) {
@@ -208,7 +103,7 @@ impl FileSystemTask {
 
                 if path.is_file() {
                     // check if the path is a symlink
-                    if let Some(hash) = Self::calculate_file_hash(&path) {
+                    if let Some(hash) = calculate_file_hash(&path) {
                         file_hashes.insert(path, hash);
                     }
                 } else if path.is_dir() {
@@ -273,10 +168,10 @@ impl FileSystemTask {
 		}
 
         if path.is_file() {
-			let mut result = Self::get_buffer_and_hash(&path);
+			let mut result = get_buffer_and_hash(&path);
 			if result.is_err() {
 				sleep(StdDuration::from_millis(DEBOUNCE_TIME)).await;
-				result = Self::get_buffer_and_hash(&path);
+				result = get_buffer_and_hash(&path);
 			}
 			if result.is_err() {
 				println!("rust: failed to get file content {:?}", result);
@@ -287,12 +182,12 @@ impl FileSystemTask {
 			if file_hashes.contains_key(&path) {
 				let old_hash = file_hashes.get(&path).unwrap();
 				if old_hash != &new_hash {
-					return Ok(Some(FileSystemEvent::FileModified(path, Self::buf_to_file_content(content))));
+					return Ok(Some(FileSystemEvent::FileModified(path, FileContent::from_buf(content))));
 				}
 			} else {
 				// If the file is newly created, we want to emit a created event
 				file_hashes.insert(path.clone(), new_hash);
-				return Ok(Some(FileSystemEvent::FileCreated(path, Self::buf_to_file_content(content))));
+				return Ok(Some(FileSystemEvent::FileCreated(path, FileContent::from_buf(content))));
 			}
         }
 		Ok(None)
@@ -310,7 +205,7 @@ impl FileSystemTask {
 		}
 
 		// Write the file content to disk
-		if let Ok(hash_str) = Self::write_file_content(&path, &content) {
+		if let Ok(hash_str) = FileContent::write_file_content(&path, &content) {
 			let mut file_hashes = self.file_hashes.lock().await;
 			file_hashes.insert(path.clone(), hash_str);
 		} else {
@@ -578,7 +473,7 @@ impl FileSystemDriver {
 			for update in updates {
 				match update {
 					FileSystemUpdateEvent::FileSaved(path, content) => {
-						if let Ok(hash_str) = FileSystemTask::write_file_content(&path, &content) {
+						if let Ok(hash_str) = FileContent::write_file_content(&path, &content) {
 							file_hashes.insert(path.clone(), hash_str);
 						} else {
 							println!("rust: failed to write file {:?}", path);

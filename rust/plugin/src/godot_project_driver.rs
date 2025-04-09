@@ -15,9 +15,10 @@ use crate::utils::{
 };
 use crate::{
     godot_parser,
-    godot_project::{BranchesMetadataDoc, FileContent, GodotProjectDoc},
+    godot_project::{BranchesMetadataDoc, GodotProjectDoc},
     utils::get_linked_docs_of_branch,
 };
+use crate::file_utils::FileContent;
 use automerge::{
     patches::TextRepresentation, transaction::Transactable, ChangeHash, ObjType, PatchLog, ReadDoc,
     TextEncoding, ROOT,
