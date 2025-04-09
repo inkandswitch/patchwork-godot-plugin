@@ -214,6 +214,27 @@ impl FileSystemTask {
 		Ok(())
     }
 
+	pub fn handle_file_update_blocking(
+        &self,
+        path: PathBuf,
+		content: FileContent,
+    ) -> Result<(), notify::Error> {
+		// Skip if path matches any ignore pattern
+		if self.should_ignore(&path) {
+			return Ok(());
+		}
+
+		// Write the file content to disk
+		if let Ok(hash_str) = FileContent::write_file_content(&path, &content) {
+			let mut file_hashes = self.file_hashes.blocking_lock();
+			file_hashes.insert(path.clone(), hash_str);
+		} else {
+			return Err(notify::Error::new(notify::ErrorKind::Generic("Failed to write file".to_string())));
+		}
+		Ok(())
+    }
+
+
     pub async fn handle_delete_update(
         &self,
         path: PathBuf,
@@ -234,6 +255,27 @@ impl FileSystemTask {
         }
         Ok(())
     }
+
+	pub fn handle_delete_update_blocking(
+        &self,
+        path: PathBuf,
+    ) -> Result<(), notify::Error> {
+        // Skip if path matches any ignore pattern
+		if self.should_ignore(&path) {
+			return Ok(());
+		}
+
+		// Delete the file from disk
+		if std::fs::remove_file(&path.canonicalize().unwrap()).is_ok() {
+			// Remove the hash from our tracking
+			let mut file_hashes = self.file_hashes.blocking_lock();
+			file_hashes.remove(&path);
+		} else {
+			return Err(notify::Error::new(notify::ErrorKind::Generic("Failed to delete file".to_string())));
+		}
+		Ok(())
+	}
+
 	// Scan for changes in the file system
 	async fn _scan_for_additive_changes(
 		&self,
@@ -345,8 +387,16 @@ impl FileSystemTask {
 		let _ = self.watcher.lock().await.watcher().unwatch(path);
 	}
 
+	fn stop_watching_path_blocking(&self, path: &PathBuf) {
+		let _ = self.watcher.blocking_lock().watcher().unwatch(path);
+	}
+
 	async fn start_watching_path(&self, path: &PathBuf) {
 		let _ = self.watcher.lock().await.watcher().watch(path, RecursiveMode::Recursive);
+	}
+
+	fn start_watching_path_blocking(&self, path: &PathBuf) {
+		let _ = self.watcher.blocking_lock().watcher().watch(path, RecursiveMode::Recursive);
 	}
 
 	async fn add_ignore_glob(&mut self, glob: &str) {
@@ -432,7 +482,7 @@ impl FileSystemDriver {
 		self.input_tx.unbounded_send(FileSystemUpdateEvent::FileDeleted(path)).ok();
 	}
 
-	pub async fn save_file(&self, path: PathBuf, content: FileContent) -> Result<(), notify::Error> {
+	fn get_existing_parent_path(path: &PathBuf) -> Option<PathBuf> {
 		let mut parent = Some(path.as_path());
 		while parent.is_some() {
 			if parent.as_ref().unwrap().exists() {
@@ -441,13 +491,35 @@ impl FileSystemDriver {
 			parent = parent.unwrap().parent();
 		}
 		if parent.is_some() {
-			let parent = parent.unwrap().to_path_buf();
+			return Some(parent.unwrap().to_path_buf());
+		}
+		None
+	}
+
+	pub async fn save_file(&self, path: PathBuf, content: FileContent) -> Result<(), notify::Error> {
+		let parent = Self::get_existing_parent_path(&path);
+		if parent.is_some() {
+			let parent = parent.unwrap();
 			self.task.stop_watching_path(&parent).await;
 			let result = self.task.handle_file_update(path.clone(), content).await;
 			self.task.start_watching_path(&parent).await;
 			return result;
 		} else {
 			let result = self.task.handle_file_update(path.clone(), content).await;
+			return result;
+		}
+	}
+
+	pub fn save_file_blocking(&self, path: PathBuf, content: FileContent) -> Result<(), notify::Error> {
+		let parent = Self::get_existing_parent_path(&path);
+		if parent.is_some() {
+			let parent = parent.unwrap();
+			self.task.stop_watching_path_blocking(&parent);
+			let result = self.task.handle_file_update_blocking(path.clone(), content);
+			self.task.start_watching_path_blocking(&parent);
+			return result;
+		} else {
+			let result = self.task.handle_file_update_blocking(path.clone(), content);
 			return result;
 		}
 	}
@@ -459,10 +531,24 @@ impl FileSystemDriver {
 		}
 	}
 
+	fn pause_task_blocking(&self) {
+		self.input_tx.unbounded_send(FileSystemUpdateEvent::Pause).ok();
+		while !self.task.is_paused() {
+			sleep(Duration::from_millis(100));
+		}
+	}
+
 	async fn resume_task(&self) {
 		self.input_tx.unbounded_send(FileSystemUpdateEvent::Resume).ok();
 		while self.task.is_paused() {
 			sleep(Duration::from_millis(100)).await;
+		}
+	}
+
+	fn resume_task_blocking(&self) {
+		self.input_tx.unbounded_send(FileSystemUpdateEvent::Resume).ok();
+		while self.task.is_paused() {
+			sleep(Duration::from_millis(100));
 		}
 	}
 
@@ -494,6 +580,40 @@ impl FileSystemDriver {
 		self.resume_task().await;
 	}
 
+	pub fn batch_update_blocking(&self, updates: Vec<FileSystemUpdateEvent>) -> Vec<FileSystemEvent> {
+		self.pause_task_blocking();
+		let mut file_hashes = self.task.file_hashes.blocking_lock();
+		let mut events = Vec::new();
+		for update in updates {
+			match update {
+				FileSystemUpdateEvent::FileSaved(path, content) => {
+					if let Ok(hash_str) = FileContent::write_file_content(&path, &content) {
+						if let Some(old_hash) = file_hashes.get_mut(&path) {
+							if old_hash != &hash_str {
+								events.push(FileSystemEvent::FileModified(path.clone(), content));
+							}
+						} else {
+							events.push(FileSystemEvent::FileCreated(path.clone(), content));
+						}
+						file_hashes.insert(path, hash_str);
+					} else {
+						println!("rust: failed to write file {:?}", path);
+					}
+				}
+				FileSystemUpdateEvent::FileDeleted(path) => {
+					if file_hashes.remove(&path).is_some() {
+						events.push(FileSystemEvent::FileDeleted(path));
+					}
+				}
+				_ => {
+					continue;
+				}
+			}
+		}
+		self.resume_task_blocking();
+		events
+	}
+
 	pub async fn delete_file(&self, path: PathBuf) -> Result<(), notify::Error> {
 		if !path.exists() {
 			return Err(notify::Error::new(notify::ErrorKind::Generic("File does not exist".to_string())));
@@ -503,6 +623,14 @@ impl FileSystemDriver {
 		return result;
 	}
 
+	pub fn delete_file_blocking(&self, path: PathBuf) -> Result<(), notify::Error> {
+		if !path.exists() {
+			return Err(notify::Error::new(notify::ErrorKind::Generic("File does not exist".to_string())));
+		}
+		self.task.stop_watching_path_blocking(&path);
+		let result = self.task.handle_delete_update_blocking(path.clone());
+		return result;
+	}
 
 	pub fn try_next(&mut self) -> Option<FileSystemEvent> {
 		let res: Result<Option<FileSystemEvent>, futures::channel::mpsc::TryRecvError> = self.output_rx.try_next();
@@ -526,6 +654,19 @@ impl FileSystemDriver {
 
 	pub async fn stop(&self) {
 		self.handle.abort();
+	}
+
+	pub fn get_all_files_blocking(&self) -> Vec<(PathBuf, FileContent)> {
+		let mut file_hashes = self.task.file_hashes.blocking_lock();
+		file_hashes.iter().filter_map(|(path, _hash)| {
+			if path.is_file() {
+				let content = std::fs::read(path);
+				if content.is_ok() {
+					return Some((path.clone(), FileContent::from_buf(content.unwrap())));
+				}
+			}
+			None
+		}).collect()
 	}
 }
 
