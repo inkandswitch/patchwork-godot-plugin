@@ -1,5 +1,6 @@
 use core::str;
-use std::path::PathBuf;
+use std::sync::atomic::Ordering;
+use std::{path::PathBuf, sync::atomic::AtomicBool};
 use std::sync::Arc;
 use futures::{
     channel::mpsc::{UnboundedReceiver, UnboundedSender},
@@ -48,6 +49,8 @@ pub enum FileSystemEvent {
 pub enum FileSystemUpdateEvent {
     FileSaved(PathBuf, FileContent),
     FileDeleted(PathBuf),
+	Pause,
+	Resume
 }
 
 #[derive(Debug, Clone)]
@@ -56,6 +59,9 @@ pub struct FileSystemTask {
     file_hashes: Arc<Mutex<HashMap<PathBuf, String>>>,
     ignore_globs: Vec<Pattern>,
 	watcher: Arc<Mutex<WatcherImpl>>,
+	// atomic bool
+	paused: Arc<AtomicBool>,
+	waiting_on_pause: Arc<AtomicBool>,
 }
 
 #[derive(Debug)]
@@ -112,26 +118,6 @@ impl FileSystemTask {
 		buf.iter().take(8000).filter(|&b| *b == 0).count() > 0
 	}
 
-	fn buf_to_file_content(buf: Vec<u8>) -> FileContent {
-		// check the first 8000 bytes (or the entire file if it's less than 8000 bytes) for a null byte
-		if Self::is_buf_binary(&buf) {
-			return FileContent::Binary(buf);
-		}
-		let str = str::from_utf8(&buf);
-		if str.is_err() {
-			return FileContent::Binary(buf);
-		}
-        let string = str.unwrap().to_string();
-        // check if the file is a scene or a tres
-        if recognize_scene(&string) {
-            let scene = parse_scene(&string);
-            if scene.is_ok() {
-                return FileContent::Scene(scene.unwrap());
-            }
-        }
-        FileContent::String(string)
-	}
-
 	// get the buffer and hash of a file
 	fn get_buffer_and_hash(path: &PathBuf) -> Result<(Vec<u8>, String), io::Error> {
 		if !path.is_file() {
@@ -147,6 +133,58 @@ impl FileSystemTask {
 		Ok((buf, hash_str))
 	}
 
+	// Write file content to disk
+	fn write_file_content(path: &PathBuf, content: &FileContent) -> std::io::Result<String> {
+		// Check if the file exists
+		let mut _temp_text: Option<String> = None;
+		// Write the content based on its type
+		let buf: &[u8] = match content {
+			FileContent::String(text) => {
+				text.as_bytes()
+			}
+			FileContent::Binary(data) => {
+				data
+			}
+			FileContent::Scene(scene) => {
+				_temp_text = Some(scene.serialize());
+				_temp_text.as_ref().unwrap().as_bytes()
+			}
+		};
+		let hash = Md5Hasher::hash_slice(buf).to_string();
+		// Open the file with the appropriate mode
+		let mut file = if path.exists() {
+			// If file exists, open it for writing (truncate)
+			File::options().write(true).truncate(true).open(path)?
+		} else {
+			// If file doesn't exist, create it
+			File::create(path)?
+		};
+		let result = file.write_all(buf);
+		if result.is_err() {
+			return Err(std::io::Error::new(std::io::ErrorKind::Other, "Failed to write file"));
+		}
+		Ok(hash)
+	}
+
+	fn buf_to_file_content(buf: Vec<u8>) -> FileContent {
+		// check the first 8000 bytes (or the entire file if it's less than 8000 bytes) for a null byte
+		if Self::is_buf_binary(&buf) {
+			return FileContent::Binary(buf);
+		}
+		let str = str::from_utf8(&buf);
+		if str.is_err() {
+			return FileContent::Binary(buf);
+		}
+		let string = str.unwrap().to_string();
+		// check if the file is a scene or a tres
+		if recognize_scene(&string) {
+			let scene = parse_scene(&string);
+			if scene.is_ok() {
+				return FileContent::Scene(scene.unwrap());
+			}
+		}
+		FileContent::String(string)
+	}
 
     fn _initialize_file_hashes(&self, watch_path: &PathBuf, file_hashes: &mut tokio::sync::MutexGuard<'_, HashMap<PathBuf, String>>, sym_links: &mut HashMap<PathBuf, PathBuf>) {
         if let Ok(entries) = std::fs::read_dir(watch_path) {
@@ -179,41 +217,10 @@ impl FileSystemTask {
     // Initialize the hash map with existing files
     async fn initialize_file_hashes(&self, sym_links: &mut HashMap<PathBuf, PathBuf>) {
         let mut file_hashes_guard: tokio::sync::MutexGuard<'_, HashMap<PathBuf, String>> = self.file_hashes.lock().await;
+		file_hashes_guard.clear();
         self._initialize_file_hashes(&self.watch_path, &mut file_hashes_guard, sym_links);
     }
 
-    // Write file content to disk
-    fn write_file_content(path: &PathBuf, content: &FileContent) -> std::io::Result<String> {
-        // Check if the file exists
-		let mut _temp_text: Option<String> = None;
-        // Write the content based on its type
-		let buf: &[u8] = match content {
-            FileContent::String(text) => {
-                text.as_bytes()
-            }
-            FileContent::Binary(data) => {
-                data
-            }
-            FileContent::Scene(scene) => {
-                _temp_text = Some(scene.serialize());
-                _temp_text.as_ref().unwrap().as_bytes()
-            }
-        };
-		let hash = Md5Hasher::hash_slice(buf).to_string();
-		// Open the file with the appropriate mode
-		let mut file = if path.exists() {
-			// If file exists, open it for writing (truncate)
-			File::options().write(true).truncate(true).open(path)?
-		} else {
-			// If file doesn't exist, create it
-			File::create(path)?
-		};
-		let result = file.write_all(buf);
-		if result.is_err() {
-			return Err(std::io::Error::new(std::io::ErrorKind::Other, "Failed to write file"));
-		}
-		Ok(hash)
-	}
 
 
     fn desymlinkify(path: &PathBuf, sym_links: &HashMap<PathBuf, PathBuf>) -> PathBuf {
@@ -324,6 +331,10 @@ impl FileSystemTask {
 				// Handle file system events
 				Some(notify_result) = notify_rx.next() => {
 					if let Ok(notify_event) = notify_result {
+						if self.is_paused() {
+							// discard the event
+							continue;
+						}
 						match notify_event {
 							notify::Event {
 								kind: notify::EventKind::Create(_),
@@ -406,9 +417,15 @@ impl FileSystemTask {
 								println!("rust: failed to handle file delete {:?}", result);
 							}
 						}
+						FileSystemUpdateEvent::Pause => {
+							self.pause();
+						}
+						FileSystemUpdateEvent::Resume => {
+							self.initialize_file_hashes(&mut sym_links).await;
+							self.resume();
+						}
 					}
 				},
-				else => break
 			}
 		}
 
@@ -423,6 +440,18 @@ impl FileSystemTask {
 
 	async fn add_ignore_glob(&mut self, glob: &str) {
 		self.ignore_globs.push(Pattern::new(glob).unwrap());
+	}
+	pub fn is_paused(&self) -> bool {
+		self.paused.load(Ordering::Relaxed)
+	}
+	
+
+	fn pause(&self) {
+		self.paused.store(true, Ordering::Relaxed);
+	}
+
+	fn resume(&self) {
+		self.paused.store(false, Ordering::Relaxed);
 	}
 
 }
@@ -461,6 +490,8 @@ impl FileSystemDriver {
 			file_hashes: Arc::new(Mutex::new(HashMap::new())),
 			ignore_globs: ignore_globs,
 			watcher: watcher_arc,
+			paused: Arc::new(AtomicBool::new(false)),
+			waiting_on_pause: Arc::new(AtomicBool::new(false)),
 		};
 
 		let this_task = task.clone();
@@ -504,6 +535,48 @@ impl FileSystemDriver {
 			let result = self.task.handle_file_update(path.clone(), content).await;
 			return result;
 		}
+	}
+	
+	async fn pause_task(&self) {
+		self.input_tx.unbounded_send(FileSystemUpdateEvent::Pause).ok();
+		while !self.task.is_paused() {
+			sleep(Duration::from_millis(100)).await;
+		}
+	}
+	
+	async fn resume_task(&self) {
+		self.input_tx.unbounded_send(FileSystemUpdateEvent::Resume).ok();
+		while self.task.is_paused() {
+			sleep(Duration::from_millis(100)).await;
+		}
+	}
+
+	pub async fn batch_update(&self, updates: Vec<FileSystemUpdateEvent>) {
+		self.pause_task().await;
+		{
+			let mut file_hashes = self.task.file_hashes.lock().await;
+			for update in updates {
+				match update {
+					FileSystemUpdateEvent::FileSaved(path, content) => {
+						if let Ok(hash_str) = FileSystemTask::write_file_content(&path, &content) {
+							file_hashes.insert(path.clone(), hash_str);
+						} else {
+							println!("rust: failed to write file {:?}", path);
+						}
+					}
+					FileSystemUpdateEvent::FileDeleted(path) => {
+						file_hashes.remove(&path);
+					}
+					FileSystemUpdateEvent::Pause => {
+						continue;
+					}
+					FileSystemUpdateEvent::Resume => {
+						continue;
+					}
+				}
+			}
+		}
+		self.resume_task().await;
 	}
 
 	pub async fn delete_file(&self, path: PathBuf) -> Result<(), notify::Error> {
@@ -850,6 +923,57 @@ mod tests {
             assert!(found_paths.contains(&path));
         }
     }
+
+	#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+	async fn test_file_system_batch_update() {
+		let dir = tempdir().unwrap();
+		let dir_path = dir.path().to_path_buf();
+		let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec![]).await;
+		// update 1000 files
+		let mut updates = Vec::new();
+		for i in 0..1000 {
+			let test_path = dir_path.join(format!("test_{}.txt", i));
+			updates.push(FileSystemUpdateEvent::FileSaved(test_path, FileContent::String("test content".to_string())));
+		}
+		driver.batch_update(updates).await;
+		// wait for the watcher to process the events
+		sleep(Duration::from_millis(100)).await;
+		// check that the files exist
+		{
+			let hashes = driver.task.file_hashes.clone();
+			let hash_table = hashes.lock().await;
+			for i in 0..1000 {
+				let file = dir_path.join(format!("test_{}.txt", i));
+				assert!(file.exists());
+				assert!(hash_table.contains_key(&file));
+			}
+		}
+		// there should be no events emitted
+		if let Some(event) = driver.next_timeout(Duration::from_millis(100)).await {
+			assert!(false, "Unexpected event type {:?}", event);
+		}
+		// write a single file
+		let test_path = dir_path.join("test_woop.txt");
+		let mut file = File::create(&test_path).unwrap();
+		file.write_all(b"test content").unwrap();
+		file.sync_all().unwrap();
+		sleep(Duration::from_millis(100)).await;
+		// check that the file exists
+		assert!(test_path.exists());
+		// check that we got an event for it
+		if let Some(event) = driver.next().await {
+			match event {
+				FileSystemEvent::FileCreated(path, content) => {
+					assert_eq!(path, test_path);
+					assert_eq!(content, FileContent::String("test content".to_string()));
+				}
+				_ => panic!("Unexpected event"),
+			}
+		} else {
+			panic!("No event received");
+		}
+
+	}
 
     // #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     // // run the test_file_system_large_number_of_files test 100 times
