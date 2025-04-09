@@ -473,7 +473,7 @@ impl FileSystemTask {
 }
 
 impl FileSystemDriver {
-    pub async fn spawn(watch_path: PathBuf, ignore_globs: Vec<String>) -> Self {
+    pub fn spawn(watch_path: PathBuf, ignore_globs: Vec<String>) -> Self {
         // if macos, increase ulimit to 100000000
         if cfg!(target_os = "macos") {
             setrlimit(Resource::NOFILE, 100000000, 100000000).unwrap();
@@ -678,7 +678,7 @@ mod tests {
         let dir_path = dir.path().to_path_buf();
 
         // Create the file system driver
-        let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec![]).await;
+        let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec![]);
 
 
         // Give the watcher time to initialize
@@ -774,7 +774,7 @@ mod tests {
         };
 
         // Create the file system driver with ignore globs
-        let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec!["*.tmp".to_string()]).await;
+        let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec!["*.tmp".to_string()]);
 
         // Give the watcher time to initialize
         sleep(Duration::from_millis(100)).await;
@@ -862,7 +862,7 @@ mod tests {
         let actual_path = dir_path.canonicalize().unwrap();
 
         // Create the file system driver
-        let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec![]).await;
+        let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec![]);
 
         // Give the watcher time to initialize
         sleep(Duration::from_millis(100)).await;
@@ -907,7 +907,7 @@ mod tests {
         // we want to have at least 1000 files in the directory to test that we actually do raise the ulimit
         let dir = tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec![]).await;
+        let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec![]);
         // give the watcher time to initialize
         sleep(Duration::from_millis(100)).await;
         // create 1000 files
@@ -952,7 +952,7 @@ mod tests {
 	async fn test_file_system_batch_update() {
 		let dir = tempdir().unwrap();
 		let dir_path = dir.path().to_path_buf();
-		let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec![]).await;
+		let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec![]);
 		// update 1000 files
 		let mut updates = Vec::new();
 		for i in 0..1000 {
