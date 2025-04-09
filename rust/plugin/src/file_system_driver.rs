@@ -9,8 +9,7 @@ use futures::{
 use rlimit::{setrlimit, Resource};
 use tokio::{task::JoinHandle, time::{sleep, Duration}};
 use notify::{Watcher, RecursiveMode, Config, Event, EventHandler};
-// use notify_debouncer_mini::new_debouncer_opt;
-// use notify_debouncer_full::new_debouncer_opt;
+use notify_debouncer_mini::{new_debouncer_opt, DebouncedEvent, Debouncer};
 // if on macos, use kqueue, otherwise use recommended
 #[cfg(target_os = "macos")]
 use notify::KqueueWatcher as WatcherImpl;
@@ -27,6 +26,10 @@ use glob::Pattern;
 use std::io;
 
 use crate::{godot_parser::{parse_scene, recognize_scene, GodotScene}, godot_project::FileContent};
+
+// static const var for debounce time
+const DEBOUNCE_TIME: u64 = 100;
+
 
 // Custom event handler that bridges between std::sync::mpsc and futures::channel::mpsc
 struct UnboundedEventHandler {
@@ -60,10 +63,9 @@ pub struct FileSystemTask {
     watch_path: PathBuf,
     file_hashes: Arc<Mutex<HashMap<PathBuf, String>>>,
     ignore_globs: Vec<Pattern>,
-	watcher: Arc<Mutex<WatcherImpl>>,
+	watcher: Arc<Mutex<Debouncer<WatcherImpl>>>,
 	// atomic bool
 	paused: Arc<AtomicBool>,
-	waiting_on_pause: Arc<AtomicBool>,
 }
 
 #[derive(Debug)]
@@ -273,8 +275,7 @@ impl FileSystemTask {
         if path.is_file() {
 			let mut result = Self::get_buffer_and_hash(&path);
 			if result.is_err() {
-				// retry after 50ms
-				sleep(StdDuration::from_millis(100)).await;
+				sleep(StdDuration::from_millis(DEBOUNCE_TIME)).await;
 				result = Self::get_buffer_and_hash(&path);
 			}
 			if result.is_err() {
@@ -395,7 +396,7 @@ impl FileSystemTask {
 		events
 	}
 
-	async fn main_loop(&self, notify_rx: &mut UnboundedReceiver<Result<Event, notify::Error>>, input_rx: &mut UnboundedReceiver<FileSystemUpdateEvent>, output_tx: &UnboundedSender<FileSystemEvent>) {
+	async fn main_loop(&self, notify_rx: &mut UnboundedReceiver<Result<Vec<DebouncedEvent>, notify::Error>>, input_rx: &mut UnboundedReceiver<FileSystemUpdateEvent>, output_tx: &UnboundedSender<FileSystemEvent>) {
 		let mut sym_links = HashMap::new();
 		self.initialize_file_hashes(&mut sym_links).await;
 		// Process both file system events and update events
@@ -404,73 +405,10 @@ impl FileSystemTask {
 				// Handle file system events
 				Some(notify_result) = notify_rx.next() => {
 					if let Ok(notify_event) = notify_result {
-						// if self.is_paused() {
-						// 	// discard the event
-						// 	continue;
-						// }
-						match notify_event {
-							notify::Event {
-								kind: notify::EventKind::Create(_),
-								paths,
-								..
-							} => {
-								for path in paths {
-									let result = self.handle_file_event(
-										path.clone(),
-										&mut sym_links,
-									).await;
-									if result.is_err() {
-										println!("rust: failed to handle file event {:?}", result);
-									}
-									if let Some(event) = result.unwrap() {
-										output_tx.unbounded_send(event).ok();
-									}
-								}
-							}
-							notify::Event {
-								kind: notify::EventKind::Modify(_),
-								paths,
-								..
-							} => {
-								for path in paths {
-									let result = self.handle_file_event(
-										path.clone(),
-										&mut sym_links,
-									).await;
-									if result.is_err() {
-										println!("rust: failed to handle file event {:?}", result);
-									}
-									if let Some(event) = result.unwrap() {
-										output_tx.unbounded_send(event).ok();
-									}
-								}
-							}
-							notify::Event {
-								kind: notify::EventKind::Remove(_),
-								paths,
-								..
-							} => {
-								for path in paths {
-									let path = if sym_links.contains_key(&path) {
-										// rmeove it
-										sym_links.remove(&path);
-										path
-									} else {
-										FileSystemTask::desymlinkify(&path, &sym_links)
-									};
-									// Skip if path matches any ignore pattern
-									if self.should_ignore(&path) {
-										continue;
-									}
-
-									let mut file_hashes = self.file_hashes.lock().await;
-									if file_hashes.remove(&path).is_some() {
-										output_tx.unbounded_send(FileSystemEvent::FileDeleted(path)).ok();
-									}
-								}
-							}
-							_ => {
-								println!("rust: unexpected event {:?}", notify_event);
+						for event in notify_event {
+							let result = self.handle_file_event(event.path, &mut sym_links).await;
+							if let Ok(Some(ret)) = result {
+								output_tx.unbounded_send(ret).ok();
 							}
 						}
 					}
@@ -506,14 +444,14 @@ impl FileSystemTask {
 				},
 			}
 		}
-
 	}
+
 	async fn stop_watching_path(&self, path: &PathBuf) {
-		let _ = self.watcher.lock().await.unwatch(path);
+		let _ = self.watcher.lock().await.watcher().unwatch(path);
 	}
 
 	async fn start_watching_path(&self, path: &PathBuf) {
-		let _ = self.watcher.lock().await.watch(path, RecursiveMode::Recursive);
+		let _ = self.watcher.lock().await.watcher().watch(path, RecursiveMode::Recursive);
 	}
 
 	async fn add_ignore_glob(&mut self, glob: &str) {
@@ -549,27 +487,31 @@ impl FileSystemDriver {
 		let (input_tx, mut input_rx) = futures::channel::mpsc::unbounded();
         // Spawn the file system watcher in a separate task
         // Create a futures channel for notify events
-        let (notify_tx, mut notify_rx) = futures::channel::mpsc::unbounded();
 
         // Create a custom event handler that uses the UnboundedSender
-        let event_handler = UnboundedEventHandler {
-            sender: notify_tx,
-        };
         // make an arc mutable
-        let watcher_arc = Arc::new(Mutex::new(WatcherImpl::new(event_handler, Config::default().with_follow_symlinks(false)).unwrap()));
-        {
-			// Start watching the directory
-            let mut watcher = watcher_arc.lock().await;
-            watcher.watch(&watch_path, RecursiveMode::Recursive).unwrap();
-        }
+		let notify_config = Config::default().with_follow_symlinks(false);
+        // let watcher_arc = Arc::new(Mutex::new(WatcherImpl::new(event_handler, notify_config).unwrap()));
+        // {
+		// 	// Start watching the directory
+        //     let mut watcher = watcher_arc.lock().await;
+        //     watcher.watch(&watch_path, RecursiveMode::Recursive).unwrap();
+        // }
+        let (notify_tx, mut notify_rx) = futures::channel::mpsc::unbounded();
+
+		let debouncer_config= notify_debouncer_mini::Config::default().with_timeout(Duration::from_millis(DEBOUNCE_TIME)).with_batch_mode(true).with_notify_config(notify_config);
+
+		let mut debouncer = new_debouncer_opt::<_,WatcherImpl>(debouncer_config, move |event: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
+			notify_tx.unbounded_send(event).unwrap();
+		}).unwrap();
+		debouncer.watcher().watch(&watch_path, RecursiveMode::Recursive).unwrap();
 
 		let task: FileSystemTask = FileSystemTask {
 			watch_path: watch_path.clone(),
 			file_hashes: Arc::new(Mutex::new(HashMap::new())),
 			ignore_globs: ignore_globs,
-			watcher: watcher_arc,
-			paused: Arc::new(AtomicBool::new(false)),
-			waiting_on_pause: Arc::new(AtomicBool::new(false)),
+			watcher: Arc::new(Mutex::new(debouncer)),
+			paused: Arc::new(AtomicBool::new(false))
 		};
 
 		let this_task = task.clone();
@@ -705,6 +647,8 @@ mod tests {
     use autosurgeon::Doc;
 	use godot::classes::physics_server_3d::G6dofJointAxisFlag;
 
+	const WAIT_TIME: u64 = DEBOUNCE_TIME * 2;
+
 	fn replace_res_prefix(watch_path: &PathBuf, path: &Path) -> PathBuf {
         if path.to_string_lossy().starts_with("res://") {
             return watch_path.join(path.to_string_lossy().replace("res://", ""));
@@ -747,10 +691,9 @@ mod tests {
             file.write_all(b"test content").unwrap();
             file.sync_all().unwrap();
         }
-        sleep(Duration::from_millis(100)).await;
 
         // Wait for the create event
-        if let Some(event) = driver.next_timeout(Duration::from_millis(100)).await {
+        if let Some(event) = driver.next_timeout(Duration::from_millis(WAIT_TIME)).await {
             match event {
                 FileSystemEvent::FileCreated(path, content) => {
                     assert_eq!(path, test_file);
@@ -766,9 +709,8 @@ mod tests {
             file.write_all(b"test content").unwrap();
             file.sync_all().unwrap();
         }
-        sleep(Duration::from_millis(100)).await;
 
-        if let Some(event) = driver.next_timeout(Duration::from_millis(100)).await {
+        if let Some(event) = driver.next_timeout(Duration::from_millis(WAIT_TIME)).await {
             match event {
                 FileSystemEvent::FileCreated(path, content) => {
                     assert_eq!(path, test_file2);
@@ -786,7 +728,7 @@ mod tests {
         }
 
         // Wait for the modify event
-        if let Some(event) = driver.next_timeout(Duration::from_millis(100)).await {
+        if let Some(event) = driver.next_timeout(Duration::from_millis(WAIT_TIME)).await {
             match event {
                 FileSystemEvent::FileModified(path, content) => {
                     assert_eq!(normalize_path(&dir_path, &path), normalize_path(&dir_path, &test_file));
@@ -805,7 +747,7 @@ mod tests {
 
         // Wait for the delete event
         // have it timeout after 100ms
-        if let Some(event) = driver.next_timeout(Duration::from_millis(100)).await {
+        if let Some(event) = driver.next_timeout(Duration::from_millis(WAIT_TIME)).await {
             match event {
                 FileSystemEvent::FileDeleted(path) => {
                     assert_eq!(normalize_path(&dir_path, &path), normalize_path(&dir_path, &test_file));
@@ -843,11 +785,10 @@ mod tests {
         let mut file = File::create(&test_file).unwrap();
         file.write_all(b"test content").unwrap();
 
-        sleep(Duration::from_millis(100)).await;
 
 
         // Wait for the create event (should only be for the non-ignored file)
-        if let Some(event) = driver.try_next() {
+        if let Some(event) = driver.next_timeout(Duration::from_millis(WAIT_TIME)).await {
             match event {
                 FileSystemEvent::FileCreated(path, content) => {
                     assert_eq!(normalize_path(&dir_path, &path), normalize_path(&dir_path, &test_file));
@@ -855,31 +796,32 @@ mod tests {
                 }
                 _ => panic!("Unexpected event"),
             }
-        }
+        } else {
+			panic!("No event received");
+		}
         // Create a test file that should be ignored
         let ignored_file = dir_path.join("test.tmp");
         let mut file = File::create(&ignored_file).unwrap();
         file.write_all(b"test content").unwrap();
 
-        sleep(Duration::from_millis(100)).await;
 
-        if let Some(event) = driver.next_timeout(Duration::from_millis(100)).await {
+        if let Some(event) = driver.next_timeout(Duration::from_millis(WAIT_TIME)).await {
             panic!("Unexpected event {:?}", event);
         }
-
-        // Modify the ignored file (should not trigger an event)
-        let mut file = File::options().write(true).open(&ignored_file).unwrap();
-        file.write_all(b"modified content").unwrap();
-
-        // Modify the non-ignored file (should trigger an event)
-        let mut file = File::options().write(true).open(&test_file).unwrap();
-        file.write_all(b"modified content").unwrap();
-        // close it
-        file.sync_all().unwrap();
-        sleep(Duration::from_millis(100)).await;
-
-        // Wait for the modify event (should only be for the non-ignored file)
-        if let Some(event) = driver.next_timeout(Duration::from_millis(100)).await {
+		{
+			// Modify the ignored file (should not trigger an event)
+			let mut file = File::options().write(true).open(&ignored_file).unwrap();
+			file.write_all(b"modified content").unwrap();
+		}
+		{
+			// Modify the non-ignored file (should trigger an event)
+			let mut file = File::options().write(true).open(&test_file).unwrap();
+			file.write_all(b"modified content").unwrap();
+			// close it
+			file.sync_all().unwrap();
+		}
+		// Wait for the modify event (should only be for the non-ignored file)
+        if let Some(event) = driver.next_timeout(Duration::from_millis(WAIT_TIME)).await {
             match event {
                 FileSystemEvent::FileModified(path, content) => {
                     assert_eq!(normalize_path(&dir_path, &path), normalize_path(&dir_path, &test_file));
@@ -892,10 +834,9 @@ mod tests {
 
         // Delete both files
         std::fs::remove_file(&test_file).unwrap();
-        sleep(Duration::from_millis(100)).await;
 
         // Wait for the delete event (should only be for the non-ignored file)
-        if let Some(event) = driver.next_timeout(Duration::from_millis(100)).await {
+        if let Some(event) = driver.next_timeout(Duration::from_millis(WAIT_TIME)).await {
             match event {
                 FileSystemEvent::FileDeleted(path) => {
                     assert_eq!(normalize_path(&dir_path, &path), normalize_path(&dir_path, &test_file));
@@ -908,7 +849,7 @@ mod tests {
         std::fs::remove_file(&ignored_file).unwrap();
 
         // try_next should return None
-        assert!(driver.try_next().is_none());
+        assert!(driver.next_timeout(Duration::from_millis(WAIT_TIME)).await.is_none());
 
     }
 
@@ -932,7 +873,7 @@ mod tests {
         let result = driver.save_file(test_file.clone(), FileContent::String(test_content.to_string())).await;
 		assert!(result.is_ok());
         // sleep
-        sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(WAIT_TIME)).await;
         // check that there's no event for the file created
         assert!(driver.try_next().is_none());
 
@@ -942,7 +883,7 @@ mod tests {
         // modify the file
         let result = driver.save_file(test_file.clone(), FileContent::String(modified_content.to_string())).await;
 		assert!(result.is_ok());
-        sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(WAIT_TIME)).await;
 
         // check that there's no event for the file modified
         assert!(driver.try_next().is_none());
@@ -952,7 +893,7 @@ mod tests {
         // delete the file
         let result = driver.delete_file(test_file.clone()).await;
 		assert!(result.is_ok());
-        sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(WAIT_TIME)).await;
         // check that there's no event for the file modified
         assert!(driver.try_next().is_none());
 
