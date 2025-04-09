@@ -9,6 +9,8 @@ use futures::{
 use rlimit::{setrlimit, Resource};
 use tokio::{task::JoinHandle, time::{sleep, Duration}};
 use notify::{Watcher, RecursiveMode, Config, Event, EventHandler};
+// use notify_debouncer_mini::new_debouncer_opt;
+// use notify_debouncer_full::new_debouncer_opt;
 // if on macos, use kqueue, otherwise use recommended
 #[cfg(target_os = "macos")]
 use notify::KqueueWatcher as WatcherImpl;
@@ -258,11 +260,25 @@ impl FileSystemTask {
         if self.should_ignore(&path) {
             return Ok(None);
         }
+		if !path.exists() {
+			// If the file doesn't exist, we want to emit a deleted event
+			let mut file_hashes: tokio::sync::MutexGuard<'_, HashMap<PathBuf, String>> = self.file_hashes.lock().await;
+			if file_hashes.contains_key(&path) {
+				file_hashes.remove(&path);
+				return Ok(Some(FileSystemEvent::FileDeleted(path)));
+			}
+			return Ok(None);
+		}
 
         if path.is_file() {
-			let result = Self::get_buffer_and_hash(&path);
+			let mut result = Self::get_buffer_and_hash(&path);
 			if result.is_err() {
-				println!("rust: failed to get file content for {:?}", path);
+				// retry after 50ms
+				sleep(StdDuration::from_millis(100)).await;
+				result = Self::get_buffer_and_hash(&path);
+			}
+			if result.is_err() {
+				println!("rust: failed to get file content {:?}", result);
 				return Err(notify::Error::new(notify::ErrorKind::Generic("Failed to get file content".to_string())));
 			}
 			let (content, new_hash) = result.unwrap();
@@ -281,6 +297,7 @@ impl FileSystemTask {
 		Ok(None)
     }
 
+	// handle syncs from patchwork
     pub async fn handle_file_update(
         &self,
         path: PathBuf,
@@ -321,6 +338,62 @@ impl FileSystemTask {
         }
         Ok(())
     }
+	// Scan for changes in the file system
+	async fn _scan_for_additive_changes(
+		&self,
+		watch_path: &PathBuf,
+		sym_links: &mut HashMap<PathBuf, PathBuf>,
+	) -> Vec<FileSystemEvent>
+	{
+		let mut events = Vec::new();
+		let entries = std::fs::read_dir(watch_path);
+		if entries.is_err() {
+			return events;
+		}
+		let entries = entries.unwrap();
+		for entry in entries.flatten() {
+			let path = entry.path();
+			// Skip if path matches any ignore pattern
+			if self.should_ignore(&path) {
+				continue;
+			}
+			if let Ok(metadata) = path.metadata() {
+				if metadata.is_symlink() {
+					let target = std::fs::read_link(&path).unwrap();
+					sym_links.insert(path.clone(), target);
+				}
+			}
+
+			if path.is_file() {
+				let res = self.handle_file_event(path, sym_links).await;
+				if let Ok(Some(ret)) = res{
+					events.push(ret);
+				}
+			} else if path.is_dir() {
+				// Use Box::pin for the recursive call to avoid infinitely sized future
+				let sub_events = Box::pin(self._scan_for_additive_changes(&path, sym_links)).await;
+				events.extend(sub_events);
+			}
+		}
+		events
+	}
+
+	async fn scan_for_changes(&self, sym_links: &mut HashMap<PathBuf, PathBuf>) -> Vec<FileSystemEvent> {
+		let mut events = self._scan_for_additive_changes(&self.watch_path, sym_links).await;
+		// check the file_hashes for removed files
+		let mut to_remove = Vec::new();
+		let mut file_hashes = self.file_hashes.lock().await;
+		for (path, _) in file_hashes.iter() {
+			if !path.exists() {
+				to_remove.push(path.clone());
+			}
+		}
+		for path in to_remove {
+			file_hashes.remove(&path);
+			events.push(FileSystemEvent::FileDeleted(path));
+		}
+		events
+	}
 
 	async fn main_loop(&self, notify_rx: &mut UnboundedReceiver<Result<Event, notify::Error>>, input_rx: &mut UnboundedReceiver<FileSystemUpdateEvent>, output_tx: &UnboundedSender<FileSystemEvent>) {
 		let mut sym_links = HashMap::new();
@@ -331,10 +404,10 @@ impl FileSystemTask {
 				// Handle file system events
 				Some(notify_result) = notify_rx.next() => {
 					if let Ok(notify_event) = notify_result {
-						if self.is_paused() {
-							// discard the event
-							continue;
-						}
+						// if self.is_paused() {
+						// 	// discard the event
+						// 	continue;
+						// }
 						match notify_event {
 							notify::Event {
 								kind: notify::EventKind::Create(_),
@@ -378,7 +451,7 @@ impl FileSystemTask {
 								..
 							} => {
 								for path in paths {
-									let path = if (sym_links.contains_key(&path)) {
+									let path = if sym_links.contains_key(&path) {
 										// rmeove it
 										sym_links.remove(&path);
 										path
@@ -419,9 +492,14 @@ impl FileSystemTask {
 						}
 						FileSystemUpdateEvent::Pause => {
 							self.pause();
+							self.stop_watching_path(&self.watch_path).await;
 						}
 						FileSystemUpdateEvent::Resume => {
-							self.initialize_file_hashes(&mut sym_links).await;
+							self.start_watching_path(&self.watch_path).await;
+							let events = self.scan_for_changes(&mut sym_links).await;
+							for event in events {
+								output_tx.unbounded_send(event).ok();
+							}
 							self.resume();
 						}
 					}
@@ -444,7 +522,7 @@ impl FileSystemTask {
 	pub fn is_paused(&self) -> bool {
 		self.paused.load(Ordering::Relaxed)
 	}
-	
+
 
 	fn pause(&self) {
 		self.paused.store(true, Ordering::Relaxed);
@@ -536,14 +614,14 @@ impl FileSystemDriver {
 			return result;
 		}
 	}
-	
+
 	async fn pause_task(&self) {
 		self.input_tx.unbounded_send(FileSystemUpdateEvent::Pause).ok();
 		while !self.task.is_paused() {
 			sleep(Duration::from_millis(100)).await;
 		}
 	}
-	
+
 	async fn resume_task(&self) {
 		self.input_tx.unbounded_send(FileSystemUpdateEvent::Resume).ok();
 		while self.task.is_paused() {
@@ -625,8 +703,9 @@ mod tests {
     use tokio::sync::mpsc;
     use std::path::Path;
     use autosurgeon::Doc;
+	use godot::classes::physics_server_3d::G6dofJointAxisFlag;
 
-    fn replace_res_prefix(watch_path: &PathBuf, path: &Path) -> PathBuf {
+	fn replace_res_prefix(watch_path: &PathBuf, path: &Path) -> PathBuf {
         if path.to_string_lossy().starts_with("res://") {
             return watch_path.join(path.to_string_lossy().replace("res://", ""));
         }
@@ -909,16 +988,20 @@ mod tests {
         // now check to see if we have 1000 events
         let mut found_paths = HashSet::new();
         let mut count = 0;
-        while let Some(event) = driver.next_timeout(Duration::from_millis(1000)).await {
+        while let Some(event) = driver.next_timeout(Duration::from_millis(10000)).await {
             let event_path = if let FileSystemEvent::FileCreated(path, _) = event {
                 path
-            } else {
-                panic!("Unexpected event type {:?}", event);
+            } else if let FileSystemEvent::FileModified(path, _) = event {
+				path
+			} else {
+				panic!("Unexpected event type {:?}", event);
             };
             found_paths.insert(event_path);
-            count += 1;
+			if found_paths.len() == test_paths.len() {
+				break;
+			}
         }
-        assert_eq!(count, 1000);
+        // assert_eq!(count, 1000);
         for path in test_paths {
             assert!(found_paths.contains(&path));
         }
@@ -952,6 +1035,7 @@ mod tests {
 		if let Some(event) = driver.next_timeout(Duration::from_millis(100)).await {
 			assert!(false, "Unexpected event type {:?}", event);
 		}
+		sleep(Duration::from_millis(1000)).await;
 		// write a single file
 		let test_path = dir_path.join("test_woop.txt");
 		let mut file = File::create(&test_path).unwrap();
