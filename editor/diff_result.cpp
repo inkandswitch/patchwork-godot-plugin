@@ -345,7 +345,7 @@ Ref<NodeDiffResult> NodeDiffResult::evaluate_node_differences(Node *scene1, Node
 		}
 		result->set_path(path);
 	} else {
-		result->set_path("." + scene1->get_name());
+		result->set_path({ "." });
 	}
 	if (String(path).contains("Coin6")) {
 		int foo = 0;
