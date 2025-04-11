@@ -17,7 +17,7 @@ class DiffResult : public RefCounted {
 	GDCLASS(DiffResult, RefCounted)
 
 private:
-	Dictionary file_diffs;
+	HashMap<String, Ref<FileDiffResult>> file_diffs;
 
 protected:
 	static void _bind_methods();
@@ -26,6 +26,8 @@ public:
 	void set_file_diff(const String &p_path, const Ref<FileDiffResult> &p_diff);
 	Ref<FileDiffResult> get_file_diff(const String &p_path) const;
 	Dictionary get_file_diffs() const;
+	HashMap<String, Ref<FileDiffResult>> get_file_diff_map() const;
+	void set_file_diff_map(const HashMap<String, Ref<FileDiffResult>> &p_diffs);
 
 	// Add static method declaration for deep_equals
 	static bool deep_equals(Variant a, Variant b, bool exclude_non_storage = true);
@@ -43,7 +45,7 @@ private:
 	Ref<Resource> res_old;
 	Ref<Resource> res_new;
 	Ref<ObjectDiffResult> props;
-	Dictionary node_diffs;
+	HashMap<String, Ref<NodeDiffResult>> node_diffs;
 
 protected:
 	static void _bind_methods();
@@ -58,7 +60,11 @@ public:
 	void set_props(const Ref<ObjectDiffResult> &p_props);
 	Ref<ObjectDiffResult> get_props() const;
 	void set_node_diffs(const Dictionary &p_diffs);
+	void set_node_diff_map(const HashMap<String, Ref<NodeDiffResult>> &p_diffs);
 	Dictionary get_node_diffs() const;
+	HashMap<String, Ref<NodeDiffResult>> get_node_diff_map() const;
+	void set_node_diff(const Ref<NodeDiffResult> &p_diff);
+	Ref<NodeDiffResult> get_node_diff(const String &p_path) const;
 
 	// Add static method declaration for get_diff_res
 	static Ref<FileDiffResult> get_diff_res(Ref<Resource> p_res, Ref<Resource> p_res2, const Dictionary &p_structured_changes = Dictionary());
@@ -72,7 +78,7 @@ class ObjectDiffResult : public RefCounted {
 
 	Object *old_object;
 	Object *new_object;
-	Dictionary property_diffs;
+	HashMap<String, Variant> property_diffs;
 
 protected:
 	static void _bind_methods();
@@ -83,7 +89,9 @@ public:
 	void set_new_object(Object *p_new_object);
 	Object *get_new_object() const;
 	void set_property_diffs(const Dictionary &p_diffs);
+	void set_property_diff_map(const HashMap<String, Variant> &p_diffs);
 	Dictionary get_property_diffs() const;
+	HashMap<String, Variant> get_property_diff_map() const;
 	void set_property_diff(const Ref<PropertyDiffResult> &p_diff);
 	Ref<PropertyDiffResult> get_property_diff(const String &p_name) const;
 	ObjectDiffResult();
