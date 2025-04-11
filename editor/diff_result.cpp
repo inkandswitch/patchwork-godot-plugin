@@ -61,8 +61,8 @@ void FileDiffResult::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "props"), "set_props", "get_props");
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "node_diffs"), "set_node_diffs", "get_node_diffs");
 
-	// Add static method binding for get_diff_res
-	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_diff_res", "res1", "res2", "structured_changes"), &FileDiffResult::get_diff_res, DEFVAL(Dictionary()));
+	// Add static method binding for get_resource_diff
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_resource_diff", "res1", "res2", "structured_changes"), &FileDiffResult::get_resource_diff, DEFVAL(Dictionary()));
 
 	// Add static method binding for get_file_diff
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_file_diff", "old_path", "new_path", "options"), &FileDiffResult::get_file_diff, DEFVAL(Dictionary()));
@@ -134,12 +134,23 @@ Ref<NodeDiffResult> FileDiffResult::get_node_diff(const String &p_path) const {
 	return Ref<NodeDiffResult>();
 }
 
-Ref<FileDiffResult> FileDiffResult::get_diff_res(Ref<Resource> p_res, Ref<Resource> p_res2, const Dictionary &p_structured_changes) {
+Ref<FileDiffResult> FileDiffResult::get_resource_diff(Ref<Resource> p_res, Ref<Resource> p_res2, const Dictionary &p_structured_changes) {
 	Ref<FileDiffResult> result;
 	result.instantiate();
 	result->set_res_old(p_res);
 	result->set_res_new(p_res2);
-
+	if (p_res.is_null() && p_res2.is_null()) {
+		result->set_type("unchanged");
+		return result;
+	}
+	if (p_res.is_null()) {
+		result->set_type("added");
+		return result;
+	}
+	if (p_res2.is_null()) {
+		result->set_type("deleted");
+		return result;
+	}
 	if (p_res->get_class() != p_res2->get_class()) {
 		result->set_type("type_changed");
 		return result;
@@ -403,9 +414,6 @@ Ref<NodeDiffResult> NodeDiffResult::evaluate_node_differences(Node *scene1, Node
 	} else {
 		result->set_path({ "." });
 	}
-	if (String(path).contains("Coin6")) {
-		int foo = 0;
-	}
 	result->set_old_object(node1);
 	result->set_new_object(node2);
 	if (node1 == nullptr) {
@@ -579,17 +587,29 @@ bool DiffResult::deep_equals(Variant a, Variant b, bool exclude_non_storage) {
 	return true;
 }
 
+static Error load_resource(const String &p_path, Ref<Resource> &res) {
+	if (!FileAccess::exists(p_path)) {
+		return ERR_FILE_NOT_FOUND;
+	}
+	{
+		Ref<FileAccess> fa = FileAccess::open(p_path, FileAccess::READ);
+		if (fa.is_null() || fa->get_length() < 4) {
+			return ERR_FILE_NOT_FOUND;
+		}
+	}
+	Error error;
+	res = ResourceLoader::load(p_path, "", ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &error);
+	if (error == OK && res.is_null()) {
+		return ERR_FILE_CORRUPT;
+	}
+	return error;
+}
+
 Ref<FileDiffResult> FileDiffResult::get_file_diff(const String &p_path, const String &p_path2, const Dictionary &p_options) {
-	Error error1 = OK;
-	Error error2 = OK;
-	auto res1 = ResourceLoader::load(p_path, "", ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &error1);
-	auto res2 = ResourceLoader::load(p_path2, "", ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &error2);
-	if (error1 == OK) {
-		error1 = res1.is_valid() ? OK : ERR_FILE_NOT_FOUND;
-	}
-	if (error2 == OK) {
-		error2 = res2.is_valid() ? OK : ERR_FILE_NOT_FOUND;
-	}
+	Ref<Resource> res1;
+	Ref<Resource> res2;
+	Error error1 = load_resource(p_path, res1);
+	Error error2 = load_resource(p_path2, res2);
 	Ref<FileDiffResult> result;
 	ERR_FAIL_COND_V_MSG(error1 != OK && error2 != OK, result, "Failed to load resources at path " + p_path + " and " + p_path2);
 	if (error1 != OK) {
@@ -601,7 +621,7 @@ Ref<FileDiffResult> FileDiffResult::get_file_diff(const String &p_path, const St
 		result->set_type("deleted");
 		result->set_res_old(res1);
 	} else {
-		result = get_diff_res(res1, res2, p_options);
+		result = get_resource_diff(res1, res2, p_options);
 	}
 	return result;
 }
