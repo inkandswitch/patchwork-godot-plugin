@@ -361,10 +361,15 @@ func update_ui() -> void:
 	for i in range(history.size() - 1, -1, -1):
 		var change = history[i]
 
-		if change.branch_id != checked_out_branch.id:
+		if !("branch_id" in change) || change.branch_id != checked_out_branch.id:
 			continue
 
-		var change_author = change.username
+		var change_author
+		if "username" in change:
+			change_author = change.username
+		else:
+			change_author = "Anonymous"
+
 		var change_timestamp = human_readable_timestamp(change.timestamp)
 
 		var prefix = ""
