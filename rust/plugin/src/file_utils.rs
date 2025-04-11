@@ -3,15 +3,18 @@ use std::io;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::str;
+use godot::builtin::{GString, PackedByteArray, Variant, VariantType};
+use godot::meta::{GodotConvert, ToGodot};
 use ya_md5::{Md5Hasher, Hash, Md5Error};
 
 use crate::godot_parser::{GodotScene, recognize_scene, parse_scene};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FileContent {
-    String(String),
-    Binary(Vec<u8>),
-    Scene(GodotScene),
+	String(String),
+	Binary(Vec<u8>),
+	Scene(GodotScene),
+	Deleted,
 }
 
 impl FileContent {
@@ -32,6 +35,9 @@ impl FileContent {
 				_temp_text = Some(scene.serialize());
 				_temp_text.as_ref().unwrap().as_bytes()
 			}
+			FileContent::Deleted => {
+				return Err(std::io::Error::new(std::io::ErrorKind::Other, "Failed to write file"));
+			}
 		};
 		let hash = Md5Hasher::hash_slice(buf).to_string();
 		// Open the file with the appropriate mode
@@ -47,6 +53,10 @@ impl FileContent {
 			return Err(std::io::Error::new(std::io::ErrorKind::Other, "Failed to write file"));
 		}
 		Ok(hash)
+	}
+
+	pub fn write(&self, path: &PathBuf) -> std::io::Result<String> {
+		FileContent::write_file_content(path, self)
 	}
 
 	// pub fn from_path(path: &PathBuf) -> Option<FileContent> {
@@ -81,7 +91,60 @@ impl FileContent {
 		FileContent::from_string(string)
 	}
 
+	pub fn to_hash(&self) -> String {
+		match self {
+			FileContent::String(s) => Md5Hasher::hash_slice(s.as_bytes()).to_string(),
+			FileContent::Binary(bytes) => Md5Hasher::hash_slice(bytes.as_slice()).to_string(),
+			FileContent::Scene(scene) => Md5Hasher::hash_slice(scene.serialize().as_bytes()).to_string(),
+			FileContent::Deleted => "".to_string(),
+		}
+	}
+
+	pub fn get_variant_type(&self) -> VariantType {
+		match self {
+			FileContent::String(_) => VariantType::STRING,
+			FileContent::Binary(_) => VariantType::PACKED_BYTE_ARRAY,
+			FileContent::Scene(_) => VariantType::OBJECT,
+			FileContent::Deleted => VariantType::NIL,
+		}
+	}
 }
+
+//
+impl Default for FileContent {
+	fn default() -> Self {
+		FileContent::Deleted
+	}
+}
+
+impl Default for &FileContent {
+	fn default() -> Self {
+		&FileContent::Deleted
+	}
+}
+
+impl GodotConvert for FileContent {
+	type Via = Variant;
+}
+
+impl ToGodot for FileContent {
+	type ToVia < 'v > = Variant;
+	fn to_godot(&self) -> Self::ToVia < '_ > {
+		// < Self as crate::obj::EngineBitfield > ::ord(* self)
+		self.to_variant().to_godot()
+	}
+	fn to_variant(&self) -> Variant {
+		match self {
+			FileContent::String(s) => GString::from(s).to_variant(),
+			FileContent::Binary(bytes) => PackedByteArray::from(bytes.as_slice()).to_variant(),
+			FileContent::Scene(scene) => scene.serialize().to_variant(),
+			FileContent::Deleted => Variant::nil(),
+		}
+	}
+}
+
+
+
 
 pub fn calculate_file_hash(path: &PathBuf) -> Option<String> {
 	if !path.is_file() {
