@@ -32,6 +32,7 @@ public:
 
 	// Add static method declaration for get_diff
 	static Ref<DiffResult> get_diff(Dictionary changed_files_dict);
+	static Ref<DiffResult> get_diff_from_list(const HashMap<String, String> &p_files);
 };
 
 class FileDiffResult : public RefCounted {
