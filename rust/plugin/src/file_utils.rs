@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io;
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{PathBuf};
 use std::str;
 use godot::builtin::{GString, PackedByteArray, Variant, VariantType};
 use godot::meta::{GodotConvert, ToGodot};
@@ -40,6 +40,12 @@ impl FileContent {
 			}
 		};
 		let hash = Md5Hasher::hash_slice(buf).to_string();
+		// ensure the directory exists
+		if let Some(dir) = path.parent() {
+			if !dir.exists() {
+				std::fs::create_dir_all(dir)?;
+			}
+		}
 		// Open the file with the appropriate mode
 		let mut file = if path.exists() {
 			// If file exists, open it for writing (truncate)
