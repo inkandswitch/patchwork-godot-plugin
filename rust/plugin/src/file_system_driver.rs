@@ -6,6 +6,7 @@ use futures::{
     channel::mpsc::{UnboundedReceiver, UnboundedSender},
     StreamExt,
 };
+#[cfg(not(target_os = "windows"))]
 use rlimit::{setrlimit, Resource};
 use tokio::{task::JoinHandle, time::{sleep, Duration}};
 use notify::{Watcher, RecursiveMode, Config, Event, EventHandler};
@@ -417,12 +418,16 @@ impl FileSystemTask {
 
 }
 
+
+
 impl FileSystemDriver {
+
+
+
     pub fn spawn(watch_path: PathBuf, ignore_globs: Vec<String>) -> Self {
         // if macos, increase ulimit to 100000000
-        if cfg!(target_os = "macos") {
-            setrlimit(Resource::NOFILE, 100000000, 100000000).unwrap();
-        }
+		#[cfg(not(target_os = "windows"))]
+		setrlimit(Resource::NOFILE, 100000000, 100000000).unwrap();
 
         let ignore_globs: Vec<Pattern> = ignore_globs
             .into_iter()
