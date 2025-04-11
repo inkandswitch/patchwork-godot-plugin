@@ -1,26 +1,17 @@
+use crate::file_utils::FileContent;
 use ::safer_ffi::prelude::*;
 use automerge::op_tree::B;
-use automerge::{Automerge, ObjId, Patch, PatchAction, Prop};
-use autosurgeon::{Hydrate, Reconcile};
-use futures::io::empty;
-use godot::classes::file_access::ModeFlags;
-use godot::classes::resource_loader::CacheMode;
-use godot::global::str_to_var;
-use godot::meta::AsArg;
-use safer_ffi::layout::OpaqueKind::T;
-use std::any::Any;
-use std::collections::HashSet;
-use std::io::BufWriter;
-use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::{collections::HashMap, str::FromStr};
-use crate::file_utils::FileContent;
 use automerge::{
     patches::TextRepresentation, transaction::Transactable, ChangeHash, ObjType, ReadDoc,
     TextEncoding, ROOT,
 };
+use automerge::{Automerge, ObjId, Patch, PatchAction, Prop};
 use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
+use autosurgeon::{Hydrate, Reconcile};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
+use futures::io::empty;
+use godot::classes::file_access::ModeFlags;
+use godot::classes::resource_loader::CacheMode;
 use godot::classes::EditorFileSystem;
 use godot::classes::EditorInterface;
 use godot::classes::Image;
@@ -28,7 +19,16 @@ use godot::classes::ProjectSettings;
 use godot::classes::ResourceLoader;
 use godot::classes::{ClassDb, EditorPlugin, Engine, IEditorPlugin};
 use godot::classes::{ConfigFile, DirAccess, FileAccess, ResourceImporter};
+use godot::global::str_to_var;
+use godot::meta::AsArg;
 use godot::prelude::*;
+use safer_ffi::layout::OpaqueKind::T;
+use std::any::Any;
+use std::collections::HashSet;
+use std::io::BufWriter;
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
+use std::{collections::HashMap, str::FromStr};
 
 use crate::godot_parser::{self, GodotScene, TypeOrInstance};
 use crate::godot_project_driver::{BranchState, DocHandleType};
@@ -85,8 +85,6 @@ pub struct Branch {
     pub fork_info: Option<ForkInfo>,
     pub merge_info: Option<MergeInfo>,
 }
-
-
 
 #[derive(Debug, Clone)]
 enum CheckedOutBranchState {
@@ -791,6 +789,22 @@ impl GodotProject {
 
             d.keys(&state).map(|k| GString::from(k)).collect()
         })
+    }
+
+    #[func]
+    fn destroy_all_entities(&self) {
+        let checked_out_branch_state = match self.get_checked_out_branch_state() {
+            Some(branch_state) => branch_state,
+            None => {
+                return;
+            }
+        };
+
+        checked_out_branch_state.doc_handle.with_doc_mut(|d| {
+            let mut tx = d.transaction();
+            let _ = tx.put_object(ROOT, "state", ObjType::Map);
+            tx.commit();
+        });
     }
 
     fn get_checked_out_branch_state(&self) -> Option<BranchState> {
