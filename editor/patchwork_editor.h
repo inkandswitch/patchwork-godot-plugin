@@ -31,7 +31,6 @@ public:
 	PatchworkEditor(EditorNode *p_editor);
 	PatchworkEditor();
 	~PatchworkEditor();
-
 	void _on_filesystem_changed();
 	void _on_resources_reloaded();
 	void _on_history_changed();
@@ -49,6 +48,7 @@ public:
 	static void progress_end_task_bg(const String &p_task);
 	static Ref<ResourceImporter> get_importer_by_name(const String &p_name);
 	static Ref<Resource> import_and_load_resource(const String &p_path);
+	static Vector<String> get_unsaved_files();
 
 	static bool is_editor_importing();
 	static void save_all_scenes_and_scripts();

@@ -112,6 +112,17 @@ bool PatchworkEditor::unsaved_files_open() {
 	return false;
 }
 
+Vector<String> PatchworkEditor::get_unsaved_files() {
+	auto files = get_unsaved_scripts();
+	auto opened_scenes = EditorNode::get_editor_data().get_edited_scenes();
+	for (auto &scene : opened_scenes) {
+		if (EditorUndoRedoManager::get_singleton()->is_history_unsaved(scene.history_id)) {
+			files.append(scene.path);
+		}
+	}
+	return files;
+}
+
 bool PatchworkEditor::detect_utf8(const PackedByteArray &p_utf8_buf) {
 	int cstr_size = 0;
 	int str_size = 0;
@@ -482,4 +493,5 @@ void PatchworkEditor::_bind_methods() {
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_unsaved_scripts"), &PatchworkEditor::get_unsaved_scripts);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("reload_scripts", "refresh_only"), &PatchworkEditor::reload_scripts);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("is_editor_importing"), &PatchworkEditor::is_editor_importing);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_unsaved_files"), &PatchworkEditor::get_unsaved_files);
 }
