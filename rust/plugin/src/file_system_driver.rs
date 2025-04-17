@@ -76,6 +76,7 @@ pub struct FileSystemDriver {
 	output_rx: UnboundedReceiver<FileSystemEvent>,
 	input_tx: UnboundedSender<FileSystemUpdateEvent>,
 	handle: JoinHandle<()>,
+	rt: Option<tokio::runtime::Runtime>,
 }
 
 impl FileSystemTask {
@@ -372,11 +373,11 @@ impl FileSystemTask {
 						}
 						FileSystemUpdateEvent::Resume => {
 							self.start_watching_path(&self.watch_path).await;
+							self.resume();
 							let events = self.scan_for_changes(&mut sym_links).await;
 							for event in events {
 								output_tx.unbounded_send(event).ok();
 							}
-							self.resume();
 						}
 					}
 				},
@@ -422,40 +423,33 @@ impl FileSystemTask {
 
 impl FileSystemDriver {
 
-
-
-    pub fn spawn(watch_path: PathBuf, ignore_globs: Vec<String>) -> Self {
-        // if macos, increase ulimit to 100000000
+	fn spawn_with_runtime(watch_path: PathBuf, ignore_globs: Vec<String>, rt: Option<tokio::runtime::Runtime>) -> Self {
+		// if macos, increase ulimit to 100000000
 		#[cfg(not(target_os = "windows"))]
-		setrlimit(Resource::NOFILE, 100000000, 100000000).unwrap();
+		let _ = setrlimit(Resource::NOFILE, 100000000, 100000000);
 
-        let ignore_globs: Vec<Pattern> = ignore_globs
-            .into_iter()
-            .filter_map(|glob_str| Pattern::new(&glob_str).ok())
-            .collect();
+		let ignore_globs: Vec<Pattern> = ignore_globs
+			.into_iter()
+			.filter_map(|glob_str| Pattern::new(&glob_str).ok())
+			.collect();
 		let (output_tx, output_rx) = futures::channel::mpsc::unbounded();
 		let (input_tx, mut input_rx) = futures::channel::mpsc::unbounded();
-        // Spawn the file system watcher in a separate task
-        // Create a futures channel for notify events
-
-        // Create a custom event handler that uses the UnboundedSender
-        // make an arc mutable
+		// Spawn the file system watcher in a separate task
 		let notify_config = Config::default().with_follow_symlinks(false);
-        // let watcher_arc = Arc::new(Mutex::new(WatcherImpl::new(event_handler, notify_config).unwrap()));
-        // {
-		// 	// Start watching the directory
-        //     let mut watcher = watcher_arc.lock().await;
-        //     watcher.watch(&watch_path, RecursiveMode::Recursive).unwrap();
-        // }
-        let (notify_tx, mut notify_rx) = futures::channel::mpsc::unbounded();
+		let (notify_tx, mut notify_rx) = futures::channel::mpsc::unbounded();
 
-		let debouncer_config= notify_debouncer_mini::Config::default().with_timeout(Duration::from_millis(DEBOUNCE_TIME)).with_batch_mode(true).with_notify_config(notify_config);
+		let debouncer_config = notify_debouncer_mini::Config::default().with_timeout(Duration::from_millis(DEBOUNCE_TIME)).with_batch_mode(true).with_notify_config(notify_config);
 
-		let mut debouncer = new_debouncer_opt::<_,WatcherImpl>(debouncer_config, move |event: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
+		let mut debouncer = new_debouncer_opt::<_, WatcherImpl>(debouncer_config, move |event: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
 			notify_tx.unbounded_send(event).unwrap();
 		}).unwrap();
 		debouncer.watcher().watch(&watch_path, RecursiveMode::Recursive).unwrap();
 
+		let rt_handle = if rt.is_some() {
+			rt.as_ref().unwrap().handle().clone()
+		} else {
+			tokio::runtime::Handle::current()
+		};
 		let task: FileSystemTask = FileSystemTask {
 			watch_path: watch_path.clone(),
 			file_hashes: Arc::new(Mutex::new(HashMap::new())),
@@ -466,16 +460,27 @@ impl FileSystemDriver {
 
 		let this_task = task.clone();
 
-        let handle = tokio::spawn(async move {
-            this_task.main_loop(&mut notify_rx, &mut input_rx, &output_tx).await;
-        });
+		let handle = rt_handle.spawn(async move {
+			this_task.main_loop(&mut notify_rx, &mut input_rx, &output_tx).await;
+		});
 		Self {
 			task,
 			output_rx,
 			input_tx,
 			handle,
+			rt: rt
 		}
-    }
+	}
+
+	pub fn spawn(watch_path: PathBuf, ignore_globs: Vec<String>) -> Self {
+		let rt = tokio::runtime::Builder::new_multi_thread()
+			.worker_threads(1)
+			.thread_name("FileSystemDriver: watcher thread")
+			.enable_all()
+			.build()
+			.unwrap();
+		Self::spawn_with_runtime(watch_path, ignore_globs, Some(rt))
+	}
 
 
 
@@ -539,7 +544,7 @@ impl FileSystemDriver {
 	fn pause_task_blocking(&self) {
 		self.input_tx.unbounded_send(FileSystemUpdateEvent::Pause).ok();
 		while !self.task.is_paused() {
-			sleep(Duration::from_millis(100));
+			std::thread::sleep(Duration::from_millis(100));
 		}
 	}
 
@@ -553,7 +558,7 @@ impl FileSystemDriver {
 	fn resume_task_blocking(&self) {
 		self.input_tx.unbounded_send(FileSystemUpdateEvent::Resume).ok();
 		while self.task.is_paused() {
-			sleep(Duration::from_millis(100));
+			std::thread::sleep(Duration::from_millis(100));
 		}
 	}
 
@@ -719,7 +724,7 @@ mod tests {
         let dir_path = dir.path().to_path_buf();
 
         // Create the file system driver
-        let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec![]);
+        let mut driver = FileSystemDriver::spawn_with_runtime(dir_path.clone(), vec!["*.tmp".to_string()], None);
 
 
         // Give the watcher time to initialize
@@ -815,7 +820,7 @@ mod tests {
         };
 
         // Create the file system driver with ignore globs
-        let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec!["*.tmp".to_string()]);
+        let mut driver = FileSystemDriver::spawn_with_runtime(dir_path.clone(), vec!["*.tmp".to_string()], None);
 
         // Give the watcher time to initialize
         sleep(Duration::from_millis(100)).await;
@@ -903,7 +908,7 @@ mod tests {
         let actual_path = dir_path.canonicalize().unwrap();
 
         // Create the file system driver
-        let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec![]);
+        let mut driver = FileSystemDriver::spawn_with_runtime(dir_path.clone(), vec![], None);
 
         // Give the watcher time to initialize
         sleep(Duration::from_millis(100)).await;
@@ -948,7 +953,7 @@ mod tests {
         // we want to have at least 1000 files in the directory to test that we actually do raise the ulimit
         let dir = tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec![]);
+        let mut driver = FileSystemDriver::spawn_with_runtime(dir_path.clone(), vec!["*.tmp".to_string()], None);
         // give the watcher time to initialize
         sleep(Duration::from_millis(100)).await;
         // create 1000 files
@@ -993,7 +998,7 @@ mod tests {
 	async fn test_file_system_batch_update() {
 		let dir = tempdir().unwrap();
 		let dir_path = dir.path().to_path_buf();
-		let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec![]);
+		let mut driver = FileSystemDriver::spawn_with_runtime(dir_path.clone(), vec![], None);
 		// update 1000 files
 		let mut updates = Vec::new();
 		for i in 0..1000 {
@@ -1039,6 +1044,58 @@ mod tests {
 			panic!("No event received");
 		}
 
+	}
+	// test blocking file system update
+	#[test]
+	fn test_file_system_blocking_update() {
+		// set the default tokio runtime to multi_thread
+		let dir = tempdir().unwrap();
+		let dir_path = dir.path().to_path_buf();
+		// spawn with the default runtime
+		let mut driver = FileSystemDriver::spawn(dir_path.clone(), vec![]);
+		// update 1000 files
+		let mut updates = Vec::new();
+		for i in 0..1000 {
+			let test_path = dir_path.join(format!("test_{}.txt", i));
+			updates.push(FileSystemUpdateEvent::FileSaved(test_path, FileContent::String("test content".to_string())));
+		}
+		driver.batch_update_blocking(updates);
+		// wait for the watcher to process the events
+		// check that the files exist
+		{
+			let hashes = driver.task.file_hashes.clone();
+			let hash_table = hashes.blocking_lock();
+			for i in 0..1000 {
+				let file = dir_path.join(format!("test_{}.txt", i));
+				assert!(file.exists());
+				assert!(hash_table.contains_key(&file));
+			}
+		}
+		// there should be no events emitted
+		if let Some(event) = driver.try_next() {
+			assert!(false, "Unexpected event type {:?}", event);
+		}
+		std::thread::sleep(Duration::from_millis(1000));
+		// write a single file
+		let test_path = dir_path.join("test_woop.txt");
+		let mut file = File::create(&test_path).unwrap();
+		file.write_all(b"test content").unwrap();
+		file.sync_all().unwrap();
+		std::thread::sleep(Duration::from_millis(1000));
+		// check that the file exists
+		assert!(test_path.exists());
+		// check that we got an event for it
+		if let Some(event) = driver.try_next() {
+			match event {
+				FileSystemEvent::FileCreated(path, content) => {
+					assert_eq!(path, test_path);
+					assert_eq!(content, FileContent::String("test content".to_string()));
+				}
+				_ => panic!("Unexpected event"),
+			}
+		} else {
+			panic!("No event received");
+		}
 	}
 
     // #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
