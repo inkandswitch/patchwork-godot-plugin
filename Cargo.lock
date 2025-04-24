@@ -108,7 +108,7 @@ dependencies = [
 [[package]]
 name = "automerge_repo"
 version = "0.2.2"
-source = "git+https://github.com/automerge/automerge-repo-rs?branch=peer-conn-info-changes#5ef9ccd94ab1e7283320ebe55c2712dcebc44025"
+source = "git+https://github.com/automerge/automerge-repo-rs?branch=conn-finished-reason#3b8cfe749d4c85ba0af2fd6fa5a54830d2328d8d"
 dependencies = [
  "automerge",
  "bs58",

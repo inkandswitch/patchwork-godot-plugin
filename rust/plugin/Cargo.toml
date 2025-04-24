@@ -17,7 +17,7 @@ doc = false
 
 [dependencies]
 automerge = "0.6.0"
-automerge_repo = { git = "https://github.com/automerge/automerge-repo-rs", branch = "peer-conn-info-changes", features = [
+automerge_repo = { git = "https://github.com/automerge/automerge-repo-rs", branch = "conn-finished-reason", features = [
   "tokio",
 ] }
 autosurgeon = "0.8.7"

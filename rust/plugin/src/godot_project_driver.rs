@@ -1,5 +1,5 @@
 use ::safer_ffi::prelude::*;
-use automerge_repo::{PeerConnectionInfo, RepoError, RepoId};
+use automerge_repo::{PeerConnectionInfo, Repo, RepoError, RepoId};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, Stream};
 use std::collections::HashSet;
@@ -8,6 +8,7 @@ use std::pin::Pin;
 use std::{collections::HashMap, str::FromStr};
 use tokio::task::JoinHandle;
 
+use crate::file_utils::FileContent;
 use crate::godot_parser::GodotScene;
 use crate::godot_project::{ForkInfo, MergeInfo};
 use crate::utils::{
@@ -18,12 +19,11 @@ use crate::{
     godot_project::{BranchesMetadataDoc, GodotProjectDoc},
     utils::get_linked_docs_of_branch,
 };
-use crate::file_utils::FileContent;
 use automerge::{
     patches::TextRepresentation, transaction::Transactable, ChangeHash, ObjType, PatchLog, ReadDoc,
     TextEncoding, ROOT,
 };
-use automerge_repo::{tokio::FsStorage, ConnDirection, DocHandle, DocumentId, Repo, RepoHandle};
+use automerge_repo::{tokio::FsStorage, ConnDirection, DocHandle, DocumentId, RepoHandle};
 use autosurgeon::{hydrate, reconcile};
 use futures::{
     channel::mpsc::{UnboundedReceiver, UnboundedSender},
@@ -34,8 +34,8 @@ use tokio::{net::TcpStream, runtime::Runtime};
 
 use crate::{doc_utils::SimpleDocReader, godot_project::Branch};
 
-const SERVER_URL: &str = "104.131.179.247:8080";
-// const SERVER_URL: &str = "0.0.0.0:8080";
+//const SERVER_URL: &str = "104.131.179.247:8080";
+const SERVER_URL: &str = "0.0.0.0:8080";
 
 const SERVER_REPO_ID: &str = "sync-server";
 
@@ -199,6 +199,7 @@ impl GodotProjectDriver {
         let _guard = runtime.enter();
 
         let storage = FsStorage::open(storage_folder_path).unwrap();
+
         let repo = Repo::new(None, Box::new(storage));
         let repo_handle = repo.run();
 
@@ -244,28 +245,40 @@ impl GodotProjectDriver {
         return self.runtime.spawn(async move {
             println!("start a client");
 
-            // Start a client.
-            let stream = loop {
-                // Try to connect to a peer
-                let res = TcpStream::connect(SERVER_URL).await;
-                if let Err(e) = res {
-                    println!("error connecting: {:?}", e);
-                    continue;
+            loop {
+                // Start a client.
+                let stream = loop {
+                    // Try to connect to a peer
+                    let res = TcpStream::connect(SERVER_URL).await;
+                    if let Err(e) = res {
+                        println!("error connecting: {:?}", e);
+                        // sleep for 1 second
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        continue;
+                    }
+                    break res.unwrap();
+                };
+
+                match repo_handle_clone
+                    .connect_tokio_io(SERVER_URL, stream, ConnDirection::Outgoing)
+                    .await
+                {
+                    Ok(completed) => {
+                        let error = completed.await;
+                        println!("connection terminated because of: {:?}", error);
+                    }
+                    Err(e) => {
+                        println!("Failed to connect: {:?}", e);
+
+                        // sleep for 5 seconds
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+                        continue;
+                    }
                 }
-                break res.unwrap();
-            };
 
-            println!("connect repo");
-
-            if let Err(e) = repo_handle_clone
-                .connect_tokio_io(SERVER_URL, stream, ConnDirection::Outgoing)
-                .await
-            {
-                println!("Failed to connect: {:?}", e);
-                return;
+                println!("connected successfully!");
             }
-
-            println!("connected successfully!");
         });
     }
 
