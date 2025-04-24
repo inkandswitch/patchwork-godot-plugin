@@ -33,7 +33,7 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 
 const TEMP_DIR = "user://tmp"
 
-var DEBUG_MODE = true
+var DEBUG_MODE = false
 
 var plugin: EditorPlugin
 
@@ -356,6 +356,9 @@ func update_ui() -> void:
 	# update history
 
 	var history = GodotProject.get_changes()
+	var unsynced_changes = get_unsynced_changes()
+
+
 	history_list.clear()
 
 	for i in range(history.size() - 1, -1, -1):
@@ -385,6 +388,9 @@ func update_ui() -> void:
 
 		else:
 			history_list.add_item(prefix + change_author + " made some changes - " + change_timestamp + "")
+
+		if unsynced_changes.has(change.hash):
+			history_list.set_item_custom_fg_color(history_list.get_item_count() - 1, Color(0.5, 0.5, 0.5))
 	
 
 	# update sync status
@@ -478,14 +484,7 @@ func update_sync_status() -> void:
 		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
 		sync_status_icon.tooltip_text = "Disconnected - might have unsynced changes"
 
-		# mark all history items as grayed out
-		for i in range(history_list.get_item_count()):
-			history_list.set_item_custom_fg_color(i, Color(0.5, 0.5, 0.5))
-		return
-
 	var sync_status = peer_connection_info.doc_sync_states[checked_out_branch.id];
-
-	print("sync_status: ", sync_status.last_acked_heads)
 
 	# fully synced
 	if sync_status.last_acked_heads == checked_out_branch.heads:
@@ -496,51 +495,61 @@ func update_sync_status() -> void:
 			sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
 			sync_status_icon.tooltip_text = "Disconnected - no unsynced local changes"
 
-		# mark all history items as synced
-		for i in range(history_list.get_item_count()):
-			history_list.set_item_custom_fg_color(i, Color(1, 1, 1))
-
-
 	# partially synced
 	else:
-		# find the point until which the history is synced
-		var changes = GodotProject.get_changes()
-		var synced_up_until_index = 0;
-		var found_matching_change = false
-		for change in changes:
-			if sync_status.last_acked_heads.has(change.hash):
-				found_matching_change = true
-				break
-			synced_up_until_index += 1;
-
-
-		var max_history_entry_index = history_list.get_item_count() - 1
-
-		if found_matching_change:
-			for i in range(history_list.get_item_count()):
-				if synced_up_until_index >= (max_history_entry_index - i):
-					history_list.set_item_custom_fg_color(i, Color(1, 1, 1))
-				else:
-					history_list.set_item_custom_fg_color(i, Color(0.5, 0.5, 0.5))
-
-
 		if peer_connection_info.is_connected:
 			sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-sync.svg")
 			sync_status_icon.tooltip_text = "Syncing"
 		else:
 			sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
 
-			var unsynced_changes_count
-			if found_matching_change:
-				unsynced_changes_count = max_history_entry_index - synced_up_until_index
-			else:
-				unsynced_changes_count = history_list.get_item_count()
+			var unsynced_changes = get_unsynced_changes()
+			var unsynced_changes_count = unsynced_changes.size()
 
 			if unsynced_changes_count == 1:
-				sync_status_icon.tooltip_text = "Disconnected - 1 unsynced change"
+				sync_status_icon.tooltip_text = "Disconnected - 1 local change that hasn't been synced"
 			else:
-				sync_status_icon.tooltip_text = "Disconnected - %s unsynced changes" % [unsynced_changes_count]
+				sync_status_icon.tooltip_text = "Disconnected - %s local changes that haven't been synced" % [unsynced_changes_count]
 
+
+func get_unsynced_changes():
+	var dict = {}
+
+	var checked_out_branch = GodotProject.get_checked_out_branch()
+	var changes = GodotProject.get_changes()
+
+	for change in changes:
+			dict[change.hash] = true
+
+
+	var doc_sync_states = GodotProject.get_sync_server_connection_info().doc_sync_states
+
+	if !doc_sync_states:
+		return dict
+
+	if !(checked_out_branch.id in doc_sync_states):
+		return dict
+
+	var sync_status = doc_sync_states[checked_out_branch.id]
+
+	if !sync_status:
+		return dict
+
+
+	var synced_until_index = -1
+	for i in range(changes.size()):
+		var change = changes[i]
+		if sync_status.last_acked_heads.has(change.hash):
+			synced_until_index = i
+			break
+
+	if synced_until_index == -1:
+		return dict
+
+	for i in range(synced_until_index + 1):
+		dict.erase(changes[i].hash)
+
+	return dict
 
 func update_branch_picker() -> void:
 	branch_picker.clear()
