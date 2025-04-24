@@ -483,6 +483,7 @@ func update_sync_status() -> void:
 	if !peer_connection_info.doc_sync_states.has(checked_out_branch.id):
 		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
 		sync_status_icon.tooltip_text = "Disconnected - might have unsynced changes"
+		return
 
 	var sync_status = peer_connection_info.doc_sync_states[checked_out_branch.id];
 
@@ -494,22 +495,22 @@ func update_sync_status() -> void:
 		else:
 			sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
 			sync_status_icon.tooltip_text = "Disconnected - no unsynced local changes"
+		return
 
 	# partially synced
+	if peer_connection_info.is_connected:
+		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-sync.svg")
+		sync_status_icon.tooltip_text = "Syncing"
 	else:
-		if peer_connection_info.is_connected:
-			sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-sync.svg")
-			sync_status_icon.tooltip_text = "Syncing"
+		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
+
+		var unsynced_changes = get_unsynced_changes()
+		var unsynced_changes_count = unsynced_changes.size()
+
+		if unsynced_changes_count == 1:
+			sync_status_icon.tooltip_text = "Disconnected - 1 local change that hasn't been synced"
 		else:
-			sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
-
-			var unsynced_changes = get_unsynced_changes()
-			var unsynced_changes_count = unsynced_changes.size()
-
-			if unsynced_changes_count == 1:
-				sync_status_icon.tooltip_text = "Disconnected - 1 local change that hasn't been synced"
-			else:
-				sync_status_icon.tooltip_text = "Disconnected - %s local changes that haven't been synced" % [unsynced_changes_count]
+			sync_status_icon.tooltip_text = "Disconnected - %s local changes that haven't been synced" % [unsynced_changes_count]
 
 
 func get_unsynced_changes():
