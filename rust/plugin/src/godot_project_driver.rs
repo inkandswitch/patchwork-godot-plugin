@@ -7,6 +7,9 @@ use std::future::Future;
 use std::pin::Pin;
 use std::{collections::HashMap, str::FromStr};
 use tokio::task::JoinHandle;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 
 use crate::file_utils::FileContent;
 use crate::godot_parser::GodotScene;
@@ -291,6 +294,17 @@ impl GodotProjectDriver {
     ) -> JoinHandle<()> {
         let repo_handle = self.repo_handle.clone();
         let user_name = user_name.clone();
+
+        let filter = EnvFilter::new("info").add_directive("automerge_repo=trace".parse().unwrap());
+        if let Err(e) = tracing_subscriber::registry()
+            .with(tracing_subscriber::fmt::layer().with_writer(std::io::stdout))
+            .with(filter)
+            .try_init()
+        {
+            println!("Failed to initialize tracing subscriber: {:?}", e);
+        } else {
+            println!("Tracing subscriber initialized");
+        }
 
         return self.runtime.spawn(async move {
             // destructure project doc handles
