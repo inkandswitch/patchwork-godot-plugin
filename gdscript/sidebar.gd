@@ -489,8 +489,12 @@ func update_sync_status() -> void:
 
 	# fully synced
 	if sync_status.last_acked_heads == checked_out_branch.heads:
-		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-check.svg")
-		sync_status_icon.tooltip_text = "Fully synced"
+		if peer_connection_info.is_connected:
+			sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-check.svg")
+			sync_status_icon.tooltip_text = "Fully synced"
+		else:
+			sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
+			sync_status_icon.tooltip_text = "Disconnected - no unsynced local changes"
 
 		# mark all history items as synced
 		for i in range(history_list.get_item_count()):
