@@ -35,7 +35,7 @@ func get_color_for_change_type(change_type: String) -> Color:
 	set(value):
 		added_color = value
 		set_inspector_change_color(("added"), value)
-		
+
 #a55454
 @export var removed_color: Color = Color("#a55454"):
 	set(value):
@@ -57,6 +57,7 @@ var sections: Array = []
 var changed_nodes: Array = []
 var added_nodes: Array = []
 var deleted_nodes: Array = []
+# this is really just to keep a reference to the resources that have been changed;
 var changed_resources: Array = []
 var changed_files: Array = []
 func _ready() -> void:
@@ -153,12 +154,13 @@ func get_prop_editor(fake_object: MissingResource, prop_name: String, prop_value
 	add_label(prop_label, panel_container)
 	add_color_marker(change_type, panel_container)
 	panel_container.add_child(editor_property)
+	changed_resources.append(fake_object)
 	return panel_container
 
 func add_old_and_new(inspector_section: DiffInspectorSection, change_type: String, prop_name: String, old_prop_value: Variant, new_prop_value: Variant, label: String) -> void:
 	var has_old = change_type != "added"
 	var has_new = change_type != "removed"
-	
+
 	if label == null:
 		label = snake_case_to_human_readable(prop_name)
 	if has_old:
@@ -178,36 +180,9 @@ func add_PropertyDiffResult(inspector_section: DiffInspectorSection, property_di
 	print("!!! adding property diff result for ", prop_name, " with type ", change_type)
 	print("!!! prop_old: ", prop_old)
 	print("!!! prop_new: ", prop_new)
-	
+
 	add_old_and_new(inspector_section, change_type, prop_name, prop_old, prop_new, prop_label)
 
-func add_ObjectDiffResult(object_diff: ObjectDiffResult) -> void:
-	var prop_results: Array[PropertyDiffResult] = []
-	var prop_diffs: Dictionary = object_diff.get_property_diffs()
-	for prop in prop_diffs.keys():
-		var prop_diff: PropertyDiffResult = prop_diffs[prop]
-		prop_results.append(prop_diff)
-	var object_name = object_diff.get_name()
-
-	var prop_old_object = object_diff.get_old_object()
-	var prop_new_object = object_diff.get_new_object()
-	var object = prop_new_object if prop_new_object != null else prop_old_object
-	if object == null:
-		print("object is null!!!!!!!!!!!!")
-		return
-	var inspector_section: DiffInspectorSection = DiffInspectorSection.new()
-	inspector_section.setup(object_name, object_name, object, added_color, true)
-	var vbox = inspector_section.get_vbox()
-
-	for i in range(prop_results.size()):
-		if i > 0:
-			var divider = HSeparator.new()
-			vbox.add_child(divider)
-		var prop_result = prop_results[i]
-		add_PropertyDiffResult(vbox, prop_result)
-		
-	sections.append(inspector_section)
-	main_vbox.add_child(inspector_section)
 
 func get_flat_stylebox(color: Color) -> StyleBoxFlat:
 	var stylebox: StyleBoxFlat = StyleBoxFlat.new()
@@ -257,12 +232,12 @@ func add_NodeDiffResult(file_section: DiffInspectorSection, node_diff: Dictionar
 	var node_label: String = node_name
 	var change_type: String = node_diff["change_type"]
 	print("!!! adding node diff result for ", node_name, " with type ", change_type)
-	
+
 	var prop_diffs: Dictionary
 	var inspector_section: DiffInspectorSection = DiffInspectorSection.new()
 	var vbox = inspector_section.get_vbox()
 	var fake_node = MissingResource.new()
-	
+
 	var node_type: String = ""
 	var color: Color = added_color
 	if change_type == "added":
@@ -379,7 +354,7 @@ func add_FileDiffResult(file_path: String, file_diff: Dictionary) -> void:
 			add_NodeDiffResult(inspector_section, node)
 	sections.append(inspector_section)
 	main_vbox.add_child(inspector_section)
-			
+
 # defs for these are in editor/diff_result.h
 func add_diff(diff: Dictionary) -> void:
 	print("ADDING DIFF!!!")
@@ -392,7 +367,7 @@ func add_diff(diff: Dictionary) -> void:
 		print("Adding file diff result for ", file)
 		add_FileDiffResult(file, diff_result[file])
 
-	
+
 func reset() -> void:
 	# disconnect from theme changed signal
 	var all_signal_connections = self.theme_changed.get_connections()
@@ -400,17 +375,17 @@ func reset() -> void:
 		self.theme_changed.disconnect(connection.callable)
 	for section in sections:
 		section.queue_free()
-	sections.clear()
-	categories.clear()
 	for child in main_vbox.get_children():
 		child.queue_free()
+	sections.clear()
+	categories.clear()
 	changed_nodes.clear()
 	added_nodes.clear()
 	deleted_nodes.clear()
-	changed_resources.clear()
+	# changed_resources.clear()
 
-	
-	
+
+
 func get_main_vbox() -> VBoxContainer:
 	return main_vbox
 
