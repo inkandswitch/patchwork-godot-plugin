@@ -520,8 +520,6 @@ func update_sync_status() -> void:
 					history_list.set_item_custom_fg_color(i, Color(0.5, 0.5, 0.5))
 
 
-		print("synced_up_until_index: ", synced_up_until_index, " - ", found_matching_change)
-
 		if peer_connection_info.is_connected:
 			sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-sync.svg")
 			sync_status_icon.tooltip_text = "Syncing"
