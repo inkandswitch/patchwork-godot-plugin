@@ -203,6 +203,7 @@ fn test_resconcile_and_hydrate() {
                     index: None,
                     groups: None,
                     child_node_ids: vec!["node2".to_string(), "node3".to_string()],
+                    node_paths: None,
                 },
             ),
             (
@@ -220,6 +221,7 @@ fn test_resconcile_and_hydrate() {
                     index: None,
                     groups: None,
                     child_node_ids: vec![],
+                    node_paths: None,
                 },
             ),
             (
@@ -247,6 +249,7 @@ fn test_resconcile_and_hydrate() {
                     index: None,
                     groups: None,
                     child_node_ids: vec![],
+                    node_paths: None,
                 },
             ),
         ]),
@@ -324,4 +327,27 @@ fn test_resconcile_and_hydrate() {
     let rehydrated_scene = GodotScene::hydrate(&mut doc, "example.tscn").unwrap();
 
     assert_eq!(example_scene, rehydrated_scene)
+}
+
+
+#[test]
+fn test_node_paths() {
+    let source = r#"[gd_scene load_steps=6 format=3 uid="uid://jnrusvm3gric"]
+[node name="Root" type="Node2D"]
+metadata/patchwork_id = "1122ae43c1054005997967892c521ea9"
+
+[node name="Child" type="Node2D" parent="."]
+metadata/patchwork_id = "1122ae43c1054005997967892c521ea2"
+
+[node name="FindInFiles" parent="Child" node_paths=PackedStringArray("main_view", "code_edit") type="Node2D"]
+metadata/patchwork_id = "1122ae43c1054005997967892c521ea3"
+"#;
+
+    let scene = godot_parser::parse_scene(&source.to_string()).unwrap();
+
+    assert_eq!(scene.nodes.len(), 3);
+    assert_eq!(scene.nodes["1122ae43c1054005997967892c521ea9"].node_paths, None);
+    assert_eq!(scene.nodes["1122ae43c1054005997967892c521ea2"].node_paths, None);
+    assert_eq!(scene.nodes["1122ae43c1054005997967892c521ea3"].node_paths, Some("PackedStringArray(\"main_view\", \"code_edit\")".to_string()));
+
 }
