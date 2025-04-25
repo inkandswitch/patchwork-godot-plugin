@@ -351,3 +351,31 @@ metadata/patchwork_id = "1122ae43c1054005997967892c521ea3"
     assert_eq!(scene.nodes["1122ae43c1054005997967892c521ea3"].node_paths, Some("PackedStringArray(\"main_view\", \"code_edit\")".to_string()));
 
 }
+
+#[test]
+fn test_stringnames() {
+    let source = r#"[gd_resource type="AudioBusLayout" format=3 uid="uid://c7thbop54thnf"]
+
+[resource]
+bus/1/name = &"Music"
+bus/1/solo = false
+bus/1/mute = false
+bus/1/bypass_fx = false
+bus/1/volume_db = 0.0
+bus/1/send = &"Master"
+bus/2/name = &"SFX"
+bus/2/solo = false
+bus/2/mute = false
+bus/2/bypass_fx = false
+bus/2/volume_db = 0.0
+bus/2/send = &"Master"
+
+"#;
+
+    let resource = godot_parser::parse_scene(&source.to_string()).unwrap();
+
+	assert_eq!(resource.sub_resources.len(), 1);
+	assert_eq!(resource.sub_resources["AudioBusLayout_c7thbop54thnf"].properties["bus/1/name"], godot_parser::OrderedProperty::new("&\"Music\"".to_string(), 0));
+}
+
+
