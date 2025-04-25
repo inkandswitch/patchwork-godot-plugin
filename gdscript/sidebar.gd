@@ -93,8 +93,37 @@ func _ready() -> void:
 	cancel_merge_button.pressed.connect(cancel_merge_preview)
 	confirm_merge_button.pressed.connect(confirm_merge_preview)
 
+	sync_status_icon.pressed.connect(_on_sync_status_icon_pressed)
+
 	history_section_header.pressed.connect(func(): toggle_section(history_section_header, history_section_body))
 	diff_section_header.pressed.connect(func(): toggle_section(diff_section_header, diff_section_body))
+
+func _on_sync_status_icon_pressed():
+	var sync_info = GodotProject.get_sync_server_connection_info()
+	var checked_out_branch = GodotProject.get_checked_out_branch()
+
+	print("Sync info ===========================", )
+	print("is connected: ", sync_info.is_connected)
+	print("last received: ", human_readable_timestamp(sync_info.last_received * 1000.0))
+	print("last sent: ", human_readable_timestamp(sync_info.last_sent * 1000.0))
+
+
+	if checked_out_branch && sync_info.doc_sync_states.has(checked_out_branch.id):
+		var doc_sync_state = sync_info.doc_sync_states[checked_out_branch.id]
+
+		print(checked_out_branch.name, ":")
+		print("  acked heads: ", doc_sync_state.last_acked_heads)
+		print("  sent heads: ", doc_sync_state.last_sent_heads)
+		if doc_sync_state.last_sent != null:
+			print("  last sent: ", human_readable_timestamp(doc_sync_state.last_sent * 1000.0))
+		else:
+			print("  last sent: -")
+		if doc_sync_state.last_received != null:
+			print("  last received: ", human_readable_timestamp(doc_sync_state.last_received * 1000.0))
+		else:
+			print("  last received: -")
+
+	print("=====================================", )
 
 
 func _on_sync_server_connection_info_changed(_peer_connection_info: Dictionary) -> void:
@@ -520,10 +549,15 @@ func get_unsynced_changes():
 	var changes = GodotProject.get_changes()
 
 	for change in changes:
-			dict[change.hash] = true
+		dict[change.hash] = true
 
 
-	var doc_sync_states = GodotProject.get_sync_server_connection_info().doc_sync_states
+	var connection_info = GodotProject.get_sync_server_connection_info()
+
+	if !connection_info:
+		return dict
+
+	var doc_sync_states = connection_info.doc_sync_states
 
 	if !doc_sync_states:
 		return dict
