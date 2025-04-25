@@ -53,6 +53,7 @@ pub struct GodotNode {
     pub owner: Option<String>,
     pub index: Option<i64>,
     pub groups: Option<String>,
+    pub node_paths: Option<String>,
     pub properties: HashMap<String, OrderedProperty>,
 
     // in the automerge doc the child_node_ids are stored as a map with the key being the child node id and the value being a number that should be used for sort order
@@ -141,13 +142,13 @@ impl GodotScene {
         }
     }
 
-	fn get_ext_resource_path(&self, ext_resource_id: &str) -> Option<String> {
-		let ext_resource = self.ext_resources.get(ext_resource_id);
-		if let Some(ext_resource) = ext_resource {
-			return Some(ext_resource.path.clone());
-		}
-		None
-	}
+    fn get_ext_resource_path(&self, ext_resource_id: &str) -> Option<String> {
+        let ext_resource = self.ext_resources.get(ext_resource_id);
+        if let Some(ext_resource) = ext_resource {
+            return Some(ext_resource.path.clone());
+        }
+        None
+    }
 
     pub fn reconcile(&self, tx: &mut Transaction, path: String) {
         let files = tx
@@ -402,6 +403,12 @@ impl GodotScene {
                 tx.put(&node_obj, "groups", groups.clone()).unwrap();
             } else if tx.get_string(&node_obj, "groups").is_some() {
                 tx.delete(&node_obj, "groups").unwrap();
+            }
+
+            if let Some(node_paths) = &node.node_paths {
+                tx.put(&node_obj, "node_paths", node_paths.clone()).unwrap();
+            } else if tx.get_string(&node_obj, "node_paths").is_some() {
+                tx.delete(&node_obj, "node_paths").unwrap();
             }
 
             // Store properties
@@ -778,7 +785,7 @@ impl GodotScene {
             let owner = doc.get_string_at(&node_obj, "owner", &heads);
             let index = doc.get_int_at(&node_obj, "index", &heads).map(|i| i);
             let groups = doc.get_string_at(&node_obj, "groups", &heads);
-
+            let node_paths = doc.get_string_at(&node_obj, "node_paths", &heads);
             // Get node properties
             let properties_obj = doc
                 .get_obj_id_at(&node_obj, "properties", &heads)
@@ -820,6 +827,7 @@ impl GodotScene {
                 groups,
                 properties,
                 child_node_ids,
+                node_paths,
             };
 
             // Add the node to our map
@@ -1058,6 +1066,10 @@ impl GodotScene {
             output.push_str(&format!(" instance={}", i));
         }
 
+        if let Some(node_paths) = &node.node_paths {
+            output.push_str(&format!(" node_paths={}", node_paths));
+        }
+
         if let Some(owner) = &node.owner {
             output.push_str(&format!(" owner=\"{}\"", owner));
         }
@@ -1143,22 +1155,22 @@ pub struct SceneMetadata {
 }
 
 pub fn recognize_scene(source: &String) -> bool {
-	// go line by line until we find a line that does not start with a comment (i.e. ;) and is not empty
-	for line in source.lines() {
-		let trimmed = line.trim();
-		if !trimmed.starts_with(";") && !trimmed.is_empty() {
-			// check if the line starts with "[gd_resource" or "[gd_scene"
-			if trimmed.starts_with("["){
-				let line_after_bracket = &trimmed[1..].trim();
-				if line_after_bracket.starts_with("gd_resource") || line_after_bracket.starts_with("gd_scene") {
-					return true;
-				}
-			}
-			// gd_resource and gd_scene have to be the first non-comment, non-empty line; if we find another line that is not a comment or empty, we can return false
-			break;
-		}
-	}
-	false
+    // go line by line until we find a line that does not start with a comment (i.e. ;) and is not empty
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with(";") && !trimmed.is_empty() {
+            // check if the line starts with "[gd_resource" or "[gd_scene"
+            if trimmed.starts_with("["){
+                let line_after_bracket = &trimmed[1..].trim();
+                if line_after_bracket.starts_with("gd_resource") || line_after_bracket.starts_with("gd_scene") {
+                    return true;
+                }
+            }
+            // gd_resource and gd_scene have to be the first non-comment, non-empty line; if we find another line that is not a comment or empty, we can return false
+            break;
+        }
+    }
+    false
 }
 
 pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
@@ -1376,6 +1388,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         ));
                     };
 
+                    let node_paths = heading.get("node_paths").cloned().map(|p| unquote(&p));
                     let parent_path = heading.get("parent").cloned().map(|p| unquote(&p));
                     let parent_id = match parent_path {
                         Some(parent_path) => {
@@ -1421,6 +1434,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         groups: heading.get("groups").cloned(),
                         properties: properties.into_iter().collect(),
                         child_node_ids: Vec::new(),
+                        node_paths,
                     };
 
                     nodes.insert(node_id.clone(), node.clone());
