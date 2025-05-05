@@ -17,7 +17,7 @@ pub struct GodotScene {
     pub uid: String,
     pub script_class: Option<String>,
     pub resource_type: String,
-    pub root_node_id: String,
+    pub root_node_id: Option<String>,
     pub ext_resources: HashMap<String, ExternalResourceNode>,
     pub sub_resources: HashMap<String, SubResourceNode>,
     pub nodes: HashMap<String, GodotNode>,
@@ -113,8 +113,10 @@ impl GodotScene {
     pub fn get_node_path(&self, node_id: &str) -> String {
         let mut path = String::new();
         let mut current_id = node_id;
+        let NO_ROOT_STR = &"<NO_ROOT>".to_string();
+        let root_node_id = self.root_node_id.as_ref().unwrap_or(NO_ROOT_STR);
 
-        if node_id == self.root_node_id {
+        if node_id == root_node_id {
             return ".".to_string();
         }
 
@@ -131,7 +133,7 @@ impl GodotScene {
                 Some(parent_id) => {
                     current_id = parent_id.as_str();
 
-                    if current_id == self.root_node_id {
+                    if current_id == root_node_id {
                         return path;
                     }
                 }
@@ -249,12 +251,13 @@ impl GodotScene {
         }
 
         // Store root node id
-        tx.put(
-            &structured_content,
-            "root_node_id",
-            self.root_node_id.clone(),
-        )
-        .unwrap();
+        if let Some(root_node_id) = &self.root_node_id {
+            tx.put(&structured_content, "root_node_id", root_node_id.clone())
+                .unwrap();
+        } else if tx.get_string(&structured_content, "root_node_id").is_some() {
+            // Remove root node id if it exists but we don't have one
+            tx.delete(&structured_content, "root_node_id").unwrap();
+        }
 
         // Reconcile external resources
         let ext_resources = tx
@@ -634,9 +637,11 @@ impl GodotScene {
             .get_obj_id_at(&structured_content, "nodes", &heads)
             .ok_or_else(|| "Could not find nodes in structured_content".to_string())?;
 
-        let root_node_id = doc
-            .get_string_at(&structured_content, "root_node_id", &heads)
-            .ok_or_else(|| "Could not find root_node_id in structured_content".to_string())?;
+        let root_node_id = if let Some(root_node_id) = doc.get_string_at(&structured_content, "root_node_id", &heads) {
+            Some(root_node_id)
+        } else {
+            None
+        };
 
         // Create a map to store the nodes
 
@@ -1008,8 +1013,8 @@ impl GodotScene {
             return output;
         }
 
-        if !self.nodes.is_empty() {
-            if let Some(root_node) = self.nodes.get(&self.root_node_id) {
+        if !self.nodes.is_empty() && self.root_node_id.is_some() {
+            if let Some(root_node) = self.nodes.get(self.root_node_id.as_ref().unwrap()) {
                 self.serialize_node(&mut output, root_node);
             }
         }
@@ -1053,7 +1058,7 @@ impl GodotScene {
         }
 
         if let Some(parent_id) = &node.parent_id {
-            let parent_name = if *parent_id == self.root_node_id {
+            let parent_name = if self.root_node_id.is_some() && parent_id == self.root_node_id.as_ref().unwrap() {
                 ".".to_string()
             } else {
                 self.get_node_path(parent_id)
@@ -1597,8 +1602,8 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
             };
 
             let root_node_id = match root_node_id {
-                Some(id) => id,
-                None => return Err(String::from("missing root node")),
+                Some(id) => Some(id),
+                None => None,
             };
 
             Ok(GodotScene {
