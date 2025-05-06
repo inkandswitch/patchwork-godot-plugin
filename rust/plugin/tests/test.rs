@@ -152,7 +152,7 @@ metadata/patchwork_id = "5b9416e8d96042b6a509f7da3263f687"
 
     let scene = godot_parser::parse_scene(&source).unwrap();
 
-    let root_node = scene.nodes.get(scene.root_node_id.as_str()).unwrap();
+    let root_node = scene.nodes.get(scene.root_node_id.unwrap().as_str()).unwrap();
 
     assert_eq!(root_node.child_node_ids.len(), 2);
 
@@ -253,7 +253,7 @@ fn test_resconcile_and_hydrate() {
                 },
             ),
         ]),
-        root_node_id: "node1".to_string(),
+        root_node_id: Some("node1".to_string()),
         ext_resources: HashMap::from([
             (
                 "1_0qn5k".to_string(),
@@ -374,8 +374,9 @@ bus/2/send = &"Master"
 
     let resource = godot_parser::parse_scene(&source.to_string()).unwrap();
 
-	assert_eq!(resource.sub_resources.len(), 1);
-	assert_eq!(resource.sub_resources["AudioBusLayout_c7thbop54thnf"].properties["bus/1/name"], godot_parser::OrderedProperty::new("&\"Music\"".to_string(), 0));
+	// assert_eq!(resource.sub_resources.len(), 1);
+    assert!(resource.main_resource.is_some());
+	assert_eq!(resource.main_resource.unwrap().properties["bus/1/name"], godot_parser::OrderedProperty::new("&\"Music\"".to_string(), 0));
 }
 
 
