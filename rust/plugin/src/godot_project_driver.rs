@@ -752,6 +752,10 @@ impl DriverState {
                 FileContent::Scene(godot_scene) => {
                     scene_entries.push((path.clone(), godot_scene));
                 }
+                FileContent::Deleted => {
+                    // todo: implement this case
+                    //
+                }
             }
         }
         branch_doc_handle.with_doc_mut(|d| {
