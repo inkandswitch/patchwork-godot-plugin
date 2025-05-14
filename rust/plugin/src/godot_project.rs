@@ -1947,7 +1947,7 @@ impl GodotProject {
                             (PathBuf::from(ProjectSettings::singleton().localize_path(&path.to_string_lossy().to_string()).to_string()), content)
                         }
                     ).collect::<Vec<(PathBuf, FileContent)>>();
-                    self._sync_files_at(branch_state.doc_handle.clone(), files, None)
+                    self._sync_files_at(branch_state.doc_handle.clone(), files, Some(branch_state.synced_heads.clone()));
                 }
             }
             None => panic!("couldn't save files, no checked out branch"),
@@ -2083,8 +2083,7 @@ impl INode for GodotProject {
                                 }
                             } else {
                                 if trigger_reload {
-                                    println!("rust: TRIGGER files changed: {}", branch_state.name);
-                                    self.base_mut().emit_signal("files_changed", &[]);
+                                    self.sync_patchwork_to_godot();
                                 } else {
                                     println!("rust: TRIGGER saved changes: {}", branch_state.name);
                                     self.base_mut().emit_signal("saved_changes", &[]);
@@ -2168,21 +2167,30 @@ impl INode for GodotProject {
                 }
             }
         }
-        // if let Some(fs_driver) = self.file_system_driver.as_mut() {
-        // 	while let Some(event) = fs_driver.try_next() {
-        // 		match event {
-        // 			FileSystemEvent::FileCreated(path, content) => {
-        // 				println!("rust: FileCreated: {}", path.to_string_lossy().to_string());
-        // 			}
-        // 			FileSystemEvent::FileModified(path, content) => {
-        // 				println!("rust: FileModified: {}", path.to_string_lossy().to_string());
-        // 			}
-        // 			FileSystemEvent::FileDeleted(path) => {
-        // 				println!("rust: FileDeleted: {}", path.to_string_lossy().to_string());
-        // 			}
-        // 		}
-        // 	}
-        // }
+        if let Some(fs_driver) = self.file_system_driver.as_mut() {
+			let mut new_files = Vec::new();
+        	while let Some(event) = fs_driver.try_next() {
+        		match event {
+        			FileSystemEvent::FileCreated(path, content) => {
+        				new_files.push((path, content));
+        			}
+        			FileSystemEvent::FileModified(path, content) => {
+        				new_files.push((path, content));
+        			}
+        			FileSystemEvent::FileDeleted(path) => {
+        				new_files.push((path, FileContent::Deleted));
+        			}
+        		}
+        	}
+			if new_files.len() > 0 {
+				let branch_state = self.get_checked_out_branch_state();
+				if let Some(branch_state) = branch_state {
+					self._sync_files_at(branch_state.doc_handle.clone(), new_files, Some(branch_state.synced_heads.clone()));
+				}
+			}
+        }
+
+
     }
 }
 
