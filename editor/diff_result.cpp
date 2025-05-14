@@ -107,8 +107,9 @@ Ref<FileDiffResult> FileDiffResult::get_diff_res(Ref<Resource> p_res, Ref<Resour
 		return result;
 	}
 	if (p_res->get_class() != "PackedScene") {
+		auto diff = ObjectDiffResult::get_diff_obj((Object *)p_res.ptr(), (Object *)p_res2.ptr(), true, p_structured_changes);
 		result->set_type("resource_changed");
-		result->set_props(ObjectDiffResult::get_diff_obj((Object *)p_res.ptr(), (Object *)p_res2.ptr(), true, p_structured_changes));
+		result->set_props(diff);
 		return result;
 	}
 	Ref<PackedScene> p_scene1 = p_res;
@@ -524,12 +525,30 @@ bool DiffResult::deep_equals(Variant a, Variant b, bool exclude_non_storage) {
 }
 
 Ref<FileDiffResult> FileDiffResult::get_file_diff(const String &p_path, const String &p_path2, const Dictionary &p_options) {
-	Error error = OK;
-	auto res1 = ResourceLoader::load(p_path, "", ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &error);
-	ERR_FAIL_COND_V_MSG(error != OK, Ref<FileDiffResult>(), "Failed to load resource at path " + p_path);
-	auto res2 = ResourceLoader::load(p_path2, "", ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &error);
-	ERR_FAIL_COND_V_MSG(error != OK, Ref<FileDiffResult>(), "Failed to load resource at path " + p_path2);
-	return get_diff_res(res1, res2, p_options);
+	Error error1 = OK;
+	Error error2 = OK;
+	auto res1 = ResourceLoader::load(p_path, "", ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &error1);
+	auto res2 = ResourceLoader::load(p_path2, "", ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &error2);
+	if (error1 == OK) {
+		error1 = res1.is_valid() ? OK : ERR_FILE_NOT_FOUND;
+	}
+	if (error2 == OK) {
+		error2 = res2.is_valid() ? OK : ERR_FILE_NOT_FOUND;
+	}
+	Ref<FileDiffResult> result;
+	ERR_FAIL_COND_V_MSG(error1 != OK && error2 != OK, result, "Failed to load resources at path " + p_path + " and " + p_path2);
+	if (error1 != OK) {
+		result.instantiate();
+		result->set_type("added");
+		result->set_res_new(res2);
+	} else if (error2 != OK) {
+		result.instantiate();
+		result->set_type("deleted");
+		result->set_res_old(res1);
+	} else {
+		result = get_diff_res(res1, res2, p_options);
+	}
+	return result;
 }
 
 Ref<DiffResult> DiffResult::get_diff(Dictionary changed_files_dict) {
@@ -587,6 +606,19 @@ Ref<DiffResult> DiffResult::get_diff(Dictionary changed_files_dict) {
 			}
 			result->set_file_diff(path, file_diff);
 		}
+	}
+	return result;
+}
+
+Ref<DiffResult> DiffResult::get_diff_from_list(const HashMap<String, String> &p_files) {
+	Ref<DiffResult> result;
+	result.instantiate();
+	for (const auto &d : p_files) {
+		result = FileDiffResult::get_file_diff(d.key, d.value);
+		if (result.is_null()) {
+			continue;
+		}
+		result->set_file_diff(d.key, result);
 	}
 	return result;
 }
