@@ -26,6 +26,12 @@ public:
 	void set_file_diff(const String &p_path, const Ref<FileDiffResult> &p_diff);
 	Ref<FileDiffResult> get_file_diff(const String &p_path) const;
 	Dictionary get_file_diffs() const;
+
+	// Add static method declaration for deep_equals
+	static bool deep_equals(Variant a, Variant b, bool exclude_non_storage = true);
+
+	// Add static method declaration for get_diff
+	static Ref<DiffResult> get_diff(Dictionary changed_files_dict);
 };
 
 class FileDiffResult : public RefCounted {
@@ -52,6 +58,12 @@ public:
 	Ref<ObjectDiffResult> get_props() const;
 	void set_node_diffs(const Dictionary &p_diffs);
 	Dictionary get_node_diffs() const;
+
+	// Add static method declaration for get_diff_res
+	static Ref<FileDiffResult> get_diff_res(Ref<Resource> p_res, Ref<Resource> p_res2, const Dictionary &p_structured_changes = Dictionary());
+
+	// Add static method declaration for get_file_diff
+	static Ref<FileDiffResult> get_file_diff(const String &p_path, const String &p_path2, const Dictionary &p_options = Dictionary());
 };
 
 class ObjectDiffResult : public RefCounted {
@@ -75,6 +87,9 @@ public:
 	Ref<PropertyDiffResult> get_property_diff(const String &p_name) const;
 	ObjectDiffResult();
 	ObjectDiffResult(Object *p_old_object, Object *p_new_object, const Dictionary &p_property_diffs);
+
+	// Add static method declaration for get_diff_obj
+	static Ref<ObjectDiffResult> get_diff_obj(Object *a, Object *b, bool exclude_non_storage = true, const Dictionary &p_structured_changes = Dictionary());
 };
 
 class NodeDiffResult : public RefCounted {
@@ -103,6 +118,12 @@ public:
 	Ref<ObjectDiffResult> get_props() const;
 	NodeDiffResult();
 	NodeDiffResult(const NodePath &p_path, const String &p_type, Object *p_old_object, Object *p_new_object, const Ref<ObjectDiffResult> &p_props);
+
+	// Add static method declaration for evaluate_node_differences
+	static Ref<NodeDiffResult> evaluate_node_differences(Node *scene1, Node *scene2, const NodePath &path, const Dictionary &p_structured_changes = Dictionary());
+
+	// Add static method declaration for get_child_node_paths
+	static void get_child_node_paths(Node *node_a, HashSet<NodePath> &paths, const String &curr_path = ".");
 };
 
 class PropertyDiffResult : public RefCounted {
