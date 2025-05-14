@@ -67,7 +67,7 @@ public:
 	Ref<NodeDiffResult> get_node_diff(const String &p_path) const;
 
 	// Add static method declaration for get_diff_res
-	static Ref<FileDiffResult> get_diff_res(Ref<Resource> p_res, Ref<Resource> p_res2, const Dictionary &p_structured_changes = Dictionary());
+	static Ref<FileDiffResult> get_resource_diff(Ref<Resource> p_res, Ref<Resource> p_res2, const Dictionary &p_structured_changes = Dictionary());
 
 	// Add static method declaration for get_file_diff
 	static Ref<FileDiffResult> get_file_diff(const String &p_path, const String &p_path2, const Dictionary &p_options = Dictionary());
