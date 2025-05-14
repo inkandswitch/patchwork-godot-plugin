@@ -17,18 +17,30 @@ void DiffResult::_bind_methods() {
 }
 
 void DiffResult::set_file_diff(const String &p_path, const Ref<FileDiffResult> &p_diff) {
-	file_diffs[(Variant)p_path] = p_diff;
+	file_diffs[p_path] = p_diff;
 }
 
 Ref<FileDiffResult> DiffResult::get_file_diff(const String &p_path) const {
-	if (file_diffs.has((Variant)p_path)) {
-		return file_diffs[(Variant)p_path];
+	if (file_diffs.has(p_path)) {
+		return file_diffs[p_path];
 	}
 	return Ref<FileDiffResult>();
 }
 
 Dictionary DiffResult::get_file_diffs() const {
+	Dictionary result;
+	for (const auto &pair : file_diffs) {
+		result[pair.key] = pair.value;
+	}
+	return result;
+}
+
+HashMap<String, Ref<FileDiffResult>> DiffResult::get_file_diff_map() const {
 	return file_diffs;
+}
+
+void DiffResult::set_file_diff_map(const HashMap<String, Ref<FileDiffResult>> &p_diffs) {
+	file_diffs = p_diffs;
 }
 
 void FileDiffResult::_bind_methods() {
@@ -89,11 +101,37 @@ Ref<ObjectDiffResult> FileDiffResult::get_props() const {
 }
 
 void FileDiffResult::set_node_diffs(const Dictionary &p_diffs) {
+	node_diffs.clear();
+	for (const Variant &key : p_diffs.keys()) {
+		node_diffs[key] = p_diffs[key];
+	}
+}
+
+void FileDiffResult::set_node_diff_map(const HashMap<String, Ref<NodeDiffResult>> &p_diffs) {
 	node_diffs = p_diffs;
 }
 
 Dictionary FileDiffResult::get_node_diffs() const {
+	Dictionary result;
+	for (const auto &pair : node_diffs) {
+		result[pair.key] = pair.value;
+	}
+	return result;
+}
+
+HashMap<String, Ref<NodeDiffResult>> FileDiffResult::get_node_diff_map() const {
 	return node_diffs;
+}
+
+void FileDiffResult::set_node_diff(const Ref<NodeDiffResult> &p_diff) {
+	node_diffs[p_diff->get_path()] = Variant(p_diff);
+}
+
+Ref<NodeDiffResult> FileDiffResult::get_node_diff(const String &p_path) const {
+	if (node_diffs.has(p_path)) {
+		return node_diffs[p_path];
+	}
+	return Ref<NodeDiffResult>();
 }
 
 Ref<FileDiffResult> FileDiffResult::get_diff_res(Ref<Resource> p_res, Ref<Resource> p_res2, const Dictionary &p_structured_changes) {
@@ -119,15 +157,15 @@ Ref<FileDiffResult> FileDiffResult::get_diff_res(Ref<Resource> p_res, Ref<Resour
 	HashSet<NodePath> paths;
 	NodeDiffResult::get_child_node_paths(scene1, paths);
 	NodeDiffResult::get_child_node_paths(scene2, paths);
-	Dictionary node_diffs;
+	HashMap<String, Ref<NodeDiffResult>> node_diffs;
 	for (auto &path : paths) {
 		Ref<NodeDiffResult> value1 = NodeDiffResult::evaluate_node_differences(scene1, scene2, path, p_structured_changes);
 		if (value1.is_valid()) {
-			node_diffs[(Variant)path] = value1;
+			node_diffs[path] = value1;
 		}
 	}
 	result->set_type("scene_changed");
-	result->set_node_diffs(node_diffs);
+	result->set_node_diff_map(node_diffs);
 	return result;
 }
 
@@ -164,20 +202,35 @@ Object *ObjectDiffResult::get_new_object() const {
 }
 
 void ObjectDiffResult::set_property_diffs(const Dictionary &p_property_diffs) {
+	property_diffs.clear();
+	for (const Variant &key : p_property_diffs.keys()) {
+		property_diffs[key] = p_property_diffs[key];
+	}
+}
+
+void ObjectDiffResult::set_property_diff_map(const HashMap<String, Variant> &p_property_diffs) {
 	property_diffs = p_property_diffs;
 }
 
 Dictionary ObjectDiffResult::get_property_diffs() const {
+	Dictionary result;
+	for (const auto &pair : property_diffs) {
+		result[pair.key] = pair.value;
+	}
+	return result;
+}
+
+HashMap<String, Variant> ObjectDiffResult::get_property_diff_map() const {
 	return property_diffs;
 }
 
 void ObjectDiffResult::set_property_diff(const Ref<PropertyDiffResult> &p_diff) {
-	property_diffs[(Variant)p_diff->get_name()] = p_diff;
+	property_diffs[p_diff->get_name()] = Variant(p_diff);
 }
 
 Ref<PropertyDiffResult> ObjectDiffResult::get_property_diff(const String &p_name) const {
-	if (property_diffs.has((Variant)p_name)) {
-		return property_diffs[(Variant)p_name];
+	if (property_diffs.has(p_name)) {
+		return property_diffs[p_name];
 	}
 	return Ref<PropertyDiffResult>();
 }
@@ -188,7 +241,9 @@ ObjectDiffResult::ObjectDiffResult() {
 ObjectDiffResult::ObjectDiffResult(Object *p_old_object, Object *p_new_object, const Dictionary &p_property_diffs) {
 	old_object = p_old_object;
 	new_object = p_new_object;
-	property_diffs = p_property_diffs;
+	for (const auto &pair : p_property_diffs.keys()) {
+		property_diffs[pair] = p_property_diffs[pair];
+	}
 }
 
 Ref<ObjectDiffResult> ObjectDiffResult::get_diff_obj(Object *a, Object *b, bool exclude_non_storage, const Dictionary &p_structured_changes) {
