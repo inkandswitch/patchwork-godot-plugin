@@ -42,12 +42,7 @@ func init_godot_project():
 		print("checked out branch is null, waiting for signal...")
 		await GodotProject.checked_out_branch
 
-	PatchworkConfig.set_project_value("checked_out_branch_doc_id", GodotProject.get_checked_out_branch().id)
-	GodotProject.checked_out_branch.connect(_on_checked_out_branch)
 	print("end init_godot_project()")
-
-func _on_checked_out_branch(checked_out_branch: String):
-	PatchworkConfig.set_project_value("checked_out_branch_doc_id", checked_out_branch)
 
 func _exit_tree() -> void:
 	print("exit patchwork!!!")

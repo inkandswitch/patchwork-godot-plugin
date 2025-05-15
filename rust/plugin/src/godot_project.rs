@@ -1783,6 +1783,10 @@ impl GodotProject {
             "**/desktop.ini".to_string(),
             "**/patchwork.cfg".to_string(),
             "**/addons/patchwork*".to_string(),
+			"res://.patchwork*".to_string(),
+			"**/.patchwork*".to_string(),
+			"**/.patchwork/**/*".to_string(),
+			"res://addons/patchwork/**/*".to_string(),
         ];
         let project_path = PathBuf::from(project_path);
         self.file_system_driver = Some(FileSystemDriver::spawn(project_path, ignore_globs));
@@ -1996,6 +2000,8 @@ impl INode for GodotProject {
     }
 
     fn process(&mut self, _delta: f64) {
+		let mut just_checked_out_new_branch = false;
+		let mut should_trigger_reload = false;
         while let Ok(Some(event)) = self.driver_output_rx.try_next() {
             match event {
                 OutputEvent::NewDocHandle {
@@ -2066,24 +2072,10 @@ impl INode for GodotProject {
                                     active_branch_state.doc_handle.document_id(),
                                 );
 
-                                self.base_mut().emit_signal(
-                                    "checked_out_branch",
-                                    &[branch_state
-                                        .doc_handle
-                                        .document_id()
-                                        .to_string()
-                                        .to_variant()
-                                        .to_variant()],
-                                );
-                                if self.new_project {
-                                    self.new_project = false;
-                                    self.sync_godot_to_patchwork();
-                                } else {
-                                    self.sync_patchwork_to_godot();
-                                }
+								just_checked_out_new_branch = true;
                             } else {
                                 if trigger_reload {
-                                    self.sync_patchwork_to_godot();
+                                    should_trigger_reload = true;
                                 } else {
                                     println!("rust: TRIGGER saved changes: {}", branch_state.name);
                                     self.base_mut().emit_signal("saved_changes", &[]);
@@ -2167,6 +2159,22 @@ impl INode for GodotProject {
                 }
             }
         }
+		if just_checked_out_new_branch {
+			let checked_out_branch = self.get_checked_out_branch();
+			PatchworkConfig::singleton().bind_mut().set_project_value(GString::from("project_doc_id"), self.get_project_doc_id());
+			PatchworkConfig::singleton().bind_mut().set_project_value(GString::from("checked_out_branch_doc_id"), checked_out_branch.clone());
+			if self.new_project {
+				self.new_project = false;
+				self.sync_godot_to_patchwork();
+			} else {
+				self.sync_patchwork_to_godot();
+			}
+			self.base_mut().emit_signal(
+				"checked_out_branch",
+				&[checked_out_branch],
+			);
+		}
+
         if let Some(fs_driver) = self.file_system_driver.as_mut() {
 			let mut new_files = Vec::new();
         	while let Some(event) = fs_driver.try_next() {
