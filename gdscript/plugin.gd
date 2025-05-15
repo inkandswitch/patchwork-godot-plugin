@@ -22,7 +22,7 @@ func _enter_tree() -> void:
 	print("checked out branch: ", GodotProject.get_checked_out_branch())
 
 	# listen for file changes once we have initialized the godot project
-	file_system.connect("file_changed", _on_local_file_changed)
+	# file_system.connect("file_changed", _on_local_file_changed)
 
 	# setup patchwork sidebar
 	sidebar = preload("res://addons/patchwork/gdscript/sidebar.tscn").instantiate()
@@ -58,5 +58,5 @@ func _exit_tree() -> void:
 	# 	pass
 		# GodotProject.shutdown();
 
-	if file_system:
-		file_system.stop()
+	# if file_system:
+	# 	file_system.stop()

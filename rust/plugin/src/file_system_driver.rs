@@ -592,31 +592,33 @@ impl FileSystemDriver {
 
 	pub fn batch_update_blocking(&self, updates: Vec<FileSystemUpdateEvent>) -> Vec<FileSystemEvent> {
 		self.pause_task_blocking();
-		let mut file_hashes = self.task.file_hashes.blocking_lock();
-		let mut events = Vec::new();
-		for update in updates {
-			match update {
-				FileSystemUpdateEvent::FileSaved(path, content) => {
-					if let Ok(hash_str) = FileContent::write_file_content(&path, &content) {
-						if let Some(old_hash) = file_hashes.get_mut(&path) {
-							if old_hash != &hash_str {
-								events.push(FileSystemEvent::FileModified(path.clone(), content));
+		let mut events: Vec<FileSystemEvent> = Vec::new();
+		{
+			let mut file_hashes = self.task.file_hashes.blocking_lock();
+			for update in updates {
+				match update {
+					FileSystemUpdateEvent::FileSaved(path, content) => {
+						if let Ok(hash_str) = FileContent::write_file_content(&path, &content) {
+							if let Some(old_hash) = file_hashes.get_mut(&path) {
+								if old_hash != &hash_str {
+									events.push(FileSystemEvent::FileModified(path.clone(), content));
+								}
+							} else {
+								events.push(FileSystemEvent::FileCreated(path.clone(), content));
 							}
+							file_hashes.insert(path, hash_str);
 						} else {
-							events.push(FileSystemEvent::FileCreated(path.clone(), content));
+							println!("rust: failed to write file {:?}", path);
 						}
-						file_hashes.insert(path, hash_str);
-					} else {
-						println!("rust: failed to write file {:?}", path);
 					}
-				}
-				FileSystemUpdateEvent::FileDeleted(path) => {
-					if file_hashes.remove(&path).is_some() {
-						events.push(FileSystemEvent::FileDeleted(path));
+					FileSystemUpdateEvent::FileDeleted(path) => {
+						if file_hashes.remove(&path).is_some() {
+							events.push(FileSystemEvent::FileDeleted(path));
+						}
 					}
-				}
-				_ => {
-					continue;
+					_ => {
+						continue;
+					}
 				}
 			}
 		}

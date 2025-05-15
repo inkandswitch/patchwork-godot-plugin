@@ -559,6 +559,51 @@ impl GodotScene {
         Self::hydrate_at(&doc, path, &doc.get_heads())
     }
 
+
+	fn hydrate_subresource_node(doc: &Automerge, sub_resource_obj: automerge::ObjId, sub_resource_id: String, heads: &Vec<ChangeHash>) -> Result<SubResourceNode, String> {
+
+            let resource_type = doc
+                .get_string_at(&sub_resource_obj, "resource_type", &heads)
+                .ok_or_else(|| {
+                    format!("Could not find resource_type for ID: {}", sub_resource_id)
+                })?;
+
+            let id = doc
+                .get_string_at(&sub_resource_obj, "id", &heads)
+                .ok_or_else(|| format!("Could not find id for ID: {}", sub_resource_id))?;
+
+            let idx = doc
+                .get_int_at(&sub_resource_obj, "idx", &heads)
+                .ok_or_else(|| format!("Could not find idx for ID: {}", sub_resource_id))?;
+
+            let properties_obj = doc
+                .get_obj_id_at(&sub_resource_obj, "properties", &heads)
+                .ok_or_else(|| {
+                    format!(
+                        "Could not find properties object for ID: {}",
+                        sub_resource_id
+                    )
+                })?;
+
+            let mut properties = HashMap::new();
+            for key in doc.keys_at(&properties_obj, &heads) {
+                let property_obj = doc.get_obj_id_at(&properties_obj, &key, &heads).unwrap();
+                let order = doc.get_int_at(&property_obj, "order", &heads).unwrap();
+                let value = doc.get_string_at(&property_obj, "value", &heads).unwrap();
+
+                properties.insert(key, OrderedProperty { value, order });
+            }
+
+            let sub_resource = SubResourceNode {
+                id,
+                resource_type,
+                properties,
+                idx,
+            };
+
+			Ok(sub_resource)
+	}
+
     pub fn hydrate_at(
         doc: &Automerge,
         path: &str,
@@ -601,33 +646,11 @@ impl GodotScene {
         let main_resource = if let Some(main_resource_obj) =
             doc.get_obj_id_at(&structured_content, "main_resource", &heads)
         {
-            let resource_type = doc
-                .get_string_at(&main_resource_obj, "resource_type", &heads)
-                .ok_or_else(|| "Could not find resource_type in main_resource".to_string())?;
-
-            let properties_obj = doc
-                .get_obj_id_at(&main_resource_obj, "properties", &heads)
-                .ok_or_else(|| "Could not find properties in main_resource".to_string())?;
-
-            let mut properties = HashMap::new();
-            for key in doc.keys_at(&properties_obj, &heads) {
-                let property_obj = doc.get_obj_id_at(&properties_obj, &key, &heads).unwrap();
-
-                let value = doc
-                    .get_string_at(&property_obj, "value", &heads)
-                    .ok_or_else(|| format!("Could not find value for property: {}", key))?;
-
-                let order = doc.get_int_at(&property_obj, "order", &heads).unwrap_or(0);
-
-                properties.insert(key, OrderedProperty { value, order });
+            if let Ok(sub_resource) = Self::hydrate_subresource_node(doc, main_resource_obj, "main_resource".to_string(), heads) {
+                Some(sub_resource)
+            } else {
+                None
             }
-
-            Some(SubResourceNode {
-                id: "".to_string(), // Resource sections don't have IDs
-                resource_type,
-                properties,
-                idx: 0,
-            })
         } else {
             None
         };
