@@ -1783,10 +1783,11 @@ impl GodotProject {
             "**/desktop.ini".to_string(),
             "**/patchwork.cfg".to_string(),
             "**/addons/patchwork*".to_string(),
-			"res://.patchwork*".to_string(),
-			"**/.patchwork*".to_string(),
-			"**/.patchwork/**/*".to_string(),
-			"res://addons/patchwork/**/*".to_string(),
+			// "**/.godot".to_string(),
+			"**/.*".to_string(),
+			// "**/.patchwork*".to_string(),
+			// "**/.patchwork/**/*".to_string(),
+			// "res://addons/patchwork/**/*".to_string(),
         ];
         let project_path = PathBuf::from(project_path);
         self.file_system_driver = Some(FileSystemDriver::spawn(project_path, ignore_globs));
@@ -2160,9 +2161,18 @@ impl INode for GodotProject {
             }
         }
 		if just_checked_out_new_branch {
-			let checked_out_branch = self.get_checked_out_branch();
+			let checked_out_branch_state = self.get_checked_out_branch_state();
+			let checked_out_branch_doc_id = if let  Some(checked_out_branch_state) = checked_out_branch_state {
+				checked_out_branch_state
+				.doc_handle
+				.document_id()
+				.to_string()
+				.to_variant()
+			} else {
+				Variant::nil()
+			};
 			PatchworkConfig::singleton().bind_mut().set_project_value(GString::from("project_doc_id"), self.get_project_doc_id());
-			PatchworkConfig::singleton().bind_mut().set_project_value(GString::from("checked_out_branch_doc_id"), checked_out_branch.clone());
+			PatchworkConfig::singleton().bind_mut().set_project_value(GString::from("checked_out_branch_doc_id"), checked_out_branch_doc_id.clone());
 			if self.new_project {
 				self.new_project = false;
 				self.sync_godot_to_patchwork();
@@ -2171,7 +2181,7 @@ impl INode for GodotProject {
 			}
 			self.base_mut().emit_signal(
 				"checked_out_branch",
-				&[checked_out_branch],
+				&[checked_out_branch_doc_id],
 			);
 		}
 
