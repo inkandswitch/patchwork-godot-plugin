@@ -49,15 +49,19 @@ func init() -> void:
 
 
 func _update_ui_on_branches_changed(_branches: Array):
+	print("update_ui_on_branches_changed")
 	update_ui()
 
 func _update_ui_on_files_saved():
+	print("update_ui_on_files_saved")
 	update_ui()
 
 func _update_ui_on_files_changed():
+	print("update_ui_on_files_changed")
 	update_ui()
 
 func _update_ui_on_branch_checked_out(_branch):
+	print("update_ui_on_branch_checked_out")
 	update_ui()
 
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
@@ -405,7 +409,7 @@ func update_ui() -> void:
 		var change_timestamp = human_readable_timestamp(change.timestamp)
 
 		var prefix = ""
-		
+
 		if DEBUG_MODE:
 			prefix = change.hash.substr(0, 8) + " - "
 
@@ -420,7 +424,7 @@ func update_ui() -> void:
 
 		if unsynced_changes.has(change.hash):
 			history_list.set_item_custom_fg_color(history_list.get_item_count() - 1, Color(0.5, 0.5, 0.5))
-	
+
 
 	# update sync status
 	update_sync_status()
@@ -433,7 +437,7 @@ func update_ui() -> void:
 	else:
 		merge_button.disabled = false
 		merge_button.tooltip_text = ""
-	
+
 
 	# update user name
 
