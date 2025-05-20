@@ -248,6 +248,8 @@ impl GodotScene {
         {
             // Remove main_resource if it exists but we don't have one
             tx.delete(&structured_content, "main_resource").unwrap();
+        } else if self.resource_type != "PackedScene" {
+            println!("PackedScene with no main resource!!");
         }
 
         // Store root node id
@@ -652,6 +654,9 @@ impl GodotScene {
                 None
             }
         } else {
+			if resource_type != "PackedScene" {
+				println!("resource with no main resource!!");
+			}
             None
         };
 
@@ -730,45 +735,7 @@ impl GodotScene {
                     )
                 })?;
 
-            let resource_type = doc
-                .get_string_at(&sub_resource_obj, "resource_type", &heads)
-                .ok_or_else(|| {
-                    format!("Could not find resource_type for ID: {}", sub_resource_id)
-                })?;
-
-            let id = doc
-                .get_string_at(&sub_resource_obj, "id", &heads)
-                .ok_or_else(|| format!("Could not find id for ID: {}", sub_resource_id))?;
-
-            let idx = doc
-                .get_int_at(&sub_resource_obj, "idx", &heads)
-                .ok_or_else(|| format!("Could not find idx for ID: {}", sub_resource_id))?;
-
-            let properties_obj = doc
-                .get_obj_id_at(&sub_resource_obj, "properties", &heads)
-                .ok_or_else(|| {
-                    format!(
-                        "Could not find properties object for ID: {}",
-                        sub_resource_id
-                    )
-                })?;
-
-            let mut properties = HashMap::new();
-            for key in doc.keys_at(&properties_obj, &heads) {
-                let property_obj = doc.get_obj_id_at(&properties_obj, &key, &heads).unwrap();
-                let order = doc.get_int_at(&property_obj, "order", &heads).unwrap();
-                let value = doc.get_string_at(&property_obj, "value", &heads).unwrap();
-
-                properties.insert(key, OrderedProperty { value, order });
-            }
-
-            let sub_resource = SubResourceNode {
-                id,
-                resource_type,
-                properties,
-                idx,
-            };
-
+            let sub_resource = Self::hydrate_subresource_node(doc, sub_resource_obj, sub_resource_id.clone(), heads)?;
             sorted_sub_resources.push((sub_resource_id.clone(), sub_resource));
         }
         sorted_sub_resources.sort_by_key(|(_, resource)| resource.idx);
@@ -1034,6 +1001,8 @@ impl GodotScene {
             output.push('\n');
             // short circuit if we have a main resource, no nodes or connections
             return output;
+        } else if self.resource_type != "PackedScene" {
+            println!("resource with no resource tag!!");
         }
 
         if !self.nodes.is_empty() && self.root_node_id.is_some() {
