@@ -1981,8 +1981,9 @@ impl GodotProject {
         }
     }
 
-    fn sync_godot_to_patchwork(&mut self) {
+    fn sync_godot_to_patchwork(&mut self, new_project: bool) {
         let res_path = ProjectSettings::singleton().globalize_path("res://").simplify_path().to_string();
+        let mut updates = Vec::new();
 
         match &self.get_checked_out_branch_state() {
             Some(branch_state) => {
@@ -1994,11 +1995,28 @@ impl GodotProject {
                             (PathBuf::from(ProjectSettings::singleton().localize_path(&path.to_string_lossy().to_string()).to_string()), content)
                         }
                     ).collect::<Vec<(PathBuf, FileContent)>>();
+					// if this is a new_project, we need to save the scene content files to disk
+					if new_project {
+						for (path, content) in files.iter() {
+							match content {
+								FileContent::Scene(scene) => {
+									updates.push(FileSystemUpdateEvent::FileSaved(PathBuf::from(ProjectSettings::singleton().globalize_path(&path.to_string_lossy().to_string()).to_string()), FileContent::Scene(scene.clone())));
+								}
+								_ => {}
+							}
+						}
+					}
                     self._sync_files_at(branch_state.doc_handle.clone(), files, Some(branch_state.synced_heads.clone()));
                 }
             }
             None => panic!("couldn't save files, no checked out branch"),
         }
+		if let Some(driver) = &mut self.file_system_driver {
+			if updates.len() > 0 {
+				let events = driver.batch_update_blocking(updates);
+				self.update_godot_after_sync(events);
+			}
+		}
 
     }
 
@@ -2105,6 +2123,7 @@ impl INode for GodotProject {
                     // only trigger update if checked out branch is fully synced
                     if let Some(active_branch_state) = active_branch_state {
                         if active_branch_state.is_synced() {
+							should_trigger_reload = trigger_reload;
                             if checking_out_new_branch {
                                 println!(
                                     "rust: TRIGGER checked out new branch: {}",
@@ -2117,9 +2136,7 @@ impl INode for GodotProject {
 
 								just_checked_out_new_branch = true;
                             } else {
-                                if trigger_reload {
-                                    should_trigger_reload = true;
-                                } else {
+                                if !trigger_reload {
                                     println!("rust: TRIGGER saved changes: {}", branch_state.name);
                                     self.base_mut().emit_signal("saved_changes", &[]);
                                 }
@@ -2217,14 +2234,18 @@ impl INode for GodotProject {
 			PatchworkConfig::singleton().bind_mut().set_project_value(GString::from("checked_out_branch_doc_id"), checked_out_branch_doc_id.clone());
 			if self.new_project {
 				self.new_project = false;
-				self.sync_godot_to_patchwork();
+				self.sync_godot_to_patchwork(true);
 			} else {
+				should_trigger_reload = false;
 				self.sync_patchwork_to_godot();
 			}
 			self.base_mut().emit_signal(
 				"checked_out_branch",
 				&[checked_out_branch_doc_id],
 			);
+		}
+		if should_trigger_reload {
+			self.sync_patchwork_to_godot();
 		}
 
         if let Some(fs_driver) = self.file_system_driver.as_mut() {
