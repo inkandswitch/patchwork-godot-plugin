@@ -1777,19 +1777,61 @@ impl GodotProject {
 
     fn _start_file_system_driver(&mut self) {
         let project_path: String = ProjectSettings::singleton().globalize_path("res://").to_string();
-        let ignore_globs = vec![
+        let project_path = PathBuf::from(project_path);
+
+		// read in .gitignore from the project path
+		let gitignore_path = project_path.join(".gitignore");
+
+
+
+
+		let mut ignore_globs = vec![
             "**/.DS_Store".to_string(),
             "**/thumbs.db".to_string(),
             "**/desktop.ini".to_string(),
             "**/patchwork.cfg".to_string(),
             "**/addons/patchwork*".to_string(),
+			"**/target/*".to_string(),
 			// "**/.godot".to_string(),
 			"**/.*".to_string(),
 			// "**/.patchwork*".to_string(),
 			// "**/.patchwork/**/*".to_string(),
 			// "res://addons/patchwork/**/*".to_string(),
         ];
-        let project_path = PathBuf::from(project_path);
+		let mut parse_gitignore = |dir: PathBuf, file: &str| {
+			let path = dir.join(file);
+			let gitignore_content = if let Ok(content) = std::fs::read_to_string(path) {
+				content
+			} else {
+				String::new()
+			};
+
+			for line in gitignore_content.lines() {
+				// trim any comments and whitespace
+				let line = line.trim().split('#').next().unwrap_or_default().trim();
+				if line.is_empty() {
+					continue;
+				}
+				let mut new_line = if line.starts_with("/") {
+					line.to_string()
+				} else {
+					dir.join(line).to_string_lossy().to_string()
+				};
+				let new_line = if new_line.ends_with("/") {
+					// just remove the trailing slash
+					new_line.pop();
+					new_line
+				} else {
+					new_line
+				};
+				ignore_globs.push(new_line);
+			}
+		};
+		parse_gitignore(project_path.clone(), ".gitignore");
+		parse_gitignore(project_path.clone(), ".patchworkignore");
+		parse_gitignore(project_path.clone(), ".gdignore");
+
+
         self.file_system_driver = Some(FileSystemDriver::spawn(project_path, ignore_globs));
     }
 
