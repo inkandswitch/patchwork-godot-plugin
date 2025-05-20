@@ -1159,7 +1159,8 @@ pub fn recognize_scene(source: &String) -> bool {
             // check if the line starts with "[gd_resource" or "[gd_scene"
             if trimmed.starts_with("["){
                 let line_after_bracket = &trimmed[1..].trim();
-                if line_after_bracket.starts_with("gd_resource") || line_after_bracket.starts_with("gd_scene") {
+                // if line_after_bracket.starts_with("gd_resource") || line_after_bracket.starts_with("gd_scene") {
+				if line_after_bracket.starts_with("gd_scene") {
                     return true;
                 }
             }
