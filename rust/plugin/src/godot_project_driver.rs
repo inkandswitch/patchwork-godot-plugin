@@ -196,6 +196,7 @@ impl GodotProjectDriver {
     pub fn create(storage_folder_path: String) -> Self {
         let runtime: Runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
+			.thread_name("GodotProjectDriver: worker thread")
             .build()
             .unwrap();
 
