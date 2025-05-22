@@ -1,4 +1,5 @@
 use crate::file_utils::FileContent;
+use godot::classes::editor_plugin::DockSlot;
 use ::safer_ffi::prelude::*;
 use automerge::op_tree::B;
 use automerge::{
@@ -12,14 +13,14 @@ use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::io::empty;
 use godot::classes::file_access::ModeFlags;
 use godot::classes::resource_loader::CacheMode;
-use godot::classes::EditorFileSystem;
+use godot::classes::{Control, EditorFileSystem, MarginContainer};
 use godot::classes::EditorInterface;
 use godot::classes::Image;
 use godot::classes::ProjectSettings;
 use godot::classes::ResourceLoader;
 use godot::classes::{ClassDb, EditorPlugin, Engine, IEditorPlugin};
 use godot::global::str_to_var;
-use godot::meta::AsArg;
+use godot::meta::{AsArg, ParamType};
 use godot::classes::{ResourceUid, ConfigFile, DirAccess, FileAccess, ResourceImporter};
 use godot::prelude::*;
 use safer_ffi::layout::OpaqueKind::T;
@@ -642,6 +643,7 @@ impl GodotProject {
         if branch_state.synced_heads == branch_state.doc_handle.with_doc(|d| d.get_heads()) {
             self.checked_out_branch_state =
                 CheckedOutBranchState::CheckedOut(branch_doc_id.clone());
+			self.sync_patchwork_to_godot();
             self.base_mut().emit_signal(
                 "checked_out_branch",
                 &[branch_doc_id.to_string().to_variant()],
@@ -1908,19 +1910,19 @@ impl GodotProject {
         let mut scenes_to_reload = Vec::new();
         let mut reimport_files = HashSet::new();
         for event in events {
-            let (path, content) = match event {
+            let (abs_path, content) = match event {
                 FileSystemEvent::FileCreated(path, content) => (path, content),
                 FileSystemEvent::FileModified(path, content) => (path, content),
                 FileSystemEvent::FileDeleted(path) => continue,
             };
-            let path = ProjectSettings::singleton().localize_path(&path.to_string_lossy().to_string());
-            let extension = path.get_extension().to_string();
+            let res_path = ProjectSettings::singleton().localize_path(&abs_path.to_string_lossy().to_string());
+            let extension = abs_path.extension().unwrap_or_default().to_string_lossy().to_string();
             if extension == "gd" {
                 reload_scripts = true;
             } else if extension == "tscn" {
-                scenes_to_reload.push(path);
+                scenes_to_reload.push(res_path);
             } else if extension == "import" {
-                let base = path.get_basename();
+                let base = res_path.get_basename();
                 reimport_files.insert(base.clone());
                 if let FileContent::String(string) = content {
                     // go line by line, find the line that begins with "uid="
@@ -1934,16 +1936,24 @@ impl GodotProject {
                 }
             } else if extension == "uid" {
                 if let FileContent::String(string) = content {
-                    Self::add_new_uid(path, string);
+                    Self::add_new_uid(res_path, string);
                 }
             // check if a file with .import added exists
             } else  {
-                let import_path = path.to_string() + ".import";
-                if PathBuf::from(&import_path).exists() {
-                    reimport_files.insert(GString::from(import_path));
+                let mut import_path = abs_path.clone();
+				import_path.set_extension(abs_path.extension().unwrap_or_default().to_string_lossy().to_string() + ".import");
+                if import_path.exists() {
+                    reimport_files.insert(GString::from(res_path.to_string()));
                 }
             }
         }
+		// We have to turn off process here because:
+		// * This was probably called from `process()`
+		// * Any of these functions we're about to call could result in popping up and stepping the ProgressDialog modal
+		// * ProgressDialog::step() will call `Main::iteration()`, which calls `process()` on all the scene tree nodes
+		// * calling `process()` on us again will cause gd_ext to attempt to re-bind_mut() the GodotProject singleton
+		// * This will cause a panic because we're already in the middle of `process()` with a bound mut ref to base
+		self.base_mut().set_process(false);
         if reload_scripts {
             Self::call_patchwork_editor_func("reload_scripts", &[false.to_variant()]);
         }
@@ -1954,8 +1964,13 @@ impl GodotProject {
         }
         if reimport_files.len() > 0 {
             let mut reimport_files_psa = reimport_files.into_iter().map(|path| path).collect::<PackedStringArray>();
-            EditorInterface::singleton().get_resource_filesystem().unwrap().reimport_files(&reimport_files_psa);
+			let mut thingy = EditorInterface::singleton();
+			let mut editor_interface = thingy.get_resource_filesystem();
+			let mut unwrapped_editor_interface = editor_interface.unwrap();
+            unwrapped_editor_interface.reimport_files(&reimport_files_psa);
         }
+		// turn on process
+		self.base_mut().set_process(true);
     }
 
 
@@ -2063,6 +2078,7 @@ impl INode for GodotProject {
     fn process(&mut self, _delta: f64) {
 		let mut just_checked_out_new_branch = false;
 		let mut should_trigger_reload = false;
+		let mut branches_changed = false;
         while let Ok(Some(event)) = self.driver_output_rx.try_next() {
             match event {
                 OutputEvent::NewDocHandle {
@@ -2087,15 +2103,7 @@ impl INode for GodotProject {
                     self.branch_states
                         .insert(branch_state.doc_handle.document_id(), branch_state.clone());
 
-                    let branches = self
-                        .get_branches()
-                        .iter_shared()
-                        .map(|branch| branch.to_variant())
-                        .collect::<Array<Variant>>()
-                        .to_variant();
-
-                    self.base_mut().emit_signal("branches_changed", &[branches]);
-
+					branches_changed = true;
                     let mut active_branch_state: Option<BranchState> = None;
                     let mut checking_out_new_branch = false;
 
@@ -2219,6 +2227,18 @@ impl INode for GodotProject {
                 }
             }
         }
+
+		if branches_changed {
+			let branches = self
+				.get_branches()
+				.iter_shared()
+				.map(|branch| branch.to_variant())
+				.collect::<Array<Variant>>()
+				.to_variant();
+
+			self.base_mut().emit_signal("branches_changed", &[branches]);
+
+		}
 		if just_checked_out_new_branch {
 			let checked_out_branch_state = self.get_checked_out_branch_state();
 			let checked_out_branch_doc_id = if let  Some(checked_out_branch_state) = checked_out_branch_state {
@@ -2265,8 +2285,14 @@ impl INode for GodotProject {
         	}
 			if new_files.len() > 0 {
 				let branch_state = self.get_checked_out_branch_state();
+				let files = new_files.into_iter().map(
+					|(path, content)| {
+						(PathBuf::from(ProjectSettings::singleton().localize_path(&path.to_string_lossy().to_string()).to_string()), content)
+					}
+				).collect::<Vec<(PathBuf, FileContent)>>();
+
 				if let Some(branch_state) = branch_state {
-					self._sync_files_at(branch_state.doc_handle.clone(), new_files, Some(branch_state.synced_heads.clone()));
+					self._sync_files_at(branch_state.doc_handle.clone(), files, Some(branch_state.synced_heads.clone()));
 				}
 			}
         }
