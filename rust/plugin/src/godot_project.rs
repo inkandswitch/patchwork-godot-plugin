@@ -129,6 +129,7 @@ pub struct GodotProject {
     checked_out_branch_state: CheckedOutBranchState,
     project_doc_id: Option<DocumentId>,
     new_project: bool,
+	should_update_godot: bool,
     driver: Option<GodotProjectDriver>,
     driver_input_tx: UnboundedSender<InputEvent>,
     driver_output_rx: UnboundedReceiver<OutputEvent>,
@@ -1887,10 +1888,13 @@ impl GodotProject {
         self.file_system_driver = None;
     }
 
-    fn call_patchwork_editor_func(func_name: &str, args: &[Variant]){
-        ClassDb::singleton().class_call_static("PatchworkEditor", func_name, args);
+    fn call_patchwork_editor_func(func_name: &str, args: &[Variant]) -> Variant {
+       	ClassDb::singleton().class_call_static("PatchworkEditor", func_name, args)
     }
 
+	fn safe_to_update_godot() -> bool {
+		return !(EditorInterface::singleton().get_resource_filesystem().unwrap().is_scanning() || Self::call_patchwork_editor_func("is_editor_importing", &[]).to::<bool>());
+	}
 
 
     fn add_new_uid(path: GString, uid: String) {
@@ -2055,6 +2059,7 @@ impl INode for GodotProject {
             checked_out_branch_state: CheckedOutBranchState::NothingCheckedOut,
             project_doc_id: None,
             new_project: true,
+			should_update_godot: false,
             driver: None,
             driver_input_tx,
             driver_output_rx,
@@ -2078,7 +2083,6 @@ impl INode for GodotProject {
 
     fn process(&mut self, _delta: f64) {
 		let mut just_checked_out_new_branch = false;
-		let mut should_trigger_reload = false;
 		let mut branches_changed = false;
         while let Ok(Some(event)) = self.driver_output_rx.try_next() {
             match event {
@@ -2132,7 +2136,7 @@ impl INode for GodotProject {
                     // only trigger update if checked out branch is fully synced
                     if let Some(active_branch_state) = active_branch_state {
                         if active_branch_state.is_synced() {
-							should_trigger_reload = trigger_reload;
+							self.should_update_godot = self.should_update_godot || trigger_reload;
                             if checking_out_new_branch {
                                 println!(
                                     "rust: TRIGGER checked out new branch: {}",
@@ -2256,16 +2260,19 @@ impl INode for GodotProject {
 			if self.new_project {
 				self.new_project = false;
 				self.sync_godot_to_patchwork(true);
-			} else {
-				should_trigger_reload = false;
+			} else if Self::safe_to_update_godot() {
+				self.should_update_godot = false;
 				self.sync_patchwork_to_godot();
+			} else {
+				println!("rust: not safe to update godot");
 			}
 			self.base_mut().emit_signal(
 				"checked_out_branch",
 				&[checked_out_branch_doc_id],
 			);
 		}
-		if should_trigger_reload {
+		if self.should_update_godot && Self::safe_to_update_godot() {
+			self.should_update_godot = false;
 			self.sync_patchwork_to_godot();
 		}
 
