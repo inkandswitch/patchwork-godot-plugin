@@ -1957,17 +1957,17 @@ impl GodotProject {
         if reload_scripts {
             Self::call_patchwork_editor_func("reload_scripts", &[false.to_variant()]);
         }
-        if scenes_to_reload.len() > 0 {
-            for scene_path in scenes_to_reload {
-                EditorInterface::singleton().reload_scene_from_path(&scene_path);
-            }
-        }
         if reimport_files.len() > 0 {
             let mut reimport_files_psa = reimport_files.into_iter().map(|path| path).collect::<PackedStringArray>();
 			let mut thingy = EditorInterface::singleton();
 			let mut editor_interface = thingy.get_resource_filesystem();
 			let mut unwrapped_editor_interface = editor_interface.unwrap();
             unwrapped_editor_interface.reimport_files(&reimport_files_psa);
+        }
+		if scenes_to_reload.len() > 0 {
+            for scene_path in scenes_to_reload {
+                EditorInterface::singleton().reload_scene_from_path(&scene_path);
+            }
         }
 		// turn on process
 		self.base_mut().set_process(true);
