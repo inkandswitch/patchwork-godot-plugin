@@ -40,7 +40,6 @@ var plugin: EditorPlugin
 var task_modal: TaskModal = TaskModal.new()
 
 var highlight_changes = false
-var initialized = false
 
 
 const CREATE_BRANCH_IDX = 1
@@ -65,32 +64,33 @@ func _update_ui_on_branch_checked_out(_branch):
 	update_ui()
 
 func _on_initial_checked_out_branch(_branch):
-	if not self.initialized:
-		self.initialized = true
-		print("on_initial_checked_out_branch")
-		GodotProject.get_singleton().disconnect("checked_out_branch", self._on_initial_checked_out_branch)
-		init()
+	print("on_initial_checked_out_branch")
+	GodotProject.disconnect("checked_out_branch", self._on_initial_checked_out_branch)
+	init()
 
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
 	print("Sidebar: ready!")
 	# need to add task_modal as a child to the plugin otherwise process won't be called
 	add_child(task_modal)
-	if GodotProject.get_singleton():
-		GodotProject.get_singleton().connect("checked_out_branch", self._on_initial_checked_out_branch)
+	# The singleton class accessor is still pointing to the old GodotProject singleton
+	# if we're hot-reloading, so we check the Engine for the singleton instead.
+	# The rest of the accessor uses outside of _ready() should be fine.
+	var godot_project = Engine.get_singleton("GodotProject")
+	if godot_project:
+		if not godot_project.get_checked_out_branch():
+			godot_project.connect("checked_out_branch", self._on_initial_checked_out_branch)
+			task_modal.start_task("Loading Patchwork")
+		else:
+			init()
 	else:
 		print("!!!!!!GodotProject not initialized!")
-	task_modal.start_task("Loading Patchwork")
 
 func init() -> void:
 	print("Sidebar initialized!")
 	task_modal.end_task("Loading Patchwork")
 	update_ui()
 
-	# get the class name of the inspector
-	var inspector_class = inspector.get_class()
-	print("Inspector class: ", inspector_class)
-	inspector.get_script()
 	# @Paul: I think somewhere besides the plugin sidebar gets instantiated. Is this something godot does?
 	# to paper over this we check if plugin and godot_project are set
 

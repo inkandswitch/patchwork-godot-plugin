@@ -2341,8 +2341,11 @@ impl GodotProjectPlugin {
 
 	fn remove_sidebar(&mut self) {
 		if let Some(sidebar) = self.sidebar.as_ref() {
-			self.to_gd().remove_child(sidebar);
-			self.sidebar = None;
+			self.to_gd().remove_control_from_docks(sidebar);
+			let mut sidebar = self.sidebar.take().unwrap();
+			sidebar.queue_free();
+		} else {
+			println!("rust: no sidebar to remove");
 		}
 	}
 }
