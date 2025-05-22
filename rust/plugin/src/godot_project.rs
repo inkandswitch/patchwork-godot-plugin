@@ -1969,6 +1969,7 @@ impl GodotProject {
                 EditorInterface::singleton().reload_scene_from_path(&scene_path);
             }
         }
+		EditorInterface::singleton().get_resource_filesystem().unwrap().scan();
 		// turn on process
 		self.base_mut().set_process(true);
     }
