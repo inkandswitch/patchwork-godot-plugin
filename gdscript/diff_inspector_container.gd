@@ -140,11 +140,11 @@ func snake_case_to_human_readable(snake_case_string: String) -> String:
 
 
 func get_prop_editor(fake_object: MissingResource, prop_name: String, prop_value: Variant, change_type: String, prop_label: String) -> PanelContainer:
-	print("!!! getting prop editor for ", prop_name, " with value ", prop_value)
+	# print("!!! getting prop editor for ", prop_name, " with value ", prop_value)
 	fake_object.recording_properties = true
 	fake_object.set(prop_name, prop_value)
 	fake_object.recording_properties = false
-	print("!!! fake_object prop value: ", fake_object.get(prop_name))
+	# print("!!! fake_object prop value: ", fake_object.get(prop_name))
 	if prop_label == null:
 		prop_label = snake_case_to_human_readable(prop_name)
 	var editor_property: DiffInspectorProperty = DiffInspector.instance_property_diff(fake_object, prop_name, false)
@@ -177,9 +177,9 @@ func add_PropertyDiffResult(inspector_section: DiffInspectorSection, property_di
 	var prop_label = snake_case_to_human_readable(property_diff["name"])
 	var prop_old = property_diff["old_value"]
 	var prop_new = property_diff["new_value"]
-	print("!!! adding property diff result for ", prop_name, " with type ", change_type)
-	print("!!! prop_old: ", prop_old)
-	print("!!! prop_new: ", prop_new)
+	# print("!!! adding property diff result for ", prop_name, " with type ", change_type)
+	# print("!!! prop_old: ", prop_old)
+	# print("!!! prop_new: ", prop_new)
 
 	add_old_and_new(inspector_section, change_type, prop_name, prop_old, prop_new, prop_label)
 
@@ -231,7 +231,7 @@ func add_NodeDiffResult(file_section: DiffInspectorSection, node_diff: Dictionar
 	var node_name: String = node_diff["node_path"] # remove the leading "./"
 	var node_label: String = node_name
 	var change_type: String = node_diff["change_type"]
-	print("!!! adding node diff result for ", node_name, " with type ", change_type)
+	# print("!!! adding node diff result for ", node_name, " with type ", change_type)
 
 	var prop_diffs: Dictionary
 	var inspector_section: DiffInspectorSection = DiffInspectorSection.new()
@@ -246,12 +246,12 @@ func add_NodeDiffResult(file_section: DiffInspectorSection, node_diff: Dictionar
 		# TODO: make rust code do this
 		prop_diffs = get_prop_diffs_from_properties(node_diff["new_content"]["properties"], "added")
 		# node_type = node_diff["new_content"]["type"]
-		print("adding node added box")
+		# print("adding node added box")
 		added_nodes.append(fake_node)
 	elif change_type == "removed":
 		color = removed_color
 		node_label += " (Deleted)"
-		print("adding node deleted box")
+		# print("adding node deleted box")
 		prop_diffs = get_prop_diffs_from_properties(node_diff["old_content"]["properties"], "removed")
 		# node_type = node_diff["old_content"]["type"]
 		deleted_nodes.append(fake_node)
@@ -267,7 +267,7 @@ func add_NodeDiffResult(file_section: DiffInspectorSection, node_diff: Dictionar
 	var i = 0
 	# get the length of the prop_diffs dictionary
 	var prop_diffs_length = prop_diffs.keys().size()
-	print("prop_diffs_length: ", prop_diffs_length)
+	# print("prop_diffs_length: ", prop_diffs_length)
 	for prop_name in prop_diffs.keys():
 		if i > 0:
 			var divider = HSeparator.new()
@@ -288,7 +288,7 @@ func add_NodeDiffResult(file_section: DiffInspectorSection, node_diff: Dictionar
 # 	var label: String
 
 func add_resource_diff(inspector_section: DiffInspectorSection, change_type: String, file_path: String, old_resource: Resource, new_resource: Resource) -> void:
-	print("adding resource diff for ", file_path)
+	# print("adding resource diff for ", file_path)
 	if !is_instance_valid(old_resource) && !is_instance_valid(new_resource):
 		return
 	var prop_label = snake_case_to_human_readable(file_path)
@@ -300,7 +300,7 @@ func add_resource_diff(inspector_section: DiffInspectorSection, change_type: Str
 	add_old_and_new(inspector_section, change_type, "Resource", old_resource, new_resource, prop_label)
 
 func add_text_diff(inspector_section: DiffInspectorSection, unified_diff: Dictionary) -> void:
-	print("adding text diff")
+	# print("adding text diff")
 	var text_diff = TextDiffer.get_text_diff(unified_diff, false)
 	text_diff.custom_minimum_size = Vector2(100, 500)
 	inspector_section.get_vbox().add_child(text_diff)
@@ -345,7 +345,7 @@ func add_FileDiffResult(file_path: String, file_diff: Dictionary) -> void:
 		add_text_diff(inspector_section, text_diff)
 	elif type == "scene_changed":
 		var node_diffs: Array = file_diff["changed_nodes"]
-		print("node_diff size: ", node_diffs.size())
+		# print("node_diff size: ", node_diffs.size())
 		for node in node_diffs:
 			var node_path: String = node["node_path"]
 			# skip temporary nodes created by the instance
@@ -357,14 +357,14 @@ func add_FileDiffResult(file_path: String, file_diff: Dictionary) -> void:
 
 # defs for these are in editor/diff_result.h
 func add_diff(diff: Dictionary) -> void:
-	print("ADDING DIFF!!!")
+	# print("ADDING DIFF!!!")
 	diff_result = diff
 	var size = diff_result.size()
-	print("Diff size: ", size)
+	# print("Diff size: ", size)
 	for file in diff_result.keys():
 		if (file.to_lower().ends_with(".import")):
 			continue
-		print("Adding file diff result for ", file)
+		# print("Adding file diff result for ", file)
 		add_FileDiffResult(file, diff_result[file])
 
 

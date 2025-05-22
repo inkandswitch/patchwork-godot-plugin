@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     str::FromStr,
-    time::{Instant, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 
 use crate::{doc_utils::SimpleDocReader, godot_project_driver::BranchState};
@@ -132,4 +132,15 @@ pub(crate) fn heads_to_array(heads: Vec<ChangeHash>) -> PackedStringArray {
         .iter()
         .map(|h| GString::from(h.to_string()))
         .collect::<PackedStringArray>()
+}
+
+
+pub(crate) fn strategic_waiting(loc: &str) {
+	println!("pointelssly waiting for about 1 second @ {}", loc);
+	let mut count: i32 = 1000;
+	while count > 0 {
+		std::thread::sleep(Duration::from_millis(100));
+		count -= 100;
+	}
+	println!("Done waiting");
 }

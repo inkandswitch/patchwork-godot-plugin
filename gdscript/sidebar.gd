@@ -268,8 +268,7 @@ func checkout_branch(branch_id: String) -> void:
 			func():
 				GodotProject.checkout_branch(branch_id)
 
-				if GodotProject.get_checked_out_branch().id != branch_id:
-					await GodotProject.checked_out_branch
+				await GodotProject.checked_out_branch
 		)
 	)
 
@@ -508,8 +507,8 @@ func update_ui() -> void:
 			heads_after = checked_out_branch.heads
 
 
-		print("heads_before: ", heads_before)
-		print("heads_after: ", heads_after)
+		# print("heads_before: ", heads_before)
+		# print("heads_after: ", heads_after)
 
 		var diff = update_properties_diff(heads_before, heads_after)
 

@@ -431,7 +431,7 @@ impl GodotScene {
                     .get_obj_id(&properties_obj, key)
                     .unwrap_or_else(|| tx.put_object(&properties_obj, key, ObjType::Map).unwrap());
 
-                println!("reconcile {:?} {:?}", key, property);
+                // println!("reconcile {:?} {:?}", key, property);
 
                 let value = tx.get_string(&value_obj, "value");
                 if value != Some(property.value.clone()) {

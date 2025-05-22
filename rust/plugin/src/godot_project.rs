@@ -28,7 +28,7 @@ use std::any::Any;
 use std::collections::HashSet;
 use std::io::BufWriter;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{collections::HashMap, str::FromStr};
 
 use crate::file_system_driver::{FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
@@ -130,6 +130,7 @@ pub struct GodotProject {
     project_doc_id: Option<DocumentId>,
     new_project: bool,
 	should_update_godot: bool,
+	just_checked_out_new_branch: bool,
     driver: Option<GodotProjectDriver>,
     driver_input_tx: UnboundedSender<InputEvent>,
     driver_output_rx: UnboundedReceiver<OutputEvent>,
@@ -640,15 +641,11 @@ impl GodotProject {
                 panic!("couldn't checkout basdfasdfrdfsfsdanch, branch doc id not found");
             }
         };
-
+		println!("rust: checking out branch {:?}", branch_state.name);
         if branch_state.synced_heads == branch_state.doc_handle.with_doc(|d| d.get_heads()) {
             self.checked_out_branch_state =
                 CheckedOutBranchState::CheckedOut(branch_doc_id.clone());
-			self.sync_patchwork_to_godot();
-            self.base_mut().emit_signal(
-                "checked_out_branch",
-                &[branch_doc_id.to_string().to_variant()],
-            );
+			self.just_checked_out_new_branch = true;
         } else {
             self.checked_out_branch_state =
                 CheckedOutBranchState::CheckingOut(branch_doc_id.clone());
@@ -1177,6 +1174,7 @@ impl GodotProject {
         old_heads: Vec<ChangeHash>,
         curr_heads: Vec<ChangeHash>,
     ) -> Dictionary {
+		println!("rust: getting changes between");
         let checked_out_branch_state = match self.get_checked_out_branch_state() {
             Some(branch_state) => branch_state,
             None => return Dictionary::new(),
@@ -1913,12 +1911,14 @@ impl GodotProject {
         let mut reload_scripts = false;
         let mut scenes_to_reload = Vec::new();
         let mut reimport_files = HashSet::new();
+		let mut files_changed = Vec::new();
         for event in events {
             let (abs_path, content) = match event {
                 FileSystemEvent::FileCreated(path, content) => (path, content),
                 FileSystemEvent::FileModified(path, content) => (path, content),
                 FileSystemEvent::FileDeleted(path) => continue,
             };
+			files_changed.push(abs_path.to_string_lossy().to_string());
             let res_path = ProjectSettings::singleton().localize_path(&abs_path.to_string_lossy().to_string());
             let extension = abs_path.extension().unwrap_or_default().to_string_lossy().to_string();
             if extension == "gd" {
@@ -1951,6 +1951,7 @@ impl GodotProject {
                 }
             }
         }
+		println!("--------------- rust: files_changed: \n{:?}", files_changed);
 		// We have to turn off process here because:
 		// * This was probably called from `process()`
 		// * Any of these functions we're about to call could result in popping up and stepping the ProgressDialog modal
@@ -1961,25 +1962,24 @@ impl GodotProject {
         if reload_scripts {
             Self::call_patchwork_editor_func("reload_scripts", &[false.to_variant()]);
         }
-        if reimport_files.len() > 0 {
+		if scenes_to_reload.len() > 0 {
+            for scene_path in scenes_to_reload {
+                EditorInterface::singleton().reload_scene_from_path(&scene_path);
+            }
+        }
+		if reimport_files.len() > 0 {
             let mut reimport_files_psa = reimport_files.into_iter().map(|path| path).collect::<PackedStringArray>();
 			let mut thingy = EditorInterface::singleton();
 			let mut editor_interface = thingy.get_resource_filesystem();
 			let mut unwrapped_editor_interface = editor_interface.unwrap();
             unwrapped_editor_interface.reimport_files(&reimport_files_psa);
         }
-		if scenes_to_reload.len() > 0 {
-            for scene_path in scenes_to_reload {
-                EditorInterface::singleton().reload_scene_from_path(&scene_path);
-            }
-        }
-		EditorInterface::singleton().get_resource_filesystem().unwrap().scan();
-		// turn on process
 		self.base_mut().set_process(true);
     }
 
 
     fn sync_patchwork_to_godot(&mut self) {
+		println!("rust: sync_patchwork_to_godot");
         let files = self._get_files_at(&None);
         let mut updates = Vec::new();
         // let res_path = ProjectSettings::singleton().globalize_path("res://").to_string();
@@ -2002,8 +2002,7 @@ impl GodotProject {
     }
 
     fn sync_godot_to_patchwork(&mut self, new_project: bool) {
-        let res_path = ProjectSettings::singleton().globalize_path("res://").simplify_path().to_string();
-        let mut updates = Vec::new();
+        // let res_path = ProjectSettings::singleton().globalize_path("res://").simplify_path().to_string();
 
         match &self.get_checked_out_branch_state() {
             Some(branch_state) => {
@@ -2012,32 +2011,26 @@ impl GodotProject {
                 if let Some(driver) = &mut self.file_system_driver {
                     let files = driver.get_all_files_blocking().into_iter().map(
                         |(path, content)| {
-                            (PathBuf::from(ProjectSettings::singleton().localize_path(&path.to_string_lossy().to_string()).to_string()), content)
+                            (ProjectSettings::singleton().localize_path(&path.to_string_lossy().to_string()).to_string(), content)
                         }
-                    ).collect::<Vec<(PathBuf, FileContent)>>();
-					// if this is a new_project, we need to save the scene content files to disk
+                    ).collect::<Vec<(String, FileContent)>>();
 					if new_project {
-						for (path, content) in files.iter() {
-							match content {
-								FileContent::Scene(scene) => {
-									updates.push(FileSystemUpdateEvent::FileSaved(PathBuf::from(ProjectSettings::singleton().globalize_path(&path.to_string_lossy().to_string()).to_string()), FileContent::Scene(scene.clone())));
-								}
-								_ => {}
-							}
-						}
+						let _ = self.driver_input_tx
+						.unbounded_send(InputEvent::InitialCheckin {
+							branch_doc_handle: branch_state.doc_handle.clone(),
+							heads: Some(branch_state.synced_heads.clone()),
+							files: files
+						});
+					} else {
+						self._sync_files_at(
+							branch_state.doc_handle.clone(),
+							files.into_iter().map(|(path, content)| (PathBuf::from(path), content)).collect::<Vec<(PathBuf, FileContent)>>(),
+							Some(branch_state.synced_heads.clone()));
 					}
-                    self._sync_files_at(branch_state.doc_handle.clone(), files, Some(branch_state.synced_heads.clone()));
                 }
             }
             None => panic!("couldn't save files, no checked out branch"),
-        }
-		if let Some(driver) = &mut self.file_system_driver {
-			if updates.len() > 0 {
-				let events = driver.batch_update_blocking(updates);
-				self.update_godot_after_sync(events);
-			}
-		}
-
+        };
     }
 
 }
@@ -2060,6 +2053,7 @@ impl INode for GodotProject {
             project_doc_id: None,
             new_project: true,
 			should_update_godot: false,
+			just_checked_out_new_branch: false,
             driver: None,
             driver_input_tx,
             driver_output_rx,
@@ -2082,7 +2076,6 @@ impl INode for GodotProject {
     }
 
     fn process(&mut self, _delta: f64) {
-		let mut just_checked_out_new_branch = false;
 		let mut branches_changed = false;
         while let Ok(Some(event)) = self.driver_output_rx.try_next() {
             match event {
@@ -2136,7 +2129,6 @@ impl INode for GodotProject {
                     // only trigger update if checked out branch is fully synced
                     if let Some(active_branch_state) = active_branch_state {
                         if active_branch_state.is_synced() {
-							self.should_update_godot = self.should_update_godot || trigger_reload;
                             if checking_out_new_branch {
                                 println!(
                                     "rust: TRIGGER checked out new branch: {}",
@@ -2147,8 +2139,9 @@ impl INode for GodotProject {
                                     active_branch_state.doc_handle.document_id(),
                                 );
 
-								just_checked_out_new_branch = true;
+								self.just_checked_out_new_branch = true;
                             } else {
+								self.should_update_godot = self.should_update_godot || trigger_reload;
                                 if !trigger_reload {
                                     println!("rust: TRIGGER saved changes: {}", branch_state.name);
                                     self.base_mut().emit_signal("saved_changes", &[]);
@@ -2244,64 +2237,68 @@ impl INode for GodotProject {
 			self.base_mut().emit_signal("branches_changed", &[branches]);
 
 		}
-		if just_checked_out_new_branch {
-			let checked_out_branch_state = self.get_checked_out_branch_state();
-			let checked_out_branch_doc_id = if let  Some(checked_out_branch_state) = checked_out_branch_state {
-				checked_out_branch_state
-				.doc_handle
-				.document_id()
-				.to_string()
-				.to_variant()
-			} else {
-				Variant::nil()
-			};
-			PatchworkConfig::singleton().bind_mut().set_project_value(GString::from("project_doc_id"), self.get_project_doc_id());
-			PatchworkConfig::singleton().bind_mut().set_project_value(GString::from("checked_out_branch_doc_id"), checked_out_branch_doc_id.clone());
+
+		if !Self::safe_to_update_godot() {
+			println!("rust: not safe to update godot");
+			return;
+		}
+		let branch_state = self.get_checked_out_branch_state();
+		if !branch_state.is_some() {
+			println!("rust: no branch state");
+			return;
+		}
+		let branch_state = branch_state.unwrap();
+		if self.just_checked_out_new_branch {
+			println!("rust: just checked out branch {:?}", branch_state.name);
+			let checked_out_branch_doc_id = branch_state
+														.doc_handle
+														.document_id()
+														.to_string()
+														.to_variant();
+			self.just_checked_out_new_branch = false;
 			if self.new_project {
 				self.new_project = false;
 				self.sync_godot_to_patchwork(true);
-			} else if Self::safe_to_update_godot() {
+			} else {
 				self.should_update_godot = false;
 				self.sync_patchwork_to_godot();
-			} else {
-				println!("rust: not safe to update godot");
 			}
+			// NOTE: it is VERY important that we save the project config AFTER we sync,
+			// because this will trigger a file scan and then resave the current project files in the editor
+			PatchworkConfig::singleton().bind_mut().set_project_value(GString::from("project_doc_id"), self.get_project_doc_id());
+			PatchworkConfig::singleton().bind_mut().set_project_value(GString::from("checked_out_branch_doc_id"), checked_out_branch_doc_id.clone());
 			self.base_mut().emit_signal(
 				"checked_out_branch",
 				&[checked_out_branch_doc_id],
 			);
-		}
-		if self.should_update_godot && Self::safe_to_update_godot() {
+		} else if self.should_update_godot {
+			println!("rust: should update godot");
 			self.should_update_godot = false;
 			self.sync_patchwork_to_godot();
-		}
-
-        if let Some(fs_driver) = self.file_system_driver.as_mut() {
+		} else if let Some(fs_driver) = self.file_system_driver.as_mut() {
 			let mut new_files = Vec::new();
-        	while let Some(event) = fs_driver.try_next() {
-        		match event {
-        			FileSystemEvent::FileCreated(path, content) => {
-        				new_files.push((path, content));
-        			}
-        			FileSystemEvent::FileModified(path, content) => {
-        				new_files.push((path, content));
-        			}
-        			FileSystemEvent::FileDeleted(path) => {
-        				new_files.push((path, FileContent::Deleted));
-        			}
-        		}
-        	}
+			while let Some(event) = fs_driver.try_next() {
+				match event {
+					FileSystemEvent::FileCreated(path, content) => {
+						new_files.push((path, content));
+					}
+					FileSystemEvent::FileModified(path, content) => {
+						new_files.push((path, content));
+					}
+					FileSystemEvent::FileDeleted(path) => {
+						new_files.push((path, FileContent::Deleted));
+					}
+				}
+			}
 			if new_files.len() > 0 {
-				let branch_state = self.get_checked_out_branch_state();
-				let files = new_files.into_iter().map(
+				let files: Vec<(PathBuf, FileContent)> = new_files.into_iter().map(
 					|(path, content)| {
+						println!("rust: godot editor updated file: {:?}", path);
 						(PathBuf::from(ProjectSettings::singleton().localize_path(&path.to_string_lossy().to_string()).to_string()), content)
 					}
 				).collect::<Vec<(PathBuf, FileContent)>>();
 
-				if let Some(branch_state) = branch_state {
-					self._sync_files_at(branch_state.doc_handle.clone(), files, Some(branch_state.synced_heads.clone()));
-				}
+				self._sync_files_at(branch_state.doc_handle.clone(), files, Some(branch_state.synced_heads.clone()));
 			}
         }
 

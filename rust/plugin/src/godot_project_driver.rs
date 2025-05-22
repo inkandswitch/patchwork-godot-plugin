@@ -69,6 +69,12 @@ pub enum InputEvent {
         files: Vec<(String, FileContent)>,
     },
 
+	InitialCheckin {
+		branch_doc_handle: DocHandle,
+		heads: Option<Vec<ChangeHash>>,
+        files: Vec<(String, FileContent)>,
+	},
+
     SetUserName {
         name: String,
     },
@@ -433,9 +439,13 @@ impl GodotProjectDriver {
                                 state.merge_branch(source_branch_doc_id, target_branch_doc_id);
                             },
 
-                            InputEvent::SaveFiles { branch_doc_handle, files, heads} => {
-                                state.save_files(branch_doc_handle, files, heads);
-                            }
+                            InputEvent::SaveFiles { branch_doc_handle, files, heads } => {
+                                state.save_files(branch_doc_handle, files, heads, false);
+                            },
+
+							InputEvent::InitialCheckin { branch_doc_handle, files, heads } => {
+                                state.save_files(branch_doc_handle, files, heads, true);
+                            },
 
                             InputEvent::StartShutdown => {
                                 println!("rust: shutting down");
@@ -716,6 +726,7 @@ impl DriverState {
         branch_doc_handle: DocHandle,
         file_entries: Vec<(String, FileContent)>,
         heads: Option<Vec<ChangeHash>>,
+		new_project: bool
     ) {
         let branch_doc_state = self
             .branch_states
@@ -824,10 +835,12 @@ impl DriverState {
         });
 
         // update heads in frontend
-        self.heads_in_frontend.insert(
-            branch_doc_handle.document_id(),
-            branch_doc_handle.with_doc(|d| d.get_heads()),
-        );
+		if !new_project {
+			self.heads_in_frontend.insert(
+				branch_doc_handle.document_id(),
+				branch_doc_handle.with_doc(|d| d.get_heads()),
+			);
+		}
 
         println!("rust: save {:?}", self.heads_in_frontend);
     }
