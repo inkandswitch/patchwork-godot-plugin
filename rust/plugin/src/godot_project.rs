@@ -2279,8 +2279,39 @@ impl INode for GodotProject {
 #[class(init, base=EditorPlugin, tool)]
 pub struct GodotProjectPlugin {
     base: Base<EditorPlugin>,
+	#[init(load = "res://addons/patchwork/gdscript/sidebar.tscn")]
+	sidebar_scene: OnReady<Gd<PackedScene>>,
+	sidebar: Option<Gd<Control>>,
 }
 
+
+#[godot_api]
+impl GodotProjectPlugin {
+
+	fn add_sidebar(&mut self) {
+		self.sidebar = if let Some(sidebar) = self.sidebar_scene.instantiate(){
+			if let Ok(sidebar) = sidebar.try_cast::<Control>() {
+				Some(sidebar)
+			} else {
+				None
+			}
+		} else {
+			None
+		};
+		if let Some(sidebar) = self.sidebar.as_ref() {
+			self.to_gd().add_control_to_dock(DockSlot::RIGHT_UL, sidebar);
+		} else {
+			panic!("Failed to instantiate sidebar");
+		};
+	}
+
+	fn remove_sidebar(&mut self) {
+		if let Some(sidebar) = self.sidebar.as_ref() {
+			self.to_gd().remove_child(sidebar);
+			self.sidebar = None;
+		}
+	}
+}
 #[godot_api]
 impl IEditorPlugin for GodotProjectPlugin {
     fn enter_tree(&mut self) {
@@ -2289,8 +2320,15 @@ impl IEditorPlugin for GodotProjectPlugin {
         self.base_mut().add_child(&godot_project_singleton);
     }
 
+	fn ready(&mut self) {
+		self.add_sidebar();
+	}
+
+	fn process(&mut self, _delta: f64) {
+	}
     fn exit_tree(&mut self) {
         println!("** GodotProjectPlugin: exit_tree");
+		self.remove_sidebar();
         self.base_mut().remove_child(&GodotProject::get_singleton());
     }
 }

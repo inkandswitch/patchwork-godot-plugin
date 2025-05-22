@@ -40,12 +40,12 @@ var plugin: EditorPlugin
 var task_modal: TaskModal = TaskModal.new()
 
 var highlight_changes = false
+var initialized = false
+
 
 const CREATE_BRANCH_IDX = 1
 const MERGE_BRANCH_IDX = 2
 
-func init() -> void:
-	print("Sidebar initialized!")
 
 
 func _update_ui_on_branches_changed(_branches: Array):
@@ -64,11 +64,27 @@ func _update_ui_on_branch_checked_out(_branch):
 	print("update_ui_on_branch_checked_out")
 	update_ui()
 
+func _on_initial_checked_out_branch(_branch):
+	if not self.initialized:
+		self.initialized = true
+		print("on_initial_checked_out_branch")
+		GodotProject.get_singleton().disconnect("checked_out_branch", self._on_initial_checked_out_branch)
+		init()
+
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
+	print("Sidebar: ready!")
 	# need to add task_modal as a child to the plugin otherwise process won't be called
 	add_child(task_modal)
+	if GodotProject.get_singleton():
+		GodotProject.get_singleton().connect("checked_out_branch", self._on_initial_checked_out_branch)
+	else:
+		print("!!!!!!GodotProject not initialized!")
+	task_modal.start_task("Loading Patchwork")
 
+func init() -> void:
+	print("Sidebar initialized!")
+	task_modal.end_task("Loading Patchwork")
 	update_ui()
 
 	# get the class name of the inspector
