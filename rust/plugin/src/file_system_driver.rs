@@ -1,4 +1,5 @@
 use core::str;
+use std::ffi::OsStr;
 use std::sync::atomic::Ordering;
 use std::{path::PathBuf, sync::atomic::AtomicBool};
 use std::sync::Arc;
@@ -7,7 +8,7 @@ use futures::{
     StreamExt,
 };
 #[cfg(not(target_os = "windows"))]
-use rlimit::{setrlimit, Resource};
+use rlimit::{setrlimit, getrlimit, Resource};
 use tokio::{task::JoinHandle, time::{sleep, Duration}};
 use notify::{Watcher, RecursiveMode, Config, Event, EventHandler};
 use notify_debouncer_mini::{new_debouncer_opt, DebouncedEvent, Debouncer};
@@ -18,7 +19,7 @@ use notify::KqueueWatcher as WatcherImpl;
 use notify::RecommendedWatcher as WatcherImpl;
 use std::sync::mpsc::channel;
 use std::time::Duration as StdDuration;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{Read, Write};
 use ya_md5::{Md5Hasher, Hash, Md5Error};
@@ -68,6 +69,7 @@ pub struct FileSystemTask {
 	watcher: Arc<Mutex<Debouncer<WatcherImpl>>>,
 	// atomic bool
 	paused: Arc<AtomicBool>,
+	found_ignored_paths: HashSet<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -87,13 +89,14 @@ impl FileSystemTask {
     }
 
 
-    fn _initialize_file_hashes(&self, watch_path: &PathBuf, file_hashes: &mut tokio::sync::MutexGuard<'_, HashMap<PathBuf, String>>, sym_links: &mut HashMap<PathBuf, PathBuf>) {
+    fn _initialize_file_hashes(&self, watch_path: &PathBuf, file_hashes: &mut tokio::sync::MutexGuard<'_, HashMap<PathBuf, String>>, sym_links: &mut HashMap<PathBuf, PathBuf>, found_ignored_paths: &mut HashSet<PathBuf>) {
         if let Ok(entries) = std::fs::read_dir(watch_path) {
             for entry in entries.flatten() {
                 let path = entry.path();
 
                 // Skip if path matches any ignore pattern
                 if self.should_ignore(&path) {
+                    found_ignored_paths.insert(path.clone());
                     continue;
                 }
                 if let Ok(metadata) = path.metadata() {
@@ -109,17 +112,19 @@ impl FileSystemTask {
                         file_hashes.insert(path, hash);
                     }
                 } else if path.is_dir() {
-                    self._initialize_file_hashes(&path, file_hashes, sym_links);
+                    self._initialize_file_hashes(&path, file_hashes, sym_links, found_ignored_paths);
                 }
             }
         }
     }
 
     // Initialize the hash map with existing files
-    async fn initialize_file_hashes(&self, sym_links: &mut HashMap<PathBuf, PathBuf>) {
+    async fn initialize_file_hashes(&mut self, sym_links: &mut HashMap<PathBuf, PathBuf>) {
+		let mut found_ignored_paths = HashSet::new();
         let mut file_hashes_guard: tokio::sync::MutexGuard<'_, HashMap<PathBuf, String>> = self.file_hashes.lock().await;
 		file_hashes_guard.clear();
-        self._initialize_file_hashes(&self.watch_path, &mut file_hashes_guard, sym_links);
+        self._initialize_file_hashes(&self.watch_path, &mut file_hashes_guard, sym_links, &mut found_ignored_paths);
+		self.found_ignored_paths = found_ignored_paths;
     }
 
 
@@ -335,9 +340,10 @@ impl FileSystemTask {
 		events
 	}
 
-	async fn main_loop(&self, notify_rx: &mut UnboundedReceiver<Result<Vec<DebouncedEvent>, notify::Error>>, input_rx: &mut UnboundedReceiver<FileSystemUpdateEvent>, output_tx: &UnboundedSender<FileSystemEvent>) {
+	async fn main_loop(&mut self, notify_rx: &mut UnboundedReceiver<Result<Vec<DebouncedEvent>, notify::Error>>, input_rx: &mut UnboundedReceiver<FileSystemUpdateEvent>, output_tx: &UnboundedSender<FileSystemEvent>) {
 		let mut sym_links = HashMap::new();
 		self.initialize_file_hashes(&mut sym_links).await;
+		self.stop_watching_paths(&self.found_ignored_paths).await;
 		// Process both file system events and update events
 		loop {
 			tokio::select! {
@@ -345,8 +351,23 @@ impl FileSystemTask {
 				Some(notify_result) = notify_rx.next() => {
 					if let Ok(notify_event) = notify_result {
 						for event in notify_event {
-							let result = self.handle_file_event(event.path, &mut sym_links).await;
+							if self.found_ignored_paths.contains(&event.path) {
+								continue;
+							}
+							if self.should_ignore(&event.path) {
+								self.found_ignored_paths.insert(event.path);
+								continue;
+							}
+							let result = self.handle_file_event(event.path.clone(), &mut sym_links).await;
 							if let Ok(Some(ret)) = result {
+								if event.path.file_name() == Some(OsStr::new("main.tscn")) {
+									println!("rust: main.tscn updated!!!!!!! {:?}", event.path);
+									if let FileSystemEvent::FileModified(_path, content) = &ret {
+										if let FileContent::Scene(scene) = &content {
+											println!("rust: main.tscn node count! {:?}", scene.nodes.len());
+										}
+									}
+								}
 								output_tx.unbounded_send(ret).ok();
 							}
 						}
@@ -373,15 +394,26 @@ impl FileSystemTask {
 						}
 						FileSystemUpdateEvent::Resume => {
 							self.start_watching_path(&self.watch_path).await;
+							self.stop_watching_paths(&self.found_ignored_paths).await;
 							self.resume();
-							let events = self.scan_for_changes(&mut sym_links).await;
-							for event in events {
-								output_tx.unbounded_send(event).ok();
-							}
+							// let events = self.scan_for_changes(&mut sym_links).await;
+							// for event in events {
+							// 	output_tx.unbounded_send(event).ok();
+							// }
 						}
 					}
 				},
 			}
+		}
+	}
+
+	async fn stop_watching_paths(&self, paths: &HashSet<PathBuf>) {
+		let mut watcher = self.watcher.lock().await;
+		for path in paths.iter() {
+			let _ret = watcher.watcher().unwatch(path);
+			// if let Err(err) = _ret {
+				// println!("rust: failed to stop watching path {:?}", err);
+			// }
 		}
 	}
 
@@ -419,23 +451,56 @@ impl FileSystemTask {
 
 }
 
+const MAX_OPEN_FILES: u64 = 100000000;
 
 
 impl FileSystemDriver {
+	fn increase_ulimit() {
+		#[cfg(not(target_os = "windows"))]
+		{
+			let mut new_soft_limit = MAX_OPEN_FILES;
+			let mut new_hard_limit = MAX_OPEN_FILES;
+			let previous_result = getrlimit(Resource::NOFILE);
+			if let Err(e) = previous_result {
+				println!("rust: failed to get ulimit {:?}", e);
+			} else if let Ok((soft_limit, hard_limit)) = previous_result {
+				println!("rust: soft ulimit {:?}", soft_limit);
+				println!("rust: hard ulimit {:?}", hard_limit);
+				if hard_limit > MAX_OPEN_FILES {
+					new_hard_limit = hard_limit;
+				}
+				if soft_limit > MAX_OPEN_FILES {
+					new_soft_limit = soft_limit;
+				}
+			}
+
+			if let Err(e) = setrlimit(Resource::NOFILE, new_soft_limit, new_hard_limit) {
+				println!("rust: failed to set ulimit {:?}", e);
+			}
+			let result = getrlimit(Resource::NOFILE);
+			if let Err(e) = result {
+				println!("rust: failed to set ulimit {:?}", e);
+			} else if let Ok((soft_limit, hard_limit)) = result {
+				if soft_limit < MAX_OPEN_FILES || hard_limit < MAX_OPEN_FILES {
+					println!("rust: failed to set ulimit");
+					println!("rust: soft ulimit {:?}", soft_limit);
+					println!("rust: hard ulimit {:?}", hard_limit);
+				}
+			}
+		}
+	}
 
 	fn spawn_with_runtime(watch_path: PathBuf, ignore_globs: Vec<String>, rt: Option<tokio::runtime::Runtime>) -> Self {
 		// if macos, increase ulimit to 100000000
-		#[cfg(not(target_os = "windows"))]
-		let _ = setrlimit(Resource::NOFILE, 100000000, 100000000);
-
+		Self::increase_ulimit();
+		let (output_tx, output_rx) = futures::channel::mpsc::unbounded();
+		let (input_tx, mut input_rx) = futures::channel::mpsc::unbounded();
+		// Spawn the file system watcher in a separate task
+		let notify_config = Config::default().with_follow_symlinks(false).with_ignore_globs(ignore_globs.clone());
 		let ignore_globs: Vec<Pattern> = ignore_globs
 			.into_iter()
 			.filter_map(|glob_str| Pattern::new(&glob_str).ok())
 			.collect();
-		let (output_tx, output_rx) = futures::channel::mpsc::unbounded();
-		let (input_tx, mut input_rx) = futures::channel::mpsc::unbounded();
-		// Spawn the file system watcher in a separate task
-		let notify_config = Config::default().with_follow_symlinks(false);
 		let (notify_tx, mut notify_rx) = futures::channel::mpsc::unbounded();
 
 		let debouncer_config = notify_debouncer_mini::Config::default().with_timeout(Duration::from_millis(DEBOUNCE_TIME)).with_batch_mode(true).with_notify_config(notify_config);
@@ -455,10 +520,11 @@ impl FileSystemDriver {
 			file_hashes: Arc::new(Mutex::new(HashMap::new())),
 			ignore_globs: ignore_globs,
 			watcher: Arc::new(Mutex::new(debouncer)),
-			paused: Arc::new(AtomicBool::new(false))
+			paused: Arc::new(AtomicBool::new(false)),
+			found_ignored_paths: HashSet::new()
 		};
 
-		let this_task = task.clone();
+		let mut this_task = task.clone();
 
 		let handle = rt_handle.spawn(async move {
 			this_task.main_loop(&mut notify_rx, &mut input_rx, &output_tx).await;
