@@ -797,9 +797,9 @@ checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 
 [[package]]
 name = "kqueue"
-version = "1.1.1"
+version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eac30106d7dce88daf4a3fcb4879ea939476d5074a9b7ddd0fb97fa4bed5596a"
+checksum = "7447f1ca1b7b563588a205fe93dea8df60fd981423a768bc1c0ded35ed147d0c"
 dependencies = [
  "kqueue-sys",
  "libc",
@@ -956,7 +956,7 @@ checksum = "e943b2c21337b7e3ec6678500687cdc741b7639ad457f234693352075c082204"
 [[package]]
 name = "notify"
 version = "8.0.0"
-source = "git+https://github.com/nikitalita/notify#83e1e04c853cd2367782d8b0d59036f95d0caab9"
+source = "git+https://github.com/nikitalita/notify#4a7a361ab0d7d7c3c3403b6bff559907144c124c"
 dependencies = [
  "bitflags 2.9.0",
  "filetime",
@@ -975,7 +975,7 @@ dependencies = [
 [[package]]
 name = "notify-debouncer-mini"
 version = "0.6.0"
-source = "git+https://github.com/nikitalita/notify#83e1e04c853cd2367782d8b0d59036f95d0caab9"
+source = "git+https://github.com/nikitalita/notify#4a7a361ab0d7d7c3c3403b6bff559907144c124c"
 dependencies = [
  "log",
  "notify",
@@ -986,7 +986,7 @@ dependencies = [
 [[package]]
 name = "notify-types"
 version = "2.0.0"
-source = "git+https://github.com/nikitalita/notify#83e1e04c853cd2367782d8b0d59036f95d0caab9"
+source = "git+https://github.com/nikitalita/notify#4a7a361ab0d7d7c3c3403b6bff559907144c124c"
 
 [[package]]
 name = "nu-ansi-term"

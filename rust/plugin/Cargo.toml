@@ -37,6 +37,8 @@ similar = { version = "2.4.0", features = ["unicode"] }
 # notify = { version = "8.0.0", features = ["macos_kqueue"] }
 notify = { git = "https://github.com/nikitalita/notify", features = ["macos_kqueue", "macos_fsevent"] }
 notify-debouncer-mini = { git = "https://github.com/nikitalita/notify", features = ["macos_kqueue", "macos_fsevent"] }
+# notify = { path = "/Users/nikita/Workspace/godot-ws/notify/notify", features = ["macos_kqueue"] }
+# notify-debouncer-mini = { path = "/Users/nikita/Workspace/godot-ws/notify/notify-debouncer-mini", features = ["macos_kqueue"] }
 
 
 
