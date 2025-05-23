@@ -657,24 +657,36 @@ impl FileSystemDriver {
 	}
 
 	pub fn batch_update_blocking(&self, updates: Vec<FileSystemUpdateEvent>) -> Vec<FileSystemEvent> {
+		println!("rust: batch_update_blocking before pause");
 		self.pause_task_blocking();
+		println!("rust: batch_update_blocking after pause");
 		let mut events: Vec<FileSystemEvent> = Vec::new();
 		{
 			let mut file_hashes = self.task.file_hashes.blocking_lock();
 			for update in updates {
 				match update {
 					FileSystemUpdateEvent::FileSaved(path, content) => {
-						if let Ok(hash_str) = FileContent::write_file_content(&path, &content) {
-							if let Some(old_hash) = file_hashes.get_mut(&path) {
-								if old_hash != &hash_str {
-									events.push(FileSystemEvent::FileModified(path.clone(), content));
-								}
-							} else {
-								events.push(FileSystemEvent::FileCreated(path.clone(), content));
+						let new_hash_str = content.to_hash();
+						let mut modified = false;
+						let mut created = false;
+						if let Some(old_hash) = file_hashes.get_mut(&path) {
+							if old_hash != &new_hash_str {
+								modified = true;
 							}
-							file_hashes.insert(path, hash_str);
 						} else {
-							println!("rust: failed to write file {:?}", path);
+							created = true;
+						}
+						if modified || created {
+							if let Ok(hash_str) = FileContent::write_file_content(&path, &content) {
+								if modified {
+									events.push(FileSystemEvent::FileModified(path.clone(), content));
+								} else {
+									events.push(FileSystemEvent::FileCreated(path.clone(), content));
+								}
+								file_hashes.insert(path, hash_str);
+							} else {
+								println!("rust: failed to write file {:?}", path);
+							}
 						}
 					}
 					FileSystemUpdateEvent::FileDeleted(path) => {
@@ -688,7 +700,9 @@ impl FileSystemDriver {
 				}
 			}
 		}
+		println!("rust: batch_update_blocking done before resume; updated files: {:?}", events.len());
 		self.resume_task_blocking();
+		println!("rust: batch_update_blocking done after resume");
 		events
 	}
 
