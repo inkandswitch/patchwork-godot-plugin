@@ -152,7 +152,7 @@ metadata/patchwork_id = "5b9416e8d96042b6a509f7da3263f687"
 
     let scene = godot_parser::parse_scene(&source).unwrap();
 
-    let root_node = scene.nodes.get(scene.root_node_id.as_str()).unwrap();
+    let root_node = scene.nodes.get(scene.root_node_id.as_ref().unwrap()).unwrap();
 
     assert_eq!(root_node.child_node_ids.len(), 2);
 
@@ -253,7 +253,7 @@ fn test_resconcile_and_hydrate() {
                 },
             ),
         ]),
-        root_node_id: "node1".to_string(),
+        root_node_id: Some("node1".to_string()),
         ext_resources: HashMap::from([
             (
                 "1_0qn5k".to_string(),
@@ -369,13 +369,27 @@ bus/2/mute = false
 bus/2/bypass_fx = false
 bus/2/volume_db = 0.0
 bus/2/send = &"Master"
+prop:with_colon/2/name = &"Music"
 
 "#;
 
     let resource = godot_parser::parse_scene(&source.to_string()).unwrap();
 
-	assert_eq!(resource.sub_resources.len(), 1);
-	assert_eq!(resource.sub_resources["AudioBusLayout_c7thbop54thnf"].properties["bus/1/name"], godot_parser::OrderedProperty::new("&\"Music\"".to_string(), 0));
+	assert_eq!(resource.main_resource.is_some(), true);
+	let main_resource = resource.main_resource.as_ref().unwrap();
+	let prop = main_resource.properties["bus/1/name"].clone();
+	let ref_prop = godot_parser::OrderedProperty::new("&\"Music\"".to_string(), 0);
+	assert_eq!(prop, ref_prop);
+
+	let prop_with_colon = main_resource.properties["prop:with_colon/2/name"].clone();
+	let ref_prop_with_colon = godot_parser::OrderedProperty::new("&\"Music\"".to_string(), 12);
+	assert_eq!(prop_with_colon, ref_prop_with_colon);
+
+	// reserialize and string compare
+	let new_resource = resource.serialize();
+	assert_eq!(new_resource, source);
+
+
 }
 
 

@@ -5,9 +5,10 @@ use automerge::{
 use godot::prelude::*;
 use safer_ffi::layout::into_raw;
 use std::collections::{HashMap, HashSet};
-use tree_sitter::{Parser, Query, QueryCursor};
+use tree_sitter::{Language, Parser, Query, QueryCursor, StreamingIterator};
 use uuid;
-
+use tree_sitter_godot_resource::LANGUAGE;
+use tree_sitter::StreamingIteratorMut;
 use crate::{doc_utils::SimpleDocReader, utils::print_doc};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1170,11 +1171,10 @@ pub fn recognize_scene(source: &String) -> bool {
     }
     false
 }
-
 pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
     let mut parser = Parser::new();
     parser
-        .set_language(tree_sitter_godot_resource::language())
+        .set_language(&tree_sitter_godot_resource::LANGUAGE.into())
         .expect("Error loading godot resource grammar");
 
     let result = parser.parse(source, None);
@@ -1195,9 +1195,9 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                     (_) @prop_value)*
             )";
             let query =
-                Query::new(tree_sitter_godot_resource::language(), query).expect("Invalid query");
+                Query::new(&tree_sitter_godot_resource::LANGUAGE.into(), query).expect("Invalid query");
             let mut query_cursor = QueryCursor::new();
-            let matches = query_cursor.matches(&query, tree.root_node(), content_bytes);
+            let mut matches = query_cursor.matches(&query, tree.root_node(), content_bytes);
 
             // Initialize with default values
             let mut scene_metadata: Option<SceneMetadata> = None;
@@ -1212,7 +1212,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
             let mut node_id_by_node_path: HashMap<String, String> = HashMap::new();
             let mut ext_resource_idx = 0;
             let mut sub_resource_idx = 0;
-            for m in matches {
+            while let Some(m) = matches.next() {
                 let mut heading = HashMap::new();
                 let mut properties = Vec::new();
                 let mut section_id = String::new();
