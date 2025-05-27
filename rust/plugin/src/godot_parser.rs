@@ -153,6 +153,51 @@ impl GodotScene {
         None
     }
 
+	pub fn reconcile_subresource_node(&self, tx: &mut Transaction, resource_obj: automerge::ObjId, resource: &SubResourceNode) {
+		tx.put(
+			&resource_obj,
+			"resource_type",
+			resource.resource_type.clone(),
+		)
+		.unwrap();
+
+		tx.put(&resource_obj, "id", resource.id.clone()).unwrap();
+		tx.put(&resource_obj, "idx", resource.idx).unwrap();
+
+		let properties_obj = tx
+			.get_obj_id(&resource_obj, "properties")
+			.unwrap_or_else(|| {
+				tx.put_object(&resource_obj, "properties", ObjType::Map)
+					.unwrap()
+			});
+
+		let mut properties_to_delete = tx.keys(&properties_obj).collect::<HashSet<_>>();
+
+		// Add or update properties
+		for (key, property) in &resource.properties {
+			let value_obj = tx
+				.get_obj_id(&properties_obj, key)
+				.unwrap_or_else(|| tx.put_object(&properties_obj, key, ObjType::Map).unwrap());
+
+			let value = tx.get_string(&value_obj, "value");
+			if value != Some(property.value.clone()) {
+				let _ = tx.put(&value_obj, "value", property.value.clone());
+			}
+
+			let order = tx.get_int(&value_obj, "order");
+			if order != Some(property.order) {
+				let _ = tx.put(&value_obj, "order", property.order);
+			}
+			properties_to_delete.remove(key);
+		}
+
+		// Remove properties that no longer exist
+		for key in properties_to_delete {
+			tx.delete(&properties_obj, &key).unwrap();
+		}
+
+	}
+
     pub fn reconcile(&self, tx: &mut Transaction, path: String) {
         let files = tx
             .get_obj_id(ROOT, "files")
@@ -208,41 +253,7 @@ impl GodotScene {
                     tx.put_object(&structured_content, "main_resource", ObjType::Map)
                         .unwrap()
                 });
-
-            tx.put(
-                &main_resource_obj,
-                "resource_type",
-                main_resource.resource_type.clone(),
-            )
-            .unwrap();
-
-            let properties_obj = tx
-                .get_obj_id(&main_resource_obj, "properties")
-                .unwrap_or_else(|| {
-                    tx.put_object(&main_resource_obj, "properties", ObjType::Map)
-                        .unwrap()
-                });
-
-            let mut existing_props = tx.keys(&properties_obj).collect::<HashSet<_>>();
-
-            // Add or update properties
-            for (key, property) in &main_resource.properties {
-                if let Some(existing_value) = tx.get_string(&properties_obj, key) {
-                    if existing_value != property.value {
-                        tx.put(&properties_obj, key, property.value.clone())
-                            .unwrap();
-                    }
-                } else {
-                    tx.put(&properties_obj, key, property.value.clone())
-                        .unwrap();
-                }
-                existing_props.remove(key);
-            }
-
-            // Remove properties that no longer exist
-            for key in existing_props {
-                tx.delete(&properties_obj, &key).unwrap();
-            }
+			self.reconcile_subresource_node(tx, main_resource_obj, main_resource);
         } else if tx
             .get_obj_id(&structured_content, "main_resource")
             .is_some()
@@ -314,48 +325,7 @@ impl GodotScene {
             let resource_obj = tx
                 .get_obj_id(&sub_resources, id)
                 .unwrap_or_else(|| tx.put_object(&sub_resources, id, ObjType::Map).unwrap());
-
-            tx.put(
-                &resource_obj,
-                "resource_type",
-                resource.resource_type.clone(),
-            )
-            .unwrap();
-
-            tx.put(&resource_obj, "id", resource.id.clone()).unwrap();
-            tx.put(&resource_obj, "idx", resource.idx).unwrap();
-
-            let properties_obj = tx
-                .get_obj_id(&resource_obj, "properties")
-                .unwrap_or_else(|| {
-                    tx.put_object(&resource_obj, "properties", ObjType::Map)
-                        .unwrap()
-                });
-
-            let mut properties_to_delete = tx.keys(&properties_obj).collect::<HashSet<_>>();
-
-            // Add or update properties
-            for (key, property) in &resource.properties {
-                let value_obj = tx
-                    .get_obj_id(&properties_obj, key)
-                    .unwrap_or_else(|| tx.put_object(&properties_obj, key, ObjType::Map).unwrap());
-
-                let value = tx.get_string(&value_obj, "value");
-                if value != Some(property.value.clone()) {
-                    let _ = tx.put(&value_obj, "value", property.value.clone());
-                }
-
-                let order = tx.get_int(&value_obj, "order");
-                if order != Some(property.order) {
-                    let _ = tx.put(&value_obj, "order", property.order);
-                }
-                properties_to_delete.remove(key);
-            }
-
-            // Remove properties that no longer exist
-            for key in properties_to_delete {
-                tx.delete(&properties_obj, &key).unwrap();
-            }
+			self.reconcile_subresource_node(tx, resource_obj, resource);
         }
 
         // Reconcile nodes
@@ -590,9 +560,15 @@ impl GodotScene {
 
             let mut properties = HashMap::new();
             for key in doc.keys_at(&properties_obj, &heads) {
-                let property_obj = doc.get_obj_id_at(&properties_obj, &key, &heads).unwrap();
-                let order = doc.get_int_at(&property_obj, "order", &heads).unwrap();
-                let value = doc.get_string_at(&property_obj, "value", &heads).unwrap();
+                let property_obj = doc.get_obj_id_at(&properties_obj, &key, &heads).ok_or_else(|| {
+                    format!("Could not find property object for key: {}", key)
+                })?;
+                let order = doc.get_int_at(&property_obj, "order", &heads).ok_or_else(|| {
+                    format!("Could not find order for key: {}", key)
+                })?;
+                let value = doc.get_string_at(&property_obj, "value", &heads).ok_or_else(|| {
+                    format!("Could not find value for key: {}", key)
+                })?;
 
                 properties.insert(key, OrderedProperty { value, order });
             }
@@ -649,9 +625,14 @@ impl GodotScene {
         let main_resource = if let Some(main_resource_obj) =
             doc.get_obj_id_at(&structured_content, "main_resource", &heads)
         {
-            if let Ok(sub_resource) = Self::hydrate_subresource_node(doc, main_resource_obj, "main_resource".to_string(), heads) {
+			let result = Self::hydrate_subresource_node(doc, main_resource_obj, "main_resource".to_string(), heads);
+            if let Ok(sub_resource) = result {
                 Some(sub_resource)
+            } else if let Err(e) = result {
+				println!("Error hydrating main resource: {}", e);
+                None
             } else {
+				println!("Error hydrating main resource: unknown error");
                 None
             }
         } else {
@@ -1160,8 +1141,8 @@ pub fn recognize_scene(source: &String) -> bool {
             // check if the line starts with "[gd_resource" or "[gd_scene"
             if trimmed.starts_with("["){
                 let line_after_bracket = &trimmed[1..].trim();
-                // if line_after_bracket.starts_with("gd_resource") || line_after_bracket.starts_with("gd_scene") {
-				if line_after_bracket.starts_with("gd_scene") {
+                if line_after_bracket.starts_with("gd_resource") || line_after_bracket.starts_with("gd_scene") {
+				// if line_after_bracket.starts_with("gd_scene") {
                     return true;
                 }
             }
