@@ -1041,12 +1041,12 @@ impl GodotScene {
             output.push_str(&format!(" parent=\"{}\"", parent_name));
         }
 
-        if let TypeOrInstance::Instance(i) = &node.type_or_instance {
-            output.push_str(&format!(" instance={}", i));
-        }
-
         if let Some(node_paths) = &node.node_paths {
             output.push_str(&format!(" node_paths={}", node_paths));
+        }
+
+        if let TypeOrInstance::Instance(i) = &node.type_or_instance {
+            output.push_str(&format!(" instance={}", i));
         }
 
         if let Some(owner) = &node.owner {
