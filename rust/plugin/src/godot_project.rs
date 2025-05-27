@@ -2318,9 +2318,9 @@ impl INode for GodotProject {
 #[class(init, base=EditorPlugin, tool)]
 pub struct GodotProjectPlugin {
     base: Base<EditorPlugin>,
-	#[init(load = "res://addons/patchwork/gdscript/sidebar.tscn")]
-	sidebar_scene: OnReady<Gd<PackedScene>>,
+	sidebar_scene: Option<Gd<PackedScene>>,
 	sidebar: Option<Gd<Control>>,
+	initialized: bool,
 }
 
 
@@ -2328,7 +2328,13 @@ pub struct GodotProjectPlugin {
 impl GodotProjectPlugin {
 
 	fn add_sidebar(&mut self) {
-		self.sidebar = if let Some(sidebar) = self.sidebar_scene.instantiate(){
+		self.sidebar_scene = ResourceLoader::singleton()
+            .load_ex("res://addons/patchwork/gdscript/sidebar.tscn")
+			.cache_mode(CacheMode::REPLACE_DEEP) // REPLACE_DEEP to ensure we get the latest version of the sidebar upon reloading the plugin
+			.done()
+			.map(|scene| scene.try_cast::<PackedScene>().ok())
+			.flatten();
+		self.sidebar = if let Some(Some(sidebar)) = self.sidebar_scene.as_ref().map(|scene| scene.instantiate()){
 			if let Ok(sidebar) = sidebar.try_cast::<Control>() {
 				Some(sidebar)
 			} else {
@@ -2354,24 +2360,38 @@ impl GodotProjectPlugin {
 		}
 	}
 }
+
 #[godot_api]
 impl IEditorPlugin for GodotProjectPlugin {
     fn enter_tree(&mut self) {
         println!("** GodotProjectPlugin: enter_tree");
-        let godot_project_singleton: Gd<GodotProject> = GodotProject::get_singleton();
-        self.base_mut().add_child(&godot_project_singleton);
     }
 
 	fn ready(&mut self) {
-		self.add_sidebar();
+		self.process(0.0);
 	}
 
 	fn process(&mut self, _delta: f64) {
+		// Don't initialize until the project is fully loaded and the editor is not importing
+		if !self.initialized
+			&& EditorInterface::singleton().get_resource_filesystem().map(|fs| return !fs.is_scanning()).unwrap_or(false)
+			&& GodotProject::call_patchwork_editor_func("is_editor_importing", &[]) == Variant::from(false)
+			&& DirAccess::dir_exists_absolute("res://.godot") // This is at the end because DirAccess::dir_exists_absolute locks a global mutex
+			{
+			let godot_project_singleton: Gd<GodotProject> = GodotProject::get_singleton();
+			self.base_mut().add_child(&godot_project_singleton);
+			self.add_sidebar();
+			self.initialized = true;
+		};
 	}
     fn exit_tree(&mut self) {
         println!("** GodotProjectPlugin: exit_tree");
-		self.remove_sidebar();
-        self.base_mut().remove_child(&GodotProject::get_singleton());
+		if self.initialized {
+			self.remove_sidebar();
+			self.base_mut().remove_child(&GodotProject::get_singleton());
+		} else {
+			println!("*************** DID NOT INITIALIZE!!!!!!");
+		}
     }
 }
 
