@@ -2250,9 +2250,13 @@ impl INode for GodotProject {
 			println!("rust: not safe to update godot");
 			return;
 		}
-		let branch_state = self.get_checked_out_branch_state();
-		if !branch_state.is_some() {
-			println!("rust: no branch state");
+		let branch_state = match &self.checked_out_branch_state{
+			CheckedOutBranchState::NothingCheckedOut => None,
+			CheckedOutBranchState::CheckingOut(_) => None,
+			CheckedOutBranchState::CheckedOut(branch_doc_id) => self.get_checked_out_branch_state(),
+		};
+		if branch_state.is_none() {
+			// println!("rust: no branch state");
 			return;
 		}
 		let branch_state = branch_state.unwrap();
