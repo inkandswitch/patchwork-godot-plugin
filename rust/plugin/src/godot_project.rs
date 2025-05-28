@@ -1023,7 +1023,7 @@ impl GodotProject {
         );
         let temp_path = path.replace("res://", &temp_dir);
         // append _old or _new to the temp path (i.e. res://thing.<EXT> -> user://temp_123_456/thing_old.<EXT>)
-        let _ = FileContent::write_file_content(&PathBuf::from(&temp_path), content);
+        let _ = FileContent::write_res_file_content(&PathBuf::from(&temp_path), content);
         // get the import file content
         let import_path = format!("{}.import", path);
         let import_file_content = self._get_file_at(import_path.clone(), Some(heads.clone()));
@@ -1035,7 +1035,7 @@ impl GodotProject {
                     import_file_content.replace(r#"uid=uid://[^\n]+"#, "uid=uid://<invalid>");
                 // write the import file content to the temp path
                 let import_file_path: String = format!("{}.import", temp_path);
-                let _ = FileContent::write_file_content(
+                let _ = FileContent::write_res_file_content(
                     &PathBuf::from(import_file_path),
                     &FileContent::String(import_file_content),
                 );
