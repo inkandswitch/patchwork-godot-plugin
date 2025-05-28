@@ -302,7 +302,7 @@ impl GodotProjectDriver {
         let repo_handle = self.repo_handle.clone();
         let user_name = user_name.clone();
 
-        let filter = EnvFilter::new("info").add_directive("automerge_repo=trace".parse().unwrap());
+        let filter = EnvFilter::new("info").add_directive("automerge_repo=info".parse().unwrap());
         if let Err(e) = tracing_subscriber::registry()
             .with(tracing_subscriber::fmt::layer().with_writer(std::io::stdout))
             .with(filter)
