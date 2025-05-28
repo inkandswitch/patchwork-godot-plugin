@@ -205,6 +205,10 @@ func _on_branch_picker_item_selected(_index: int) -> void:
 		# Return early to prevent checkout attempt
 		return
 
+	if not selected_branch:
+		printerr("no selected branch")
+		return
+
 	checkout_branch(selected_branch.id)
 
 func _on_highlight_changes_checkbox_toggled(pressed: bool) -> void:
@@ -336,6 +340,10 @@ func move_inspector_to_main() -> void:
 
 func create_merge_preview_branch():
 	var checked_out_branch = GodotProject.get_checked_out_branch()
+	if not checked_out_branch:
+		printerr("no checked out branch")
+		return
+
 	if checked_out_branch.is_main:
 		popup_box(self, $ErrorDialog, "Can't merge the main branch!", "Error")
 		return
@@ -565,6 +573,10 @@ func get_unsynced_changes():
 	var dict = {}
 
 	var checked_out_branch = GodotProject.get_checked_out_branch()
+	if not checked_out_branch:
+		printerr("no checked out branch")
+		return
+
 	var changes = GodotProject.get_changes()
 
 	for change in changes:
