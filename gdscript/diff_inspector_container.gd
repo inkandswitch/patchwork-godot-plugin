@@ -17,7 +17,6 @@ func get_change_theme_color_name(change_type: String) -> String:
 	return "prop_subsection"
 
 
-
 func set_inspector_change_color(name: String, color: Color) -> void:
 	# get the theme override for the given name for the Editor type
 	var theme: Theme = get_theme()
@@ -279,7 +278,6 @@ func add_NodeDiffResult(file_section: DiffInspectorSection, node_diff: Dictionar
 	file_section.get_vbox().add_child(inspector_section)
 
 
-
 # class DiffSet:
 # 	var prop_name: String
 # 	var change_type: String
@@ -345,6 +343,8 @@ func add_FileDiffResult(file_path: String, file_diff: Dictionary) -> void:
 		add_text_diff(inspector_section, text_diff)
 	elif type == "scene_changed":
 		var node_diffs: Array = file_diff["changed_nodes"]
+		node_diffs.sort_custom(func(a, b): return a["node_path"] < b["node_path"])
+	
 		# print("node_diff size: ", node_diffs.size())
 		for node in node_diffs:
 			var node_path: String = node["node_path"]
@@ -383,7 +383,6 @@ func reset() -> void:
 	added_nodes.clear()
 	deleted_nodes.clear()
 	# changed_resources.clear()
-
 
 
 func get_main_vbox() -> VBoxContainer:
