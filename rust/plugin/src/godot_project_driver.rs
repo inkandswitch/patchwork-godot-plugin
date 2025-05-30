@@ -190,10 +190,16 @@ struct DriverState {
     heads_in_frontend: HashMap<DocumentId, Vec<ChangeHash>>,
 }
 
+pub enum ConnectionThreadError {
+	ConnectionThreadDied(String),
+	ConnectionThreadError(String),
+}
+
 pub struct GodotProjectDriver {
     runtime: Runtime,
     repo_handle: RepoHandle,
 
+	connection_thread_output_rx: Option<UnboundedReceiver<String>>,
     connection_thread: Option<JoinHandle<()>>,
     spawned_thread: Option<JoinHandle<()>>,
 }
@@ -216,6 +222,7 @@ impl GodotProjectDriver {
         return Self {
             runtime,
             repo_handle,
+			connection_thread_output_rx: None,
             connection_thread: None,
             spawned_thread: None,
         };
@@ -233,7 +240,7 @@ impl GodotProjectDriver {
             return;
         }
 
-        self.connection_thread = Some(self.spawn_connection_task());
+        self.respawn_connection_thread();
 
         // Spawn sync task for all doc handles
         self.spawned_thread =
@@ -249,7 +256,43 @@ impl GodotProjectDriver {
         }
     }
 
-    fn spawn_connection_task(&self) -> JoinHandle<()> {
+	fn connection_thread_died(&self) -> bool {
+		if let Some(connection_thread) = &self.connection_thread {
+			return connection_thread.is_finished();
+		}
+		false
+	}
+
+	pub fn connection_thread_get_last_error(&mut self) -> Option<ConnectionThreadError> {
+		if let Some(connection_thread_rx) = &mut self.connection_thread_output_rx {
+			let mut error_str = String::new();
+			while let Ok(Some(error)) = connection_thread_rx.try_next() {
+				error_str.push_str("\n");
+				error_str.push_str(&error);
+			}
+			if self.connection_thread_died() {
+				return Some(ConnectionThreadError::ConnectionThreadDied(error_str));
+			}
+			if !error_str.is_empty() {
+				return Some(ConnectionThreadError::ConnectionThreadError(error_str));
+			}
+		}
+		None
+	}
+
+	pub fn respawn_connection_thread(&mut self) {
+		if let Some(connection_thread) = self.connection_thread.take() {
+			if !connection_thread.is_finished() {
+				println!("rust: WARNING: connection thread is not finished, aborting");
+				connection_thread.abort();
+			}
+		}
+		let (connection_thread_tx, connection_thread_rx) = futures::channel::mpsc::unbounded();
+		self.connection_thread_output_rx = Some(connection_thread_rx);
+		self.connection_thread = Some(self.spawn_connection_task(connection_thread_tx));
+	}
+
+    fn spawn_connection_task(&self, connection_thread_tx: UnboundedSender<String>) -> JoinHandle<()> {
         let repo_handle_clone = self.repo_handle.clone();
 
         return self.runtime.spawn(async move {
@@ -276,9 +319,11 @@ impl GodotProjectDriver {
                     Ok(completed) => {
                         let error = completed.await;
                         println!("connection terminated because of: {:?}", error);
+                        connection_thread_tx.unbounded_send(error.to_string()).unwrap();
                     }
                     Err(e) => {
                         println!("Failed to connect: {:?}", e);
+                        connection_thread_tx.unbounded_send(e.to_string()).unwrap();
 
                         // sleep for 5 seconds
                         tokio::time::sleep(std::time::Duration::from_secs(5)).await;

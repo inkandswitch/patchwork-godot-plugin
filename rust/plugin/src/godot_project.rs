@@ -33,7 +33,7 @@ use std::{collections::HashMap, str::FromStr};
 
 use crate::file_system_driver::{FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
 use crate::godot_parser::{self, GodotScene, TypeOrInstance};
-use crate::godot_project_driver::{BranchState, DocHandleType};
+use crate::godot_project_driver::{BranchState, ConnectionThreadError, DocHandleType};
 use crate::patches::{get_changed_files, get_changed_files_vec};
 use crate::patchwork_config::PatchworkConfig;
 use crate::utils::{array_to_heads, heads_to_array, parse_automerge_url, CommitMetadata};
@@ -1932,6 +1932,21 @@ impl INode for GodotProject {
     }
 
     fn process(&mut self, _delta: f64) {
+		// check if the connection thread died
+		if let Some(driver) = &mut self.driver {
+			if let Some(error) = driver.connection_thread_get_last_error() {
+				match error {
+					ConnectionThreadError::ConnectionThreadDied(error) => {
+						println!("rust: file system driver connection thread died, respawning: {}", error);
+						driver.respawn_connection_thread();
+					}
+					ConnectionThreadError::ConnectionThreadError(error) => {
+						println!("rust: file system driver connection thread error: {}", error);
+					}
+				}
+			}
+		}
+
 		let mut branches_changed = false;
         while let Ok(Some(event)) = self.driver_output_rx.try_next() {
             match event {
