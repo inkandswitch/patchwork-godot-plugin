@@ -128,6 +128,7 @@ impl FileContent {
 		}
 	}
 
+	// NOTE: Probably not appropriate to put here, should have this in BranchState
 	pub fn hydrate_content_at(file_entry: ObjId, doc: &Automerge, path: &String, heads: &Vec<ChangeHash>) -> Result<FileContent, Result<DocumentId, io::Error>> {
 		let structured_content = doc
 		.get_at(&file_entry, "structured_content", heads)

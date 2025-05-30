@@ -91,8 +91,8 @@ pub struct Branch {
 #[derive(Debug, Clone)]
 enum CheckedOutBranchState {
     NothingCheckedOut,
-    CheckingOut(DocumentId),
-    CheckedOut(DocumentId),
+    CheckingOut(DocumentId, Option<(DocumentId, Vec<ChangeHash>)>),
+    CheckedOut(DocumentId, Option<(DocumentId, Vec<ChangeHash>)>),
 }
 
 enum VariantStrValue {
@@ -311,7 +311,8 @@ impl GodotProject {
             })
             .unwrap();
 
-        self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(target_branch_doc_id);
+		// setting previous branch to None so that we don't delete any files when we checkout the new branch
+        self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(target_branch_doc_id, None);
     }
 
     #[func]
@@ -361,22 +362,44 @@ impl GodotProject {
 
     #[func]
     fn checkout_branch(&mut self, branch_doc_id: String) {
-        let branch_doc_id = DocumentId::from_str(&branch_doc_id).unwrap();
+		self._checkout_branch(DocumentId::from_str(&branch_doc_id).unwrap());
+	}
 
-        let branch_state = match self.branch_states.get(&branch_doc_id) {
+	fn _checkout_branch(&mut self, branch_doc_id: DocumentId) {
+		let current_branch = match &self.checked_out_branch_state {
+			CheckedOutBranchState::CheckedOut(doc_id, _) => doc_id.clone(),
+			CheckedOutBranchState::CheckingOut(doc_id, _) => {
+				println!("rust: CHECKING OUT BRANCH WHILE STILL CHECKING OUT?!?!?! {:?}", doc_id);
+				doc_id.clone()
+			},
+			CheckedOutBranchState::NothingCheckedOut => {
+				panic!("couldn't checkout branch, no checked out branch");
+			}
+		};
+		// Do we want the current heads or the synced heads?
+		// let current_heads = self.get_current_heads_at_branch(current_branch.clone());
+		let current_heads = match self.branch_states.get(&current_branch) {
+			Some(branch_state) => branch_state.synced_heads.clone(),
+			None => vec![]
+		};
+        let target_branch_state = match self.branch_states.get(&branch_doc_id) {
             Some(branch_state) => branch_state,
-            None => {
-                panic!("couldn't checkout basdfasdfrdfsfsdanch, branch doc id not found");
-            }
+            None => panic!("couldn't checkout branch, branch doc id not found")
         };
-		println!("rust: checking out branch {:?}", branch_state.name);
-        if branch_state.synced_heads == branch_state.doc_handle.with_doc(|d| d.get_heads()) {
+		println!("rust: checking out branch {:?}", target_branch_state.name);
+
+        if target_branch_state.synced_heads == target_branch_state.doc_handle.with_doc(|d| d.get_heads()) {
             self.checked_out_branch_state =
-                CheckedOutBranchState::CheckedOut(branch_doc_id.clone());
+                CheckedOutBranchState::CheckedOut(
+					branch_doc_id.clone(),
+					Some((current_branch.clone(), current_heads)));
 			self.just_checked_out_new_branch = true;
         } else {
             self.checked_out_branch_state =
-                CheckedOutBranchState::CheckingOut(branch_doc_id.clone());
+				CheckedOutBranchState::CheckingOut(
+					branch_doc_id.clone(),
+					Some((current_branch.clone(), current_heads))
+				);
         }
     }
 
@@ -441,10 +464,157 @@ impl GodotProject {
 
 
 	// INTERNAL FUNCTIONS
+	fn _get_changed_file_content_between(
+		&self,
+		branch_doc_id: DocumentId,
+		previous_heads: Vec<ChangeHash>,
+		current_heads: Vec<ChangeHash>,
+	) -> Vec<FileSystemEvent> {
+
+        let branch_state = match self.branch_states.get(&branch_doc_id) {
+            Some(branch_state) => branch_state,
+            None => return Vec::new(),
+        };
+
+        let curr_heads = if current_heads.len() == 0 {
+            branch_state.synced_heads.clone()
+        } else {
+            current_heads
+        };
+		if previous_heads.len() == 0 {
+			let files = self._get_files_on_branch_at(branch_doc_id, &Some(curr_heads));
+			return files.into_iter().map(|(path, content)| {
+				match content {
+					FileContent::Deleted => {
+						FileSystemEvent::FileDeleted(PathBuf::from(path))
+					}
+					_ => {
+						FileSystemEvent::FileCreated(PathBuf::from(path), content)
+					}
+				}
+			}).collect::<Vec<FileSystemEvent>>();
+		}
+
+        let (patches, old_file_set, curr_file_set) = branch_state.doc_handle.with_doc(|d| {
+			let mut old_files_id = d.get_obj_id_at(ROOT, "files", &previous_heads);
+			let mut curr_files_id = d.get_obj_id_at(ROOT, "files", &curr_heads);
+			let old_file_set = if old_files_id.is_none(){
+				HashSet::<String>::new()
+			} else {
+				d.keys_at(&old_files_id.unwrap(), &previous_heads).into_iter().collect::<HashSet<String>>()
+			};
+			let curr_file_set = if curr_files_id.is_none(){
+				HashSet::<String>::new()
+			} else {
+				d.keys_at(&curr_files_id.unwrap(), &curr_heads).into_iter().collect::<HashSet<String>>()
+			};
+			let patches = branch_state.doc_handle.with_doc(|d| {
+				d.diff(
+					&previous_heads,
+					&curr_heads,
+					TextRepresentation::String(TextEncoding::Utf8CodeUnit),
+				)
+			});
+			(patches, old_file_set, curr_file_set)
+		});
+
+		let deleted_files = old_file_set.difference(&curr_file_set).into_iter().cloned().collect::<HashSet<String>>();
+		let added_files = curr_file_set.difference(&old_file_set).into_iter().cloned().collect::<HashSet<String>>();
+		let mut modified_files = HashSet::new();
+
+		// log all patches
+		let changed_files = get_changed_files_vec(&patches);
+		let alt_changed_files_hashset = changed_files.iter().cloned().collect::<HashSet<String>>();
+
+		for file in changed_files {
+			if added_files.contains(&file) || deleted_files.contains(&file) {
+				continue;
+			}
+			modified_files.insert(file);
+		}
+		let changed_files_hashset = deleted_files.union(&added_files)
+			.cloned()
+			.collect::<HashSet<String>>()
+			.union(&modified_files)
+			.cloned()
+			.collect::<HashSet<String>>();
+
+
+		let make_event = |path: String, content: FileContent| {
+			if added_files.contains(&path) {
+				match content {
+					FileContent::Deleted => {
+						FileSystemEvent::FileDeleted(PathBuf::from(path))
+					}
+					_ => {
+						FileSystemEvent::FileCreated(PathBuf::from(path), content)
+					}
+				}
+			} else if deleted_files.contains(&path) {
+				FileSystemEvent::FileDeleted(PathBuf::from(path))
+			} else if modified_files.contains(&path) {
+				match content {
+					FileContent::Deleted => {
+						FileSystemEvent::FileDeleted(PathBuf::from(path))
+					}
+					_ => {
+						FileSystemEvent::FileModified(PathBuf::from(path), content)
+					}
+				}
+			} else {
+				println!("rust: _get_changed_file_events_: file not found in added_files, deleted_files, or modified_files: {:?}", path);
+				FileSystemEvent::FileModified(PathBuf::from(path), content)
+			}
+		};
+		let mut changed_file_events = Vec::new();
+
+		let mut linked_doc_ids = Vec::new();
+		branch_state.doc_handle.with_doc(|doc|{
+			let files_obj_id: ObjId = doc.get_at(ROOT, "files", &previous_heads).unwrap().unwrap().1;
+			for path in doc.keys_at(&files_obj_id, &previous_heads) {
+				if !deleted_files.contains(&path) && !added_files.contains(&path) && !modified_files.contains(&path) {
+					continue;
+				}
+
+				let file_entry = match doc.get_at(&files_obj_id, &path, &previous_heads) {
+					Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
+					_ => panic!("failed to get file entry for {:?}", path),
+				};
+
+				match FileContent::hydrate_content_at(file_entry, &doc, &path, &previous_heads) {
+					Ok(content) => {
+						changed_file_events.push(make_event(path, content));
+					},
+					Err(res) => {
+						match res {
+							Ok(id) => {
+								linked_doc_ids.push((id, path));
+							},
+							Err(error_msg) => {
+								println!("error: {:?}", error_msg);
+							}
+						}
+					}
+				};
+			}
+		});
+
+		for (doc_id, path) in linked_doc_ids {
+			let linked_file_content: Option<FileContent> = self._get_linked_file(&doc_id);
+			if let Some(file_content) = linked_file_content {
+				changed_file_events.push(make_event(path, file_content));
+			}
+		}
+
+		changed_file_events
+
+        // get_changed_files_vec(&patches)
+    }
+
 
     fn _get_files_at(&self, heads: &Option<Vec<ChangeHash>>) -> HashMap<String, FileContent> {
 		match &self.checked_out_branch_state {
-			CheckedOutBranchState::CheckedOut(branch_doc_id) => self._get_files_on_branch_at(branch_doc_id.clone(), heads),
+			CheckedOutBranchState::CheckedOut(branch_doc_id, _) => self._get_files_on_branch_at(branch_doc_id.clone(), heads),
 			_ => panic!("rust: _get_files_at: no checked out branch"),
 		}
 	}
@@ -557,8 +727,8 @@ impl GodotProject {
 
     fn get_checked_out_branch_state(&self) -> Option<BranchState> {
         match &self.checked_out_branch_state {
-            CheckedOutBranchState::CheckedOut(branch_doc_id) => {
-                Some(self.branch_states.get(&branch_doc_id).unwrap().clone())
+            CheckedOutBranchState::CheckedOut(branch_doc_id, _) => {
+				self.branch_states.get(&branch_doc_id).cloned()
             }
             _ => {
                 println!(
@@ -1563,7 +1733,7 @@ impl GodotProject {
         };
 
         self.checked_out_branch_state = match DocumentId::from_str(&checked_out_branch_doc_id) {
-            Ok(doc_id) => CheckedOutBranchState::CheckingOut(doc_id),
+            Ok(doc_id) => CheckedOutBranchState::CheckingOut(doc_id, None),
             Err(_) => CheckedOutBranchState::NothingCheckedOut,
         };
 
@@ -1702,20 +1872,34 @@ impl GodotProject {
     }
 
 
-    fn sync_patchwork_to_godot(&mut self) {
+    fn sync_patchwork_to_godot(&mut self, previous_branch_id: Option<DocumentId>, previous_branch_heads: Vec<ChangeHash>) {
 		println!("rust: sync_patchwork_to_godot");
-        let files = self._get_files_at(&None);
+		let current_branch_state = match self.get_checked_out_branch_state() {
+			Some(branch_state) => branch_state,
+			None => {
+				println!("!!!!!!!no checked out branch!!!!!!");
+				return;
+			}
+		};
+		let current_doc_id = current_branch_state.doc_handle.document_id();
+		let current_heads = current_branch_state.synced_heads.clone();
+		let previous_heads = previous_branch_heads.clone();
+		let events = self._get_changed_file_content_between(current_doc_id, previous_heads, current_heads);
+
         let mut updates = Vec::new();
         // let res_path = ProjectSettings::singleton().globalize_path("res://").to_string();
-        for (path, content) in files {
+        for event in events {
             // replace res:// with the actual project path
             // let path = path.replace("res://", &res_path);
-            match content{
-                FileContent::Deleted => {
-                    updates.push(FileSystemUpdateEvent::FileDeleted(PathBuf::from(ProjectSettings::singleton().globalize_path(&path).to_string())));
+            match event{
+                FileSystemEvent::FileDeleted(path) => {
+                    updates.push(FileSystemUpdateEvent::FileDeleted(PathBuf::from(ProjectSettings::singleton().globalize_path(&path.to_string_lossy().to_string()).to_string())));
                 }
-                _ => {
-                    updates.push(FileSystemUpdateEvent::FileSaved(PathBuf::from(ProjectSettings::singleton().globalize_path(&path).to_string()), content));
+                FileSystemEvent::FileCreated(path, content) => {
+                    updates.push(FileSystemUpdateEvent::FileSaved(PathBuf::from(ProjectSettings::singleton().globalize_path(&path.to_string_lossy().to_string()).to_string()), content));
+                }
+                FileSystemEvent::FileModified(path, content) => {
+                    updates.push(FileSystemUpdateEvent::FileSaved(PathBuf::from(ProjectSettings::singleton().globalize_path(&path.to_string_lossy().to_string()).to_string()), content));
                 }
             }
         }
@@ -1839,10 +2023,9 @@ impl INode for GodotProject {
                         .insert(branch_state.doc_handle.document_id(), branch_state.clone());
 
 					branches_changed = true;
-                    let mut active_branch_state: Option<BranchState> = None;
                     let mut checking_out_new_branch = false;
 
-                    match &self.checked_out_branch_state {
+                    let (active_branch_state, prev_branch_info) = match &self.checked_out_branch_state {
                         CheckedOutBranchState::NothingCheckedOut => {
                             // check out main branch if we haven't checked out anything yet
                             if branch_state.is_main {
@@ -1850,18 +2033,22 @@ impl INode for GodotProject {
 
                                 self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(
                                     branch_state.doc_handle.document_id(),
+                                    None,
                                 );
-                                active_branch_state = Some(branch_state.clone());
+                                (Some(&branch_state), None)
+                            } else {
+								panic!("rust: NOTHING CHECKED OUT AND WE'RE NOT CHECKING OUT A NEW BRANCH?!?!?! {:?}", branch_state.name);
+                                (None, None)
                             }
                         }
-                        CheckedOutBranchState::CheckingOut(branch_doc_id) => {
-                            active_branch_state = self.branch_states.get(&branch_doc_id).cloned();
-                            checking_out_new_branch = true;
+                        CheckedOutBranchState::CheckingOut(branch_doc_id, prev_branch_info) => {
+							checking_out_new_branch = true;
+                            (self.branch_states.get(branch_doc_id), prev_branch_info.clone())
                         }
-                        CheckedOutBranchState::CheckedOut(branch_doc_id) => {
-                            active_branch_state = self.branch_states.get(&branch_doc_id).cloned();
+                        CheckedOutBranchState::CheckedOut(branch_doc_id, prev_branch_info) => {
+                            (self.branch_states.get(branch_doc_id), prev_branch_info.clone())
                         }
-                    }
+                    };
 
                     // only trigger update if checked out branch is fully synced
                     if let Some(active_branch_state) = active_branch_state {
@@ -1874,6 +2061,7 @@ impl INode for GodotProject {
 
                                 self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(
                                     active_branch_state.doc_handle.document_id(),
+									prev_branch_info,
                                 );
 
 								self.just_checked_out_new_branch = true;
@@ -1893,7 +2081,7 @@ impl INode for GodotProject {
 
                 OutputEvent::CompletedCreateBranch { branch_doc_id } => {
                     self.checked_out_branch_state =
-                        CheckedOutBranchState::CheckingOut(branch_doc_id);
+                        CheckedOutBranchState::CheckingOut(branch_doc_id, None);
                 }
 
                 OutputEvent::CompletedShutdown => {
@@ -1979,16 +2167,21 @@ impl INode for GodotProject {
 			println!("rust: not safe to update godot");
 			return;
 		}
-		let branch_state = match &self.checked_out_branch_state{
-			CheckedOutBranchState::NothingCheckedOut => None,
-			CheckedOutBranchState::CheckingOut(_) => None,
-			CheckedOutBranchState::CheckedOut(branch_doc_id) => self.get_checked_out_branch_state(),
+		let (branch_state, previous_branch_info) = match &self.checked_out_branch_state{
+			CheckedOutBranchState::NothingCheckedOut => (None, None),
+			CheckedOutBranchState::CheckingOut(_, _) => (None, None),
+			CheckedOutBranchState::CheckedOut(_, prev_branch_info) => (self.get_checked_out_branch_state(), prev_branch_info.clone()),
 		};
 		if branch_state.is_none() {
-			// println!("rust: no branch state");
 			return;
 		}
 		let branch_state = branch_state.unwrap();
+		let (previous_branch_id, mut previous_branch_heads) = previous_branch_info.map(|(id, heads)| (Some(id), heads)).unwrap_or((None, Vec::new()));
+		if let Some(previous_branch_id) = &previous_branch_id {
+			previous_branch_heads = self.branch_states.get(previous_branch_id).map(|branch_state| branch_state.synced_heads.clone()).unwrap_or_default();
+		} else {
+			previous_branch_heads = branch_state.synced_heads.clone();
+		}
 		if self.just_checked_out_new_branch {
 			println!("rust: just checked out branch {:?}", branch_state.name);
 			let checked_out_branch_doc_id = branch_state
@@ -2002,7 +2195,7 @@ impl INode for GodotProject {
 				self.sync_godot_to_patchwork(true);
 			} else {
 				self.should_update_godot = false;
-				self.sync_patchwork_to_godot();
+				self.sync_patchwork_to_godot(previous_branch_id, previous_branch_heads);
 			}
 			// NOTE: it is VERY important that we save the project config AFTER we sync,
 			// because this will trigger a file scan and then resave the current project files in the editor
@@ -2015,7 +2208,7 @@ impl INode for GodotProject {
 		} else if self.should_update_godot {
 			println!("rust: should update godot");
 			self.should_update_godot = false;
-			self.sync_patchwork_to_godot();
+			self.sync_patchwork_to_godot(previous_branch_id, previous_branch_heads);
 		} else if let Some(fs_driver) = self.file_system_driver.as_mut() {
 			let mut new_files = Vec::new();
 			while let Some(event) = fs_driver.try_next() {
