@@ -262,15 +262,6 @@ impl GodotProject {
     }
 
     #[func]
-    fn get_changed_file_content_between(
-        &self,
-        old_heads: PackedStringArray,
-        curr_heads: PackedStringArray,
-    ) -> Dictionary {
-        return Dictionary::new();
-    }
-
-    #[func]
     fn get_changes(&self) -> Array<Dictionary> /* String[]  */ {
         let checked_out_branch_doc = match &self.get_checked_out_branch_state() {
             Some(branch_state) => branch_state.doc_handle.with_doc(|d| d.clone()),
@@ -343,39 +334,6 @@ impl GodotProject {
         }
     }
 
-    #[func]
-    fn save_files_at(
-        &self,
-        files: Dictionary, /*  Record<String, Variant> */
-        heads: PackedStringArray,
-    ) {
-        let heads = array_to_heads(heads);
-
-        match &self.get_checked_out_branch_state() {
-            Some(branch_state) => {
-                self._save_files(branch_state.doc_handle.clone(), files, Some(heads))
-            }
-            None => panic!("couldn't save files, no checked out branch"),
-        }
-    }
-
-    #[func]
-    fn save_files(&self, files: Dictionary) {
-        match &self.get_checked_out_branch_state() {
-            Some(branch_state) => self._save_files(branch_state.doc_handle.clone(), files, None),
-            None => panic!("couldn't save files, no checked out branch"),
-        }
-    }
-
-    #[func]
-    fn save_file(&self, path: String, content: Variant) {
-        self.save_files(dict! { path: content });
-    }
-
-    #[func]
-    fn save_file_at(&self, path: String, heads: PackedStringArray, content: Variant) {
-        self.save_files_at(dict! { path: content }, heads);
-    }
     #[func]
     fn merge_branch(&mut self, source_branch_doc_id: String, target_branch_doc_id: String) {
         let source_branch_doc_id = DocumentId::from_str(&source_branch_doc_id).unwrap();
@@ -504,133 +462,6 @@ impl GodotProject {
         }
     }
 
-    // State api
-
-    #[func]
-    fn set_entity_state(&self, entity_id: String, prop: String, value: Variant) {
-        let checked_out_doc_handle = match &self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state.doc_handle.clone(),
-            None => {
-                return;
-            }
-        };
-
-        checked_out_doc_handle.with_doc_mut(|d| {
-            let mut tx = d.transaction();
-            let state = match tx.get_obj_id(ROOT, "state") {
-                Some(id) => id,
-                _ => {
-                    println!("failed to load state");
-                    return;
-                }
-            };
-
-            let entity_id = match tx.get_obj_id(&state, &entity_id) {
-                Some(id) => id,
-                None => match tx.put_object(state, &entity_id, ObjType::Map) {
-                    Ok(id) => id,
-                    Err(e) => {
-                        println!("failed to create state object: {:?}", e);
-                        return;
-                    }
-                },
-            };
-
-            match value.get_type() {
-                VariantType::INT => {
-                    let _ = tx.put(entity_id, prop, value.to::<i64>());
-                }
-                VariantType::FLOAT => {
-                    let _ = tx.put(entity_id, prop, value.to::<f64>());
-                }
-                VariantType::STRING => {
-                    let _ = tx.put(entity_id, prop, value.to::<GString>().to_string());
-                }
-                VariantType::STRING_NAME => {
-                    let _ = tx.put(entity_id, prop, value.to::<StringName>().to_string());
-                }
-                VariantType::BOOL => {
-                    let _ = tx.put(entity_id, prop, value.to::<bool>());
-                }
-                _ => println!(
-                    "failed to store {}.{} unsupported value type: {:?}",
-                    entity_id,
-                    prop,
-                    value.get_type()
-                ),
-            }
-
-            tx.commit();
-        });
-    }
-
-    #[func]
-    fn get_entity_state(&self, entity_id: String, prop: String) -> Variant /* Option<int | float | string | bool */
-    {
-        let checked_out_branch_state = match self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state,
-            None => {
-                return Variant::nil();
-            }
-        };
-
-        checked_out_branch_state.doc_handle.with_doc(|d| {
-            let state = match d.get_obj_id(ROOT, "state") {
-                Some(id) => id,
-                None => {
-                    println!("invalid document, no state property");
-                    return Variant::nil();
-                }
-            };
-
-            let entity = match d.get_obj_id(state, entity_id) {
-                Some(id) => id,
-                None => {
-                    return Variant::nil();
-                }
-            };
-
-            return match d.get_variant(entity, prop) {
-                Some(value) => value,
-                None => Variant::nil(),
-            };
-        })
-    }
-
-    #[func]
-    fn get_all_entity_ids(&self) -> PackedStringArray {
-        let checked_out_branch_state = match self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state,
-            None => {
-                return PackedStringArray::new();
-            }
-        };
-
-        checked_out_branch_state.doc_handle.with_doc(|d| {
-            let state = match d.get_obj_id(ROOT, "state") {
-                Some(id) => id,
-                None => return PackedStringArray::new(),
-            };
-
-            d.keys(&state).map(|k| GString::from(k)).collect()
-        })
-    }
-
-    #[func]
-    fn destroy_all_entities(&self) {
-        let checked_out_branch_state = match self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state,
-            None => {
-                return;
-            }
-        };
-
-        checked_out_branch_state.doc_handle.with_doc_mut(|d| {
-            let mut tx = d.transaction();
-            let _ = tx.put_object(ROOT, "state", ObjType::Map);
-            tx.commit();
-        });
-    }
 
     #[func]
     fn get_all_changes_between(
@@ -2070,8 +1901,6 @@ impl GodotProject {
 
 }
 
-// static singleton variable
-static mut GODOT_PROJECT: Option<GodotProject> = None;
 
 #[godot_api]
 impl INode for GodotProject {
