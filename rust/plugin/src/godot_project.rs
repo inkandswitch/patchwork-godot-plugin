@@ -2015,11 +2015,7 @@ impl GodotProject {
 		if scenes_to_reload.len() > 0 {
 			println!("rust: reloading scenes");
 			for scene_path in scenes_to_reload {
-				// ResourceLoader::load() with CACHE_MODE_REPLACE to ensure that the scene is reloaded from disk
-				let scene = ResourceLoader::singleton()
-				.load_ex(&scene_path)
-				.cache_mode(CacheMode::REPLACE_DEEP)
-				.done();
+				let scene = force_reload_resource(&scene_path);
 				if let Some(scene) = scene {
 					if PatchworkEditorAccessor::is_changing_scene() {
 						println!("!!!!!!!!!!!!!!rust: is changing scene, skipping reload");
@@ -2613,4 +2609,12 @@ fn system_time_to_variant(time: SystemTime) -> Variant {
         .ok()
         .map(|d| d.as_secs().to_variant())
         .unwrap_or(Variant::nil())
+}
+
+fn force_reload_resource(path: &str) -> Option<Gd<Resource>> {
+	let scene = ResourceLoader::singleton()
+	.load_ex(path)
+	.cache_mode(CacheMode::REPLACE_DEEP)
+	.done();
+	scene
 }
