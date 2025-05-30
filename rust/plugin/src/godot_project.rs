@@ -1868,11 +1868,18 @@ impl GodotProject {
         let mut scenes_to_reload = Vec::new();
         let mut reimport_files = HashSet::new();
 		let mut files_changed = Vec::new();
+		let mut file_created_or_deleted = true;
         for event in events {
             let (abs_path, content) = match event {
-                FileSystemEvent::FileCreated(path, content) => (path, content),
+                FileSystemEvent::FileCreated(path, content) => {
+					file_created_or_deleted = true;
+					(path, content)
+				},
                 FileSystemEvent::FileModified(path, content) => (path, content),
-                FileSystemEvent::FileDeleted(path) => continue,
+                FileSystemEvent::FileDeleted(_) => {
+					file_created_or_deleted = true;
+					continue;
+				},
             };
 			files_changed.push(abs_path.to_string_lossy().to_string());
             let res_path = ProjectSettings::singleton().localize_path(&abs_path.to_string_lossy().to_string());
@@ -1944,6 +1951,9 @@ impl GodotProject {
 				}
             }
         }
+		if file_created_or_deleted {
+			EditorInterface::singleton().get_resource_filesystem().unwrap().scan();
+		}
 		self.base_mut().set_process(true);
     }
 
