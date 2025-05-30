@@ -133,6 +133,7 @@ pub struct GodotProject {
     driver_output_rx: UnboundedReceiver<OutputEvent>,
     sync_server_connection_info: Option<PeerConnectionInfo>,
     file_system_driver: Option<FileSystemDriver>,
+	project_dir: String,
 }
 
 enum ChangeOp {
@@ -278,6 +279,23 @@ impl GodotProject {
         let new_heads = array_to_heads(curr_heads);
         self._get_changes_between(old_heads, new_heads)
     }
+
+	fn globalize_path(&self, path: &String) -> String {
+		// trim the project_dir from the front of the path
+		if path.starts_with("res://") {
+			self.project_dir.clone() + "/" + &path[5..].to_string()
+		} else {
+			path.to_string()
+		}
+	}
+
+	fn localize_path(&self, path: &String) -> String {
+		if path.starts_with(&self.project_dir) {
+			"res://".to_string() + &path[self.project_dir.len()..].to_string()
+		} else {
+			path.to_string()
+		}
+	}
 
 
     fn _get_project_doc_id(&self) -> Option<DocumentId> {
@@ -980,7 +998,7 @@ impl GodotProject {
         );
         let temp_path = path.replace("res://", &temp_dir);
         // append _old or _new to the temp path (i.e. res://thing.<EXT> -> user://temp_123_456/thing_old.<EXT>)
-        let _ = FileContent::write_res_file_content(&PathBuf::from(&temp_path), content);
+        let _ = FileContent::write_file_content(&PathBuf::from(self.globalize_path(&temp_path)), content);
         // get the import file content
         let import_path = format!("{}.import", path);
         let import_file_content = self._get_file_at(import_path.clone(), Some(heads.clone()));
@@ -992,8 +1010,8 @@ impl GodotProject {
                     import_file_content.replace(r#"uid=uid://[^\n]+"#, "uid=uid://<invalid>");
                 // write the import file content to the temp path
                 let import_file_path: String = format!("{}.import", temp_path);
-                let _ = FileContent::write_res_file_content(
-                    &PathBuf::from(import_file_path),
+                let _ = FileContent::write_file_content(
+                    &PathBuf::from(self.globalize_path(&import_file_path)),
                     &FileContent::String(import_file_content),
                 );
 
@@ -1713,8 +1731,7 @@ impl GodotProject {
         self.driver_input_tx = driver_input_tx;
         self.driver_output_rx = driver_output_rx;
 
-        let storage_folder_path =
-            String::from(ProjectSettings::singleton().globalize_path("res://.patchwork"));
+        let storage_folder_path = self.globalize_path(&"res://.patchwork".to_string());
         let mut driver: GodotProjectDriver = GodotProjectDriver::create(storage_folder_path);
         let maybe_user_name: String = PatchworkConfig::singleton()
             .bind()
@@ -1734,7 +1751,7 @@ impl GodotProject {
     }
 
     fn _start_file_system_driver(&mut self) {
-        let project_path: String = ProjectSettings::singleton().globalize_path("res://").to_string();
+        let project_path: String = self.globalize_path(&"res://".to_string());
         let project_path = PathBuf::from(project_path);
 
 		// read in .gitignore from the project path
@@ -1886,28 +1903,28 @@ impl GodotProject {
 				},
             };
 			files_changed.push(abs_path.to_string_lossy().to_string());
-            let res_path = ProjectSettings::singleton().localize_path(&abs_path.to_string_lossy().to_string());
+            let res_path = self.localize_path(&abs_path.to_string_lossy().to_string());
             let extension = abs_path.extension().unwrap_or_default().to_string_lossy().to_string();
             if extension == "gd" {
                 reload_scripts = true;
             } else if extension == "tscn" {
                 scenes_to_reload.push(res_path);
             } else if extension == "import" {
-                let base = res_path.get_basename();
-                reimport_files.insert(base.clone());
+                let base = PathBuf::from(res_path).file_stem().unwrap_or_default().to_string_lossy().to_string();
+                reimport_files.insert(GString::from(base.clone()));
                 if let FileContent::String(string) = content {
                     // go line by line, find the line that begins with "uid="
                     for line in string.lines() {
                         if line.starts_with("uid=") {
                             let uid = line.split("=").nth(1).unwrap_or_default().to_string();
-                            Self::add_new_uid(base, uid);
+                            Self::add_new_uid(GString::from(base), uid);
                             break;
                         }
                     }
                 }
             } else if extension == "uid" {
                 if let FileContent::String(string) = content {
-                    Self::add_new_uid(res_path, string);
+                    Self::add_new_uid(GString::from(res_path), string);
                 }
             // check if a file with .import added exists
             } else  {
@@ -1991,19 +2008,18 @@ impl GodotProject {
 		let events = self._get_changed_file_content_between(previous_branch_id, current_doc_id, previous_heads, current_heads);
 
         let mut updates = Vec::new();
-        // let res_path = ProjectSettings::singleton().globalize_path("res://").to_string();
         for event in events {
             // replace res:// with the actual project path
             // let path = path.replace("res://", &res_path);
             match event{
                 FileSystemEvent::FileDeleted(path) => {
-                    updates.push(FileSystemUpdateEvent::FileDeleted(PathBuf::from(ProjectSettings::singleton().globalize_path(&path.to_string_lossy().to_string()).to_string())));
+                    updates.push(FileSystemUpdateEvent::FileDeleted(PathBuf::from(self.globalize_path(&path.to_string_lossy().to_string()).to_string())));
                 }
                 FileSystemEvent::FileCreated(path, content) => {
-                    updates.push(FileSystemUpdateEvent::FileSaved(PathBuf::from(ProjectSettings::singleton().globalize_path(&path.to_string_lossy().to_string()).to_string()), content));
+                    updates.push(FileSystemUpdateEvent::FileSaved(PathBuf::from(self.globalize_path(&path.to_string_lossy().to_string()).to_string()), content));
                 }
                 FileSystemEvent::FileModified(path, content) => {
-                    updates.push(FileSystemUpdateEvent::FileSaved(PathBuf::from(ProjectSettings::singleton().globalize_path(&path.to_string_lossy().to_string()).to_string()), content));
+                    updates.push(FileSystemUpdateEvent::FileSaved(PathBuf::from(self.globalize_path(&path.to_string_lossy().to_string()).to_string()), content));
                 }
             }
         }
@@ -2017,8 +2033,6 @@ impl GodotProject {
     }
 
     fn sync_godot_to_patchwork(&mut self, new_project: bool) {
-        // let res_path = ProjectSettings::singleton().globalize_path("res://").simplify_path().to_string();
-
         match &self.get_checked_out_branch_state() {
             Some(branch_state) => {
                 // syncing the filesystem to patchwork
@@ -2026,7 +2040,7 @@ impl GodotProject {
                 if let Some(driver) = &mut self.file_system_driver {
                     let files = driver.get_all_files_blocking().into_iter().map(
                         |(path, content)| {
-                            (ProjectSettings::singleton().localize_path(&path.to_string_lossy().to_string()).to_string(), content)
+                            (self.localize_path(&path.to_string_lossy().to_string()).to_string(), content)
                         }
                     ).collect::<Vec<(String, FileContent)>>();
 					if new_project {
@@ -2048,7 +2062,7 @@ impl GodotProject {
         };
     }
 
-	fn _init(_base: Base<Node>) -> Self {
+	fn _init(_base: Base<Node>, project_dir: String) -> Self {
 
         let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
         let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
@@ -2067,6 +2081,7 @@ impl GodotProject {
             driver_input_tx,
             driver_output_rx,
             file_system_driver: None,
+			project_dir,
         };
         // process it a few times to get it to check out the branch
         ret
@@ -2332,7 +2347,7 @@ impl GodotProject {
 				let files: Vec<(PathBuf, FileContent)> = new_files.into_iter().map(
 					|(path, content)| {
 						println!("rust: godot editor updated file: {:?}", path);
-						(PathBuf::from(ProjectSettings::singleton().localize_path(&path.to_string_lossy().to_string()).to_string()), content)
+						(PathBuf::from(self.localize_path(&path.to_string_lossy().to_string()).to_string()), content)
 					}
 				).collect::<Vec<(PathBuf, FileContent)>>();
 
@@ -2347,7 +2362,7 @@ impl GodotProject {
 #[godot_api]
 impl INode for GodotProject {
     fn init(_base: Base<Node>) -> Self {
-        Self::_init(_base)
+        Self::_init(_base, ProjectSettings::singleton().globalize_path("res://").to_string())
     }
 
     fn enter_tree(&mut self) {

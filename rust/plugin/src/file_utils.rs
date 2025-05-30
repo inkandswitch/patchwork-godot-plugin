@@ -9,7 +9,6 @@ use automerge::ObjId;
 use automerge_repo::{DocHandle, DocumentId};
 use autosurgeon::Hydrate;
 use godot::builtin::{GString, PackedByteArray, Variant, VariantType};
-use godot::classes::ProjectSettings;
 use godot::meta::{GodotConvert, ToGodot};
 use ya_md5::{Md5Hasher, Hash, Md5Error};
 
@@ -26,12 +25,6 @@ pub enum FileContent {
 }
 
 impl FileContent {
-
-	pub fn write_res_file_content(path: &PathBuf, content: &FileContent) -> std::io::Result<String> {
-		let global_path = ProjectSettings::singleton().globalize_path(&path.to_string_lossy().to_string()).to_string();
-		FileContent::write_file_content(&PathBuf::from(&global_path), content)
-	}
-
 	// Write file content to disk
 	pub fn write_file_content(path: &PathBuf, content: &FileContent) -> std::io::Result<String> {
 		// Check if the file exists
