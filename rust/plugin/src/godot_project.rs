@@ -178,8 +178,31 @@ impl PatchworkEditorAccessor {
 			&[],
 		);
 	}
-
 }
+
+struct EditorFilesystemAccessor{
+}
+
+impl EditorFilesystemAccessor {
+	fn is_scanning() -> bool {
+		EditorInterface::singleton().get_resource_filesystem().map(|fs| return fs.is_scanning()).unwrap_or(false)
+	}
+
+	fn reimport_files(files: &Vec<String>) {
+		let files_packed = files.iter().map(|f| GString::from(f.clone())).collect::<PackedStringArray>();
+		EditorInterface::singleton().get_resource_filesystem().unwrap().reimport_files(&files_packed);
+	}
+
+	fn reload_scene_from_path(path: &String) {
+		EditorInterface::singleton().reload_scene_from_path(&GString::from(path));
+	}
+
+	fn scan(){
+		EditorInterface::singleton().get_resource_filesystem().unwrap().scan();
+	}
+}
+
+
 
 #[godot_api]
 impl GodotProject {
@@ -1896,7 +1919,7 @@ impl GodotProject {
     }
 
 	fn safe_to_update_godot() -> bool {
-		return !(EditorInterface::singleton().get_resource_filesystem().unwrap().is_scanning() ||
+		return !(EditorFilesystemAccessor::is_scanning() ||
 		PatchworkEditorAccessor::is_editor_importing() ||
 		PatchworkEditorAccessor::is_changing_scene());
 	}
@@ -1941,7 +1964,7 @@ impl GodotProject {
                 scenes_to_reload.push(res_path);
             } else if extension == "import" {
                 let base = PathBuf::from(res_path).file_stem().unwrap_or_default().to_string_lossy().to_string();
-                reimport_files.insert(GString::from(base.clone()));
+                reimport_files.insert(base.clone());
                 if let FileContent::String(string) = content {
                     // go line by line, find the line that begins with "uid="
                     for line in string.lines() {
@@ -1961,7 +1984,7 @@ impl GodotProject {
                 let mut import_path = abs_path.clone();
 				import_path.set_extension(abs_path.extension().unwrap_or_default().to_string_lossy().to_string() + ".import");
                 if import_path.exists() {
-                    reimport_files.insert(GString::from(res_path.to_string()));
+                    reimport_files.insert(res_path.to_string());
                 }
             }
         }
@@ -1977,11 +2000,7 @@ impl GodotProject {
             PatchworkEditorAccessor::reload_scripts();
         }
 		if reimport_files.len() > 0 {
-            let mut reimport_files_psa = reimport_files.into_iter().map(|path| path).collect::<PackedStringArray>();
-			let mut thingy = EditorInterface::singleton();
-			let mut editor_interface = thingy.get_resource_filesystem();
-			let mut unwrapped_editor_interface = editor_interface.unwrap();
-            unwrapped_editor_interface.reimport_files(&reimport_files_psa);
+			EditorFilesystemAccessor::reimport_files(&reimport_files.into_iter().map(|path| path).collect::<Vec<String>>());
         }
 		if scenes_to_reload.len() > 0 {
 			println!("rust: reloading scenes");
@@ -1995,7 +2014,7 @@ impl GodotProject {
 					if PatchworkEditorAccessor::is_changing_scene() {
 						println!("!!!!!!!!!!!!!!rust: is changing scene, skipping reload");
 					} else {
-						EditorInterface::singleton().reload_scene_from_path(&scene_path);
+						EditorFilesystemAccessor::reload_scene_from_path(&scene_path);
 					}
 				} else {
 					println!("rust: failed to reload scene: {}", scene_path);
@@ -2003,7 +2022,7 @@ impl GodotProject {
             }
         }
 		if file_created_or_deleted {
-			EditorInterface::singleton().get_resource_filesystem().unwrap().scan();
+			EditorFilesystemAccessor::scan();
 		}
 		self.base_mut().set_process(true);
     }
@@ -2471,7 +2490,7 @@ impl IEditorPlugin for GodotProjectPlugin {
 	fn process(&mut self, _delta: f64) {
 		// Don't initialize until the project is fully loaded and the editor is not importing
 		if !self.initialized
-			&& EditorInterface::singleton().get_resource_filesystem().map(|fs| return !fs.is_scanning()).unwrap_or(false)
+			&& !EditorFilesystemAccessor::is_scanning()
 			&& !PatchworkEditorAccessor::is_editor_importing()
 			&& DirAccess::dir_exists_absolute("res://.godot") // This is at the end because DirAccess::dir_exists_absolute locks a global mutex
 			{
