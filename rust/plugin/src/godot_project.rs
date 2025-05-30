@@ -147,7 +147,7 @@ struct PatchworkEditorAccessor{
 }
 
 impl PatchworkEditorAccessor {
-	fn import_and_load_resource(path: String) -> Variant {
+	fn import_and_load_resource(path: &str) -> Variant {
 		ClassDb::singleton().class_call_static(
 			"PatchworkEditor",
 			"import_and_load_resource",
@@ -193,7 +193,7 @@ impl EditorFilesystemAccessor {
 		EditorInterface::singleton().get_resource_filesystem().unwrap().reimport_files(&files_packed);
 	}
 
-	fn reload_scene_from_path(path: &String) {
+	fn reload_scene_from_path(path: &str) {
 		EditorInterface::singleton().reload_scene_from_path(&GString::from(path));
 	}
 
@@ -1096,7 +1096,7 @@ impl GodotProject {
                     &FileContent::String(import_file_content),
                 );
 
-                let res = PatchworkEditorAccessor::import_and_load_resource(temp_path);
+                let res = PatchworkEditorAccessor::import_and_load_resource(&temp_path);
                 if res.is_nil() {
                     return None;
                 }
