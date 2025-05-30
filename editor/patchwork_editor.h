@@ -51,6 +51,7 @@ public:
 	static Vector<String> get_unsaved_files();
 
 	static bool is_editor_importing();
+	static bool is_changing_scene();
 	static void save_all_scenes_and_scripts();
 	static void save_all_scripts();
 	static PackedStringArray get_unsaved_scripts();

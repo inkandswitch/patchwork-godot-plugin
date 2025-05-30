@@ -460,6 +460,10 @@ bool PatchworkEditor::is_editor_importing() {
 	return EditorFileSystem::get_singleton()->is_importing();
 }
 
+bool PatchworkEditor::is_changing_scene() {
+	return EditorNode::get_singleton()->is_changing_scene();
+}
+
 PatchworkEditor *PatchworkEditor::singleton = nullptr;
 
 PatchworkEditor::PatchworkEditor(EditorNode *p_editor) {
@@ -493,5 +497,6 @@ void PatchworkEditor::_bind_methods() {
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_unsaved_scripts"), &PatchworkEditor::get_unsaved_scripts);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("reload_scripts", "refresh_only"), &PatchworkEditor::reload_scripts);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("is_editor_importing"), &PatchworkEditor::is_editor_importing);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("is_changing_scene"), &PatchworkEditor::is_changing_scene);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_unsaved_files"), &PatchworkEditor::get_unsaved_files);
 }

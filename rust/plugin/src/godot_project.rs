@@ -229,6 +229,7 @@ impl GodotProject {
             Some(heads) => heads.clone(),
             None => branch_state.synced_heads.clone(),
         };
+		println!("rust: _get_files_at: {:?}, heads: {:?}", branch_state.name, heads);
 
         let doc = branch_state.doc_handle.with_doc(|d| d.clone());
 
@@ -471,7 +472,21 @@ impl GodotProject {
         files: Dictionary, /*  Record<String, Variant> */
         heads: Option<Vec<ChangeHash>>,
     ) {
-        let stored_files = self._get_files_at(&heads);
+		let branch_state = match self.get_checked_out_branch_state() {
+            Some(branch_state) => branch_state,
+            None => {
+				println!("rust: _save_files: no checked out branch");
+				return;
+			},
+        };
+
+        let heads = match heads {
+            Some(heads) => heads.clone(),
+            None => branch_state.synced_heads.clone(),
+        };
+		println!("rust: _save_files: {:?}, heads: {:?}", branch_state.name, heads);
+
+        let stored_files = self._get_files_at(&Some(heads.clone()));
 
         // we filter the files here because godot sends us indiscriminately all the files in the project
         // we only want to save the files that have actually changed
@@ -533,7 +548,7 @@ impl GodotProject {
         self.driver_input_tx
             .unbounded_send(InputEvent::SaveFiles {
                 branch_doc_handle,
-                heads,
+                heads: Some(heads.clone()),
                 files: changed_files,
             })
             .unwrap();
@@ -1891,7 +1906,10 @@ impl GodotProject {
     }
 
 	fn safe_to_update_godot() -> bool {
-		return !(EditorInterface::singleton().get_resource_filesystem().unwrap().is_scanning() || Self::call_patchwork_editor_func("is_editor_importing", &[]).to::<bool>());
+		return
+		!(EditorInterface::singleton().get_resource_filesystem().unwrap().is_scanning() ||
+		Self::call_patchwork_editor_func("is_editor_importing", &[]).to::<bool>() ||
+		Self::call_patchwork_editor_func("is_changing_scene", &[]).to::<bool>());
 	}
 
 
@@ -1978,7 +1996,13 @@ impl GodotProject {
 				.cache_mode(CacheMode::REPLACE_DEEP)
 				.done();
 				if let Some(scene) = scene {
-					EditorInterface::singleton().reload_scene_from_path(&scene_path);
+					if Self::call_patchwork_editor_func("is_changing_scene", &[]).to::<bool>() {
+						println!("!!!!!!!!!!!!!!rust: is changing scene, skipping reload");
+					} else {
+						EditorInterface::singleton().reload_scene_from_path(&scene_path);
+					}
+				} else {
+					println!("rust: failed to reload scene: {}", scene_path);
 				}
             }
         }
