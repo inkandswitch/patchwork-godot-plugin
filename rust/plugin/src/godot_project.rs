@@ -34,7 +34,7 @@ use std::{collections::HashMap, str::FromStr};
 use crate::file_system_driver::{FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
 use crate::godot_parser::{self, GodotScene, TypeOrInstance};
 use crate::godot_project_driver::{BranchState, ConnectionThreadError, DocHandleType};
-use crate::patches::{get_changed_files, get_changed_files_vec};
+use crate::patches::{get_changed_files_vec};
 use crate::patchwork_config::PatchworkConfig;
 use crate::utils::{array_to_heads, heads_to_array, parse_automerge_url, CommitMetadata};
 use crate::{
@@ -224,41 +224,6 @@ impl GodotProject {
             .get_singleton(&StringName::from("GodotProject"))
             .unwrap()
             .cast::<Self>()
-    }
-
-    #[func]
-    fn get_changed_files(&self, heads: PackedStringArray) -> PackedStringArray {
-        self.get_changed_files_between(heads, PackedStringArray::new())
-    }
-
-    #[func]
-    fn get_changed_files_between(
-        &self,
-        heads: PackedStringArray,
-        curr_heads: PackedStringArray,
-    ) -> PackedStringArray {
-        let heads = array_to_heads(heads);
-        // if curr_heads is empty, we're comparing against the current heads
-
-        let checked_out_branch_state = match self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state,
-            None => return PackedStringArray::new(),
-        };
-
-        let curr_heads = if curr_heads.len() == 0 {
-            checked_out_branch_state.synced_heads.clone()
-        } else {
-            array_to_heads(curr_heads)
-        };
-
-        let patches = checked_out_branch_state.doc_handle.with_doc(|d| {
-            d.diff(
-                &heads,
-                &curr_heads,
-                TextRepresentation::String(TextEncoding::Utf8CodeUnit),
-            )
-        });
-        get_changed_files(&patches)
     }
 
     #[func]
