@@ -200,6 +200,7 @@ pub struct GodotProjectDriver {
     repo_handle: RepoHandle,
 
 	connection_thread_output_rx: Option<UnboundedReceiver<String>>,
+	retries: u32,
     connection_thread: Option<JoinHandle<()>>,
     spawned_thread: Option<JoinHandle<()>>,
 }
@@ -222,6 +223,7 @@ impl GodotProjectDriver {
         return Self {
             runtime,
             repo_handle,
+			retries: 0,
 			connection_thread_output_rx: None,
             connection_thread: None,
             spawned_thread: None,
@@ -271,6 +273,7 @@ impl GodotProjectDriver {
 				error_str.push_str(&error);
 			}
 			if self.connection_thread_died() {
+				self.retries += 1;
 				return Some(ConnectionThreadError::ConnectionThreadDied(error_str));
 			}
 			if !error_str.is_empty() {
@@ -280,24 +283,33 @@ impl GodotProjectDriver {
 		None
 	}
 
-	pub fn respawn_connection_thread(&mut self) {
+	pub fn respawn_connection_thread(&mut self) -> bool {
 		if let Some(connection_thread) = self.connection_thread.take() {
 			if !connection_thread.is_finished() {
 				println!("rust: WARNING: connection thread is not finished, aborting");
 				connection_thread.abort();
 			}
 		}
+		if self.retries > 6 {
+			println!("rust: connection thread failed too many times, aborting");
+			return false;
+		}
 		let (connection_thread_tx, connection_thread_rx) = futures::channel::mpsc::unbounded();
 		self.connection_thread_output_rx = Some(connection_thread_rx);
 		self.connection_thread = Some(self.spawn_connection_task(connection_thread_tx));
+		return true;
 	}
 
     fn spawn_connection_task(&self, connection_thread_tx: UnboundedSender<String>) -> JoinHandle<()> {
         let repo_handle_clone = self.repo_handle.clone();
-
+		let retries = self.retries;
         return self.runtime.spawn(async move {
             println!("start a client");
-
+			let backoff = 2_f64.powf(retries as f64) * 100.0;
+			if backoff > 0.0 {
+				println!("rust: connection thread failed, retrying in {}ms...", backoff);
+				tokio::time::sleep(std::time::Duration::from_millis(backoff as u64)).await;
+			}
             loop {
                 // Start a client.
                 let stream = loop {

@@ -1988,7 +1988,11 @@ impl INode for GodotProject {
 				match error {
 					ConnectionThreadError::ConnectionThreadDied(error) => {
 						println!("rust: file system driver connection thread died, respawning: {}", error);
-						driver.respawn_connection_thread();
+						if !driver.respawn_connection_thread() {
+							println!("rust: file system driver connection thread failed too many times, aborting");
+							// TODO: make the GUI do something with this
+							self.base_mut().emit_signal("connection_thread_failed", &[]);
+						}
 					}
 					ConnectionThreadError::ConnectionThreadError(error) => {
 						println!("rust: file system driver connection thread error: {}", error);
