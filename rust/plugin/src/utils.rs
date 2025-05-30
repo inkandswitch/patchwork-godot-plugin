@@ -4,13 +4,12 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use crate::{doc_utils::SimpleDocReader, godot_project_driver::BranchState};
+use crate::{doc_utils::SimpleDocReader, godot_helpers::{ToGodotExt, ToVariantExt}, godot_project_driver::BranchState};
 use automerge::{
-    transaction::{CommitOptions, Transaction},
-    ChangeHash, ReadDoc, ROOT,
+    transaction::{CommitOptions, Transaction}, Change, ChangeHash, ReadDoc, ROOT
 };
 use automerge_repo::{DocHandle, DocumentId, RepoHandle};
-use godot::builtin::{Array, GString, PackedStringArray};
+use godot::{builtin::{dict, Array, Dictionary, GString, PackedStringArray, Variant}, meta::ToGodot, prelude::GodotConvert};
 use serde::{Deserialize, Serialize};
 use serde_json::Serializer;
 
@@ -143,4 +142,127 @@ pub(crate) fn strategic_waiting(loc: &str) {
 		count -= 100;
 	}
 	println!("Done waiting");
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CommitInfo {
+	pub hash: String,
+	pub timestamp: i64,
+	pub metadata: Option<CommitMetadata>,
+}
+
+impl GodotConvert for MergeMetadata {
+	type Via = Dictionary;
+}
+
+impl ToGodot for MergeMetadata {
+	type ToVia<'v> = Dictionary;
+	fn to_godot(&self) -> Dictionary {
+		dict! {
+			"merged_branch_id": self.merged_branch_id.to_godot(),
+			"merged_at_heads": self.merged_at_heads.to_godot(),
+			"forked_at_heads": self.forked_at_heads.to_godot(),
+		}
+	}
+	fn to_variant(&self) -> Variant {
+				dict! {
+			"merged_branch_id": self.merged_branch_id.to_godot(),
+			"merged_at_heads": self.merged_at_heads.to_godot(),
+			"forked_at_heads": self.forked_at_heads.to_godot(),
+		}.to_variant()
+	}
+}
+
+impl GodotConvert for CommitInfo {
+	type Via = Dictionary;
+}
+
+impl ToGodot for CommitInfo {
+	type ToVia<'v> = Dictionary;
+	fn to_godot(&self) -> Dictionary {
+		let mut md = dict! {
+			"hash": self.hash.to_godot(),
+			"timestamp": self.timestamp.to_godot(),
+		};
+		if let Some(metadata) = &self.metadata {
+			if let Some(username) = &metadata.username {
+				let _ = md.insert("username", username.to_godot());
+			}
+			if let Some(branch_id) = &metadata.branch_id {
+				let _ = md.insert("branch_id", branch_id.to_godot());
+			}
+			if let Some(merge_metadata) = &metadata.merge_metadata {
+				let _ = md.insert("merge_metadata", merge_metadata.to_godot());
+			}
+		}
+		md
+	}
+	fn to_variant(&self) -> Variant {
+		self.to_godot().to_variant()
+	}
+}
+
+impl From<&&Change> for CommitInfo {
+	fn from(change: &&Change) -> Self {
+		CommitInfo {
+			hash: change.hash().to_string(),
+			timestamp: change.timestamp(),
+			metadata: change.message().and_then(|m| serde_json::from_str::<CommitMetadata>(&m).ok()),
+		}
+	}
+}
+
+fn branch_state_to_dict(branch_state: &BranchState) -> Dictionary {
+    let mut branch = dict! {
+        "name": branch_state.name.clone(),
+        "id": branch_state.doc_handle.document_id().to_string(),
+        "is_main": branch_state.is_main,
+
+        // we shouldn't have branches that don't have any changes but sometimes
+        // the branch docs are not synced correctly so this flag is used in the UI to
+        // indicate that the branch is not loaded and prevent users from checking it out
+        "is_not_loaded": branch_state.doc_handle.with_doc(|d| d.get_heads().len() == 0),
+        "heads": heads_to_array(branch_state.synced_heads.clone()),
+        "is_merge_preview": branch_state.merge_info.is_some(),
+    };
+
+    if let Some(fork_info) = &branch_state.fork_info {
+        let _ = branch.insert("forked_from", fork_info.forked_from.to_string());
+        let _ = branch.insert("forked_at", heads_to_array(fork_info.forked_at.clone()));
+    }
+
+    if let Some(merge_info) = &branch_state.merge_info {
+        let _ = branch.insert("merge_into", merge_info.merge_into.to_string());
+        let _ = branch.insert("merge_at", heads_to_array(merge_info.merge_at.clone()));
+    }
+
+    branch
+}
+
+impl GodotConvert for BranchState {
+	type Via = Dictionary;
+}
+
+impl ToGodot for BranchState {
+	type ToVia<'v> = Dictionary;
+	fn to_godot(&self) -> Dictionary {
+		branch_state_to_dict(self)
+	}
+}
+
+impl ToVariantExt for Option<BranchState> {
+	fn _to_variant(&self) -> Variant {
+		match self {
+			Some(branch_state) => branch_state.to_godot().to_variant(),
+			None => Variant::nil(),
+		}
+	}
+}
+impl ToVariantExt for Option<&BranchState> {
+	fn _to_variant(&self) -> Variant {
+		match self {
+			Some(branch_state) => branch_state.to_godot().to_variant(),
+			None => Variant::nil(),
+		}
+	}
 }
