@@ -10,12 +10,10 @@ use automerge::{Automerge, ObjId, Patch, PatchAction, Prop};
 use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
 use autosurgeon::{Hydrate, Reconcile};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
-use futures::io::empty;
 use godot::classes::file_access::ModeFlags;
 use godot::classes::resource_loader::CacheMode;
 use godot::classes::{Control, EditorFileSystem, MarginContainer};
 use godot::classes::EditorInterface;
-use godot::classes::Image;
 use godot::classes::ProjectSettings;
 use godot::classes::ResourceLoader;
 use godot::classes::{ClassDb, EditorPlugin, Engine, IEditorPlugin};
@@ -23,20 +21,19 @@ use godot::global::str_to_var;
 use godot::meta::{AsArg, ParamType};
 use godot::classes::{ResourceUid, ConfigFile, DirAccess, FileAccess, ResourceImporter};
 use godot::prelude::*;
-use safer_ffi::layout::OpaqueKind::T;
 use std::any::Any;
 use std::collections::HashSet;
-use std::io::BufWriter;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{collections::HashMap, str::FromStr};
-
+use crate::godot_helpers::{ToGodotExt, ToVariantExt};
+use crate::godot_helpers::ToRust;
 use crate::file_system_driver::{FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
 use crate::godot_parser::{self, GodotScene, TypeOrInstance};
 use crate::godot_project_driver::{BranchState, ConnectionThreadError, DocHandleType};
 use crate::patches::{get_changed_files_vec};
 use crate::patchwork_config::PatchworkConfig;
-use crate::utils::{array_to_heads, heads_to_array, parse_automerge_url, CommitMetadata};
+use crate::utils::{array_to_heads, heads_to_array, parse_automerge_url, CommitInfo};
 use crate::{
     doc_utils::SimpleDocReader,
     godot_project_driver::{GodotProjectDriver, InputEvent, OutputEvent},
@@ -185,39 +182,48 @@ impl GodotProject {
 
     #[func]
     fn get_project_doc_id(&self) -> Variant {
-        match &self.project_doc_id {
-            Some(doc_id) => GString::from(doc_id.to_string()).to_variant(),
-            None => Variant::nil(),
-        }
+        self._get_project_doc_id().to_variant()
     }
+
+    fn _get_project_doc_id(&self) -> Option<DocumentId> {
+		self.project_doc_id.clone()
+	}
 
     #[func]
     fn get_heads(&self) -> PackedStringArray /* String[] */ {
-        match &self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state
-                .doc_handle
-                .with_doc(|d| d.get_heads())
-                .iter()
-                .map(|h| GString::from(h.to_string()))
-                .collect::<PackedStringArray>(),
-            _ => PackedStringArray::new(),
-        }
+        self._get_heads().to_godot()
     }
 
+	fn _get_heads(&self) -> Vec<ChangeHash> {
+		match &self.get_checked_out_branch_state() {
+            Some(branch_state) => branch_state
+                .doc_handle
+                .with_doc(|d| d.get_heads()),
+				_ => Vec::new(),
+		}
+	}
+
     #[func]
-    fn get_files(&self) -> Dictionary {
+	fn get_files(&self) -> PackedStringArray {
+		self._get_files().to_godot()
+	}
+
+
+    fn _get_files(&self) -> Vec<String> {
         let files = self._get_files_at(&None);
 
-        let mut result = Dictionary::new();
+        // let mut result = Dictionary::new();
+		let mut result: Vec<String> = Vec::new();
 
-        for (path, content) in files {
-            let _ = result.insert(path, content.to_variant());
+        for (path, _) in files {
+            let _ = result.push(path);
         }
 
         result
     }
 
 
+	// TODO: move to GodotProjectNode
     #[func]
     pub fn get_singleton() -> Gd<Self> {
         Engine::singleton()
@@ -228,9 +234,14 @@ impl GodotProject {
 
     #[func]
     fn get_changes(&self) -> Array<Dictionary> /* String[]  */ {
+		let changes = self._get_changes();
+		changes.iter().map(|c| c.to_godot()).collect::<Array<Dictionary>>()
+	}
+
+	fn _get_changes(&self) -> Vec<CommitInfo> {
         let checked_out_branch_doc = match &self.get_checked_out_branch_state() {
             Some(branch_state) => branch_state.doc_handle.with_doc(|d| d.clone()),
-            _ => return Array::new(),
+            _ => return Vec::new(),
         };
 
         checked_out_branch_doc
@@ -238,72 +249,43 @@ impl GodotProject {
             .to_vec()
             .iter()
             .map(|c| {
-                let a = c.message();
-
-                let mut commit_dict = dict! {
-                    "hash": GString::from(c.hash().to_string()).to_variant(),
-                    "timestamp": c.timestamp(),
-                };
-
-                if let Some(metadata) = c
-                    .message()
-                    .and_then(|m| serde_json::from_str::<CommitMetadata>(&m).ok())
-                {
-                    if let Some(username) = metadata.username {
-                        let _ =
-                            commit_dict.insert("username", GString::from(username).to_variant());
-                    }
-
-                    if let Some(branch_id) = metadata.branch_id {
-                        let _ =
-                            commit_dict.insert("branch_id", GString::from(branch_id).to_variant());
-                    }
-
-                    if let Some(merge_metadata) = metadata.merge_metadata {
-                        let merge_metadata_dict = dict! {
-                            "merged_branch_id": GString::from(merge_metadata.merged_branch_id).to_variant(),
-                            "merged_at_heads": merge_metadata.merged_at_heads.iter().map(|h| GString::from(h.to_string())).collect::<PackedStringArray>().to_variant(),
-                            "forked_at_heads": merge_metadata.forked_at_heads.iter().map(|h| GString::from(h.to_string())).collect::<PackedStringArray>().to_variant(),
-                        };
-
-                        let _ = commit_dict.insert("merge_metadata", merge_metadata_dict);
-                    }
-                }
-
-                commit_dict
+                CommitInfo::from(c)
             })
-            .collect::<Array<Dictionary>>()
+            .collect::<Vec<CommitInfo>>()
     }
 
     #[func]
     fn get_main_branch(&self) -> Variant /* Branch? */ {
-        match &self
+		self._get_main_branch().to_variant()
+	}
+
+	fn _get_main_branch(&self) -> Option<&BranchState> {
+		self
             .branch_states
             .values()
             .find(|branch_state| branch_state.is_main)
-        {
-            Some(branch_state) => branch_state_to_dict(branch_state).to_variant(),
-            None => Variant::nil(),
-        }
     }
 
     #[func]
     fn get_branch_by_id(&self, branch_id: String) -> Variant /* Branch? */ {
-        match DocumentId::from_str(&branch_id) {
+		self._get_branch_by_id(&branch_id).to_variant()
+	}
+
+	fn _get_branch_by_id(&self, branch_id: &String) -> Option<&BranchState> {
+        match DocumentId::from_str(branch_id) {
             Ok(id) => self
                 .branch_states
-                .get(&id)
-                .map(|branch_state| branch_state_to_dict(branch_state).to_variant())
-                .unwrap_or(Variant::nil()),
-            Err(_) => Variant::nil(),
+                .get(&id),
+            Err(_) => None,
         }
     }
 
     #[func]
     fn merge_branch(&mut self, source_branch_doc_id: String, target_branch_doc_id: String) {
-        let source_branch_doc_id = DocumentId::from_str(&source_branch_doc_id).unwrap();
-        let target_branch_doc_id = DocumentId::from_str(&target_branch_doc_id).unwrap();
+		self._merge_branch(DocumentId::from_str(&source_branch_doc_id).unwrap(), DocumentId::from_str(&target_branch_doc_id).unwrap());
+	}
 
+	fn _merge_branch(&mut self, source_branch_doc_id: DocumentId, target_branch_doc_id: DocumentId) {
         self.driver_input_tx
             .unbounded_send(InputEvent::MergeBranch {
                 source_branch_doc_id: source_branch_doc_id,
@@ -317,6 +299,10 @@ impl GodotProject {
 
     #[func]
     fn create_branch(&mut self, name: String) {
+		self._create_branch(name);
+	}
+
+	fn _create_branch(&mut self, name: String) {
         let source_branch_doc_id = match &self.get_checked_out_branch_state() {
             Some(branch_state) => branch_state.doc_handle.document_id(),
             None => {
@@ -340,8 +326,16 @@ impl GodotProject {
         source_branch_doc_id: String,
         target_branch_doc_id: String,
     ) {
-        let source_branch_doc_id = DocumentId::from_str(&source_branch_doc_id).unwrap();
+		let source_branch_doc_id = DocumentId::from_str(&source_branch_doc_id).unwrap();
         let target_branch_doc_id = DocumentId::from_str(&target_branch_doc_id).unwrap();
+		self._create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id);
+	}
+
+	fn _create_merge_preview_branch(
+		&mut self,
+		source_branch_doc_id: DocumentId,
+		target_branch_doc_id: DocumentId,
+	) {
 
         self.driver_input_tx
             .unbounded_send(InputEvent::CreateMergePreviewBranch {
@@ -353,8 +347,10 @@ impl GodotProject {
 
     #[func]
     fn delete_branch(&mut self, branch_doc_id: String) {
-        let branch_doc_id = DocumentId::from_str(&branch_doc_id).unwrap();
+		self._delete_branch(DocumentId::from_str(&branch_doc_id).unwrap());
+	}
 
+	fn _delete_branch(&mut self, branch_doc_id: DocumentId) {
         self.driver_input_tx
             .unbounded_send(InputEvent::DeleteBranch { branch_doc_id })
             .unwrap();
@@ -406,16 +402,19 @@ impl GodotProject {
     // filters out merge preview branches
     #[func]
     fn get_branches(&self) -> Array<Dictionary> /* { name: String, id: String }[] */ {
+		self._get_branches().iter().map(|b| b.to_godot()).collect::<Array<Dictionary>>()
+	}
+
+	fn _get_branches(&self) -> Vec<&BranchState> {
         let mut branches = self
             .branch_states
             .values()
             .filter(|branch_state| branch_state.merge_info.is_none())
-            .map(branch_state_to_dict)
-            .collect::<Vec<Dictionary>>();
+            .collect::<Vec<&BranchState>>();
 
         branches.sort_by(|a, b| {
-            let a_is_main = a.get("is_main").unwrap().to::<bool>();
-            let b_is_main = b.get("is_main").unwrap().to::<bool>();
+            let a_is_main = a.is_main;
+            let b_is_main = b.is_main;
 
             if a_is_main && !b_is_main {
                 return std::cmp::Ordering::Less;
@@ -424,31 +423,32 @@ impl GodotProject {
                 return std::cmp::Ordering::Greater;
             }
 
-            let name_a = a.get("name").unwrap().to_string().to_lowercase();
-            let name_b = b.get("name").unwrap().to_string().to_lowercase();
+            let name_a = a.name.clone().to_lowercase();
+            let name_b = b.name.clone().to_lowercase();
             name_a.cmp(&name_b)
         });
 
-        Array::from_iter(branches)
+        branches
     }
 
     #[func]
     fn get_checked_out_branch(&self) -> Variant /* {name: String, id: String, is_main: bool}? */ {
-        match &self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state_to_dict(branch_state).to_variant(),
-            None => Variant::nil(),
-        }
-    }
+		self.get_checked_out_branch_state().to_variant()
+	}
 
     #[func]
     fn get_sync_server_connection_info(&self) -> Variant {
-        match &self.sync_server_connection_info {
+        match self._get_sync_server_connection_info() {
             Some(peer_connection_info) => {
                 peer_connection_info_to_dict(peer_connection_info).to_variant()
             }
             None => Variant::nil(),
         }
     }
+
+	fn _get_sync_server_connection_info(&self) -> Option<&PeerConnectionInfo> {
+		self.sync_server_connection_info.as_ref()
+	}
 
 
     #[func]
@@ -2347,6 +2347,7 @@ impl INode for GodotProject {
     }
 }
 
+
 #[derive(GodotClass)]
 #[class(init, base=EditorPlugin, tool)]
 pub struct GodotProjectPlugin {
@@ -2455,32 +2456,6 @@ fn match_path(path: &Vec<Prop>, patch: &Patch) -> Option<PathWithAction> {
     })
 }
 
-fn branch_state_to_dict(branch_state: &BranchState) -> Dictionary {
-    let mut branch = dict! {
-        "name": branch_state.name.clone(),
-        "id": branch_state.doc_handle.document_id().to_string(),
-        "is_main": branch_state.is_main,
-
-        // we shouldn't have branches that don't have any changes but sometimes
-        // the branch docs are not synced correctly so this flag is used in the UI to
-        // indicate that the branch is not loaded and prevent users from checking it out
-        "is_not_loaded": branch_state.doc_handle.with_doc(|d| d.get_heads().len() == 0),
-        "heads": heads_to_array(branch_state.synced_heads.clone()),
-        "is_merge_preview": branch_state.merge_info.is_some(),
-    };
-
-    if let Some(fork_info) = &branch_state.fork_info {
-        let _ = branch.insert("forked_from", fork_info.forked_from.to_string());
-        let _ = branch.insert("forked_at", heads_to_array(fork_info.forked_at.clone()));
-    }
-
-    if let Some(merge_info) = &branch_state.merge_info {
-        let _ = branch.insert("merge_into", merge_info.merge_into.to_string());
-        let _ = branch.insert("merge_at", heads_to_array(merge_info.merge_at.clone()));
-    }
-
-    branch
-}
 
 fn peer_connection_info_to_dict(peer_connection_info: &PeerConnectionInfo) -> Dictionary {
     let mut doc_sync_states = Dictionary::new();
