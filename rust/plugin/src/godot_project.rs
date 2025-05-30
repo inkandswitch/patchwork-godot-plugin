@@ -217,95 +217,6 @@ impl GodotProject {
         result
     }
 
-    fn _get_files_at(&self, heads: &Option<Vec<ChangeHash>>) -> HashMap<String, FileContent> {
-        let mut files = HashMap::new();
-
-        let branch_state = match self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state,
-            None => return files,
-        };
-
-        let heads = match heads {
-            Some(heads) => heads.clone(),
-            None => branch_state.synced_heads.clone(),
-        };
-		println!("rust: _get_files_at: {:?}, heads: {:?}", branch_state.name, heads);
-
-        let doc = branch_state.doc_handle.with_doc(|d| d.clone());
-
-        let files_obj_id = doc.get_at(ROOT, "files", &heads).unwrap().unwrap().1;
-
-        for path in doc.keys_at(&files_obj_id, &heads) {
-            let file_entry = match doc.get_at(&files_obj_id, &path, &heads) {
-                Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
-                _ => panic!("failed to get file entry for {:?}", path),
-            };
-
-            let structured_content = doc
-                .get_at(&file_entry, "structured_content", &heads)
-                .unwrap()
-                .map(|(value, _)| value);
-
-            if structured_content.is_some() {
-                let scene: GodotScene = GodotScene::hydrate_at(&doc, &path, &heads).ok().unwrap();
-                files.insert(path, FileContent::Scene(scene));
-                continue;
-            }
-
-            // try to read file as text
-            let content = doc.get_at(&file_entry, "content", &heads);
-
-            match content {
-                Ok(Some((automerge::Value::Object(ObjType::Text), content))) => {
-                    match doc.text_at(content, &heads) {
-                        Ok(text) => {
-                            files.insert(path, FileContent::String(text.to_string()));
-                            continue;
-                        }
-                        Err(e) => println!("failed to read text file {:?}: {:?}", path, e),
-                    }
-                }
-                _ => match doc.get_string_at(&file_entry, "content", &heads) {
-                    Some(s) => {
-                        files.insert(path, FileContent::String(s.to_string()));
-                        continue;
-                    }
-                    _ => {}
-                },
-            }
-
-            // ... otherwise try to read as linked binary doc
-            let linked_file_content = doc
-                .get_string_at(&file_entry, "url", &heads)
-                .and_then(|url| parse_automerge_url(&url))
-                .and_then(|doc_id| self.doc_handles.get(&doc_id))
-                .map(|doc_handle| {
-                    doc_handle.with_doc(|d| match d.get(ROOT, "content") {
-                        Ok(Some((value, _))) if value.is_bytes() => {
-                            FileContent::Binary(value.into_bytes().unwrap())
-                        }
-                        Ok(Some((value, _))) if value.is_str() => {
-                            FileContent::String(value.into_string().unwrap())
-                        }
-                        _ => {
-                            panic!(
-                                "failed to read binary doc {:?} {:?} {:?}",
-                                path,
-                                doc_handle.document_id(),
-                                doc_handle.with_doc(|d| d.get_heads())
-                            );
-                        }
-                    })
-                });
-            if let Some(file_content) = linked_file_content {
-                files.insert(path, file_content);
-            }
-        }
-
-        return files;
-
-        // try to read file as scene
-    }
 
     #[func]
     pub fn get_singleton() -> Gd<Self> {
@@ -465,127 +376,6 @@ impl GodotProject {
     fn save_file_at(&self, path: String, heads: PackedStringArray, content: Variant) {
         self.save_files_at(dict! { path: content }, heads);
     }
-
-    fn _save_files(
-        &self,
-        branch_doc_handle: DocHandle,
-        files: Dictionary, /*  Record<String, Variant> */
-        heads: Option<Vec<ChangeHash>>,
-    ) {
-		let branch_state = match self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state,
-            None => {
-				println!("rust: _save_files: no checked out branch");
-				return;
-			},
-        };
-
-        let heads = match heads {
-            Some(heads) => heads.clone(),
-            None => branch_state.synced_heads.clone(),
-        };
-		println!("rust: _save_files: {:?}, heads: {:?}", branch_state.name, heads);
-
-        let stored_files = self._get_files_at(&Some(heads.clone()));
-
-        // we filter the files here because godot sends us indiscriminately all the files in the project
-        // we only want to save the files that have actually changed
-        let changed_files: Vec<(String, FileContent)> = files
-            .iter_shared()
-            .filter_map(|(path, content)| {
-                let stored_content = stored_files.get(&path.to_string());
-
-                match content.get_type() {
-                    VariantType::STRING => {
-                        let new_content = String::from(content.to::<GString>());
-
-                        // save scene files as structured data
-                        if path.to_string().ends_with(".tscn") {
-                            let new_scene = match godot_parser::parse_scene(&new_content) {
-                                Ok(scene) => scene,
-                                Err(error) => {
-                                    println!("RUST: error parsing scene {}: {:?}", path, error);
-                                    return None;
-                                }
-                            };
-
-                            if let Some(FileContent::Scene(stored_scene)) = stored_content {
-                                if stored_scene == &new_scene {
-                                    println!("file {:?} is already up to date", path.to_string());
-                                    return None;
-                                }
-                            }
-
-                            return Some((path.to_string(), FileContent::Scene(new_scene)));
-                        }
-
-                        if let Some(FileContent::String(stored_text)) = stored_content {
-                            if stored_text == &new_content {
-                                println!("file {:?} is already up to date", path.to_string());
-                                return None;
-                            }
-                        }
-
-                        Some((path.to_string(), FileContent::String(new_content)))
-                    }
-                    VariantType::PACKED_BYTE_ARRAY => {
-                        let new_content = content.to::<PackedByteArray>().to_vec();
-
-                        if let Some(FileContent::Binary(stored_binary_content)) = stored_content {
-                            if stored_binary_content == &new_content {
-                                println!("file {:?} is already up to date", path.to_string());
-                                return None;
-                            }
-                        }
-
-                        Some((path.to_string(), FileContent::Binary(new_content)))
-                    }
-                    _ => panic!("invalid content type"),
-                }
-            })
-            .collect();
-
-        self.driver_input_tx
-            .unbounded_send(InputEvent::SaveFiles {
-                branch_doc_handle,
-                heads: Some(heads.clone()),
-                files: changed_files,
-            })
-            .unwrap();
-    }
-
-
-    fn _sync_files_at(&self,
-                      branch_doc_handle: DocHandle,
-                      files: Vec<(PathBuf, FileContent)>, /*  Record<String, Variant> */
-                      heads: Option<Vec<ChangeHash>>)
-    {
-        let stored_files = self._get_files_at(&heads);
-
-        let changed_files: Vec<(String, FileContent)> = files.iter().filter_map(|(path, content)| {
-            let path = path.to_string_lossy().to_string();
-            let stored_content = stored_files.get(&path);
-            if let Some(stored_content) = stored_content {
-                if stored_content == content {
-                    return None;
-                }
-            }
-            Some((path.to_string(), content.clone()))
-        }).collect();
-        let _ = self.driver_input_tx
-            .unbounded_send(InputEvent::SaveFiles {
-                branch_doc_handle,
-                heads,
-                files: changed_files,
-            });
-    }
-
-
-    fn _get_file_at(&self, path: String, heads: Option<Vec<ChangeHash>>) -> Option<FileContent> {
-        let files = self._get_files_at(&heads);
-        files.get(&path).cloned()
-    }
-
     #[func]
     fn merge_branch(&mut self, source_branch_doc_id: String, target_branch_doc_id: String) {
         let source_branch_doc_id = DocumentId::from_str(&source_branch_doc_id).unwrap();
@@ -842,20 +632,6 @@ impl GodotProject {
         });
     }
 
-    fn get_checked_out_branch_state(&self) -> Option<BranchState> {
-        match &self.checked_out_branch_state {
-            CheckedOutBranchState::CheckedOut(branch_doc_id) => {
-                Some(self.branch_states.get(&branch_doc_id).unwrap().clone())
-            }
-            _ => {
-                println!(
-                    "warning: tried to get checked out branch state when nothing is checked out"
-                );
-                None
-            }
-        }
-    }
-
     #[func]
     fn get_all_changes_between(
         &self,
@@ -875,6 +651,233 @@ impl GodotProject {
             }
         }
         String::new()
+    }
+
+	// INTERNAL FUNCTIONS
+
+    fn _get_files_at(&self, heads: &Option<Vec<ChangeHash>>) -> HashMap<String, FileContent> {
+        let mut files = HashMap::new();
+
+        let branch_state = match self.get_checked_out_branch_state() {
+            Some(branch_state) => branch_state,
+            None => return files,
+        };
+
+        let heads = match heads {
+            Some(heads) => heads.clone(),
+            None => branch_state.synced_heads.clone(),
+        };
+		println!("rust: _get_files_at: {:?}, heads: {:?}", branch_state.name, heads);
+
+        let doc = branch_state.doc_handle.with_doc(|d| d.clone());
+
+        let files_obj_id = doc.get_at(ROOT, "files", &heads).unwrap().unwrap().1;
+
+        for path in doc.keys_at(&files_obj_id, &heads) {
+            let file_entry = match doc.get_at(&files_obj_id, &path, &heads) {
+                Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
+                _ => panic!("failed to get file entry for {:?}", path),
+            };
+
+            let structured_content = doc
+                .get_at(&file_entry, "structured_content", &heads)
+                .unwrap()
+                .map(|(value, _)| value);
+
+            if structured_content.is_some() {
+                let scene: GodotScene = GodotScene::hydrate_at(&doc, &path, &heads).ok().unwrap();
+                files.insert(path, FileContent::Scene(scene));
+                continue;
+            }
+
+            // try to read file as text
+            let content = doc.get_at(&file_entry, "content", &heads);
+
+            match content {
+                Ok(Some((automerge::Value::Object(ObjType::Text), content))) => {
+                    match doc.text_at(content, &heads) {
+                        Ok(text) => {
+                            files.insert(path, FileContent::String(text.to_string()));
+                            continue;
+                        }
+                        Err(e) => println!("failed to read text file {:?}: {:?}", path, e),
+                    }
+                }
+                _ => match doc.get_string_at(&file_entry, "content", &heads) {
+                    Some(s) => {
+                        files.insert(path, FileContent::String(s.to_string()));
+                        continue;
+                    }
+                    _ => {}
+                },
+            }
+
+            // ... otherwise try to read as linked binary doc
+            let linked_file_content = doc
+                .get_string_at(&file_entry, "url", &heads)
+                .and_then(|url| parse_automerge_url(&url))
+                .and_then(|doc_id| self.doc_handles.get(&doc_id))
+                .map(|doc_handle| {
+                    doc_handle.with_doc(|d| match d.get(ROOT, "content") {
+                        Ok(Some((value, _))) if value.is_bytes() => {
+                            FileContent::Binary(value.into_bytes().unwrap())
+                        }
+                        Ok(Some((value, _))) if value.is_str() => {
+                            FileContent::String(value.into_string().unwrap())
+                        }
+                        _ => {
+                            panic!(
+                                "failed to read binary doc {:?} {:?} {:?}",
+                                path,
+                                doc_handle.document_id(),
+                                doc_handle.with_doc(|d| d.get_heads())
+                            );
+                        }
+                    })
+                });
+            if let Some(file_content) = linked_file_content {
+                files.insert(path, file_content);
+            }
+        }
+
+        return files;
+
+        // try to read file as scene
+    }
+
+
+    fn _save_files(
+        &self,
+        branch_doc_handle: DocHandle,
+        files: Dictionary, /*  Record<String, Variant> */
+        heads: Option<Vec<ChangeHash>>,
+    ) {
+		let branch_state = match self.get_checked_out_branch_state() {
+            Some(branch_state) => branch_state,
+            None => {
+				println!("rust: _save_files: no checked out branch");
+				return;
+			},
+        };
+
+        let heads = match heads {
+            Some(heads) => heads.clone(),
+            None => branch_state.synced_heads.clone(),
+        };
+		println!("rust: _save_files: {:?}, heads: {:?}", branch_state.name, heads);
+
+        let stored_files = self._get_files_at(&Some(heads.clone()));
+
+        // we filter the files here because godot sends us indiscriminately all the files in the project
+        // we only want to save the files that have actually changed
+        let changed_files: Vec<(String, FileContent)> = files
+            .iter_shared()
+            .filter_map(|(path, content)| {
+                let stored_content = stored_files.get(&path.to_string());
+
+                match content.get_type() {
+                    VariantType::STRING => {
+                        let new_content = String::from(content.to::<GString>());
+
+                        // save scene files as structured data
+                        if path.to_string().ends_with(".tscn") {
+                            let new_scene = match godot_parser::parse_scene(&new_content) {
+                                Ok(scene) => scene,
+                                Err(error) => {
+                                    println!("RUST: error parsing scene {}: {:?}", path, error);
+                                    return None;
+                                }
+                            };
+
+                            if let Some(FileContent::Scene(stored_scene)) = stored_content {
+                                if stored_scene == &new_scene {
+                                    println!("file {:?} is already up to date", path.to_string());
+                                    return None;
+                                }
+                            }
+
+                            return Some((path.to_string(), FileContent::Scene(new_scene)));
+                        }
+
+                        if let Some(FileContent::String(stored_text)) = stored_content {
+                            if stored_text == &new_content {
+                                println!("file {:?} is already up to date", path.to_string());
+                                return None;
+                            }
+                        }
+
+                        Some((path.to_string(), FileContent::String(new_content)))
+                    }
+                    VariantType::PACKED_BYTE_ARRAY => {
+                        let new_content = content.to::<PackedByteArray>().to_vec();
+
+                        if let Some(FileContent::Binary(stored_binary_content)) = stored_content {
+                            if stored_binary_content == &new_content {
+                                println!("file {:?} is already up to date", path.to_string());
+                                return None;
+                            }
+                        }
+
+                        Some((path.to_string(), FileContent::Binary(new_content)))
+                    }
+                    _ => panic!("invalid content type"),
+                }
+            })
+            .collect();
+
+        self.driver_input_tx
+            .unbounded_send(InputEvent::SaveFiles {
+                branch_doc_handle,
+                heads: Some(heads.clone()),
+                files: changed_files,
+            })
+            .unwrap();
+    }
+
+
+    fn _sync_files_at(&self,
+                      branch_doc_handle: DocHandle,
+                      files: Vec<(PathBuf, FileContent)>, /*  Record<String, Variant> */
+                      heads: Option<Vec<ChangeHash>>)
+    {
+        let stored_files = self._get_files_at(&heads);
+
+        let changed_files: Vec<(String, FileContent)> = files.iter().filter_map(|(path, content)| {
+            let path = path.to_string_lossy().to_string();
+            let stored_content = stored_files.get(&path);
+            if let Some(stored_content) = stored_content {
+                if stored_content == content {
+                    return None;
+                }
+            }
+            Some((path.to_string(), content.clone()))
+        }).collect();
+        let _ = self.driver_input_tx
+            .unbounded_send(InputEvent::SaveFiles {
+                branch_doc_handle,
+                heads,
+                files: changed_files,
+            });
+    }
+
+
+    fn _get_file_at(&self, path: String, heads: Option<Vec<ChangeHash>>) -> Option<FileContent> {
+        let files = self._get_files_at(&heads);
+        files.get(&path).cloned()
+    }
+
+    fn get_checked_out_branch_state(&self) -> Option<BranchState> {
+        match &self.checked_out_branch_state {
+            CheckedOutBranchState::CheckedOut(branch_doc_id) => {
+                Some(self.branch_states.get(&branch_doc_id).unwrap().clone())
+            }
+            _ => {
+                println!(
+                    "warning: tried to get checked out branch state when nothing is checked out"
+                );
+                None
+            }
+        }
     }
 
     fn _write_variant_to_file(&self, path: &String, variant: &Variant) {
