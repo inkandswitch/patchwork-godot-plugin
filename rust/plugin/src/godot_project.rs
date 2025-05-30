@@ -484,6 +484,23 @@ impl GodotProject {
 		}
 	}
 
+	fn _get_linked_file(&self, doc_id: &DocumentId) -> Option<FileContent> {
+		self.doc_handles.get(&doc_id)
+		.map(|doc_handle| {
+			doc_handle.with_doc(|d| match d.get(ROOT, "content") {
+				Ok(Some((value, _))) if value.is_bytes() => {
+					Some(FileContent::Binary(value.into_bytes().unwrap()))
+				}
+				Ok(Some((value, _))) if value.is_str() => {
+					Some(FileContent::String(value.into_string().unwrap()))
+				}
+				_ => {
+					None
+				}
+			})
+		}).unwrap_or(None)
+	}
+
 	fn _get_files_on_branch_at(&self, branch_doc_id: DocumentId, heads: &Option<Vec<ChangeHash>>) -> HashMap<String, FileContent> {
 
         let mut files = HashMap::new();
@@ -530,25 +547,7 @@ impl GodotProject {
 		});
 
 		for (doc_id, path) in linked_doc_ids {
-			let linked_file_content: Option<FileContent> = self.doc_handles.get(&doc_id)
-				.map(|doc_handle| {
-					doc_handle.with_doc(|d| match d.get(ROOT, "content") {
-						Ok(Some((value, _))) if value.is_bytes() => {
-							FileContent::Binary(value.into_bytes().unwrap())
-						}
-						Ok(Some((value, _))) if value.is_str() => {
-							FileContent::String(value.into_string().unwrap())
-						}
-						_ => {
-							panic!(
-								"failed to read binary doc {:?} {:?} {:?}",
-								path,
-								doc_handle.document_id(),
-								doc_handle.with_doc(|d| d.get_heads())
-							);
-						}
-					})
-				});
+			let linked_file_content: Option<FileContent> = self._get_linked_file(&doc_id);
 			if let Some(file_content) = linked_file_content {
 				files.insert(path, file_content);
 			}
