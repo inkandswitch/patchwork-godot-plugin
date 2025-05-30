@@ -13,9 +13,9 @@ use tokio::{task::JoinHandle, time::{sleep, Duration}};
 use notify::{Watcher, RecursiveMode, Config, Event, EventHandler};
 use notify_debouncer_mini::{new_debouncer_opt, DebouncedEvent, Debouncer};
 // if on macos, use kqueue, otherwise use recommended
-#[cfg(target_os = "macos")]
-use notify::KqueueWatcher as WatcherImpl;
-#[cfg(not(target_os = "macos"))]
+// #[cfg(target_os = "macos")]
+// use notify::KqueueWatcher as WatcherImpl;
+// #[cfg(not(target_os = "macos"))]
 use notify::RecommendedWatcher as WatcherImpl;
 use std::sync::mpsc::channel;
 use std::time::Duration as StdDuration;
@@ -84,6 +84,14 @@ pub struct FileSystemDriver {
 impl FileSystemTask {
     // Check if a path should be ignored based on glob patterns
     fn should_ignore(&self, path: &PathBuf) -> bool {
+		// TODO: We should check if it's a symlink or not, but right now it's sufficient to just check if it's outside of the watch path
+		// check if it's outside of the watch path
+		if path.is_symlink() {
+			return true;
+		}
+		if !path.starts_with(&self.watch_path) {
+			return true;
+		}
         let path_str = path.to_string_lossy();
         self.ignore_globs.iter().any(|pattern| pattern.matches(&path_str))
     }
@@ -411,9 +419,6 @@ impl FileSystemTask {
 		let mut watcher = self.watcher.lock().await;
 		for path in paths.iter() {
 			let _ret = watcher.watcher().unwatch(path);
-			// if let Err(err) = _ret {
-				// println!("rust: failed to stop watching path {:?}", err);
-			// }
 		}
 	}
 
