@@ -12,10 +12,6 @@ use rlimit::{setrlimit, getrlimit, Resource};
 use tokio::{task::JoinHandle, time::{sleep, Duration}};
 use notify::{Watcher, RecursiveMode, Config, Event, EventHandler};
 use notify_debouncer_mini::{new_debouncer_opt, DebouncedEvent, Debouncer};
-// if on macos, use kqueue, otherwise use recommended
-// #[cfg(target_os = "macos")]
-// use notify::KqueueWatcher as WatcherImpl;
-// #[cfg(not(target_os = "macos"))]
 use notify::RecommendedWatcher as WatcherImpl;
 use std::sync::mpsc::channel;
 use std::time::Duration as StdDuration;
