@@ -488,7 +488,7 @@ impl GodotProject {
 
     fn _get_files_at(&self, heads: &Option<Vec<ChangeHash>>) -> HashMap<String, FileContent> {
 		match &self.checked_out_branch_state {
-			CheckedOutBranchState::CheckedOut(branch_doc_id, _) => self._get_files_on_branch_at(branch_doc_id.clone(), heads),
+			CheckedOutBranchState::CheckedOut(branch_doc_id) => self._get_files_on_branch_at(branch_doc_id.clone(), heads),
 			_ => panic!("rust: _get_files_at: no checked out branch"),
 		}
 	}
@@ -497,9 +497,12 @@ impl GodotProject {
 
         let mut files = HashMap::new();
 
-        let branch_state = match self.get_branch_state(&branch_doc_id) {
+        let branch_state = match self.branch_states.get(&branch_doc_id) {
             Some(branch_state) => branch_state,
-            None => return files,
+            None => {
+				println!("rust: _get_files_on_branch_at: branch doc id not found");
+				return files;
+			},
         };
 
         let heads = match heads {
