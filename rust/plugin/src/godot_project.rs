@@ -143,84 +143,58 @@ enum ChangeOp {
 
 #[godot_api]
 impl GodotProject {
-    #[signal]
-    fn started();
+	#[signal]
+	fn started();
 
-    #[signal]
-    fn checked_out_branch(branch: Dictionary);
+	#[signal]
+	fn checked_out_branch(branch: Dictionary);
 
-    #[signal]
-    fn files_changed();
+	#[signal]
+	fn files_changed();
 
-    #[signal]
-    fn saved_changes();
+	#[signal]
+	fn saved_changes();
 
-    #[signal]
-    fn branches_changed(branches: Array<Dictionary>);
+	#[signal]
+	fn branches_changed(branches: Array<Dictionary>);
 
-    #[signal]
-    fn shutdown_completed();
+	#[signal]
+	fn shutdown_completed();
 
-    #[signal]
-    fn sync_server_connection_info_changed(peer_connection_info: Dictionary);
+	#[signal]
+	fn sync_server_connection_info_changed(peer_connection_info: Dictionary);
 
-    // PUBLIC API
+	// PUBLIC API
 
-    #[func]
-    fn set_user_name(&self, name: String) {
-        self.driver_input_tx
-            .unbounded_send(InputEvent::SetUserName { name })
-            .unwrap();
-    }
-
-    #[func]
-    fn shutdown(&self) {
-        self.driver_input_tx
-            .unbounded_send(InputEvent::StartShutdown)
-            .unwrap();
-    }
-
-    #[func]
-    fn get_project_doc_id(&self) -> Variant {
-        self._get_project_doc_id().to_variant()
-    }
-
-    fn _get_project_doc_id(&self) -> Option<DocumentId> {
-		self.project_doc_id.clone()
+	#[func]
+	fn set_user_name(&self, name: String) {
+		self.driver_input_tx
+			.unbounded_send(InputEvent::SetUserName { name })
+			.unwrap();
 	}
 
-    #[func]
-    fn get_heads(&self) -> PackedStringArray /* String[] */ {
-        self._get_heads().to_godot()
-    }
-
-	fn _get_heads(&self) -> Vec<ChangeHash> {
-		match &self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state
-                .doc_handle
-                .with_doc(|d| d.get_heads()),
-				_ => Vec::new(),
-		}
+	#[func]
+	fn shutdown(&self) {
+		self.driver_input_tx
+			.unbounded_send(InputEvent::StartShutdown)
+			.unwrap();
 	}
 
-    #[func]
+	#[func]
+	fn get_project_doc_id(&self) -> Variant {
+		self._get_project_doc_id().to_variant()
+	}
+
+	#[func]
+	fn get_heads(&self) -> PackedStringArray /* String[] */ {
+		self._get_heads().to_godot()
+	}
+
+
+	#[func]
 	fn get_files(&self) -> PackedStringArray {
 		self._get_files().to_godot()
 	}
-
-
-    fn _get_files(&self) -> Vec<String> {
-        let files = self._get_files_at(&None);
-
-        // let mut result = Dictionary::new();
-		let mut result: Vec<String> = Vec::new();
-
-        for (path, _) in files {
-            let _ = result.push(path);
-        }
-
-        result
-    }
 
 
 	// TODO: move to GodotProjectNode
@@ -238,6 +212,102 @@ impl GodotProject {
 		changes.iter().map(|c| c.to_godot()).collect::<Array<Dictionary>>()
 	}
 
+    #[func]
+    fn get_main_branch(&self) -> Variant /* Branch? */ {
+		self._get_main_branch().to_variant()
+	}
+
+    #[func]
+    fn get_branch_by_id(&self, branch_id: String) -> Variant /* Branch? */ {
+		self._get_branch_by_id(&branch_id).to_variant()
+	}
+    #[func]
+    fn merge_branch(&mut self, source_branch_doc_id: String, target_branch_doc_id: String) {
+		self._merge_branch(DocumentId::from_str(&source_branch_doc_id).unwrap(), DocumentId::from_str(&target_branch_doc_id).unwrap());
+	}
+
+    #[func]
+    fn create_branch(&mut self, name: String) {
+		self._create_branch(name);
+	}
+    #[func]
+    fn create_merge_preview_branch(
+        &mut self,
+        source_branch_doc_id: String,
+        target_branch_doc_id: String,
+    ) {
+		let source_branch_doc_id = DocumentId::from_str(&source_branch_doc_id).unwrap();
+        let target_branch_doc_id = DocumentId::from_str(&target_branch_doc_id).unwrap();
+		self._create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id);
+	}
+    #[func]
+    fn delete_branch(&mut self, branch_doc_id: String) {
+		self._delete_branch(DocumentId::from_str(&branch_doc_id).unwrap());
+	}
+    #[func]
+    fn checkout_branch(&mut self, branch_doc_id: String) {
+		self._checkout_branch(DocumentId::from_str(&branch_doc_id).unwrap());
+	}
+    // filters out merge preview branches
+    #[func]
+    fn get_branches(&self) -> Array<Dictionary> /* { name: String, id: String }[] */ {
+		self._get_branches().iter().map(|b| b.to_godot()).collect::<Array<Dictionary>>()
+	}
+    #[func]
+    fn get_checked_out_branch(&self) -> Variant /* {name: String, id: String, is_main: bool}? */ {
+		self.get_checked_out_branch_state().to_variant()
+	}
+
+    #[func]
+    fn get_sync_server_connection_info(&self) -> Variant {
+        match self._get_sync_server_connection_info() {
+            Some(peer_connection_info) => {
+                peer_connection_info_to_dict(peer_connection_info).to_variant()
+            }
+            None => Variant::nil(),
+        }
+    }
+
+    #[func]
+    fn get_all_changes_between(
+        &self,
+        old_heads: PackedStringArray,
+        curr_heads: PackedStringArray,
+    ) -> Dictionary {
+        let old_heads = array_to_heads(old_heads);
+        let new_heads = array_to_heads(curr_heads);
+        self._get_changes_between(old_heads, new_heads)
+    }
+
+
+    fn _get_project_doc_id(&self) -> Option<DocumentId> {
+		self.project_doc_id.clone()
+	}
+
+
+	fn _get_heads(&self) -> Vec<ChangeHash> {
+		match &self.get_checked_out_branch_state() {
+            Some(branch_state) => branch_state
+                .doc_handle
+                .with_doc(|d| d.get_heads()),
+				_ => Vec::new(),
+		}
+	}
+
+
+    fn _get_files(&self) -> Vec<String> {
+        let files = self._get_files_at(&None);
+
+        // let mut result = Dictionary::new();
+		let mut result: Vec<String> = Vec::new();
+
+        for (path, _) in files {
+            let _ = result.push(path);
+        }
+
+        result
+    }
+
 	fn _get_changes(&self) -> Vec<CommitInfo> {
         let checked_out_branch_doc = match &self.get_checked_out_branch_state() {
             Some(branch_state) => branch_state.doc_handle.with_doc(|d| d.clone()),
@@ -254,11 +324,6 @@ impl GodotProject {
             .collect::<Vec<CommitInfo>>()
     }
 
-    #[func]
-    fn get_main_branch(&self) -> Variant /* Branch? */ {
-		self._get_main_branch().to_variant()
-	}
-
 	fn _get_main_branch(&self) -> Option<&BranchState> {
 		self
             .branch_states
@@ -266,10 +331,6 @@ impl GodotProject {
             .find(|branch_state| branch_state.is_main)
     }
 
-    #[func]
-    fn get_branch_by_id(&self, branch_id: String) -> Variant /* Branch? */ {
-		self._get_branch_by_id(&branch_id).to_variant()
-	}
 
 	fn _get_branch_by_id(&self, branch_id: &String) -> Option<&BranchState> {
         match DocumentId::from_str(branch_id) {
@@ -279,11 +340,6 @@ impl GodotProject {
             Err(_) => None,
         }
     }
-
-    #[func]
-    fn merge_branch(&mut self, source_branch_doc_id: String, target_branch_doc_id: String) {
-		self._merge_branch(DocumentId::from_str(&source_branch_doc_id).unwrap(), DocumentId::from_str(&target_branch_doc_id).unwrap());
-	}
 
 	fn _merge_branch(&mut self, source_branch_doc_id: DocumentId, target_branch_doc_id: DocumentId) {
         self.driver_input_tx
@@ -297,10 +353,6 @@ impl GodotProject {
         self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(target_branch_doc_id, None);
     }
 
-    #[func]
-    fn create_branch(&mut self, name: String) {
-		self._create_branch(name);
-	}
 
 	fn _create_branch(&mut self, name: String) {
         let source_branch_doc_id = match &self.get_checked_out_branch_state() {
@@ -320,16 +372,6 @@ impl GodotProject {
         self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut;
     }
 
-    #[func]
-    fn create_merge_preview_branch(
-        &mut self,
-        source_branch_doc_id: String,
-        target_branch_doc_id: String,
-    ) {
-		let source_branch_doc_id = DocumentId::from_str(&source_branch_doc_id).unwrap();
-        let target_branch_doc_id = DocumentId::from_str(&target_branch_doc_id).unwrap();
-		self._create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id);
-	}
 
 	fn _create_merge_preview_branch(
 		&mut self,
@@ -345,10 +387,6 @@ impl GodotProject {
             .unwrap();
     }
 
-    #[func]
-    fn delete_branch(&mut self, branch_doc_id: String) {
-		self._delete_branch(DocumentId::from_str(&branch_doc_id).unwrap());
-	}
 
 	fn _delete_branch(&mut self, branch_doc_id: DocumentId) {
         self.driver_input_tx
@@ -356,10 +394,6 @@ impl GodotProject {
             .unwrap();
     }
 
-    #[func]
-    fn checkout_branch(&mut self, branch_doc_id: String) {
-		self._checkout_branch(DocumentId::from_str(&branch_doc_id).unwrap());
-	}
 
 	fn _checkout_branch(&mut self, branch_doc_id: DocumentId) {
 		let current_branch = match &self.checked_out_branch_state {
@@ -399,11 +433,6 @@ impl GodotProject {
         }
     }
 
-    // filters out merge preview branches
-    #[func]
-    fn get_branches(&self) -> Array<Dictionary> /* { name: String, id: String }[] */ {
-		self._get_branches().iter().map(|b| b.to_godot()).collect::<Array<Dictionary>>()
-	}
 
 	fn _get_branches(&self) -> Vec<&BranchState> {
         let mut branches = self
@@ -431,36 +460,11 @@ impl GodotProject {
         branches
     }
 
-    #[func]
-    fn get_checked_out_branch(&self) -> Variant /* {name: String, id: String, is_main: bool}? */ {
-		self.get_checked_out_branch_state().to_variant()
-	}
-
-    #[func]
-    fn get_sync_server_connection_info(&self) -> Variant {
-        match self._get_sync_server_connection_info() {
-            Some(peer_connection_info) => {
-                peer_connection_info_to_dict(peer_connection_info).to_variant()
-            }
-            None => Variant::nil(),
-        }
-    }
 
 	fn _get_sync_server_connection_info(&self) -> Option<&PeerConnectionInfo> {
 		self.sync_server_connection_info.as_ref()
 	}
 
-
-    #[func]
-    fn get_all_changes_between(
-        &self,
-        old_heads: PackedStringArray,
-        curr_heads: PackedStringArray,
-    ) -> Dictionary {
-        let old_heads = array_to_heads(old_heads);
-        let new_heads = array_to_heads(curr_heads);
-        self._get_changes_between(old_heads, new_heads)
-    }
 
 	fn _get_descendent_document(
 		&self,
@@ -2044,12 +2048,8 @@ impl GodotProject {
         };
     }
 
-}
+	fn _init(_base: Base<Node>) -> Self {
 
-
-#[godot_api]
-impl INode for GodotProject {
-    fn init(_base: Base<Node>) -> Self {
         let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
         let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
 
@@ -2070,22 +2070,19 @@ impl INode for GodotProject {
         };
         // process it a few times to get it to check out the branch
         ret
-    }
+	}
 
-    fn enter_tree(&mut self) {
-        println!("** GodotProject: enter_tree");
-        self.start();
-        // Perform typical plugin operations here.
-    }
+	fn _enter_tree(&mut self) {
+		println!("** GodotProject: enter_tree");
+		self.start();
+	}
 
-    fn exit_tree(&mut self) {
+	fn _exit_tree(&mut self) {
         println!("** GodotProject: exit_tree");
         self.stop();
-        // Perform typical plugin operations here.
-    }
+	}
 
-    fn process(&mut self, _delta: f64) {
-		// check if the connection thread died
+	fn _process(&mut self, _delta: f64) {
 		if let Some(driver) = &mut self.driver {
 			if let Some(error) = driver.connection_thread_get_last_error() {
 				match error {
@@ -2343,7 +2340,28 @@ impl INode for GodotProject {
 			}
         }
 
+	}
+}
 
+
+#[godot_api]
+impl INode for GodotProject {
+    fn init(_base: Base<Node>) -> Self {
+        Self::_init(_base)
+    }
+
+    fn enter_tree(&mut self) {
+		self._enter_tree();
+    }
+
+    fn exit_tree(&mut self) {
+		self._exit_tree();
+        // Perform typical plugin operations here.
+    }
+
+    fn process(&mut self, _delta: f64) {
+		// check if the connection thread died
+		self._process(_delta);
     }
 }
 
