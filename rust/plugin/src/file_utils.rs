@@ -1,14 +1,21 @@
+use core::fmt;
 use std::fs::File;
 use std::io;
 use std::io::{Read, Write};
 use std::path::{PathBuf};
 use std::str;
+use automerge::{Automerge, ChangeHash, ObjType, ReadDoc};
+use automerge::ObjId;
+use automerge_repo::{DocHandle, DocumentId};
+use autosurgeon::Hydrate;
 use godot::builtin::{GString, PackedByteArray, Variant, VariantType};
 use godot::classes::ProjectSettings;
 use godot::meta::{GodotConvert, ToGodot};
 use ya_md5::{Md5Hasher, Hash, Md5Error};
 
+use crate::doc_utils::SimpleDocReader;
 use crate::godot_parser::{GodotScene, recognize_scene, parse_scene};
+use crate::utils::parse_automerge_url;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FileContent {
@@ -120,6 +127,57 @@ impl FileContent {
 			FileContent::Deleted => VariantType::NIL,
 		}
 	}
+
+	pub fn hydrate_content_at(file_entry: ObjId, doc: &Automerge, path: &String, heads: &Vec<ChangeHash>) -> Result<FileContent, Result<DocumentId, io::Error>> {
+		let structured_content = doc
+		.get_at(&file_entry, "structured_content", heads)
+		.unwrap()
+		.map(|(value, _)| value);
+
+		if structured_content.is_some() {
+			let scene: GodotScene = GodotScene::hydrate_at(doc, path, heads).ok().unwrap();
+			return Ok(FileContent::Scene(scene));
+		}
+
+		// try to read file as text
+		let content = doc.get_at(&file_entry, "content", &heads);
+
+		match content {
+			Ok(Some((automerge::Value::Object(ObjType::Text), content))) => {
+				match doc.text_at(content, &heads) {
+					Ok(text) => {
+						return Ok(FileContent::String(text.to_string()));
+					}
+					Err(e) => {
+						return Err(Err(io::Error::new(io::ErrorKind::Other, format!("failed to read text file {:?}: {:?}", path, e))));
+					}
+				}
+			}
+			_ => match doc.get_string_at(&file_entry, "content", &heads) {
+				Some(s) => {
+					return Ok(FileContent::String(s.to_string()));
+				}
+				_ => {
+					// return Err(io::Error::new(io::ErrorKind::Other, "Failed to read file"));
+				}
+			},
+		}
+		// ... otherwise, check the rul
+		let linked_file_content = doc
+		.get_string_at(&file_entry, "url", &heads)
+		.map(|url| parse_automerge_url(&url)).flatten();
+		if linked_file_content.is_some() {
+			return Err(Ok(linked_file_content.unwrap()));
+		}
+		Err(Err(io::Error::new(io::ErrorKind::Other, "Failed to url!")))
+
+	}
+
+}
+
+
+impl Hydrate for FileContent {
+
 }
 
 //

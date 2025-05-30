@@ -487,9 +487,17 @@ impl GodotProject {
 	// INTERNAL FUNCTIONS
 
     fn _get_files_at(&self, heads: &Option<Vec<ChangeHash>>) -> HashMap<String, FileContent> {
+		match &self.checked_out_branch_state {
+			CheckedOutBranchState::CheckedOut(branch_doc_id, _) => self._get_files_on_branch_at(branch_doc_id.clone(), heads),
+			_ => panic!("rust: _get_files_at: no checked out branch"),
+		}
+	}
+
+	fn _get_files_on_branch_at(&self, branch_doc_id: DocumentId, heads: &Option<Vec<ChangeHash>>) -> HashMap<String, FileContent> {
+
         let mut files = HashMap::new();
 
-        let branch_state = match self.get_checked_out_branch_state() {
+        let branch_state = match self.get_branch_state(&branch_doc_id) {
             Some(branch_state) => branch_state,
             None => return files,
         };
@@ -499,77 +507,58 @@ impl GodotProject {
             None => branch_state.synced_heads.clone(),
         };
 		println!("rust: _get_files_at: {:?}, heads: {:?}", branch_state.name, heads);
+		let mut linked_doc_ids = Vec::new();
 
-        let doc = branch_state.doc_handle.with_doc(|d| d.clone());
+        branch_state.doc_handle.with_doc(|doc|{
+			let files_obj_id: ObjId = doc.get_at(ROOT, "files", &heads).unwrap().unwrap().1;
+			for path in doc.keys_at(&files_obj_id, &heads) {
+				let file_entry = match doc.get_at(&files_obj_id, &path, &heads) {
+					Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
+					_ => panic!("failed to get file entry for {:?}", path),
+				};
 
-        let files_obj_id = doc.get_at(ROOT, "files", &heads).unwrap().unwrap().1;
+				match FileContent::hydrate_content_at(file_entry, &doc, &path, &heads) {
+					Ok(content) => {
+						files.insert(path, content);
+					},
+					Err(res) => {
+						match res {
+							Ok(id) => {
+								linked_doc_ids.push((id, path));
+							},
+							Err(error_msg) => {
+								println!("error: {:?}", error_msg);
+							}
+						}
+					}
+				};
+			}
+		});
 
-        for path in doc.keys_at(&files_obj_id, &heads) {
-            let file_entry = match doc.get_at(&files_obj_id, &path, &heads) {
-                Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
-                _ => panic!("failed to get file entry for {:?}", path),
-            };
-
-            let structured_content = doc
-                .get_at(&file_entry, "structured_content", &heads)
-                .unwrap()
-                .map(|(value, _)| value);
-
-            if structured_content.is_some() {
-                let scene: GodotScene = GodotScene::hydrate_at(&doc, &path, &heads).ok().unwrap();
-                files.insert(path, FileContent::Scene(scene));
-                continue;
-            }
-
-            // try to read file as text
-            let content = doc.get_at(&file_entry, "content", &heads);
-
-            match content {
-                Ok(Some((automerge::Value::Object(ObjType::Text), content))) => {
-                    match doc.text_at(content, &heads) {
-                        Ok(text) => {
-                            files.insert(path, FileContent::String(text.to_string()));
-                            continue;
-                        }
-                        Err(e) => println!("failed to read text file {:?}: {:?}", path, e),
-                    }
-                }
-                _ => match doc.get_string_at(&file_entry, "content", &heads) {
-                    Some(s) => {
-                        files.insert(path, FileContent::String(s.to_string()));
-                        continue;
-                    }
-                    _ => {}
-                },
-            }
-
-            // ... otherwise try to read as linked binary doc
-            let linked_file_content = doc
-                .get_string_at(&file_entry, "url", &heads)
-                .and_then(|url| parse_automerge_url(&url))
-                .and_then(|doc_id| self.doc_handles.get(&doc_id))
-                .map(|doc_handle| {
-                    doc_handle.with_doc(|d| match d.get(ROOT, "content") {
-                        Ok(Some((value, _))) if value.is_bytes() => {
-                            FileContent::Binary(value.into_bytes().unwrap())
-                        }
-                        Ok(Some((value, _))) if value.is_str() => {
-                            FileContent::String(value.into_string().unwrap())
-                        }
-                        _ => {
-                            panic!(
-                                "failed to read binary doc {:?} {:?} {:?}",
-                                path,
-                                doc_handle.document_id(),
-                                doc_handle.with_doc(|d| d.get_heads())
-                            );
-                        }
-                    })
-                });
-            if let Some(file_content) = linked_file_content {
-                files.insert(path, file_content);
-            }
-        }
+		for (doc_id, path) in linked_doc_ids {
+			let linked_file_content: Option<FileContent> = self.doc_handles.get(&doc_id)
+				.map(|doc_handle| {
+					doc_handle.with_doc(|d| match d.get(ROOT, "content") {
+						Ok(Some((value, _))) if value.is_bytes() => {
+							FileContent::Binary(value.into_bytes().unwrap())
+						}
+						Ok(Some((value, _))) if value.is_str() => {
+							FileContent::String(value.into_string().unwrap())
+						}
+						_ => {
+							panic!(
+								"failed to read binary doc {:?} {:?} {:?}",
+								path,
+								doc_handle.document_id(),
+								doc_handle.with_doc(|d| d.get_heads())
+							);
+						}
+					})
+				});
+			if let Some(file_content) = linked_file_content {
+				files.insert(path, file_content);
+			}
+		}
 
         return files;
 
