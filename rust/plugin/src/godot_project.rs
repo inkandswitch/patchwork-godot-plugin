@@ -142,6 +142,45 @@ enum ChangeOp {
     Modified,
 }
 
+// PatchworkEditor accessor functions
+struct PatchworkEditorAccessor{
+}
+
+impl PatchworkEditorAccessor {
+	fn import_and_load_resource(path: String) -> Variant {
+		ClassDb::singleton().class_call_static(
+			"PatchworkEditor",
+			"import_and_load_resource",
+			&[path.to_variant()],
+		)
+	}
+
+	fn is_editor_importing() -> bool {
+		return ClassDb::singleton().class_call_static(
+			"PatchworkEditor",
+			"is_editor_importing",
+			&[],
+		).to::<bool>()
+	}
+
+	fn is_changing_scene() -> bool {
+		return ClassDb::singleton().class_call_static(
+			"PatchworkEditor",
+			"is_changing_scene",
+			&[],
+		).to::<bool>()
+	}
+
+	fn reload_scripts() {
+		ClassDb::singleton().class_call_static(
+			"PatchworkEditor",
+			"reload_scripts",
+			&[],
+		);
+	}
+
+}
+
 #[godot_api]
 impl GodotProject {
 	#[signal]
@@ -1015,11 +1054,7 @@ impl GodotProject {
                     &FileContent::String(import_file_content),
                 );
 
-                let res = ClassDb::singleton().class_call_static(
-                    "PatchworkEditor",
-                    "import_and_load_resource",
-                    &[temp_path.to_variant()],
-                );
+                let res = PatchworkEditorAccessor::import_and_load_resource(temp_path);
                 if res.is_nil() {
                     return None;
                 }
@@ -1860,15 +1895,10 @@ impl GodotProject {
         self.file_system_driver = None;
     }
 
-    fn call_patchwork_editor_func(func_name: &str, args: &[Variant]) -> Variant {
-       	ClassDb::singleton().class_call_static("PatchworkEditor", func_name, args)
-    }
-
 	fn safe_to_update_godot() -> bool {
-		return
-		!(EditorInterface::singleton().get_resource_filesystem().unwrap().is_scanning() ||
-		Self::call_patchwork_editor_func("is_editor_importing", &[]).to::<bool>() ||
-		Self::call_patchwork_editor_func("is_changing_scene", &[]).to::<bool>());
+		return !(EditorInterface::singleton().get_resource_filesystem().unwrap().is_scanning() ||
+		PatchworkEditorAccessor::is_editor_importing() ||
+		PatchworkEditorAccessor::is_changing_scene());
 	}
 
 
@@ -1944,7 +1974,7 @@ impl GodotProject {
 		// * This will cause a panic because we're already in the middle of `process()` with a bound mut ref to base
 		self.base_mut().set_process(false);
         if reload_scripts {
-            Self::call_patchwork_editor_func("reload_scripts", &[false.to_variant()]);
+            PatchworkEditorAccessor::reload_scripts();
         }
 		if reimport_files.len() > 0 {
             let mut reimport_files_psa = reimport_files.into_iter().map(|path| path).collect::<PackedStringArray>();
@@ -1962,7 +1992,7 @@ impl GodotProject {
 				.cache_mode(CacheMode::REPLACE_DEEP)
 				.done();
 				if let Some(scene) = scene {
-					if Self::call_patchwork_editor_func("is_changing_scene", &[]).to::<bool>() {
+					if PatchworkEditorAccessor::is_changing_scene() {
 						println!("!!!!!!!!!!!!!!rust: is changing scene, skipping reload");
 					} else {
 						EditorInterface::singleton().reload_scene_from_path(&scene_path);
@@ -2442,7 +2472,7 @@ impl IEditorPlugin for GodotProjectPlugin {
 		// Don't initialize until the project is fully loaded and the editor is not importing
 		if !self.initialized
 			&& EditorInterface::singleton().get_resource_filesystem().map(|fs| return !fs.is_scanning()).unwrap_or(false)
-			&& GodotProject::call_patchwork_editor_func("is_editor_importing", &[]) == Variant::from(false)
+			&& !PatchworkEditorAccessor::is_editor_importing()
 			&& DirAccess::dir_exists_absolute("res://.godot") // This is at the end because DirAccess::dir_exists_absolute locks a global mutex
 			{
 			let godot_project_singleton: Gd<GodotProject> = GodotProject::get_singleton();
