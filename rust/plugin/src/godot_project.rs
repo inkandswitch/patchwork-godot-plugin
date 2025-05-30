@@ -27,7 +27,7 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{collections::HashMap, str::FromStr};
 use crate::godot_helpers::{ToGodotExt, ToVariantExt};
-use crate::godot_helpers::ToRust;
+use crate::godot_helpers::{ToRust};
 use crate::file_system_driver::{FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
 use crate::godot_parser::{self, GodotScene, TypeOrInstance};
 use crate::godot_project_driver::{BranchState, ConnectionThreadError, DocHandleType};
@@ -202,7 +202,26 @@ impl EditorFilesystemAccessor {
 	}
 }
 
+struct PatchworkConfigAccessor{
+}
 
+impl PatchworkConfigAccessor {
+	fn get_project_value(name: &str, default: &str) -> String {
+		PatchworkConfig::singleton().bind().get_project_value(GString::from(name), default.to_variant()).to::<String>()
+	}
+
+	fn get_user_value(name: &str, default: &str) -> String {
+		PatchworkConfig::singleton().bind().get_user_value(GString::from(name), default.to_variant()).to::<String>()
+	}
+
+	fn set_project_value(name: &str, value: &str) {
+		PatchworkConfig::singleton().bind_mut().set_project_value(GString::from(name), value.to_variant());
+	}
+
+	fn set_user_value(name: &str, value: &str) {
+		PatchworkConfig::singleton().bind_mut().set_user_value(GString::from(name), value.to_variant());
+	}
+}
 
 #[godot_api]
 impl GodotProject {
@@ -1791,10 +1810,7 @@ impl GodotProject {
 
         let storage_folder_path = self.globalize_path(&"res://.patchwork".to_string());
         let mut driver: GodotProjectDriver = GodotProjectDriver::create(storage_folder_path);
-        let maybe_user_name: String = PatchworkConfig::singleton()
-            .bind()
-            .get_user_value(GString::from("user_name"), "".to_variant())
-            .to_string();
+        let maybe_user_name: String = PatchworkConfigAccessor::get_user_value("user_name", "");
         driver.spawn(
             driver_input_rx,
             driver_output_tx,
@@ -1869,14 +1885,8 @@ impl GodotProject {
     }
 
     fn start(&mut self) {
-        let project_doc_id: String = PatchworkConfig::singleton()
-            .bind()
-            .get_project_value(GString::from("project_doc_id"), "".to_variant())
-            .to_string();
-        let checked_out_branch_doc_id = PatchworkConfig::singleton()
-            .bind()
-            .get_project_value(GString::from("checked_out_branch_doc_id"), "".to_variant())
-            .to_string();
+        let project_doc_id: String = PatchworkConfigAccessor::get_project_value("project_doc_id", "");
+        let checked_out_branch_doc_id = PatchworkConfigAccessor::get_project_value("checked_out_branch_doc_id", "");
         println!("rust: START {:?}", project_doc_id);
         self.project_doc_id = match DocumentId::from_str(&project_doc_id) {
             Ok(doc_id) => Some(doc_id),
@@ -2355,8 +2365,7 @@ impl GodotProject {
 			let checked_out_branch_doc_id = branch_state
 														.doc_handle
 														.document_id()
-														.to_string()
-														.to_variant();
+														.to_string();
 			self.just_checked_out_new_branch = false;
 			if self.new_project {
 				self.new_project = false;
@@ -2367,11 +2376,14 @@ impl GodotProject {
 			}
 			// NOTE: it is VERY important that we save the project config AFTER we sync,
 			// because this will trigger a file scan and then resave the current project files in the editor
-			PatchworkConfig::singleton().bind_mut().set_project_value(GString::from("project_doc_id"), self.get_project_doc_id());
-			PatchworkConfig::singleton().bind_mut().set_project_value(GString::from("checked_out_branch_doc_id"), checked_out_branch_doc_id.clone());
+			PatchworkConfigAccessor::set_project_value("project_doc_id", &match &self._get_project_doc_id() {
+				Some(doc_id) => doc_id.to_string(),
+				None => "".to_string(),
+			});
+			PatchworkConfigAccessor::set_project_value("checked_out_branch_doc_id", &checked_out_branch_doc_id);
 			self.base_mut().emit_signal(
 				"checked_out_branch",
-				&[checked_out_branch_doc_id],
+				&[checked_out_branch_doc_id.to_variant()],
 			);
 		} else if self.should_update_godot {
 			println!("rust: should update godot");
