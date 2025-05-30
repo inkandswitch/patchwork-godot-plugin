@@ -462,27 +462,76 @@ impl GodotProject {
         self._get_changes_between(old_heads, new_heads)
     }
 
+	fn _get_descendent_document(
+		&self,
+		previous_branch_id: DocumentId,
+		current_doc_id: DocumentId,
+		previous_heads: Vec<ChangeHash>,
+		current_heads: Vec<ChangeHash>,
+	) -> Option<DocumentId> {
+		let branch_state = match self.branch_states.get(&current_doc_id) {
+			Some(branch_state) => branch_state,
+			None => return None,
+		};
+		if current_heads.len() == 0 {
+			panic!("rust: _get_descendent_document: previous_heads is empty");
+		}
+		if previous_heads.len() == 0 {
+			panic!("rust: _get_descendent_document: previous_heads is empty");
+		}
+
+		let previous_keys = branch_state.doc_handle.with_doc(|d| {
+			d.get_obj_id_at(ROOT, "files", &previous_heads).is_some()
+		});
+		let current_keys = branch_state.doc_handle.with_doc(|d| {
+			d.get_obj_id_at(ROOT, "files", &current_heads).is_some()
+		});
+		if !previous_keys || !current_keys {
+			// try it with the other doc_id
+			let other_branch_state = match self.branch_states.get(&previous_branch_id) {
+				Some(branch_state) => branch_state,
+				None => return None,
+			};
+			let previous_keys = other_branch_state.doc_handle.with_doc(|d| {
+				d.get_obj_id_at(ROOT, "files", &previous_heads).is_some()
+			});
+			let current_keys = other_branch_state.doc_handle.with_doc(|d| {
+				d.get_obj_id_at(ROOT, "files", &current_heads).is_some()
+			});
+			if previous_keys && current_keys {
+				return Some(previous_branch_id);
+			}
+		} else {
+			return Some(current_doc_id);
+		}
+
+
+		None
+
+	}
+
 
 	// INTERNAL FUNCTIONS
 	fn _get_changed_file_content_between(
 		&self,
-		branch_doc_id: DocumentId,
+		previous_branch_id: Option<DocumentId>,
+		current_doc_id: DocumentId,
 		previous_heads: Vec<ChangeHash>,
 		current_heads: Vec<ChangeHash>,
 	) -> Vec<FileSystemEvent> {
 
-        let branch_state = match self.branch_states.get(&branch_doc_id) {
+        let current_branch_state = match self.branch_states.get(&current_doc_id) {
             Some(branch_state) => branch_state,
             None => return Vec::new(),
         };
 
         let curr_heads = if current_heads.len() == 0 {
-            branch_state.synced_heads.clone()
+            current_branch_state.synced_heads.clone()
         } else {
             current_heads
         };
 		if previous_heads.len() == 0 {
-			let files = self._get_files_on_branch_at(branch_doc_id, &Some(curr_heads));
+			let files = self._get_files_on_branch_at(current_doc_id, &Some(curr_heads));
 			return files.into_iter().map(|(path, content)| {
 				match content {
 					FileContent::Deleted => {
@@ -495,9 +544,48 @@ impl GodotProject {
 			}).collect::<Vec<FileSystemEvent>>();
 		}
 
-        let (patches, old_file_set, curr_file_set) = branch_state.doc_handle.with_doc(|d| {
-			let mut old_files_id = d.get_obj_id_at(ROOT, "files", &previous_heads);
-			let mut curr_files_id = d.get_obj_id_at(ROOT, "files", &curr_heads);
+		let descendent_doc_id: Option<DocumentId> = if let Some(previous_branch_id) = previous_branch_id.clone() {
+			self._get_descendent_document(previous_branch_id, current_doc_id.clone(), previous_heads.clone(), curr_heads.clone())
+		} else {
+			Some(current_doc_id.clone())
+		};
+		if descendent_doc_id.is_none() {
+			// neither document is the descendent of the other, we can't do a fast diff,
+			// we need to do it the slow way; get the files from both docs
+			// TODO: Is there a fast way to do this?
+			let previous_files = self._get_files_on_branch_at(previous_branch_id.unwrap(), &Some(previous_heads));
+			let current_files = self._get_files_on_branch_at(current_doc_id, &Some(curr_heads));
+			let mut events = Vec::new();
+			for (path, _) in previous_files.iter() {
+				if !current_files.contains_key(path) {
+					events.push(FileSystemEvent::FileDeleted(PathBuf::from(path)));
+				}
+			}
+			for (path, content) in current_files {
+				match content {
+					FileContent::Deleted => {
+						events.push(FileSystemEvent::FileDeleted(PathBuf::from(path)));
+						continue
+					}
+					_ => {}
+				}
+				if !previous_files.contains_key(&path) {
+					events.push(FileSystemEvent::FileCreated(PathBuf::from(path), content));
+				} else if &content != previous_files.get(&path).unwrap() {
+					events.push(FileSystemEvent::FileModified(PathBuf::from(path), content));
+				}
+			}
+			return events;
+		}
+		let descendent_doc_id = descendent_doc_id.unwrap();
+		let branch_state = match self.branch_states.get(&descendent_doc_id) {
+			Some(branch_state) => branch_state,
+			None => panic!("rust: _get_changed_file_content_between: descendent doc id not found"),
+		};
+        let (patches, old_file_set, curr_file_set) =
+		branch_state.doc_handle.with_doc(|d| {
+			let old_files_id: Option<ObjId> = d.get_obj_id_at(ROOT, "files", &previous_heads);
+			let curr_files_id = d.get_obj_id_at(ROOT, "files", &curr_heads);
 			let old_file_set = if old_files_id.is_none(){
 				HashSet::<String>::new()
 			} else {
@@ -524,22 +612,12 @@ impl GodotProject {
 
 		// log all patches
 		let changed_files = get_changed_files_vec(&patches);
-		let alt_changed_files_hashset = changed_files.iter().cloned().collect::<HashSet<String>>();
-
 		for file in changed_files {
 			if added_files.contains(&file) || deleted_files.contains(&file) {
 				continue;
 			}
 			modified_files.insert(file);
 		}
-		let changed_files_hashset = deleted_files.union(&added_files)
-			.cloned()
-			.collect::<HashSet<String>>()
-			.union(&modified_files)
-			.cloned()
-			.collect::<HashSet<String>>();
-
-
 		let make_event = |path: String, content: FileContent| {
 			if added_files.contains(&path) {
 				match content {
@@ -607,8 +685,6 @@ impl GodotProject {
 		}
 
 		changed_file_events
-
-        // get_changed_files_vec(&patches)
     }
 
 
@@ -1883,8 +1959,22 @@ impl GodotProject {
 		};
 		let current_doc_id = current_branch_state.doc_handle.document_id();
 		let current_heads = current_branch_state.synced_heads.clone();
-		let previous_heads = previous_branch_heads.clone();
-		let events = self._get_changed_file_content_between(current_doc_id, previous_heads, current_heads);
+		let previous_heads = match &previous_branch_id {
+			Some(branch_id) => {
+				match self.branch_states.get(branch_id) {
+					Some(branch_state) => {
+						branch_state.synced_heads.clone()
+					}
+					None => {
+						Vec::new()
+					}
+				}
+			}
+			None => {
+				Vec::new()
+			}
+		};
+		let events = self._get_changed_file_content_between(previous_branch_id, current_doc_id, previous_heads, current_heads);
 
         let mut updates = Vec::new();
         // let res_path = ProjectSettings::singleton().globalize_path("res://").to_string();
@@ -1903,6 +1993,9 @@ impl GodotProject {
                 }
             }
         }
+		if updates.len() == 0 {
+			return;
+		}
         if let Some(driver) = &mut self.file_system_driver {
             let events = driver.batch_update_blocking(updates);
             self.update_godot_after_sync(events);

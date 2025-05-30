@@ -691,6 +691,7 @@ impl FileSystemDriver {
 						}
 					}
 					FileSystemUpdateEvent::FileDeleted(path) => {
+						let _ = std::fs::remove_file(&path);
 						if file_hashes.remove(&path).is_some() {
 							events.push(FileSystemEvent::FileDeleted(path));
 						}
