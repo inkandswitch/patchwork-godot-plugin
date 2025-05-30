@@ -474,15 +474,6 @@ impl GodotProject {
         self._get_changes_between(old_heads, new_heads)
     }
 
-    fn get_class_name(&self, script_content: String) -> String {
-        // just keep going until we find `class_name <something>`
-        for line in script_content.lines() {
-            if line.trim().starts_with("class_name") {
-                return line.trim().split(" ").nth(1).unwrap().trim().to_string();
-            }
-        }
-        String::new()
-    }
 
 	// INTERNAL FUNCTIONS
 
