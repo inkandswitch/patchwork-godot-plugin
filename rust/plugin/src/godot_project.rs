@@ -2313,7 +2313,7 @@ impl GodotProject {
     fn get_sync_server_connection_info(&self) -> Variant {
         match self.project._get_sync_server_connection_info() {
             Some(peer_connection_info) => {
-                peer_connection_info_to_dict(peer_connection_info).to_variant()
+                peer_connection_info.to_variant()
             }
             None => Variant::nil(),
         }
@@ -2475,7 +2475,7 @@ impl INode for GodotProject {
 					self.base_mut().emit_signal("shutdown_completed", &[]);
 				}
 				GodotProjectSignal::SyncServerConnectionInfoChanged(peer_connection_info) => {
-					self.base_mut().emit_signal("sync_server_connection_info_changed", &[peer_connection_info_to_dict(&peer_connection_info).to_variant()]);
+					self.signals().sync_server_connection_info_changed().emit(peer_connection_info.to_godot());
 				}
 				GodotProjectSignal::ConnectionThreadFailed => {
 					self.base_mut().emit_signal("connection_thread_failed", &[]);
@@ -2593,71 +2593,6 @@ fn match_path(path: &Vec<Prop>, patch: &Patch) -> Option<PathWithAction> {
         path: remaining_path,
         action: patch.action.clone(),
     })
-}
-
-
-fn peer_connection_info_to_dict(peer_connection_info: &PeerConnectionInfo) -> Dictionary {
-    let mut doc_sync_states = Dictionary::new();
-
-    for (doc_id, doc_state) in peer_connection_info.docs.iter() {
-        let last_received = doc_state
-            .last_received
-            .map(system_time_to_variant)
-            .unwrap_or(Variant::nil());
-
-        let last_sent = doc_state
-            .last_sent
-            .map(system_time_to_variant)
-            .unwrap_or(Variant::nil());
-
-        let last_sent_heads = doc_state
-            .last_sent_heads
-            .as_ref()
-            .map(|heads| heads_to_array(heads.clone()).to_variant())
-            .unwrap_or(Variant::nil());
-
-        let last_acked_heads = doc_state
-            .last_acked_heads
-            .as_ref()
-            .map(|heads| heads_to_array(heads.clone()).to_variant())
-            .unwrap_or(Variant::nil());
-
-        let _ = doc_sync_states.insert(
-            doc_id.to_string(),
-            dict! {
-                "last_received": last_received,
-                "last_sent": last_sent,
-                "last_sent_heads": last_sent_heads,
-                "last_acked_heads": last_acked_heads,
-            },
-        );
-    }
-
-    let last_received = peer_connection_info
-        .last_received
-        .map(system_time_to_variant)
-        .unwrap_or(Variant::nil());
-
-    let last_sent = peer_connection_info
-        .last_sent
-        .map(system_time_to_variant)
-        .unwrap_or(Variant::nil());
-
-    let is_connected = !last_received.is_nil();
-
-    dict! {
-        "doc_sync_states": doc_sync_states,
-        "last_received": last_received,
-        "last_sent": last_sent,
-        "is_connected": is_connected,
-    }
-}
-
-fn system_time_to_variant(time: SystemTime) -> Variant {
-    time.duration_since(UNIX_EPOCH)
-        .ok()
-        .map(|d| d.as_secs().to_variant())
-        .unwrap_or(Variant::nil())
 }
 
 fn force_reload_resource(path: &str) -> Option<Gd<Resource>> {

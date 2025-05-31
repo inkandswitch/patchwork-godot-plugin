@@ -1,14 +1,14 @@
 use std::{
     collections::HashMap,
     str::FromStr,
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use crate::{doc_utils::SimpleDocReader, godot_helpers::{ToGodotExt, ToVariantExt}, godot_project_driver::BranchState};
+use crate::{doc_utils::SimpleDocReader, godot_helpers::{GodotConvertExt, ToGodotExt, ToVariantExt}, godot_project_driver::BranchState};
 use automerge::{
     transaction::{CommitOptions, Transaction}, Change, ChangeHash, ReadDoc, ROOT
 };
-use automerge_repo::{DocHandle, DocumentId, RepoHandle};
+use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo, RepoHandle};
 use godot::{builtin::{dict, Array, Dictionary, GString, PackedStringArray, Variant}, meta::ToGodot, prelude::GodotConvert};
 use serde::{Deserialize, Serialize};
 use serde_json::Serializer;
@@ -258,11 +258,91 @@ impl ToVariantExt for Option<BranchState> {
 		}
 	}
 }
+
 impl ToVariantExt for Option<&BranchState> {
 	fn _to_variant(&self) -> Variant {
 		match self {
 			Some(branch_state) => branch_state.to_godot().to_variant(),
 			None => Variant::nil(),
 		}
+	}
+}
+
+
+fn peer_connection_info_to_dict(peer_connection_info: &PeerConnectionInfo) -> Dictionary {
+    let mut doc_sync_states = Dictionary::new();
+
+    for (doc_id, doc_state) in peer_connection_info.docs.iter() {
+        let last_received = doc_state
+            .last_received
+            .map(system_time_to_variant)
+            .unwrap_or(Variant::nil());
+
+        let last_sent = doc_state
+            .last_sent
+            .map(system_time_to_variant)
+            .unwrap_or(Variant::nil());
+
+        let last_sent_heads = doc_state
+            .last_sent_heads
+            .as_ref()
+            .map(|heads| heads_to_array(heads.clone()).to_variant())
+            .unwrap_or(Variant::nil());
+
+        let last_acked_heads = doc_state
+            .last_acked_heads
+            .as_ref()
+            .map(|heads| heads_to_array(heads.clone()).to_variant())
+            .unwrap_or(Variant::nil());
+
+        let _ = doc_sync_states.insert(
+            doc_id.to_string(),
+            dict! {
+                "last_received": last_received,
+                "last_sent": last_sent,
+                "last_sent_heads": last_sent_heads,
+                "last_acked_heads": last_acked_heads,
+            },
+        );
+    }
+
+    let last_received = peer_connection_info
+        .last_received
+        .map(system_time_to_variant)
+        .unwrap_or(Variant::nil());
+
+    let last_sent = peer_connection_info
+        .last_sent
+        .map(system_time_to_variant)
+        .unwrap_or(Variant::nil());
+
+    let is_connected = !last_received.is_nil();
+
+    dict! {
+        "doc_sync_states": doc_sync_states,
+        "last_received": last_received,
+        "last_sent": last_sent,
+        "is_connected": is_connected,
+    }
+}
+
+fn system_time_to_variant(time: SystemTime) -> Variant {
+    time.duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs().to_variant())
+        .unwrap_or(Variant::nil())
+}
+
+impl GodotConvertExt for PeerConnectionInfo {
+	type Via = Dictionary;
+}
+
+impl ToGodotExt for PeerConnectionInfo {
+	type ToVia<'v> = Dictionary;
+	fn _to_godot(&self) -> Self::ToVia<'_> {
+		peer_connection_info_to_dict(self)
+	}
+	fn _to_variant(&self) -> Variant {
+		peer_connection_info_to_dict(self).to_variant()
 	}
 }
