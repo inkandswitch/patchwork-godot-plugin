@@ -45,6 +45,7 @@ var highlight_changes = false
 const CREATE_BRANCH_IDX = 1
 const MERGE_BRANCH_IDX = 2
 
+signal reload_ui();
 
 
 func _update_ui_on_branches_changed(_branches: Array):
@@ -70,10 +71,14 @@ func _on_initial_checked_out_branch(_branch):
 	print("on_initial_checked_out_branch")
 	GodotProject.disconnect("checked_out_branch", self._on_initial_checked_out_branch)
 	init()
+	
+func _on_reload_ui_button_pressed():
+	reload_ui.emit()
 
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
 	print("Sidebar: ready!")
+	%ReloadUIButton.pressed.connect(self._on_reload_ui_button_pressed)
 	# need to add task_modal as a child to the plugin otherwise process won't be called
 	add_child(task_modal)
 	# The singleton class accessor is still pointing to the old GodotProject singleton

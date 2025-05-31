@@ -2492,11 +2492,16 @@ pub struct GodotProjectPlugin {
 	sidebar_scene: Option<Gd<PackedScene>>,
 	sidebar: Option<Gd<Control>>,
 	initialized: bool,
+	ui_needs_update: bool,
 }
 
 
 #[godot_api]
 impl GodotProjectPlugin {
+	#[func]
+	fn _on_reload_ui(&mut self) {
+		self.ui_needs_update = true;
+	}
 
 	fn add_sidebar(&mut self) {
 		self.sidebar_scene = ResourceLoader::singleton()
@@ -2505,8 +2510,9 @@ impl GodotProjectPlugin {
 			.done()
 			.map(|scene| scene.try_cast::<PackedScene>().ok())
 			.flatten();
-		self.sidebar = if let Some(Some(sidebar)) = self.sidebar_scene.as_ref().map(|scene| scene.instantiate()){
-			if let Ok(sidebar) = sidebar.try_cast::<Control>() {
+		self.sidebar = if let Some(Some(sidebar)) = self.sidebar_scene.as_ref().map(|scene| scene.instantiate()) {
+			if let Ok(mut sidebar) = sidebar.try_cast::<Control>() {
+				let _ = sidebar.connect("reload_ui", &Callable::from_object_method(&self.to_gd(), "_on_reload_ui"));
 				Some(sidebar)
 			} else {
 				None
@@ -2553,7 +2559,12 @@ impl IEditorPlugin for GodotProjectPlugin {
 			self.base_mut().add_child(&godot_project_singleton);
 			self.add_sidebar();
 			self.initialized = true;
-		};
+		}
+		if self.ui_needs_update {
+			self.ui_needs_update = false;
+			self.remove_sidebar();
+			self.add_sidebar();
+		}
 	}
     fn exit_tree(&mut self) {
         println!("** GodotProjectPlugin: exit_tree");
