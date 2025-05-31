@@ -364,15 +364,18 @@ impl GodotProject {
 	fn globalize_path(&self, path: &String) -> String {
 		// trim the project_dir from the front of the path
 		if path.starts_with("res://") {
-			self.project_dir.clone() + "/" + &path[5..].to_string()
+			let thing = PathBuf::from(self.project_dir.clone()).join(PathBuf::from(&path["res://".len()..].to_string()));
+			thing.to_string_lossy().to_string()
 		} else {
 			path.to_string()
 		}
 	}
 
+	// TODO: We need to test this on Windows
 	fn localize_path(&self, path: &String) -> String {
 		if path.starts_with(&self.project_dir) {
-			"res://".to_string() + &path[self.project_dir.len()..].to_string()
+			let thing = PathBuf::from("res://".to_string()).join(PathBuf::from(&path[self.project_dir.len()..].to_string()));
+			thing.to_string_lossy().to_string()
 		} else {
 			path.to_string()
 		}
