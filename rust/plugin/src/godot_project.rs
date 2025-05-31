@@ -222,7 +222,7 @@ impl PatchworkConfigAccessor {
 
 enum GodotProjectSignal {
 	Started,
-	CheckedOutBranch(DocumentId),
+	CheckedOutBranch(BranchState),
 	FilesChanged,
 	SavedChanges,
 	BranchesChanged(Vec<BranchState>),
@@ -2146,7 +2146,7 @@ impl GodotProjectImpl {
 				None => "".to_string(),
 			});
 			PatchworkConfigAccessor::set_project_value("checked_out_branch_doc_id", &checked_out_branch_doc_id.to_string());
-			signals.push(GodotProjectSignal::CheckedOutBranch(checked_out_branch_doc_id));
+			signals.push(GodotProjectSignal::CheckedOutBranch(branch_state));
 		} else if self.should_update_godot {
 			println!("rust: should update godot");
 			self.should_update_godot = false;
@@ -2449,36 +2449,35 @@ impl INode for GodotProject {
     }
 
     fn process(&mut self, _delta: f64) {
-		// check if the connection thread died
 		let (updates, signals) = self.project._process(_delta);
 		if updates.len() > 0 {
 			self.update_godot_after_sync(updates);
 		}
 		for signal in signals {
 			match signal {
-				GodotProjectSignal::CheckedOutBranch(doc_id) => {
-					self.base_mut().emit_signal("checked_out_branch", &[doc_id.to_variant()]);
+				GodotProjectSignal::CheckedOutBranch(branch) => {
+					self.signals().checked_out_branch().emit(branch.to_godot());
 				}
 				GodotProjectSignal::FilesChanged => {
-					self.base_mut().emit_signal("files_changed", &[]);
+					self.signals().files_changed().emit();
 				}
 				GodotProjectSignal::SavedChanges => {
-					self.base_mut().emit_signal("saved_changes", &[]);
+					self.signals().saved_changes().emit();
 				}
 				GodotProjectSignal::BranchesChanged(branches) => {
-					self.base_mut().emit_signal("branches_changed", &[branches.into_iter().map(|branch| branch.to_godot()).collect::<Array<Dictionary>>().to_variant()]);
+					self.signals().branches_changed().emit(branches.into_iter().map(|branch| branch.to_godot()).collect::<Array<Dictionary>>());
 				}
 				GodotProjectSignal::Started => {
-					self.base_mut().emit_signal("started", &[]);
+					self.signals().started().emit();
 				}
 				GodotProjectSignal::ShutdownCompleted => {
-					self.base_mut().emit_signal("shutdown_completed", &[]);
+					self.signals().shutdown_completed().emit();
 				}
 				GodotProjectSignal::SyncServerConnectionInfoChanged(peer_connection_info) => {
 					self.signals().sync_server_connection_info_changed().emit(peer_connection_info.to_godot());
 				}
 				GodotProjectSignal::ConnectionThreadFailed => {
-					self.base_mut().emit_signal("connection_thread_failed", &[]);
+					self.signals().connection_thread_failed().emit();
 				}
 			}
 		}
