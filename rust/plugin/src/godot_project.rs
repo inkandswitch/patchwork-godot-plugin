@@ -117,10 +117,7 @@ struct GodotProjectState {
     branches_metadata_doc_id: DocumentId,
 }
 
-#[derive(GodotClass)]
-#[class(base=Node, tool)]
-pub struct GodotProject {
-    base: Base<Node>,
+pub struct GodotProjectImpl {
     doc_handles: HashMap<DocumentId, DocHandle>,
     branch_states: HashMap<DocumentId, BranchState>,
     checked_out_branch_state: CheckedOutBranchState,
@@ -197,7 +194,7 @@ impl EditorFilesystemAccessor {
 		EditorInterface::singleton().reload_scene_from_path(&GString::from(path));
 	}
 
-	fn scan(){
+	fn scan() {
 		EditorInterface::singleton().get_resource_filesystem().unwrap().scan();
 	}
 }
@@ -234,147 +231,7 @@ enum GodotProjectSignal {
 	ConnectionThreadFailed,
 }
 
-#[godot_api]
-impl GodotProject {
-	#[signal]
-	fn started();
-
-	#[signal]
-	fn checked_out_branch(branch: Dictionary);
-
-	#[signal]
-	fn files_changed();
-
-	#[signal]
-	fn saved_changes();
-
-	#[signal]
-	fn branches_changed(branches: Array<Dictionary>);
-
-	#[signal]
-	fn shutdown_completed();
-
-	#[signal]
-	fn sync_server_connection_info_changed(peer_connection_info: Dictionary);
-
-	#[signal]
-	fn connection_thread_failed();
-
-	// PUBLIC API
-
-	#[func]
-	fn set_user_name(&self, name: String) {
-		self.driver_input_tx
-			.unbounded_send(InputEvent::SetUserName { name })
-			.unwrap();
-	}
-
-	#[func]
-	fn shutdown(&self) {
-		self.driver_input_tx
-			.unbounded_send(InputEvent::StartShutdown)
-			.unwrap();
-	}
-
-	#[func]
-	fn get_project_doc_id(&self) -> Variant {
-		self._get_project_doc_id().to_variant()
-	}
-
-	#[func]
-	fn get_heads(&self) -> PackedStringArray /* String[] */ {
-		self._get_heads().to_godot()
-	}
-
-
-	#[func]
-	fn get_files(&self) -> PackedStringArray {
-		self._get_files().to_godot()
-	}
-
-
-	// TODO: move to GodotProjectNode
-    #[func]
-    pub fn get_singleton() -> Gd<Self> {
-        Engine::singleton()
-            .get_singleton(&StringName::from("GodotProject"))
-            .unwrap()
-            .cast::<Self>()
-    }
-
-    #[func]
-    fn get_changes(&self) -> Array<Dictionary> /* String[]  */ {
-		let changes = self._get_changes();
-		changes.iter().map(|c| c.to_godot()).collect::<Array<Dictionary>>()
-	}
-
-    #[func]
-    fn get_main_branch(&self) -> Variant /* Branch? */ {
-		self._get_main_branch().to_variant()
-	}
-
-    #[func]
-    fn get_branch_by_id(&self, branch_id: String) -> Variant /* Branch? */ {
-		self._get_branch_by_id(&branch_id).to_variant()
-	}
-    #[func]
-    fn merge_branch(&mut self, source_branch_doc_id: String, target_branch_doc_id: String) {
-		self._merge_branch(DocumentId::from_str(&source_branch_doc_id).unwrap(), DocumentId::from_str(&target_branch_doc_id).unwrap());
-	}
-
-    #[func]
-    fn create_branch(&mut self, name: String) {
-		self._create_branch(name);
-	}
-    #[func]
-    fn create_merge_preview_branch(
-        &mut self,
-        source_branch_doc_id: String,
-        target_branch_doc_id: String,
-    ) {
-		let source_branch_doc_id = DocumentId::from_str(&source_branch_doc_id).unwrap();
-        let target_branch_doc_id = DocumentId::from_str(&target_branch_doc_id).unwrap();
-		self._create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id);
-	}
-    #[func]
-    fn delete_branch(&mut self, branch_doc_id: String) {
-		self._delete_branch(DocumentId::from_str(&branch_doc_id).unwrap());
-	}
-    #[func]
-    fn checkout_branch(&mut self, branch_doc_id: String) {
-		self._checkout_branch(DocumentId::from_str(&branch_doc_id).unwrap());
-	}
-    // filters out merge preview branches
-    #[func]
-    fn get_branches(&self) -> Array<Dictionary> /* { name: String, id: String }[] */ {
-		self._get_branches().iter().map(|b| b.to_godot()).collect::<Array<Dictionary>>()
-	}
-    #[func]
-    fn get_checked_out_branch(&self) -> Variant /* {name: String, id: String, is_main: bool}? */ {
-		self.get_checked_out_branch_state().to_variant()
-	}
-
-    #[func]
-    fn get_sync_server_connection_info(&self) -> Variant {
-        match self._get_sync_server_connection_info() {
-            Some(peer_connection_info) => {
-                peer_connection_info_to_dict(peer_connection_info).to_variant()
-            }
-            None => Variant::nil(),
-        }
-    }
-
-    #[func]
-    fn get_all_changes_between(
-        &self,
-        old_heads: PackedStringArray,
-        curr_heads: PackedStringArray,
-    ) -> Dictionary {
-        let old_heads = array_to_heads(old_heads);
-        let new_heads = array_to_heads(curr_heads);
-        self._get_changes_between(old_heads, new_heads)
-    }
-
+impl GodotProjectImpl {
 	fn globalize_path(&self, path: &String) -> String {
 		// trim the project_dir from the front of the path
 		if path.starts_with("res://") {
@@ -1182,7 +1039,7 @@ impl GodotProject {
         } else {
             &empty_string
         };
-        let diff = GodotProject::get_diff_dict(path.clone(), path.clone(), old_text, new_text);
+        let diff = Self::get_diff_dict(path.clone(), path.clone(), old_text, new_text);
         let result = dict! {
             "path" : path.to_variant(),
             "change_type" : change_type.to_variant(),
@@ -1952,104 +1809,6 @@ impl GodotProject {
 	}
 
 
-    fn add_new_uid(path: GString, uid: String) {
-        let id = ResourceUid::singleton().text_to_id(&uid);
-        if id == ResourceUid::INVALID_ID as i64 {
-            return;
-        }
-        if !ResourceUid::singleton().has_id(id) {
-            ResourceUid::singleton().add_id(id, &path);
-        } else if ResourceUid::singleton().get_id_path(id) != path {
-            ResourceUid::singleton().set_id(id, &path);
-        }
-    }
-
-    fn update_godot_after_sync(&mut self, events: Vec<FileSystemEvent>) {
-        let mut reload_scripts = false;
-        let mut scenes_to_reload = Vec::new();
-        let mut reimport_files = HashSet::new();
-		let mut files_changed = Vec::new();
-		let mut file_created_or_deleted = true;
-        for event in events {
-            let (abs_path, content) = match event {
-                FileSystemEvent::FileCreated(path, content) => {
-					file_created_or_deleted = true;
-					(path, content)
-				},
-                FileSystemEvent::FileModified(path, content) => (path, content),
-                FileSystemEvent::FileDeleted(_) => {
-					file_created_or_deleted = true;
-					continue;
-				},
-            };
-			files_changed.push(abs_path.to_string_lossy().to_string());
-            let res_path = self.localize_path(&abs_path.to_string_lossy().to_string());
-            let extension = abs_path.extension().unwrap_or_default().to_string_lossy().to_string();
-            if extension == "gd" {
-                reload_scripts = true;
-            } else if extension == "tscn" {
-                scenes_to_reload.push(res_path);
-            } else if extension == "import" {
-                let base = PathBuf::from(res_path).file_stem().unwrap_or_default().to_string_lossy().to_string();
-                reimport_files.insert(base.clone());
-                if let FileContent::String(string) = content {
-                    // go line by line, find the line that begins with "uid="
-                    for line in string.lines() {
-                        if line.starts_with("uid=") {
-                            let uid = line.split("=").nth(1).unwrap_or_default().to_string();
-                            Self::add_new_uid(GString::from(base), uid);
-                            break;
-                        }
-                    }
-                }
-            } else if extension == "uid" {
-                if let FileContent::String(string) = content {
-                    Self::add_new_uid(GString::from(res_path), string);
-                }
-            // check if a file with .import added exists
-            } else  {
-                let mut import_path = abs_path.clone();
-				import_path.set_extension(abs_path.extension().unwrap_or_default().to_string_lossy().to_string() + ".import");
-                if import_path.exists() {
-                    reimport_files.insert(res_path.to_string());
-                }
-            }
-        }
-		println!("--------------- rust: files_changed: \n{:?}", files_changed);
-		// We have to turn off process here because:
-		// * This was probably called from `process()`
-		// * Any of these functions we're about to call could result in popping up and stepping the ProgressDialog modal
-		// * ProgressDialog::step() will call `Main::iteration()`, which calls `process()` on all the scene tree nodes
-		// * calling `process()` on us again will cause gd_ext to attempt to re-bind_mut() the GodotProject singleton
-		// * This will cause a panic because we're already in the middle of `process()` with a bound mut ref to base
-		self.base_mut().set_process(false);
-        if reload_scripts {
-            PatchworkEditorAccessor::reload_scripts();
-        }
-		if reimport_files.len() > 0 {
-			EditorFilesystemAccessor::reimport_files(&reimport_files.into_iter().map(|path| path).collect::<Vec<String>>());
-        }
-		if scenes_to_reload.len() > 0 {
-			println!("rust: reloading scenes");
-			for scene_path in scenes_to_reload {
-				let scene = force_reload_resource(&scene_path);
-				if let Some(scene) = scene {
-					if PatchworkEditorAccessor::is_changing_scene() {
-						println!("!!!!!!!!!!!!!!rust: is changing scene, skipping reload");
-					} else {
-						EditorFilesystemAccessor::reload_scene_from_path(&scene_path);
-					}
-				} else {
-					println!("rust: failed to reload scene: {}", scene_path);
-				}
-            }
-        }
-		if file_created_or_deleted {
-			EditorFilesystemAccessor::scan();
-		}
-		self.base_mut().set_process(true);
-    }
-
 
     fn sync_patchwork_to_godot(&mut self, previous_branch_id: Option<DocumentId>, previous_branch_heads: Vec<ChangeHash>) -> Vec<FileSystemEvent> {
 		println!("rust: sync_patchwork_to_godot");
@@ -2135,13 +1894,12 @@ impl GodotProject {
         };
     }
 
-	fn _init(_base: Base<Node>, project_dir: String) -> Self {
+	fn _init(project_dir: String) -> Self {
 
         let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
         let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
 
         let mut ret = Self {
-            base: _base,
             sync_server_connection_info: None,
             doc_handles: HashMap::new(),
             branch_states: HashMap::new(),
@@ -2425,24 +2183,274 @@ impl GodotProject {
 }
 
 
+#[derive(GodotClass)]
+#[class(base=Node)]
+pub struct GodotProject {
+	base: Base<Node>,
+	project: GodotProjectImpl,
+}
+
+
+#[godot_api]
+impl GodotProject {
+	#[signal]
+	fn started();
+
+	#[signal]
+	fn checked_out_branch(branch: Dictionary);
+
+	#[signal]
+	fn files_changed();
+
+	#[signal]
+	fn saved_changes();
+
+	#[signal]
+	fn branches_changed(branches: Array<Dictionary>);
+
+	#[signal]
+	fn shutdown_completed();
+
+	#[signal]
+	fn sync_server_connection_info_changed(peer_connection_info: Dictionary);
+
+	#[signal]
+	fn connection_thread_failed();
+
+	// PUBLIC API
+
+	#[func]
+	fn set_user_name(&self, name: String) {
+		self.project.driver_input_tx
+			.unbounded_send(InputEvent::SetUserName { name })
+			.unwrap();
+	}
+
+	#[func]
+	fn shutdown(&self) {
+		self.project.driver_input_tx
+			.unbounded_send(InputEvent::StartShutdown)
+			.unwrap();
+	}
+
+	#[func]
+	fn get_project_doc_id(&self) -> Variant {
+		self.project._get_project_doc_id().to_variant()
+	}
+
+	#[func]
+	fn get_heads(&self) -> PackedStringArray /* String[] */ {
+		self.project._get_heads().to_godot()
+	}
+
+
+	#[func]
+	fn get_files(&self) -> PackedStringArray {
+		self.project._get_files().to_godot()
+	}
+
+    #[func]
+    pub fn get_singleton() -> Gd<Self> {
+        Engine::singleton()
+            .get_singleton(&StringName::from("GodotProject"))
+            .unwrap()
+            .cast::<Self>()
+    }
+
+    #[func]
+    fn get_changes(&self) -> Array<Dictionary> /* String[]  */ {
+		let changes = self.project._get_changes();
+		changes.iter().map(|c| c.to_godot()).collect::<Array<Dictionary>>()
+	}
+
+    #[func]
+    fn get_main_branch(&self) -> Variant /* Branch? */ {
+		self.project._get_main_branch().to_variant()
+	}
+
+    #[func]
+    fn get_branch_by_id(&self, branch_id: String) -> Variant /* Branch? */ {
+		self.project._get_branch_by_id(&branch_id).to_variant()
+	}
+    #[func]
+    fn merge_branch(&mut self, source_branch_doc_id: String, target_branch_doc_id: String) {
+		self.project._merge_branch(DocumentId::from_str(&source_branch_doc_id).unwrap(), DocumentId::from_str(&target_branch_doc_id).unwrap());
+	}
+
+    #[func]
+    fn create_branch(&mut self, name: String) {
+		self.project._create_branch(name);
+	}
+    #[func]
+    fn create_merge_preview_branch(
+        &mut self,
+        source_branch_doc_id: String,
+        target_branch_doc_id: String,
+    ) {
+		let source_branch_doc_id = DocumentId::from_str(&source_branch_doc_id).unwrap();
+        let target_branch_doc_id = DocumentId::from_str(&target_branch_doc_id).unwrap();
+		self.project._create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id);
+	}
+    #[func]
+    fn delete_branch(&mut self, branch_doc_id: String) {
+		self.project._delete_branch(DocumentId::from_str(&branch_doc_id).unwrap());
+	}
+    #[func]
+    fn checkout_branch(&mut self, branch_doc_id: String) {
+		self.project._checkout_branch(DocumentId::from_str(&branch_doc_id).unwrap());
+	}
+    // filters out merge preview branches
+    #[func]
+    fn get_branches(&self) -> Array<Dictionary> /* { name: String, id: String }[] */ {
+		self.project._get_branches().iter().map(|b| b.to_godot()).collect::<Array<Dictionary>>()
+	}
+    #[func]
+    fn get_checked_out_branch(&self) -> Variant /* {name: String, id: String, is_main: bool}? */ {
+		self.project.get_checked_out_branch_state().to_variant()
+	}
+
+    #[func]
+    fn get_sync_server_connection_info(&self) -> Variant {
+        match self.project._get_sync_server_connection_info() {
+            Some(peer_connection_info) => {
+                peer_connection_info_to_dict(peer_connection_info).to_variant()
+            }
+            None => Variant::nil(),
+        }
+    }
+
+    #[func]
+    fn get_all_changes_between(
+        &self,
+        old_heads: PackedStringArray,
+        curr_heads: PackedStringArray,
+    ) -> Dictionary {
+        let old_heads = array_to_heads(old_heads);
+        let new_heads = array_to_heads(curr_heads);
+        self.project._get_changes_between(old_heads, new_heads)
+    }
+
+	fn add_new_uid(path: GString, uid: String) {
+        let id = ResourceUid::singleton().text_to_id(&uid);
+        if id == ResourceUid::INVALID_ID as i64 {
+            return;
+        }
+        if !ResourceUid::singleton().has_id(id) {
+            ResourceUid::singleton().add_id(id, &path);
+        } else if ResourceUid::singleton().get_id_path(id) != path {
+            ResourceUid::singleton().set_id(id, &path);
+        }
+    }
+
+	fn update_godot_after_sync(&mut self, events: Vec<FileSystemEvent>) {
+        let mut reload_scripts = false;
+        let mut scenes_to_reload = Vec::new();
+        let mut reimport_files = HashSet::new();
+		let mut files_changed = Vec::new();
+		let mut file_created_or_deleted = true;
+        for event in events {
+            let (abs_path, content) = match event {
+                FileSystemEvent::FileCreated(path, content) => {
+					file_created_or_deleted = true;
+					(path, content)
+				},
+                FileSystemEvent::FileModified(path, content) => (path, content),
+                FileSystemEvent::FileDeleted(_) => {
+					file_created_or_deleted = true;
+					continue;
+				},
+            };
+			files_changed.push(abs_path.to_string_lossy().to_string());
+            let res_path = self.project.localize_path(&abs_path.to_string_lossy().to_string());
+            let extension = abs_path.extension().unwrap_or_default().to_string_lossy().to_string();
+            if extension == "gd" {
+                reload_scripts = true;
+            } else if extension == "tscn" {
+                scenes_to_reload.push(res_path);
+            } else if extension == "import" {
+                let base = PathBuf::from(res_path).file_stem().unwrap_or_default().to_string_lossy().to_string();
+                reimport_files.insert(base.clone());
+                if let FileContent::String(string) = content {
+                    // go line by line, find the line that begins with "uid="
+                    for line in string.lines() {
+                        if line.starts_with("uid=") {
+                            let uid = line.split("=").nth(1).unwrap_or_default().to_string();
+                            Self::add_new_uid(GString::from(base), uid);
+                            break;
+                        }
+                    }
+                }
+            } else if extension == "uid" {
+                if let FileContent::String(string) = content {
+                    Self::add_new_uid(GString::from(res_path), string);
+                }
+            // check if a file with .import added exists
+            } else  {
+                let mut import_path = abs_path.clone();
+				import_path.set_extension(abs_path.extension().unwrap_or_default().to_string_lossy().to_string() + ".import");
+                if import_path.exists() {
+                    reimport_files.insert(res_path.to_string());
+                }
+            }
+        }
+		println!("--------------- rust: files_changed: \n{:?}", files_changed);
+		// We have to turn off process here because:
+		// * This was probably called from `process()`
+		// * Any of these functions we're about to call could result in popping up and stepping the ProgressDialog modal
+		// * ProgressDialog::step() will call `Main::iteration()`, which calls `process()` on all the scene tree nodes
+		// * calling `process()` on us again will cause gd_ext to attempt to re-bind_mut() the GodotProject singleton
+		// * This will cause a panic because we're already in the middle of `process()` with a bound mut ref to base
+		self.base_mut().set_process(false);
+        if reload_scripts {
+            PatchworkEditorAccessor::reload_scripts();
+        }
+		if reimport_files.len() > 0 {
+			EditorFilesystemAccessor::reimport_files(&reimport_files.into_iter().map(|path| path).collect::<Vec<String>>());
+        }
+		if scenes_to_reload.len() > 0 {
+			println!("rust: reloading scenes");
+			for scene_path in scenes_to_reload {
+				let scene = force_reload_resource(&scene_path);
+				if let Some(scene) = scene {
+					if PatchworkEditorAccessor::is_changing_scene() {
+						println!("!!!!!!!!!!!!!!rust: is changing scene, skipping reload");
+					} else {
+						EditorFilesystemAccessor::reload_scene_from_path(&scene_path);
+					}
+				} else {
+					println!("rust: failed to reload scene: {}", scene_path);
+				}
+            }
+        }
+		if file_created_or_deleted {
+			EditorFilesystemAccessor::scan();
+		}
+		self.base_mut().set_process(true);
+    }
+}
+
+
 #[godot_api]
 impl INode for GodotProject {
     fn init(_base: Base<Node>) -> Self {
-        Self::_init(_base, ProjectSettings::singleton().globalize_path("res://").to_string())
+        GodotProject {
+			base: _base,
+			project: GodotProjectImpl::_init(ProjectSettings::singleton().globalize_path("res://").to_string()),
+		}
     }
 
     fn enter_tree(&mut self) {
-		self._enter_tree();
+		self.project._enter_tree();
     }
 
     fn exit_tree(&mut self) {
-		self._exit_tree();
+		self.project._exit_tree();
         // Perform typical plugin operations here.
     }
 
     fn process(&mut self, _delta: f64) {
 		// check if the connection thread died
-		let (updates, signals) = self._process(_delta);
+		let (updates, signals) = self.project._process(_delta);
 		if updates.len() > 0 {
 			self.update_godot_after_sync(updates);
 		}
@@ -2558,6 +2566,7 @@ impl IEditorPlugin for GodotProjectPlugin {
 		}
     }
 }
+
 
 #[derive(Debug, Clone)]
 struct PathWithAction {
