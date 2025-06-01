@@ -988,6 +988,10 @@ impl GodotScene {
         if !self.nodes.is_empty() && self.root_node_id.is_some() {
             if let Some(root_node) = self.nodes.get(self.root_node_id.as_ref().unwrap()) {
                 self.serialize_node(&mut output, root_node);
+				if self.connections.len() == 0  && self.editable_instances.len() == 0 {
+					// prevent an extra trailing new line
+					output.pop();
+				}
             }
         }
 
