@@ -23,7 +23,8 @@ use godot::classes::{ResourceUid, ConfigFile, DirAccess, FileAccess, ResourceImp
 use godot::prelude::*;
 use tracing::instrument;
 use std::any::Any;
-use std::collections::HashSet;
+use std::collections::{hash_set, HashSet};
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{collections::HashMap, str::FromStr};
@@ -272,7 +273,7 @@ impl GodotProjectImpl {
 
 
     fn _get_files(&self) -> Vec<String> {
-        let files = self._get_files_at(None);
+        let files = self._get_files_at(None, None);
 
         // let mut result = Dictionary::new();
 		let mut result: Vec<String> = Vec::new();
@@ -675,7 +676,7 @@ impl GodotProjectImpl {
     }
 
 
-    fn _get_files_at(&self, heads: Option<&Vec<ChangeHash>>) -> HashMap<String, FileContent> {
+    fn _get_files_at(&self, heads: Option<&Vec<ChangeHash>>, filters: Option<&HashSet<String>>) -> HashMap<String, FileContent> {
 		match &self.checked_out_branch_state {
 			CheckedOutBranchState::CheckedOut(branch_doc_id, _) => {
 				let branch_state = match self.branch_states.get(&branch_doc_id) {
@@ -685,7 +686,7 @@ impl GodotProjectImpl {
 						return HashMap::new();
 					},
 				};
-				self._get_files_on_branch_at(branch_state, heads, None)
+				self._get_files_on_branch_at(branch_state, heads, filters)
 			}
 			_ => panic!("_get_files_at: no checked out branch"),
 		}
@@ -774,17 +775,20 @@ impl GodotProjectImpl {
                       files: Vec<(PathBuf, FileContent)>, /*  Record<String, Variant> */
                       heads: Option<Vec<ChangeHash>>)
     {
-        let stored_files = self._get_files_at(heads.as_ref());
+        let stored_files = self._get_files_at(heads.as_ref(),
+		Some(
+			&files.iter().map(|(path, _)| path.to_string_lossy().to_string()).collect::<HashSet<String>>()
+		));
 
-        let changed_files: Vec<(String, FileContent)> = files.iter().filter_map(|(path, content)| {
+        let changed_files: Vec<(String, FileContent)> = files.into_iter().filter_map(|(path, content)| {
             let path = path.to_string_lossy().to_string();
             let stored_content = stored_files.get(&path);
             if let Some(stored_content) = stored_content {
-                if stored_content == content {
+                if stored_content == &content {
                     return None;
                 }
             }
-            Some((path.to_string(), content.clone()))
+            Some((path, content))
         }).collect();
         let _ = self.driver_input_tx
             .unbounded_send(InputEvent::SaveFiles {
@@ -796,8 +800,20 @@ impl GodotProjectImpl {
 
 
     fn _get_file_at(&self, path: String, heads: Option<Vec<ChangeHash>>) -> Option<FileContent> {
-        let files = self._get_files_at(heads.as_ref());
-        files.get(&path).cloned()
+		let mut ret: Option<FileContent> = None;
+		{
+			let files = self._get_files_at(heads.as_ref(),Some(&HashSet::from_iter(vec![path.clone()])));
+			for file in files.into_iter() {
+				if file.0 == path {
+					ret = Some(file.1);
+					break;
+				} else {
+					panic!("Returned a file that didn't match the path!?!??!?!?!?!?!?!!? {:?} != {:?}", file.0, path);
+				}
+			}
+		}
+
+		ret
     }
 
     fn get_checked_out_branch_state(&self) -> Option<BranchState> {
