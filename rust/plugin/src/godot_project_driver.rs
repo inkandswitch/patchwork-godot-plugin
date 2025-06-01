@@ -15,7 +15,7 @@ use crate::file_utils::FileContent;
 use crate::godot_parser::GodotScene;
 use crate::godot_project::{ForkInfo, MergeInfo};
 use crate::utils::{
-    commit_with_attribution_and_timestamp, print_branch_state, CommitMetadata, MergeMetadata,
+    commit_with_attribution_and_timestamp, print_branch_state, CommitMetadata, MergeMetadata, ToShortForm,
 };
 use crate::{
     godot_parser,
@@ -307,11 +307,12 @@ impl GodotProjectDriver {
         return self.runtime.spawn(async move {
             tracing::info!("start a client");
 			let backoff = 2_f64.powf(retries as f64) * 100.0;
-			if backoff > 0.0 {
+			if retries > 0 {
 				tracing::error!("connection thread failed, retrying in {}ms...", backoff);
 				tokio::time::sleep(std::time::Duration::from_millis(backoff as u64)).await;
 			}
             loop {
+				tracing::info!("Attempting to connect to automerge repo...");
                 // Start a client.
                 let stream = loop {
                     // Try to connect to a peer
@@ -324,6 +325,7 @@ impl GodotProjectDriver {
                     }
                     break res.unwrap();
                 };
+                tracing::info!("Connected successfully!");
 
                 match repo_handle_clone
                     .connect_tokio_io(SERVER_URL, stream, ConnDirection::Outgoing)
@@ -345,7 +347,6 @@ impl GodotProjectDriver {
                     }
                 }
 
-                tracing::debug!("connected successfully!");
             }
         });
     }
@@ -1099,7 +1100,7 @@ impl DriverState {
                         })
                         .unwrap();
 
-                    tracing::debug!("branch {:?} (id: {:?}): state loaded {:?}", branch_state.name, branch_state.doc_handle.document_id(), branch_state.synced_heads);
+                    tracing::debug!("branch {:?} (id: {:?}): state loaded with heads {}", branch_state.name, branch_state.doc_handle.document_id(), branch_state.synced_heads.to_short_form());
                 } else {
                     tracing::debug!("branch {:?} (id: {:?}): state still missing {:?} binary docs", branch_state.name, branch_state.doc_handle.document_id(), missing_binary_doc_ids.len());
 					tracing::trace!("missing binary doc ids: {:?}", missing_binary_doc_ids);
