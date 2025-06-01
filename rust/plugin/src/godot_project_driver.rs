@@ -904,7 +904,7 @@ impl DriverState {
 			);
 		}
 
-        tracing::debug!("save {:?}", self.heads_in_frontend);
+        tracing::debug!("save on branch {:?} {:?}", branch_doc_state.name, self.heads_in_frontend);
     }
 
     fn merge_branch(&mut self, source_branch_doc_id: DocumentId, target_branch_doc_id: DocumentId) {
@@ -1197,7 +1197,7 @@ fn does_frontend_have_branch_at_heads(
     if let Some(synced_heads) = heads_in_frontend.get(&branch_state.doc_handle.document_id()) {
 		let result = synced_heads == &branch_state.synced_heads;
 		tracing::trace!("comparing {:?} == {:?}: {:?}", synced_heads, branch_state.synced_heads, result);
-        tracing::info!("Frontend has branch {:?} (id: {:?}) at heads {:?} == {:?}: {:?}", branch_state.name, branch_state.doc_handle.document_id(), synced_heads, branch_state.synced_heads, result);
+        tracing::info!("Frontend has branch {:?} (id: {:?}) at heads {:?}: {:?}", branch_state.name, branch_state.doc_handle.document_id(), synced_heads, result);
         result
     } else {
 		tracing::info!("no synced heads found for branch {:?} (id: {:?})", branch_state.name, branch_state.doc_handle.document_id());

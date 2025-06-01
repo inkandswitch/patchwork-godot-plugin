@@ -318,7 +318,15 @@ impl GodotProjectImpl {
         }
     }
 
+	#[instrument(skip_all, level = tracing::Level::INFO)]
 	fn _merge_branch(&mut self, source_branch_doc_id: DocumentId, target_branch_doc_id: DocumentId) {
+		println!("");
+		tracing::info!("*** MERGE BRANCH: {:?} into {:?}",
+			self.branch_states.get(&source_branch_doc_id).map(|b| b.name.clone()).unwrap_or(source_branch_doc_id.to_string()),
+			self.branch_states.get(&target_branch_doc_id).map(|b| b.name.clone()).unwrap_or(target_branch_doc_id.to_string())
+		);
+		println!("");
+
         self.driver_input_tx
             .unbounded_send(InputEvent::MergeBranch {
                 source_branch_doc_id: source_branch_doc_id,
@@ -331,7 +339,11 @@ impl GodotProjectImpl {
     }
 
 
+	#[instrument(skip(self), fields(name = ?name), level = tracing::Level::INFO)]
 	fn _create_branch(&mut self, name: String) {
+		println!("");
+		tracing::info!("*** CREATE BRANCH");
+		println!("");
         let source_branch_doc_id = match &self.get_checked_out_branch_state() {
             Some(branch_state) => branch_state.doc_handle.document_id(),
             None => {
@@ -355,6 +367,12 @@ impl GodotProjectImpl {
 		source_branch_doc_id: DocumentId,
 		target_branch_doc_id: DocumentId,
 	) {
+		println!("");
+		tracing::info!("*** CREATE MERGE PREVIEW BRANCH: {:?} into {:?}",
+			self.branch_states.get(&source_branch_doc_id).map(|b| b.name.clone()).unwrap_or(source_branch_doc_id.to_string()),
+			self.branch_states.get(&target_branch_doc_id).map(|b| b.name.clone()).unwrap_or(target_branch_doc_id.to_string())
+		);
+		println!("");
 
         self.driver_input_tx
             .unbounded_send(InputEvent::CreateMergePreviewBranch {
@@ -493,6 +511,7 @@ impl GodotProjectImpl {
 
 
 	// INTERNAL FUNCTIONS
+	#[instrument(skip(self), fields(previous_branch_id = ?previous_branch_id, current_doc_id = ?current_doc_id, previous_heads = ?previous_heads, current_heads = ?current_heads), level = tracing::Level::DEBUG)]
 	fn _get_changed_file_content_between(
 		&self,
 		previous_branch_id: Option<DocumentId>,
@@ -512,6 +531,7 @@ impl GodotProjectImpl {
             current_heads
         };
 		if previous_heads.len() == 0 {
+			tracing::debug!("No previous heads, getting all files on current branch {:?}", current_branch_state.name);
 			let files = self._get_files_on_branch_at(current_branch_state, Some(&curr_heads), None);
 			return files.into_iter().map(|(path, content)| {
 				match content {
@@ -541,6 +561,8 @@ impl GodotProjectImpl {
 					return Vec::new();
 				},
 			};
+			tracing::debug!("No descendent doc id, doing slow diff, previous: {:?}, current: {:?}", previous_branch_state.name, current_branch_state.name);
+
 			let previous_files = self._get_files_on_branch_at(previous_branch_state, Some(&previous_heads), None);
 			let current_files = self._get_files_on_branch_at(current_branch_state, Some(&curr_heads), None);
 			let mut events = Vec::new();
@@ -570,6 +592,7 @@ impl GodotProjectImpl {
 			Some(branch_state) => branch_state,
 			None => panic!("_get_changed_file_content_between: descendent doc id not found"),
 		};
+		tracing::debug!("descendent branch: {:?}", branch_state.name);
         let (patches, old_file_set, curr_file_set) =
 		branch_state.doc_handle.with_doc(|d| {
 			let old_files_id: Option<ObjId> = d.get_obj_id_at(ROOT, "files", &previous_heads);
@@ -784,7 +807,15 @@ impl GodotProjectImpl {
                       heads: Option<Vec<ChangeHash>>)
     {
 		let filter = files.iter().map(|(path, _)| path.to_string_lossy().to_string()).collect::<HashSet<String>>();
-		tracing::trace!("syncing files: [{}]", files.iter().map(|(path, content)|
+		println!("");
+		tracing::debug!("*** SYNC: branch {:?} at {:?}, num files: {}",
+			self.branch_states.get(&branch_doc_handle.document_id()).map(|b| b.name.clone()).unwrap_or("unknown".to_string()),
+			heads.as_ref().unwrap_or(&Vec::new()),
+			files.len()
+		);
+		println!("");
+		tracing::trace!("files: [{}]",
+			files.iter().map(|(path, content)|
 			format!("{}: {}", path.to_string_lossy().to_string(), fmt_debug_file_content(content))
 		).collect::<Vec<String>>().join(", "));
         let stored_files = self._get_files_at(heads.as_ref(), Some(&filter));
@@ -1994,15 +2025,15 @@ impl GodotProjectImpl {
 			if let Some(error) = driver.connection_thread_get_last_error() {
 				match error {
 					ConnectionThreadError::ConnectionThreadDied(error) => {
-						tracing::error!("file system driver connection thread died, respawning: {}", error);
+						tracing::error!("automerge repo driver connection thread died, respawning: {}", error);
 						if !driver.respawn_connection_thread() {
-							tracing::error!("file system driver connection thread failed too many times, aborting");
+							tracing::error!("automerge repo driver connection thread failed too many times, aborting");
 							// TODO: make the GUI do something with this
 							signals.push(GodotProjectSignal::ConnectionThreadFailed);
 						}
 					}
 					ConnectionThreadError::ConnectionThreadError(error) => {
-						tracing::error!("file system driver connection thread error: {}", error);
+						tracing::error!("automerge repo driver connection thread error: {}", error);
 					}
 				}
 			}
