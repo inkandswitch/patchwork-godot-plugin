@@ -272,7 +272,7 @@ impl GodotProjectImpl {
 
 
     fn _get_files(&self) -> Vec<String> {
-        let files = self._get_files_at(&None);
+        let files = self._get_files_at(None);
 
         // let mut result = Dictionary::new();
 		let mut result: Vec<String> = Vec::new();
@@ -511,7 +511,7 @@ impl GodotProjectImpl {
             current_heads
         };
 		if previous_heads.len() == 0 {
-			let files = self._get_files_on_branch_at(current_branch_state, &Some(curr_heads));
+			let files = self._get_files_on_branch_at(current_branch_state, Some(&curr_heads), None);
 			return files.into_iter().map(|(path, content)| {
 				match content {
 					FileContent::Deleted => {
@@ -540,8 +540,8 @@ impl GodotProjectImpl {
 					return Vec::new();
 				},
 			};
-			let previous_files = self._get_files_on_branch_at(previous_branch_state, &Some(previous_heads));
-			let current_files = self._get_files_on_branch_at(current_branch_state, &Some(curr_heads));
+			let previous_files = self._get_files_on_branch_at(previous_branch_state, Some(&previous_heads), None);
+			let current_files = self._get_files_on_branch_at(current_branch_state, Some(&curr_heads), None);
 			let mut events = Vec::new();
 			for (path, _) in previous_files.iter() {
 				if !current_files.contains_key(path) {
@@ -675,7 +675,7 @@ impl GodotProjectImpl {
     }
 
 
-    fn _get_files_at(&self, heads: &Option<Vec<ChangeHash>>) -> HashMap<String, FileContent> {
+    fn _get_files_at(&self, heads: Option<&Vec<ChangeHash>>) -> HashMap<String, FileContent> {
 		match &self.checked_out_branch_state {
 			CheckedOutBranchState::CheckedOut(branch_doc_id, _) => {
 				let branch_state = match self.branch_states.get(&branch_doc_id) {
@@ -685,7 +685,7 @@ impl GodotProjectImpl {
 						return HashMap::new();
 					},
 				};
-				self._get_files_on_branch_at(branch_state, heads)
+				self._get_files_on_branch_at(branch_state, heads, None)
 			}
 			_ => panic!("_get_files_at: no checked out branch"),
 		}
@@ -709,7 +709,7 @@ impl GodotProjectImpl {
 	}
 
 	#[instrument(skip(self, branch_state, heads), fields(branch_state.name = ?branch_state.name, synced_heads = ?branch_state.synced_heads, heads_to_get = ?heads), level = tracing::Level::DEBUG)]
-	fn _get_files_on_branch_at(&self, branch_state: &BranchState, heads: &Option<Vec<ChangeHash>>) -> HashMap<String, FileContent> {
+	fn _get_files_on_branch_at(&self, branch_state: &BranchState, heads: Option<&Vec<ChangeHash>>, filters: Option<&HashSet<String>>) -> HashMap<String, FileContent> {
 
         let mut files = HashMap::new();
 
@@ -719,10 +719,18 @@ impl GodotProjectImpl {
         };
 		tracing::debug!("getting files from doc");
 		let mut linked_doc_ids = Vec::new();
+		let filtered_paths = if let Some(filters) = filters {
+			filters
+		} else {
+			&HashSet::new()
+		};
 
         branch_state.doc_handle.with_doc(|doc|{
 			let files_obj_id: ObjId = doc.get_at(ROOT, "files", &heads).unwrap().unwrap().1;
 			for path in doc.keys_at(&files_obj_id, &heads) {
+				if filtered_paths.len() > 0 && !filtered_paths.contains(&path) {
+					continue;
+				}
 				let file_entry = match doc.get_at(&files_obj_id, &path, &heads) {
 					Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
 					_ => panic!("failed to get file entry for {:?}", path),
@@ -766,7 +774,7 @@ impl GodotProjectImpl {
                       files: Vec<(PathBuf, FileContent)>, /*  Record<String, Variant> */
                       heads: Option<Vec<ChangeHash>>)
     {
-        let stored_files = self._get_files_at(&heads);
+        let stored_files = self._get_files_at(heads.as_ref());
 
         let changed_files: Vec<(String, FileContent)> = files.iter().filter_map(|(path, content)| {
             let path = path.to_string_lossy().to_string();
@@ -788,7 +796,7 @@ impl GodotProjectImpl {
 
 
     fn _get_file_at(&self, path: String, heads: Option<Vec<ChangeHash>>) -> Option<FileContent> {
-        let files = self._get_files_at(&heads);
+        let files = self._get_files_at(heads.as_ref());
         files.get(&path).cloned()
     }
 
@@ -1006,8 +1014,8 @@ impl GodotProjectImpl {
         &self,
         path: &String,
         change_type: &str,
-        old_content: &Option<FileContent>,
-        new_content: &Option<FileContent>,
+        old_content: Option<&FileContent>,
+        new_content: Option<&FileContent>,
         old_heads: &Vec<ChangeHash>,
         curr_heads: &Vec<ChangeHash>,
     ) -> Dictionary {
@@ -1015,8 +1023,8 @@ impl GodotProjectImpl {
             "path" : path.to_variant(),
             "diff_type" : "resource_changed".to_variant(),
             "change_type" : change_type.to_variant(),
-            "old_content" : old_content.as_ref().unwrap_or(&FileContent::Deleted).to_variant(),
-            "new_content" : new_content.as_ref().unwrap_or(&FileContent::Deleted).to_variant(),
+            "old_content" : old_content.unwrap_or(&FileContent::Deleted).to_variant(),
+            "new_content" : new_content.unwrap_or(&FileContent::Deleted).to_variant(),
         };
         if let Some(old_content) = old_content {
             if let Some(old_resource) =
@@ -1039,8 +1047,8 @@ impl GodotProjectImpl {
         &self,
         path: &String,
         change_type: &str,
-        old_content: &Option<FileContent>,
-        new_content: &Option<FileContent>,
+        old_content: Option<&FileContent>,
+        new_content: Option<&FileContent>,
     ) -> Dictionary {
         let empty_string = String::from("");
         let old_text = if let Some(FileContent::String(s)) = old_content {
@@ -1057,8 +1065,8 @@ impl GodotProjectImpl {
         let result = dict! {
             "path" : path.to_variant(),
             "change_type" : change_type.to_variant(),
-            "old_content" : if old_text.is_empty() { Variant::nil() } else { old_text.to_variant() },
-            "new_content" : if new_text.is_empty() { Variant::nil() } else { new_text.to_variant() },
+            "old_content" : old_content.unwrap_or(&FileContent::Deleted).to_variant(),
+            "new_content" : new_content.unwrap_or(&FileContent::Deleted).to_variant(),
             "text_diff" : diff,
             "diff_type" : "text_changed".to_variant(),
         };
@@ -1069,42 +1077,42 @@ impl GodotProjectImpl {
         &self,
         path: &String,
         change_type: &str,
-        old_content: &Option<FileContent>,
-        new_content: &Option<FileContent>,
+        old_content: Option<&FileContent>,
+        new_content: Option<&FileContent>,
         old_heads: &Vec<ChangeHash>,
         curr_heads: &Vec<ChangeHash>,
     ) -> Dictionary {
-        let old_content_type = old_content.as_ref().unwrap_or_default().get_variant_type();
-        let new_content_type = new_content.as_ref().unwrap_or_default().get_variant_type();
+        let old_content_type = old_content.unwrap_or(&FileContent::Deleted).get_variant_type();
+        let new_content_type = new_content.unwrap_or(&FileContent::Deleted).get_variant_type();
         if (change_type == "unchanged") {
             return dict! {
                 "path" : path.to_variant(),
                 "diff_type" : "file_unchanged".to_variant(),
                 "change_type" : change_type.to_variant(),
-                "old_content": old_content.as_ref().unwrap_or(&FileContent::Deleted).to_variant(),
-                "new_content": new_content.as_ref().unwrap_or(&FileContent::Deleted).to_variant(),
+                "old_content": old_content.unwrap_or(&FileContent::Deleted).to_variant(),
+                "new_content": new_content.unwrap_or(&FileContent::Deleted).to_variant(),
             };
         }
         if (old_content_type != VariantType::STRING && new_content_type != VariantType::STRING) {
             return self._get_resource_diff(
                 &path,
                 &change_type,
-                &old_content,
-                &new_content,
+                old_content,
+                new_content,
                 &old_heads,
                 &curr_heads,
             );
         } else if (old_content_type != VariantType::PACKED_BYTE_ARRAY
             && new_content_type != VariantType::PACKED_BYTE_ARRAY)
         {
-            return self._get_text_file_diff(&path, &change_type, &old_content, &new_content);
+            return self._get_text_file_diff(&path, &change_type, old_content, new_content);
         } else {
             return dict! {
                 "path" : path.to_variant(),
                 "diff_type" : "file_changed".to_variant(),
                 "change_type" : change_type.to_variant(),
-                "old_content" : old_content.as_ref().unwrap_or(&FileContent::Deleted).to_variant(),
-                "new_content" : new_content.as_ref().unwrap_or(&FileContent::Deleted).to_variant(),
+                "old_content" : old_content.unwrap_or(&FileContent::Deleted).to_variant(),
+                "new_content" : new_content.unwrap_or(&FileContent::Deleted).to_variant(),
             };
         }
     }
@@ -1136,25 +1144,28 @@ impl GodotProjectImpl {
                 TextRepresentation::String(TextEncoding::Utf8CodeUnit),
             )
         });
-        let mut changed_files = get_changed_files_vec(&patches);
-        let mut changed_files_set = HashMap::new();
+		let changed_files_set: HashSet<String> = get_changed_files_vec(&patches).into_iter().map(|path| path).collect();
+        let mut changed_files_map = HashMap::new();
         let mut scene_files = Vec::new();
 
         let mut all_diff: HashMap<String, Dictionary> = HashMap::new();
         // Get old and new content
-        for path in changed_files.iter() {
-            let old_file_content = self._get_file_at(path.clone(), Some(old_heads.clone()));
-            let new_file_content = self._get_file_at(path.clone(), Some(curr_heads.clone()));
-            let old_content_type = old_file_content.as_ref().unwrap_or_default().get_variant_type();
-            let new_content_type = new_file_content.as_ref().unwrap_or_default().get_variant_type();
-            let change_type = if old_file_content.is_none() {
+		let old_file_contents = self._get_files_on_branch_at(&checked_out_branch_state, Some(&old_heads), Some(&changed_files_set));
+		let new_file_contents = self._get_files_on_branch_at(&checked_out_branch_state, Some(&curr_heads), Some(&changed_files_set));
+
+        for path in changed_files_set.iter() {
+			let old_file_content = old_file_contents.get(path).unwrap_or(&FileContent::Deleted);
+			let new_file_content = new_file_contents.get(path).unwrap_or(&FileContent::Deleted);
+            let old_content_type = old_file_content.get_variant_type();
+            let new_content_type = new_file_content.get_variant_type();
+            let change_type = if old_file_content == &FileContent::Deleted {
                 "added"
-            } else if new_file_content.is_none() {
+            } else if new_file_content == &FileContent::Deleted {
                 "deleted"
             } else {
                 "modified"
             };
-            changed_files_set.insert(path.clone(), change_type.to_string());
+            changed_files_map.insert(path.clone(), change_type.to_string());
             if old_content_type != VariantType::OBJECT && new_content_type != VariantType::OBJECT {
                 // if both the old and new one are binary, or if one is none and the other is binary, then we can use the resource diff
                 let _ = all_diff.insert(
@@ -1162,8 +1173,8 @@ impl GodotProjectImpl {
                     self._get_non_scene_diff(
                         &path,
                         &change_type,
-                        &old_file_content,
-                        &new_file_content,
+                        Some(old_file_content),
+                        Some(new_file_content),
                         &old_heads,
                         &curr_heads,
                     ),
@@ -1327,8 +1338,8 @@ impl GodotProjectImpl {
             let mut get_depsfn = |scene: Option<GodotScene>, ext_resources: &mut Dictionary| {
                 if let Some(scene) = scene {
                     for (ext_id, ext_resource) in scene.ext_resources.iter() {
-                        if changed_files_set.contains_key(&ext_resource.path) {
-                            let change_type = changed_files_set.get(&ext_resource.path).unwrap();
+                        if changed_files_map.contains_key(&ext_resource.path) {
+                            let change_type = changed_files_map.get(&ext_resource.path).unwrap();
                             if change_type == "modified" {
                                 changed_ext_resources.insert(ext_id.clone());
                                 all_changed_ext_resource_ids.insert(ext_id.clone());
