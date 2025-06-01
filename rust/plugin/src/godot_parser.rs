@@ -979,8 +979,6 @@ impl GodotScene {
             for (key, property) in sorted_props {
                 output.push_str(&format!("{} = {}\n", key, property.value));
             }
-
-            output.push('\n');
             // short circuit if we have a main resource, no nodes or connections
             return output;
         } else if self.resource_type != "PackedScene" {
