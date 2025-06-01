@@ -133,6 +133,10 @@ impl FileContent {
 			return Ok(FileContent::Scene(scene));
 		}
 
+		if let Ok(Some((_, _))) = doc.get_at(&file_entry, "deleted", &heads) {
+			return Ok(FileContent::Deleted);
+		}
+
 		// try to read file as text
 		let content = doc.get_at(&file_entry, "content", &heads);
 
@@ -170,8 +174,13 @@ impl FileContent {
 }
 
 
-impl Hydrate for FileContent {
-
+pub fn fmt_debug_file_content(file_content: &FileContent) -> String {
+	match file_content {
+		FileContent::String(s) => format!("String"),
+		FileContent::Binary(bytes) => format!("Binary"),
+		FileContent::Scene(scene) => format!("Scene"),
+		FileContent::Deleted => "Deleted".to_string(),
+	}
 }
 
 //
@@ -195,7 +204,7 @@ impl ToGodot for FileContent {
 	type ToVia < 'v > = Variant;
 	fn to_godot(&self) -> Self::ToVia < '_ > {
 		// < Self as crate::obj::EngineBitfield > ::ord(* self)
-		self.to_variant().to_godot()
+		self.to_variant()
 	}
 	fn to_variant(&self) -> Variant {
 		match self {
