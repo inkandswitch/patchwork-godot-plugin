@@ -1196,6 +1196,11 @@ impl GodotProjectImpl {
 
 		tracing::debug!("branch {:?}, getting changes between {:?} and {:?}", checked_out_branch_state.name, old_heads, curr_heads);
 
+		if old_heads == curr_heads{
+			tracing::debug!("no changes");
+			return Dictionary::new();
+		}
+
         // only get the first 6 chars of the hash
         let patches: Vec<Patch> = checked_out_branch_state.doc_handle.with_doc(|d| {
             d.diff(
