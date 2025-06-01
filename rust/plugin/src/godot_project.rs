@@ -411,7 +411,9 @@ impl GodotProjectImpl {
             Some(branch_state) => branch_state,
             None => panic!("couldn't checkout branch, branch doc id not found")
         };
-		tracing::debug!("checking out branch {:?}", target_branch_state.name);
+		println!("");
+		tracing::debug!("*** CHECKOUT: {:?}\n", target_branch_state.name);
+		println!("");
 
         if target_branch_state.synced_heads == target_branch_state.doc_handle.with_doc(|d| d.get_heads()) {
             self.checked_out_branch_state =
@@ -420,6 +422,7 @@ impl GodotProjectImpl {
 					Some((current_branch.clone(), current_heads)));
 			self.just_checked_out_new_branch = true;
         } else {
+			tracing::debug!("checked out branch {:?} has unsynced heads", target_branch_state.name);
             self.checked_out_branch_state =
 				CheckedOutBranchState::CheckingOut(
 					branch_doc_id.clone(),
