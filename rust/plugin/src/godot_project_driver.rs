@@ -795,6 +795,7 @@ impl DriverState {
         let mut binary_entries: Vec<(String, DocHandle)> = Vec::new();
         let mut text_entries: Vec<(String, &String)> = Vec::new();
         let mut scene_entries: Vec<(String, &GodotScene)> = Vec::new();
+		let mut deleted_entries: Vec<String> = Vec::new();
 
         for (path, content) in file_entries.iter() {
             match content {
@@ -823,8 +824,7 @@ impl DriverState {
                     scene_entries.push((path.clone(), godot_scene));
                 }
                 FileContent::Deleted => {
-                    // todo: implement this case
-                    //
+					deleted_entries.push(path.clone());
                 }
             }
         }
@@ -881,6 +881,10 @@ impl DriverState {
                     format!("automerge:{}", &binary_doc_handle.document_id()),
                 );
             }
+
+			for path in deleted_entries {
+				let _ = tx.delete(&files, &path);
+			}
 
             commit_with_attribution_and_timestamp(
                 tx,

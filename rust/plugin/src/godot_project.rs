@@ -1,4 +1,4 @@
-use crate::file_utils::FileContent;
+use crate::file_utils::{fmt_debug_file_content, FileContent};
 use godot::classes::editor_plugin::DockSlot;
 use ::safer_ffi::prelude::*;
 use automerge::op_tree::B;
@@ -30,7 +30,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{collections::HashMap, str::FromStr};
 use crate::godot_helpers::{ToGodotExt, ToVariantExt};
 use crate::godot_helpers::{ToRust};
-use crate::file_system_driver::{FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
+use crate::file_system_driver::{debug_fmt_file_system_event, debug_fmt_update_event, FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
 use crate::godot_parser::{self, GodotScene, TypeOrInstance};
 use crate::godot_project_driver::{BranchState, ConnectionThreadError, DocHandleType};
 use crate::patches::{get_changed_files_vec};
@@ -635,19 +635,27 @@ impl GodotProjectImpl {
 		let mut changed_file_events = Vec::new();
 
 		let mut linked_doc_ids = Vec::new();
+		for path in deleted_files.iter() {
+			changed_file_events.push(FileSystemEvent::FileDeleted(PathBuf::from(path)));
+		}
+
 		branch_state.doc_handle.with_doc(|doc|{
-			let files_obj_id: ObjId = doc.get_at(ROOT, "files", &previous_heads).unwrap().unwrap().1;
-			for path in doc.keys_at(&files_obj_id, &previous_heads) {
-				if !deleted_files.contains(&path) && !added_files.contains(&path) && !modified_files.contains(&path) {
+			let files_obj_id: ObjId = doc.get_at(ROOT, "files", &curr_heads).unwrap().unwrap().1;
+
+			for path in doc.keys_at(&files_obj_id, &curr_heads) {
+				if !added_files.contains(&path) && !modified_files.contains(&path) {
 					continue;
 				}
 
-				let file_entry = match doc.get_at(&files_obj_id, &path, &previous_heads) {
+				let file_entry = match doc.get_at(&files_obj_id, &path, &curr_heads) {
 					Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
-					_ => panic!("failed to get file entry for {:?}", path),
+					_ => {
+						tracing::error!("failed to get file entry for {:?}", path);
+						continue;
+					}
 				};
 
-				match FileContent::hydrate_content_at(file_entry, &doc, &path, &previous_heads) {
+				match FileContent::hydrate_content_at(file_entry, &doc, &path, &curr_heads) {
 					Ok(content) => {
 						changed_file_events.push(make_event(path, content));
 					},
@@ -775,11 +783,12 @@ impl GodotProjectImpl {
                       files: Vec<(PathBuf, FileContent)>, /*  Record<String, Variant> */
                       heads: Option<Vec<ChangeHash>>)
     {
-        let stored_files = self._get_files_at(heads.as_ref(),
-		Some(
-			&files.iter().map(|(path, _)| path.to_string_lossy().to_string()).collect::<HashSet<String>>()
-		));
-
+		let filter = files.iter().map(|(path, _)| path.to_string_lossy().to_string()).collect::<HashSet<String>>();
+		tracing::trace!("syncing files: [{}]", files.iter().map(|(path, content)|
+			format!("{}: {}", path.to_string_lossy().to_string(), fmt_debug_file_content(content))
+		).collect::<Vec<String>>().join(", "));
+        let stored_files = self._get_files_at(heads.as_ref(), Some(&filter));
+		let files_len = files.len();
         let changed_files: Vec<(String, FileContent)> = files.into_iter().filter_map(|(path, content)| {
             let path = path.to_string_lossy().to_string();
             let stored_content = stored_files.get(&path);
@@ -790,6 +799,10 @@ impl GodotProjectImpl {
             }
             Some((path, content))
         }).collect();
+		tracing::debug!("syncing {}/{} files", changed_files.len(), files_len);
+		tracing::trace!("syncing actually changed files: [{}]", changed_files.iter().map(|(path, content)|
+			format!("{}: {}", path, fmt_debug_file_content(content))
+		).collect::<Vec<String>>().join(", "));
         let _ = self.driver_input_tx
             .unbounded_send(InputEvent::SaveFiles {
                 branch_doc_handle,
@@ -1883,8 +1896,6 @@ impl GodotProjectImpl {
 
         let mut updates = Vec::new();
         for event in events {
-            // replace res:// with the actual project path
-            // let path = path.replace("res://", &res_path);
             match event{
                 FileSystemEvent::FileDeleted(path) => {
                     updates.push(FileSystemUpdateEvent::FileDeleted(PathBuf::from(self.globalize_path(&path.to_string_lossy().to_string()).to_string())));
