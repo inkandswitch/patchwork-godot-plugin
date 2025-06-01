@@ -511,7 +511,7 @@ impl GodotProjectImpl {
             current_heads
         };
 		if previous_heads.len() == 0 {
-			let files = self._get_files_on_branch_at(current_doc_id, &Some(curr_heads));
+			let files = self._get_files_on_branch_at(current_branch_state, &Some(curr_heads));
 			return files.into_iter().map(|(path, content)| {
 				match content {
 					FileContent::Deleted => {
@@ -533,8 +533,15 @@ impl GodotProjectImpl {
 			// neither document is the descendent of the other, we can't do a fast diff,
 			// we need to do it the slow way; get the files from both docs
 			// TODO: Is there a fast way to do this?
-			let previous_files = self._get_files_on_branch_at(previous_branch_id.unwrap(), &Some(previous_heads));
-			let current_files = self._get_files_on_branch_at(current_doc_id, &Some(curr_heads));
+			let previous_branch_state = match self.branch_states.get(&previous_branch_id.unwrap()) {
+				Some(branch_state) => branch_state,
+				None => {
+					tracing::warn!("_get_changed_file_content_between: previous branch id not found");
+					return Vec::new();
+				},
+			};
+			let previous_files = self._get_files_on_branch_at(previous_branch_state, &Some(previous_heads));
+			let current_files = self._get_files_on_branch_at(current_branch_state, &Some(curr_heads));
 			let mut events = Vec::new();
 			for (path, _) in previous_files.iter() {
 				if !current_files.contains_key(path) {
@@ -670,7 +677,16 @@ impl GodotProjectImpl {
 
     fn _get_files_at(&self, heads: &Option<Vec<ChangeHash>>) -> HashMap<String, FileContent> {
 		match &self.checked_out_branch_state {
-			CheckedOutBranchState::CheckedOut(branch_doc_id, _) => self._get_files_on_branch_at(branch_doc_id.clone(), heads),
+			CheckedOutBranchState::CheckedOut(branch_doc_id, _) => {
+				let branch_state = match self.branch_states.get(&branch_doc_id) {
+					Some(branch_state) => branch_state,
+					None => {
+						tracing::error!("_get_files_at: branch doc id {:?} not found", branch_doc_id);
+						return HashMap::new();
+					},
+				};
+				self._get_files_on_branch_at(branch_state, heads)
+			}
 			_ => panic!("_get_files_at: no checked out branch"),
 		}
 	}
@@ -692,24 +708,16 @@ impl GodotProjectImpl {
 		}).unwrap_or(None)
 	}
 
-	#[instrument(skip_all, level = tracing::Level::DEBUG)]
-	fn _get_files_on_branch_at(&self, branch_doc_id: DocumentId, heads: &Option<Vec<ChangeHash>>) -> HashMap<String, FileContent> {
+	#[instrument(skip(self, branch_state, heads), fields(branch_state.name = ?branch_state.name, synced_heads = ?branch_state.synced_heads, heads_to_get = ?heads), level = tracing::Level::DEBUG)]
+	fn _get_files_on_branch_at(&self, branch_state: &BranchState, heads: &Option<Vec<ChangeHash>>) -> HashMap<String, FileContent> {
 
         let mut files = HashMap::new();
-
-        let branch_state = match self.branch_states.get(&branch_doc_id) {
-            Some(branch_state) => branch_state,
-            None => {
-				tracing::warn!("_get_files_on_branch_at: branch doc id {:?} not found", branch_doc_id);
-				return files;
-			},
-        };
 
         let heads = match heads {
             Some(heads) => heads.clone(),
             None => branch_state.synced_heads.clone(),
         };
-		tracing::debug!("{:?}, heads: {:?}", branch_state.name, heads);
+		tracing::debug!("getting files from doc");
 		let mut linked_doc_ids = Vec::new();
 
         branch_state.doc_handle.with_doc(|doc|{
@@ -1936,7 +1944,7 @@ impl GodotProjectImpl {
         self.stop();
 	}
 
-	#[instrument(target = "patchwork_rust_core::godot_project::inner_process", level = "debug", skip_all)]
+	#[instrument(target = "patchwork_rust_core::godot_project::inner_process", level = tracing::Level::DEBUG, skip_all)]
 	fn _process(&mut self, _delta: f64) -> (Vec<FileSystemEvent>, Vec<GodotProjectSignal>) {
 		let mut signals: Vec<GodotProjectSignal> = Vec::new();
 
@@ -2459,7 +2467,7 @@ impl INode for GodotProject {
         // Perform typical plugin operations here.
     }
 
-	#[instrument(target = "patchwork_rust_core::godot_project::outer_process", level = "debug", skip_all)]
+	#[instrument(target = "patchwork_rust_core::godot_project::outer_process", level = tracing::Level::DEBUG, skip_all)]
     fn process(&mut self, _delta: f64) {
 		let (updates, signals) = self.project._process(_delta);
 		if updates.len() > 0 {
