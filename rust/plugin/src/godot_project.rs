@@ -758,7 +758,7 @@ impl GodotProjectImpl {
 		}).unwrap_or(None)
 	}
 
-	#[instrument(skip(self, branch_state, heads), fields(branch_state.name = ?branch_state.name, synced_heads = ?branch_state.synced_heads, heads_to_get = ?heads), level = tracing::Level::DEBUG)]
+	#[instrument(skip_all, level = tracing::Level::DEBUG)]
 	fn _get_files_on_branch_at(&self, branch_state: &BranchState, heads: Option<&Vec<ChangeHash>>, filters: Option<&HashSet<String>>) -> HashMap<String, FileContent> {
 
         let mut files = HashMap::new();
@@ -767,7 +767,7 @@ impl GodotProjectImpl {
             Some(heads) => heads.clone(),
             None => branch_state.synced_heads.clone(),
         };
-		tracing::debug!("getting files from doc");
+		tracing::debug!("Getting files on branch {:?} at {}", branch_state.name, heads.to_short_form());
 		let mut linked_doc_ids = Vec::new();
 		let filtered_paths = if let Some(filters) = filters {
 			filters
@@ -1955,7 +1955,12 @@ impl GodotProjectImpl {
 				Vec::new()
 			}
 		};
-		tracing::debug!("syncing branch {:?} from {} to {}", current_branch_state.name, previous_heads.to_short_form(), current_heads.to_short_form());
+		tracing::debug!("syncing branch {:?} from {}{} to {}", current_branch_state.name,
+		if previous_branch_id.is_some() {
+			format!("{} @ ", self._get_branch_name(previous_branch_id.as_ref().unwrap()))
+		} else {
+			"".to_string()
+		}, previous_heads.to_short_form(), current_heads.to_short_form());
 		let events = self._get_changed_file_content_between(previous_branch_id, current_doc_id, previous_heads, current_heads);
 
         let mut updates = Vec::new();

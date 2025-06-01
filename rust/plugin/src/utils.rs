@@ -112,7 +112,7 @@ pub(crate) fn commit_with_attribution_and_timestamp(tx: Transaction, metadata: &
 }
 
 pub(crate) fn print_branch_state(message: &str, branch_state: &BranchState) {
-	let last_synced_head = branch_state.synced_heads.last().map(|h| h.to_string()).unwrap_or("<NONE>".to_string());
+	let last_synced_head = branch_state.synced_heads.last().map(|h| h.to_short_form()).unwrap_or("<NONE>".to_string());
     tracing::info!(
         "{}: {:?} - linked docs: {:?}, last synced head: {:?}",
         &message, branch_state.name, branch_state.linked_doc_ids.len(), last_synced_head
@@ -381,7 +381,7 @@ impl ToShortForm for Option<ChangeHash> {
 
 impl ToShortForm for Vec<ChangeHash> {
     fn to_short_form(&self) -> String {
-        self.iter().map(|h| h.to_short_form()).collect::<Vec<String>>().join(", ")
+        format!("[{}]", self.iter().map(|h| h.to_short_form()).collect::<Vec<String>>().join(", "))
     }
 }
 
