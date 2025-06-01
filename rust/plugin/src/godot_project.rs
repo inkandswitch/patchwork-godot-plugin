@@ -2395,9 +2395,11 @@ impl GodotProject {
 		let mut files_changed = Vec::new();
 		let mut file_created_or_deleted = true;
         for event in events {
+			let mut file_created = false;
             let (abs_path, content) = match event {
                 FileSystemEvent::FileCreated(path, content) => {
 					file_created_or_deleted = true;
+					file_created = true;
 					(path, content)
 				},
                 FileSystemEvent::FileModified(path, content) => (path, content),
@@ -2414,8 +2416,12 @@ impl GodotProject {
             } else if extension == "tscn" {
                 scenes_to_reload.push(res_path);
             } else if extension == "import" {
-                let base = PathBuf::from(res_path).file_stem().unwrap_or_default().to_string_lossy().to_string();
-                reimport_files.insert(base.clone());
+				let mut pb = PathBuf::from(res_path);
+				pb.set_extension("");
+				let base = pb.to_string_lossy().to_string();
+				if !file_created {
+					reimport_files.insert(base.clone());
+				}
                 if let FileContent::String(string) = content {
                     // go line by line, find the line that begins with "uid="
                     for line in string.lines() {
@@ -2435,7 +2441,9 @@ impl GodotProject {
                 let mut import_path = abs_path.clone();
 				import_path.set_extension(abs_path.extension().unwrap_or_default().to_string_lossy().to_string() + ".import");
                 if import_path.exists() {
-                    reimport_files.insert(res_path.to_string());
+					if !file_created {
+						reimport_files.insert(res_path.to_string());
+					}
                 }
             }
         }
