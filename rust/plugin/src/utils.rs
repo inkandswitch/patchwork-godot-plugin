@@ -21,7 +21,7 @@ pub(crate) fn get_linked_docs_of_branch(
         let files = match d.get_obj_id(ROOT, "files") {
             Some(files) => files,
             None => {
-                println!(
+                tracing::warn!(
                     "Failed to load files for branch doc {:?}",
                     branch_doc_handle.document_id()
                 );
@@ -34,7 +34,7 @@ pub(crate) fn get_linked_docs_of_branch(
                 let file = match d.get_obj_id(&files, &path) {
                     Some(file) => file,
                     None => {
-                        println!("Failed to load linked doc {:?}", path);
+                        tracing::error!("Failed to load linked doc {:?}", path);
                         return None;
                     }
                 };
@@ -68,10 +68,10 @@ pub(crate) fn print_branch_doc(message: &str, doc_handle: &DocHandle) {
 
         let keys = d.keys(files).into_iter().collect::<Vec<_>>();
 
-        println!("{:?}: {:?}", message, doc_handle.document_id());
+        tracing::debug!("{:?}: {:?}", message, doc_handle.document_id());
 
         for key in keys {
-            println!("  {:?}", key);
+            tracing::debug!(" - {:?}", key);
         }
     });
 }
@@ -79,7 +79,7 @@ pub(crate) fn print_branch_doc(message: &str, doc_handle: &DocHandle) {
 pub(crate) fn print_doc(message: &str, doc_handle: &DocHandle) {
     let checked_out_doc_json =
         doc_handle.with_doc(|d| serde_json::to_string(&automerge::AutoSerde::from(d)).unwrap());
-    println!("rust: {:?}: {:?}", message, checked_out_doc_json);
+    tracing::debug!("{:?}: {:?}", message, checked_out_doc_json);
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -112,10 +112,14 @@ pub(crate) fn commit_with_attribution_and_timestamp(tx: Transaction, metadata: &
 }
 
 pub(crate) fn print_branch_state(message: &str, branch_state: &BranchState) {
-    println!(
-        "rust: {:?}: {:?} {:?} {:?}",
-        message, branch_state.name, branch_state.linked_doc_ids, branch_state.synced_heads
+	let last_synced_head = branch_state.synced_heads.last().map(|h| h.to_string()).unwrap_or("<NONE>".to_string());
+    tracing::info!(
+        "{}: {:?} - linked docs: {:?}, last synced head: {:?}",
+        &message, branch_state.name, branch_state.linked_doc_ids.len(), last_synced_head
     );
+	tracing::debug!("branch id: {:?}", branch_state.doc_handle.document_id());
+	tracing::trace!("linked doc ids: {:?}", branch_state.linked_doc_ids);
+	tracing::trace!("synced heads: {:?}", branch_state.synced_heads);
 }
 
 pub(crate) fn array_to_heads(packed_string_array: PackedStringArray) -> Vec<ChangeHash> {
@@ -135,13 +139,13 @@ pub(crate) fn heads_to_array(heads: Vec<ChangeHash>) -> PackedStringArray {
 
 
 pub(crate) fn strategic_waiting(loc: &str) {
-	println!("pointelssly waiting for about 1 second @ {}", loc);
+	tracing::debug!("pointelssly waiting for about 1 second @ {}", loc);
 	let mut count: i32 = 1000;
 	while count > 0 {
 		std::thread::sleep(Duration::from_millis(100));
 		count -= 100;
 	}
-	println!("Done waiting");
+	tracing::debug!("Done waiting");
 }
 
 #[derive(Debug, Serialize, Deserialize)]

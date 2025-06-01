@@ -21,6 +21,7 @@ use godot::global::str_to_var;
 use godot::meta::{AsArg, ParamType};
 use godot::classes::{ResourceUid, ConfigFile, DirAccess, FileAccess, ResourceImporter};
 use godot::prelude::*;
+use tracing::instrument;
 use std::any::Any;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -117,6 +118,8 @@ struct GodotProjectState {
     branches_metadata_doc_id: DocumentId,
 }
 
+
+#[derive(Debug)]
 pub struct GodotProjectImpl {
     doc_handles: HashMap<DocumentId, DocHandle>,
     branch_states: HashMap<DocumentId, BranchState>,
@@ -372,7 +375,7 @@ impl GodotProjectImpl {
 		let current_branch = match &self.checked_out_branch_state {
 			CheckedOutBranchState::CheckedOut(doc_id, _) => doc_id.clone(),
 			CheckedOutBranchState::CheckingOut(doc_id, _) => {
-				println!("rust: CHECKING OUT BRANCH WHILE STILL CHECKING OUT?!?!?! {:?}", doc_id);
+				tracing::error!("CHECKING OUT BRANCH WHILE STILL CHECKING OUT?!?!?! {:?}", doc_id);
 				doc_id.clone()
 			},
 			CheckedOutBranchState::NothingCheckedOut => {
@@ -389,7 +392,7 @@ impl GodotProjectImpl {
             Some(branch_state) => branch_state,
             None => panic!("couldn't checkout branch, branch doc id not found")
         };
-		println!("rust: checking out branch {:?}", target_branch_state.name);
+		tracing::debug!("checking out branch {:?}", target_branch_state.name);
 
         if target_branch_state.synced_heads == target_branch_state.doc_handle.with_doc(|d| d.get_heads()) {
             self.checked_out_branch_state =
@@ -451,10 +454,10 @@ impl GodotProjectImpl {
 			None => return None,
 		};
 		if current_heads.len() == 0 {
-			panic!("rust: _get_descendent_document: previous_heads is empty");
+			panic!("_get_descendent_document: previous_heads is empty");
 		}
 		if previous_heads.len() == 0 {
-			panic!("rust: _get_descendent_document: previous_heads is empty");
+			panic!("_get_descendent_document: previous_heads is empty");
 		}
 
 		let previous_keys = branch_state.doc_handle.with_doc(|d| {
@@ -557,7 +560,7 @@ impl GodotProjectImpl {
 		let descendent_doc_id = descendent_doc_id.unwrap();
 		let branch_state = match self.branch_states.get(&descendent_doc_id) {
 			Some(branch_state) => branch_state,
-			None => panic!("rust: _get_changed_file_content_between: descendent doc id not found"),
+			None => panic!("_get_changed_file_content_between: descendent doc id not found"),
 		};
         let (patches, old_file_set, curr_file_set) =
 		branch_state.doc_handle.with_doc(|d| {
@@ -617,7 +620,7 @@ impl GodotProjectImpl {
 					}
 				}
 			} else {
-				println!("rust: _get_changed_file_events_: file not found in added_files, deleted_files, or modified_files: {:?}", path);
+				tracing::debug!("file not found in added_files, deleted_files, or modified_files: {:?}", path);
 				FileSystemEvent::FileModified(PathBuf::from(path), content)
 			}
 		};
@@ -646,7 +649,7 @@ impl GodotProjectImpl {
 								linked_doc_ids.push((id, path));
 							},
 							Err(error_msg) => {
-								println!("error: {:?}", error_msg);
+								tracing::error!("error: {:?}", error_msg);
 							}
 						}
 					}
@@ -668,7 +671,7 @@ impl GodotProjectImpl {
     fn _get_files_at(&self, heads: &Option<Vec<ChangeHash>>) -> HashMap<String, FileContent> {
 		match &self.checked_out_branch_state {
 			CheckedOutBranchState::CheckedOut(branch_doc_id, _) => self._get_files_on_branch_at(branch_doc_id.clone(), heads),
-			_ => panic!("rust: _get_files_at: no checked out branch"),
+			_ => panic!("_get_files_at: no checked out branch"),
 		}
 	}
 
@@ -696,7 +699,7 @@ impl GodotProjectImpl {
         let branch_state = match self.branch_states.get(&branch_doc_id) {
             Some(branch_state) => branch_state,
             None => {
-				println!("rust: _get_files_on_branch_at: branch doc id not found");
+				tracing::warn!("_get_files_on_branch_at: branch doc id {:?} not found", branch_doc_id);
 				return files;
 			},
         };
@@ -705,7 +708,7 @@ impl GodotProjectImpl {
             Some(heads) => heads.clone(),
             None => branch_state.synced_heads.clone(),
         };
-		println!("rust: _get_files_at: {:?}, heads: {:?}", branch_state.name, heads);
+		tracing::debug!("{:?}, heads: {:?}", branch_state.name, heads);
 		let mut linked_doc_ids = Vec::new();
 
         branch_state.doc_handle.with_doc(|doc|{
@@ -726,7 +729,7 @@ impl GodotProjectImpl {
 								linked_doc_ids.push((id, path));
 							},
 							Err(error_msg) => {
-								println!("error: {:?}", error_msg);
+								tracing::error!("error: {:?}", error_msg);
 							}
 						}
 					}
@@ -784,8 +787,8 @@ impl GodotProjectImpl {
 				self.branch_states.get(&branch_doc_id).cloned()
             }
             _ => {
-                println!(
-                    "warning: tried to get checked out branch state when nothing is checked out"
+                tracing::info!(
+                    "Tried to get checked out branch state when nothing is checked out"
                 );
                 None
             }
@@ -810,7 +813,7 @@ impl GodotProjectImpl {
 
         let file = FileAccess::open(path, ModeFlags::WRITE);
         if let None = file {
-            println!("error opening file: {}", path);
+            tracing::error!("error opening file: {}", path);
             return;
         }
         let mut file = file.unwrap();
@@ -820,7 +823,7 @@ impl GodotProjectImpl {
         } else if let Ok(string) = variant.try_to::<String>() {
             file.store_line(&GString::from(string));
         } else {
-            println!("unsupported variant type!! {:?}", variant.type_id());
+            tracing::error!("unsupported variant type!! {:?}", variant.type_id());
         }
         file.close();
     }
@@ -1100,7 +1103,7 @@ impl GodotProjectImpl {
         old_heads: Vec<ChangeHash>,
         curr_heads: Vec<ChangeHash>,
     ) -> Dictionary {
-		println!("rust: getting changes between");
+		tracing::debug!("getting changes between");
         let checked_out_branch_state = match self.get_checked_out_branch_state() {
             Some(branch_state) => branch_state,
             None => return Dictionary::new(),
@@ -1761,7 +1764,7 @@ impl GodotProjectImpl {
     fn start(&mut self) {
         let project_doc_id: String = PatchworkConfigAccessor::get_project_value("project_doc_id", "");
         let checked_out_branch_doc_id = PatchworkConfigAccessor::get_project_value("checked_out_branch_doc_id", "");
-        println!("rust: START {:?}", project_doc_id);
+        tracing::info!("Starting GodotProject with project doc id: {:?}", if project_doc_id == "" { "<NEW DOC>" } else { &project_doc_id });
         self.project_doc_id = match DocumentId::from_str(&project_doc_id) {
             Ok(doc_id) => Some(doc_id),
             Err(e) => None,
@@ -1776,7 +1779,7 @@ impl GodotProjectImpl {
             Err(_) => CheckedOutBranchState::NothingCheckedOut,
         };
 
-        println!(
+        tracing::debug!(
             "initial checked out branch state: {:?}",
             self.checked_out_branch_state
         );
@@ -1811,11 +1814,11 @@ impl GodotProjectImpl {
 
 
     fn sync_patchwork_to_godot(&mut self, previous_branch_id: Option<DocumentId>, previous_branch_heads: Vec<ChangeHash>) -> Vec<FileSystemEvent> {
-		println!("rust: sync_patchwork_to_godot");
+		tracing::debug!("sync_patchwork_to_godot");
 		let current_branch_state = match self.get_checked_out_branch_state() {
 			Some(branch_state) => branch_state,
 			None => {
-				println!("!!!!!!!no checked out branch!!!!!!");
+				tracing::error!("!!!!!!!no checked out branch!!!!!!");
 				return Vec::new();
 			}
 		};
@@ -1919,15 +1922,16 @@ impl GodotProjectImpl {
 	}
 
 	fn _enter_tree(&mut self) {
-		println!("** GodotProject: enter_tree");
+		tracing::debug!("** GodotProject: enter_tree");
 		self.start();
 	}
 
 	fn _exit_tree(&mut self) {
-        println!("** GodotProject: exit_tree");
+        tracing::debug!("** GodotProject: exit_tree");
         self.stop();
 	}
 
+	#[instrument(target = "patchwork_rust_core::godot_project::inner_process", level = "trace", skip_all)]
 	fn _process(&mut self, _delta: f64) -> (Vec<FileSystemEvent>, Vec<GodotProjectSignal>) {
 		let mut signals: Vec<GodotProjectSignal> = Vec::new();
 
@@ -1935,15 +1939,15 @@ impl GodotProjectImpl {
 			if let Some(error) = driver.connection_thread_get_last_error() {
 				match error {
 					ConnectionThreadError::ConnectionThreadDied(error) => {
-						println!("rust: file system driver connection thread died, respawning: {}", error);
+						tracing::error!("file system driver connection thread died, respawning: {}", error);
 						if !driver.respawn_connection_thread() {
-							println!("rust: file system driver connection thread failed too many times, aborting");
+							tracing::error!("file system driver connection thread failed too many times, aborting");
 							// TODO: make the GUI do something with this
 							signals.push(GodotProjectSignal::ConnectionThreadFailed);
 						}
 					}
 					ConnectionThreadError::ConnectionThreadError(error) => {
-						println!("rust: file system driver connection thread error: {}", error);
+						tracing::error!("file system driver connection thread error: {}", error);
 					}
 				}
 			}
@@ -1957,8 +1961,8 @@ impl GodotProjectImpl {
                     doc_handle_type,
                 } => {
                     if doc_handle_type == DocHandleType::Binary {
-                        println!(
-                            "rust: NewBinaryDocHandle !!!! {} {} changes",
+                        tracing::trace!(
+                            "NewBinaryDocHandle !!!! {} {} changes",
                             doc_handle.document_id(),
                             doc_handle.with_doc(|d| d.get_heads().len())
                         );
@@ -1989,7 +1993,7 @@ impl GodotProjectImpl {
                                 );
                                 (Some(&branch_state), None)
                             } else {
-								panic!("rust: NOTHING CHECKED OUT AND WE'RE NOT CHECKING OUT A NEW BRANCH?!?!?! {:?}", branch_state.name);
+								panic!("NOTHING CHECKED OUT AND WE'RE NOT CHECKING OUT A NEW BRANCH?!?!?! {:?}", branch_state.name);
                                 (None, None)
                             }
                         }
@@ -2006,8 +2010,8 @@ impl GodotProjectImpl {
                     if let Some(active_branch_state) = active_branch_state {
                         if active_branch_state.is_synced() {
                             if checking_out_new_branch {
-                                println!(
-                                    "rust: TRIGGER checked out new branch: {}",
+                                tracing::info!(
+                                    "TRIGGER checked out new branch: {}",
                                     active_branch_state.name
                                 );
 
@@ -2020,7 +2024,7 @@ impl GodotProjectImpl {
                             } else {
 								self.should_update_godot = self.should_update_godot || trigger_reload;
                                 if !trigger_reload {
-                                    println!("rust: TRIGGER saved changes: {}", branch_state.name);
+                                    tracing::debug!("TRIGGER saved changes: {}", branch_state.name);
                                     signals.push(GodotProjectSignal::SavedChanges);
                                 }
                             }
@@ -2037,7 +2041,7 @@ impl GodotProjectImpl {
                 }
 
                 OutputEvent::CompletedShutdown => {
-                    println!("rust: CompletedShutdown event");
+                    tracing::debug!("CompletedShutdown event");
                     signals.push(GodotProjectSignal::ShutdownCompleted);
                 }
 
@@ -2107,7 +2111,9 @@ impl GodotProjectImpl {
 		}
 
 		if !Self::safe_to_update_godot() {
-			println!("rust: not safe to update godot");
+			if self.just_checked_out_new_branch || self.should_update_godot || self.file_system_driver.as_ref().map(|driver| driver.has_events_pending()).unwrap_or(false) {
+				tracing::info!("Pending changes, but we're not safe to update godot");
+			}
 			return (Vec::new(), signals);
 		}
 		let (branch_state, previous_branch_info) = match &self.checked_out_branch_state{
@@ -2127,7 +2133,7 @@ impl GodotProjectImpl {
 		}
 		let mut updates = Vec::new();
 		if self.just_checked_out_new_branch {
-			println!("rust: just checked out branch {:?}", branch_state.name);
+			tracing::debug!("just checked out branch {:?}", branch_state.name);
 			let checked_out_branch_doc_id = branch_state
 														.doc_handle
 														.document_id();
@@ -2148,7 +2154,7 @@ impl GodotProjectImpl {
 			PatchworkConfigAccessor::set_project_value("checked_out_branch_doc_id", &checked_out_branch_doc_id.to_string());
 			signals.push(GodotProjectSignal::CheckedOutBranch(branch_state));
 		} else if self.should_update_godot {
-			println!("rust: should update godot");
+			tracing::debug!("should update godot");
 			self.should_update_godot = false;
 			updates = self.sync_patchwork_to_godot(previous_branch_id, previous_branch_heads);
 		} else if let Some(fs_driver) = self.file_system_driver.as_mut() {
@@ -2169,7 +2175,7 @@ impl GodotProjectImpl {
 			if new_files.len() > 0 {
 				let files: Vec<(PathBuf, FileContent)> = new_files.into_iter().map(
 					|(path, content)| {
-						println!("rust: godot editor updated file: {:?}", path);
+						tracing::debug!("godot editor updated file: {:?}", path);
 						(PathBuf::from(self.localize_path(&path.to_string_lossy().to_string()).to_string()), content)
 					}
 				).collect::<Vec<(PathBuf, FileContent)>>();
@@ -2183,7 +2189,7 @@ impl GodotProjectImpl {
 }
 
 
-#[derive(GodotClass)]
+#[derive(GodotClass, Debug)]
 #[class(base=Node)]
 pub struct GodotProject {
 	base: Base<Node>,
@@ -2393,7 +2399,7 @@ impl GodotProject {
                 }
             }
         }
-		println!("--------------- rust: files_changed: \n{:?}", files_changed);
+		tracing::info!("---------- files_changed: {:?}", files_changed);
 		// We have to turn off process here because:
 		// * This was probably called from `process()`
 		// * Any of these functions we're about to call could result in popping up and stepping the ProgressDialog modal
@@ -2408,17 +2414,17 @@ impl GodotProject {
 			EditorFilesystemAccessor::reimport_files(&reimport_files.into_iter().map(|path| path).collect::<Vec<String>>());
         }
 		if scenes_to_reload.len() > 0 {
-			println!("rust: reloading scenes");
+			tracing::debug!("reloading scenes");
 			for scene_path in scenes_to_reload {
 				let scene = force_reload_resource(&scene_path);
 				if let Some(scene) = scene {
 					if PatchworkEditorAccessor::is_changing_scene() {
-						println!("!!!!!!!!!!!!!!rust: is changing scene, skipping reload");
+						tracing::warn!("Editor is changing scene, skipping reload of {}", scene_path);
 					} else {
 						EditorFilesystemAccessor::reload_scene_from_path(&scene_path);
 					}
 				} else {
-					println!("rust: failed to reload scene: {}", scene_path);
+					tracing::error!("failed to reload scene: {}", scene_path);
 				}
             }
         }
@@ -2448,6 +2454,7 @@ impl INode for GodotProject {
         // Perform typical plugin operations here.
     }
 
+	#[instrument(target = "patchwork_rust_core::godot_project::outer_process", level = "trace", skip_all)]
     fn process(&mut self, _delta: f64) {
 		let (updates, signals) = self.project._process(_delta);
 		if updates.len() > 0 {
@@ -2533,7 +2540,7 @@ impl GodotProjectPlugin {
 			let mut sidebar = self.sidebar.take().unwrap();
 			sidebar.queue_free();
 		} else {
-			println!("rust: no sidebar to remove");
+			tracing::warn!("no sidebar to remove");
 		}
 	}
 }
@@ -2541,7 +2548,7 @@ impl GodotProjectPlugin {
 #[godot_api]
 impl IEditorPlugin for GodotProjectPlugin {
     fn enter_tree(&mut self) {
-        println!("** GodotProjectPlugin: enter_tree");
+        tracing::debug!("** GodotProjectPlugin: enter_tree");
     }
 
 	fn ready(&mut self) {
@@ -2567,12 +2574,12 @@ impl IEditorPlugin for GodotProjectPlugin {
 		}
 	}
     fn exit_tree(&mut self) {
-        println!("** GodotProjectPlugin: exit_tree");
+        tracing::debug!("** GodotProjectPlugin: exit_tree");
 		if self.initialized {
 			self.remove_sidebar();
 			self.base_mut().remove_child(&GodotProject::get_singleton());
 		} else {
-			println!("*************** DID NOT INITIALIZE!!!!!!");
+			tracing::error!("*************** DID NOT INITIALIZE!!!!!!");
 		}
     }
 }

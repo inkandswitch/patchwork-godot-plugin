@@ -261,7 +261,7 @@ impl GodotScene {
             // Remove main_resource if it exists but we don't have one
             tx.delete(&structured_content, "main_resource").unwrap();
         } else if self.resource_type != "PackedScene" {
-            println!("PackedScene with no main resource!!");
+            tracing::error!("PackedScene with no main resource!!");
         }
 
         // Store root node id
@@ -402,7 +402,7 @@ impl GodotScene {
                     .get_obj_id(&properties_obj, key)
                     .unwrap_or_else(|| tx.put_object(&properties_obj, key, ObjType::Map).unwrap());
 
-                // println!("reconcile {:?} {:?}", key, property);
+                // tracing::debug!("reconcile {:?} {:?}", key, property);
 
                 let value = tx.get_string(&value_obj, "value");
                 if value != Some(property.value.clone()) {
@@ -629,15 +629,15 @@ impl GodotScene {
             if let Ok(sub_resource) = result {
                 Some(sub_resource)
             } else if let Err(e) = result {
-				println!("Error hydrating main resource: {}", e);
+				tracing::error!("Error hydrating main resource: {}", e);
                 None
             } else {
-				println!("Error hydrating main resource: unknown error");
+				tracing::error!("Error hydrating main resource: unknown error");
                 None
             }
         } else {
 			if resource_type != "PackedScene" {
-				println!("resource with no main resource!!");
+				tracing::error!("resource with no main resource!!");
 			}
             None
         };
@@ -984,7 +984,7 @@ impl GodotScene {
             // short circuit if we have a main resource, no nodes or connections
             return output;
         } else if self.resource_type != "PackedScene" {
-            println!("resource with no resource tag!!");
+            tracing::error!("resource with no resource tag!!");
         }
 
         if !self.nodes.is_empty() && self.root_node_id.is_some() {

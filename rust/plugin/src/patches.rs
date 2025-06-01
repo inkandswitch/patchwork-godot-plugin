@@ -28,7 +28,7 @@ pub fn get_changed_files_vec(patches: &Vec<automerge::Patch>) -> Vec<String> {
             changed_files.insert(second_key.to_string());
         }
 
-        // println!("changed files: {:?}", changed_files);
+        // tracing::debug!("changed files: {:?}", changed_files);
     }
 
     return changed_files.iter().cloned().collect::<Vec<String>>();

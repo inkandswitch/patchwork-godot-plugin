@@ -195,6 +195,7 @@ pub enum ConnectionThreadError {
 	ConnectionThreadError(String),
 }
 
+#[derive(Debug)]
 pub struct GodotProjectDriver {
     runtime: Runtime,
     repo_handle: RepoHandle,
@@ -238,7 +239,7 @@ impl GodotProjectDriver {
         user_name: Option<String>,
     ) {
         if self.connection_thread.is_some() || self.spawned_thread.is_some() {
-            println!("driver already spawned");
+            tracing::warn!("driver already spawned");
             return;
         }
 
@@ -286,12 +287,12 @@ impl GodotProjectDriver {
 	pub fn respawn_connection_thread(&mut self) -> bool {
 		if let Some(connection_thread) = self.connection_thread.take() {
 			if !connection_thread.is_finished() {
-				println!("rust: WARNING: connection thread is not finished, aborting");
+				tracing::warn!("WARNING: connection thread is not finished, aborting");
 				connection_thread.abort();
 			}
 		}
 		if self.retries > 6 {
-			println!("rust: connection thread failed too many times, aborting");
+			tracing::error!("connection thread failed too many times, aborting");
 			return false;
 		}
 		let (connection_thread_tx, connection_thread_rx) = futures::channel::mpsc::unbounded();
@@ -304,10 +305,10 @@ impl GodotProjectDriver {
         let repo_handle_clone = self.repo_handle.clone();
 		let retries = self.retries;
         return self.runtime.spawn(async move {
-            println!("start a client");
+            tracing::info!("start a client");
 			let backoff = 2_f64.powf(retries as f64) * 100.0;
 			if backoff > 0.0 {
-				println!("rust: connection thread failed, retrying in {}ms...", backoff);
+				tracing::error!("connection thread failed, retrying in {}ms...", backoff);
 				tokio::time::sleep(std::time::Duration::from_millis(backoff as u64)).await;
 			}
             loop {
@@ -316,7 +317,7 @@ impl GodotProjectDriver {
                     // Try to connect to a peer
                     let res = TcpStream::connect(SERVER_URL).await;
                     if let Err(e) = res {
-                        println!("error connecting: {:?}", e);
+                        tracing::error!("error connecting: {:?}", e);
                         // sleep for 1 second
                         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                         continue;
@@ -330,11 +331,11 @@ impl GodotProjectDriver {
                 {
                     Ok(completed) => {
                         let error = completed.await;
-                        println!("connection terminated because of: {:?}", error);
+                        tracing::error!("connection terminated because of: {:?}", error);
                         connection_thread_tx.unbounded_send(error.to_string()).unwrap();
                     }
                     Err(e) => {
-                        println!("Failed to connect: {:?}", e);
+                        tracing::error!("Failed to connect: {:?}", e);
                         connection_thread_tx.unbounded_send(e.to_string()).unwrap();
 
                         // sleep for 5 seconds
@@ -344,7 +345,7 @@ impl GodotProjectDriver {
                     }
                 }
 
-                println!("connected successfully!");
+                tracing::debug!("connected successfully!");
             }
         });
     }
@@ -359,16 +360,16 @@ impl GodotProjectDriver {
         let repo_handle = self.repo_handle.clone();
         let user_name = user_name.clone();
 
-        let filter = EnvFilter::new("info").add_directive("automerge_repo=info".parse().unwrap());
-        if let Err(e) = tracing_subscriber::registry()
-            .with(tracing_subscriber::fmt::layer().with_writer(std::io::stdout))
-            .with(filter)
-            .try_init()
-        {
-            println!("Failed to initialize tracing subscriber: {:?}", e);
-        } else {
-            println!("Tracing subscriber initialized");
-        }
+        // let filter = EnvFilter::new("info").add_directive("automerge_repo=info".parse().unwrap());
+        // if let Err(e) = tracing_subscriber::registry()
+        //     .with(tracing_subscriber::fmt::layer().with_writer(std::io::stdout))
+        //     .with(filter)
+        //     .try_init()
+        // {
+        //     tracing::error!("Failed to initialize tracing subscriber: {:?}", e);
+        // } else {
+        //     tracing::info!("Tracing subscriber initialized");
+        // }
 
         return self.runtime.spawn(async move {
             // destructure project doc handles
@@ -417,7 +418,7 @@ impl GodotProjectDriver {
                                     state.add_binary_doc_handle(&path, &doc_handle);
                                 },
                                 Err(e) => {
-                                    println!("error requesting binary doc: {:?}", e);
+                                    tracing::error!("error requesting binary doc: {:?}", e);
                                 }
                             }
                         }
@@ -430,11 +431,11 @@ impl GodotProjectDriver {
                                     state.pending_branch_doc_ids.remove(&doc_handle.document_id());
                                     state.update_branch_doc_state(doc_handle.clone());
                                     state.subscribe_to_doc_handle(doc_handle.clone());
-                                    println!("rust: added branch doc: {:?}", branch_name);
+                                    tracing::debug!("added branch doc: {:?}", branch_name);
 
                                 }
                                 Err(e) => {
-                                    println!("error requesting branch doc: {:?}", e);
+                                    tracing::error!("error requesting branch doc: {:?}", e);
                                 }
                             }
                         }
@@ -505,11 +506,11 @@ impl GodotProjectDriver {
                             },
 
                             InputEvent::StartShutdown => {
-                                println!("rust: shutting down");
+                                tracing::info!("shutting down");
 
                                 let result = repo_handle_clone.stop();
 
-                                println!("rust: shutdown result: {:?}", result);
+                                tracing::info!("shutdown result: {:?}", result);
 
                                 tx.unbounded_send(OutputEvent::CompletedShutdown).unwrap();
                             }
@@ -538,7 +539,7 @@ async fn init_project_doc_handles(
     match branches_metadata_doc_id {
         // load existing project
         Some(doc_id) => {
-            println!("rust: loading existing project: {:?}", doc_id);
+            tracing::debug!("loading existing project: {:?}", doc_id);
 
             let branches_metadata_doc_handle = repo_handle
                 .request_document(doc_id.clone())
@@ -569,7 +570,7 @@ async fn init_project_doc_handles(
 
         // create new project
         None => {
-            println!("rust: creating new project");
+            tracing::debug!("creating new project");
 
             // Create new main branch doc
             let main_branch_doc_handle = repo_handle.new_document();
@@ -686,7 +687,7 @@ impl DriverState {
         source_branch_doc_id: DocumentId,
         target_branch_doc_id: DocumentId,
     ) {
-        println!("driver: create merge preview branch");
+        tracing::debug!("driver: create merge preview branch");
 
         let source_branch_state = self.branch_states.get(&source_branch_doc_id).unwrap();
         let target_branch_state = self.branch_states.get(&target_branch_doc_id).unwrap();
@@ -758,7 +759,7 @@ impl DriverState {
     // delete branch isn't fully implemented right now deletes are not propagated to the frontend
     // right now this is just useful to clean up merge preview branches
     fn delete_branch(&mut self, branch_doc_id: DocumentId) {
-        println!("driver: delete branch {:?}", branch_doc_id);
+        tracing::debug!("driver: delete branch {:?}", branch_doc_id);
 
         self.branches_metadata_doc_handle.with_doc_mut(|d| {
             let mut tx = d.transaction();
@@ -899,7 +900,7 @@ impl DriverState {
 			);
 		}
 
-        println!("rust: save {:?}", self.heads_in_frontend);
+        tracing::debug!("save {:?}", self.heads_in_frontend);
     }
 
     fn merge_branch(&mut self, source_branch_doc_id: DocumentId, target_branch_doc_id: DocumentId) {
@@ -1046,8 +1047,7 @@ impl DriverState {
                     branch_state: branch_state.clone(),
                     trigger_reload: !does_frontend_have_branch_at_heads(
                         &self.heads_in_frontend,
-                        &branch_state.doc_handle,
-                        &branch_state.synced_heads,
+                        &branch_state
                     ),
                 })
                 .unwrap();
@@ -1071,7 +1071,7 @@ impl DriverState {
             })
             .unwrap();
 
-        // println!("add_binary_doc_handle {:?} {:?}", path, binary_doc_handle.document_id());
+        // tracing::debug!("add_binary_doc_handle {:?} {:?}", path, binary_doc_handle.document_id());
 
         // check all branch states that link to this doc
         for branch_state in self.branch_states.values_mut() {
@@ -1090,15 +1090,15 @@ impl DriverState {
                             branch_state: branch_state.clone(),
                             trigger_reload: !does_frontend_have_branch_at_heads(
                                 &self.heads_in_frontend,
-                                &branch_state.doc_handle,
-                                &branch_state.synced_heads,
+                                &branch_state
                             ),
                         })
                         .unwrap();
 
-                    // println!("rust: branch state loaded {:?} {:?}", branch_state.doc_handle.document_id(), branch_state.synced_heads);
+                    tracing::debug!("branch {:?} (id: {:?}): state loaded {:?}", branch_state.name, branch_state.doc_handle.document_id(), branch_state.synced_heads);
                 } else {
-                    //println!("rust: branch state still missing some binary docs {:?} {:?}", branch_state.doc_handle.document_id(), missing_binary_doc_ids);
+                    tracing::debug!("branch {:?} (id: {:?}): state still missing {:?} binary docs", branch_state.name, branch_state.doc_handle.document_id(), missing_binary_doc_ids.len());
+					tracing::trace!("missing binary doc ids: {:?}", missing_binary_doc_ids);
                 }
             }
         }
@@ -1181,19 +1181,22 @@ fn get_missing_binary_doc_ids(
 
 fn does_frontend_have_branch_at_heads(
     heads_in_frontend: &HashMap<DocumentId, Vec<ChangeHash>>,
-    branch_doc_handle: &DocHandle,
-    heads: &Vec<ChangeHash>,
+    branch_state: &BranchState,
 ) -> bool {
-    println!(
-        "rust: does_frontend_have_branch_at_heads {:?}  {:?}",
-        branch_doc_handle.document_id(),
+    tracing::trace!(
+        "Checking if frontend has branch {:?} (id: {:?}) at heads {:?}",
+        branch_state.name,
+        branch_state.doc_handle.document_id(),
         heads_in_frontend
     );
 
-    if let Some(synced_heads) = heads_in_frontend.get(&branch_doc_handle.document_id()) {
-        println!("rust: compare heads {:?} {:?}", synced_heads, heads);
-        synced_heads == heads
+    if let Some(synced_heads) = heads_in_frontend.get(&branch_state.doc_handle.document_id()) {
+		let result = synced_heads == &branch_state.synced_heads;
+		tracing::trace!("comparing {:?} == {:?}: {:?}", synced_heads, branch_state.synced_heads, result);
+        tracing::info!("Frontend has branch {:?} (id: {:?}) at heads {:?} == {:?}: {:?}", branch_state.name, branch_state.doc_handle.document_id(), synced_heads, branch_state.synced_heads, result);
+        result
     } else {
+		tracing::info!("no synced heads found for branch {:?} (id: {:?})", branch_state.name, branch_state.doc_handle.document_id());
         false
     }
 }

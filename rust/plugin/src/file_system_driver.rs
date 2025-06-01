@@ -1,8 +1,10 @@
 use core::str;
 use std::ffi::OsStr;
+use std::fmt::Display;
 use std::sync::atomic::Ordering;
 use std::{path::PathBuf, sync::atomic::AtomicBool};
 use std::sync::Arc;
+use futures::Stream;
 use futures::{
     channel::mpsc::{UnboundedReceiver, UnboundedSender},
     StreamExt,
@@ -49,12 +51,61 @@ pub enum FileSystemEvent {
     FileDeleted(PathBuf),
 }
 
+impl Display for FileSystemEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		let content_type = match &self {
+			FileSystemEvent::FileCreated(_, content) => match content {
+				FileContent::Scene(_) => "scene",
+				FileContent::String(_) => "text",
+				FileContent::Binary(_) => "binary",
+				FileContent::Deleted => "deleted",
+			},
+			FileSystemEvent::FileModified(_, content) => match content {
+				FileContent::Scene(_) => "scene",
+				FileContent::String(_) => "text",
+				FileContent::Binary(_) => "binary",
+				FileContent::Deleted => "deleted",
+			},
+			_ => "deleted",
+		};
+        match &self {
+            FileSystemEvent::FileCreated(path, _) => write!(f, "FileCreated({:?} {})", path, content_type),
+			FileSystemEvent::FileModified(path_buf, _) => write!(f, "FileModified({:?} {})", path_buf, content_type),
+			FileSystemEvent::FileDeleted(path_buf) => write!(f, "FileDeleted({:?} {})", path_buf, content_type),
+        }
+
+    }
+}
+
 #[derive(Debug)]
 pub enum FileSystemUpdateEvent {
     FileSaved(PathBuf, FileContent),
     FileDeleted(PathBuf),
 	Pause,
 	Resume
+}
+
+impl Display for FileSystemUpdateEvent {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		let content_type = match &self {
+			FileSystemUpdateEvent::FileSaved(_, content) => match content {
+				FileContent::Scene(_) => "scene",
+				FileContent::String(_) => "text",
+				FileContent::Binary(_) => "binary",
+				FileContent::Deleted => "deleted",
+			},
+			FileSystemUpdateEvent::FileDeleted(_) => "deleted",
+			FileSystemUpdateEvent::Pause => "<NONE>",
+			FileSystemUpdateEvent::Resume => "<NONE>",
+		};
+
+		match &self {
+			FileSystemUpdateEvent::FileSaved(path, _) => write!(f, "FileSaved({:?} {})", path, content_type),
+			FileSystemUpdateEvent::FileDeleted(path) => write!(f, "FileDeleted({:?} {})", path, content_type),
+			FileSystemUpdateEvent::Pause => write!(f, "Pause"),
+			FileSystemUpdateEvent::Resume => write!(f, "Resume"),
+		}
+	}
 }
 
 #[derive(Debug, Clone)]
@@ -185,7 +236,7 @@ impl FileSystemTask {
 				result = get_buffer_and_hash(&path);
 			}
 			if result.is_err() {
-				println!("rust: failed to get file content {:?}", result);
+				tracing::error!("failed to get file content {:?}", result);
 				return Err(notify::Error::new(notify::ErrorKind::Generic("Failed to get file content".to_string())));
 			}
 			let (content, new_hash) = result.unwrap();
@@ -365,10 +416,10 @@ impl FileSystemTask {
 							let result = self.handle_file_event(event.path.clone(), &mut sym_links).await;
 							if let Ok(Some(ret)) = result {
 								if event.path.file_name() == Some(OsStr::new("main.tscn")) {
-									println!("rust: main.tscn updated!!!!!!! {:?}", event.path);
+									tracing::debug!("main.tscn updated {:?}", event.path);
 									if let FileSystemEvent::FileModified(_path, content) = &ret {
 										if let FileContent::Scene(scene) = &content {
-											println!("rust: main.tscn node count! {:?}", scene.nodes.len());
+											tracing::debug!("main.tscn node count! {:?}", scene.nodes.len());
 										}
 									}
 								}
@@ -383,13 +434,13 @@ impl FileSystemTask {
 						FileSystemUpdateEvent::FileSaved(path, content) => {
 							let result = self.handle_file_update(path, content).await;
 							if result.is_err() {
-								println!("rust: failed to handle file update {:?}", result);
+								tracing::error!("failed to handle file update {:?}", result);
 							}
 						}
 						FileSystemUpdateEvent::FileDeleted(path) => {
 							let result = self.handle_delete_update(path).await;
 							if result.is_err() {
-								println!("rust: failed to handle file delete {:?}", result);
+								tracing::error!("failed to handle file delete {:?}", result);
 							}
 						}
 						FileSystemUpdateEvent::Pause => {
@@ -463,10 +514,10 @@ impl FileSystemDriver {
 			let mut new_hard_limit = MAX_OPEN_FILES;
 			let previous_result = getrlimit(Resource::NOFILE);
 			if let Err(e) = previous_result {
-				println!("rust: failed to get ulimit {:?}", e);
+				tracing::error!("failed to get ulimit {:?}", e);
 			} else if let Ok((soft_limit, hard_limit)) = previous_result {
-				println!("rust: soft ulimit {:?}", soft_limit);
-				println!("rust: hard ulimit {:?}", hard_limit);
+				tracing::debug!("soft ulimit {:?}", soft_limit);
+				tracing::debug!("hard ulimit {:?}", hard_limit);
 				if hard_limit > MAX_OPEN_FILES {
 					new_hard_limit = hard_limit;
 				}
@@ -476,16 +527,14 @@ impl FileSystemDriver {
 			}
 
 			if let Err(e) = setrlimit(Resource::NOFILE, new_soft_limit, new_hard_limit) {
-				println!("rust: failed to set ulimit {:?}", e);
+				tracing::error!("failed to set ulimit {:?}", e);
 			}
 			let result = getrlimit(Resource::NOFILE);
 			if let Err(e) = result {
-				println!("rust: failed to set ulimit {:?}", e);
+				tracing::error!("failed to set ulimit {:?}", e);
 			} else if let Ok((soft_limit, hard_limit)) = result {
 				if soft_limit < MAX_OPEN_FILES || hard_limit < MAX_OPEN_FILES {
-					println!("rust: failed to set ulimit");
-					println!("rust: soft ulimit {:?}", soft_limit);
-					println!("rust: hard ulimit {:?}", hard_limit);
+					tracing::error!("failed to set ulimit; soft ulimit {:?}, hard ulimit {:?}", soft_limit, hard_limit);
 				}
 			}
 		}
@@ -639,7 +688,7 @@ impl FileSystemDriver {
 						if let Ok(hash_str) = FileContent::write_file_content(&path, &content) {
 							file_hashes.insert(path.clone(), hash_str);
 						} else {
-							println!("rust: failed to write file {:?}", path);
+							tracing::error!("failed to write file {:?}", path);
 						}
 					}
 					FileSystemUpdateEvent::FileDeleted(path) => {
@@ -658,9 +707,12 @@ impl FileSystemDriver {
 	}
 
 	pub fn batch_update_blocking(&self, updates: Vec<FileSystemUpdateEvent>) -> Vec<FileSystemEvent> {
-		println!("rust: batch_update_blocking before pause");
+		tracing::debug!("starting batch_update_blocking, # of updates: {:?}", updates.len());
+		tracing::trace!("updates: [{}]", updates.iter().map(|e|
+			format!("{}", e)
+		).collect::<Vec<String>>().join(", "));
 		self.pause_task_blocking();
-		println!("rust: batch_update_blocking after pause");
+		tracing::trace!("batch_update_blocking after pause");
 		let mut events: Vec<FileSystemEvent> = Vec::new();
 		{
 			let mut file_hashes = self.task.file_hashes.blocking_lock();
@@ -686,7 +738,7 @@ impl FileSystemDriver {
 								}
 								file_hashes.insert(path, hash_str);
 							} else {
-								println!("rust: failed to write file {:?}", path);
+								tracing::error!("failed to write file {:?}", path);
 							}
 						}
 					}
@@ -702,9 +754,10 @@ impl FileSystemDriver {
 				}
 			}
 		}
-		println!("rust: batch_update_blocking done before resume; updated files: {:?}", events.len());
+		tracing::trace!("batch_update_blocking done, before resume");
 		self.resume_task_blocking();
-		println!("rust: batch_update_blocking done after resume");
+		tracing::debug!("batch_update_blocking done, updated files: {:?}", events.len());
+		tracing::trace!("events: [{}]", events.iter().map(|e| format!("{}", e)).collect::<Vec<String>>().join(", "));
 		events
 	}
 
@@ -724,6 +777,10 @@ impl FileSystemDriver {
 		self.task.stop_watching_path_blocking(&path);
 		let result = self.task.handle_delete_update_blocking(path.clone());
 		return result;
+	}
+
+	pub fn has_events_pending(&self) -> bool {
+		self.output_rx.size_hint().0 > 0
 	}
 
 	pub fn try_next(&mut self) -> Option<FileSystemEvent> {
