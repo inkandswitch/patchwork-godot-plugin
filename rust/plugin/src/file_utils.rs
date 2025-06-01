@@ -14,7 +14,7 @@ use ya_md5::{Md5Hasher, Hash, Md5Error};
 
 use crate::doc_utils::SimpleDocReader;
 use crate::godot_parser::{GodotScene, recognize_scene, parse_scene};
-use crate::utils::parse_automerge_url;
+use crate::utils::{parse_automerge_url, ToShortForm};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FileContent {
@@ -174,12 +174,14 @@ impl FileContent {
 }
 
 
-pub fn fmt_debug_file_content(file_content: &FileContent) -> String {
-	match file_content {
-		FileContent::String(s) => format!("String"),
-		FileContent::Binary(bytes) => format!("Binary"),
-		FileContent::Scene(scene) => format!("Scene"),
-		FileContent::Deleted => "Deleted".to_string(),
+impl ToShortForm for FileContent {
+	fn to_short_form(&self) -> String {
+		match self {
+			FileContent::String(_) => "String".to_string(),
+			FileContent::Binary(_) => "Binary".to_string(),
+			FileContent::Scene(_) => "Scene".to_string(),
+			FileContent::Deleted => "Deleted".to_string(),
+		}
 	}
 }
 

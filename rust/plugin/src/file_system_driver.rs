@@ -26,6 +26,7 @@ use glob::Pattern;
 use std::io;
 use crate::file_utils::{calculate_file_hash, get_buffer_and_hash, FileContent};
 
+use crate::utils::ToShortForm;
 use crate::{godot_parser::{parse_scene, recognize_scene, GodotScene}};
 
 // static const var for debounce time
@@ -51,29 +52,37 @@ pub enum FileSystemEvent {
     FileDeleted(PathBuf),
 }
 
-pub fn debug_fmt_file_system_event(event: &FileSystemEvent) -> String {
-	let content_type = match event {
-		FileSystemEvent::FileCreated(_, content) => match content {
-			FileContent::Scene(_) => "scene",
-			FileContent::String(_) => "text",
-			FileContent::Binary(_) => "binary",
-			FileContent::Deleted => "deleted",
-		},
-		FileSystemEvent::FileModified(_, content) => match content {
-			FileContent::Scene(_) => "scene",
-			FileContent::String(_) => "text",
-			FileContent::Binary(_) => "binary",
-			FileContent::Deleted => "deleted",
-		},
-		_ => "deleted",
-	};
-	match event {
-		FileSystemEvent::FileCreated(path, _) => format!("FileCreated({:?}, {})", path, content_type),
-		FileSystemEvent::FileModified(path_buf, _) => format!("FileModified({:?}, {})", path_buf, content_type),
-		FileSystemEvent::FileDeleted(path_buf) => format!("FileDeleted({:?}, {})", path_buf, content_type),
+impl ToShortForm for FileSystemEvent {
+	fn to_short_form(&self) -> String {
+		let content_type = match self {
+			FileSystemEvent::FileCreated(_, content) => match content {
+				FileContent::Scene(_) => "scene",
+				FileContent::String(_) => "text",
+				FileContent::Binary(_) => "binary",
+				FileContent::Deleted => "deleted",
+			},
+			FileSystemEvent::FileModified(_, content) => match content {
+				FileContent::Scene(_) => "scene",
+				FileContent::String(_) => "text",
+				FileContent::Binary(_) => "binary",
+				FileContent::Deleted => "deleted",
+			},
+			_ => "deleted",
+		};
+		match self {
+			FileSystemEvent::FileCreated(path, _) => format!("FileCreated({:?}, {})", path, content_type),
+			FileSystemEvent::FileModified(path_buf, _) => format!("FileModified({:?}, {})", path_buf, content_type),
+			FileSystemEvent::FileDeleted(path_buf) => format!("FileDeleted({:?}, {})", path_buf, content_type),
+		}
 	}
-
 }
+
+impl ToShortForm for Vec<FileSystemEvent> {
+	fn to_short_form(&self) -> String {
+		self.iter().map(|e| e.to_short_form()).collect::<Vec<String>>().join(", ")
+	}
+}
+
 
 #[derive(Debug)]
 pub enum FileSystemUpdateEvent {
@@ -83,24 +92,32 @@ pub enum FileSystemUpdateEvent {
 	Resume
 }
 
-pub fn debug_fmt_update_event(update_event: &FileSystemUpdateEvent) -> String {
-	let content_type = match update_event {
-		FileSystemUpdateEvent::FileSaved(_, content) => match content {
-			FileContent::Scene(_) => "scene",
-			FileContent::String(_) => "text",
-			FileContent::Binary(_) => "binary",
-			FileContent::Deleted => "deleted",
-		},
-		FileSystemUpdateEvent::FileDeleted(_) => "deleted",
-		FileSystemUpdateEvent::Pause => "<NONE>",
-		FileSystemUpdateEvent::Resume => "<NONE>",
-	};
+impl ToShortForm for FileSystemUpdateEvent {
+	fn to_short_form(&self) -> String {
+		let content_type = match self {
+			FileSystemUpdateEvent::FileSaved(_, content) => match content {
+				FileContent::Scene(_) => "scene",
+				FileContent::String(_) => "text",
+				FileContent::Binary(_) => "binary",
+				FileContent::Deleted => "deleted",
+			},
+			FileSystemUpdateEvent::FileDeleted(_) => "deleted",
+			FileSystemUpdateEvent::Pause => "<NONE>",
+			FileSystemUpdateEvent::Resume => "<NONE>",
+		};
 
-	match update_event {
-		FileSystemUpdateEvent::FileSaved(path, _) => format!("FileSaved({:?} {})", path, content_type),
-		FileSystemUpdateEvent::FileDeleted(path) => format!("FileDeleted({:?} {})", path, content_type),
-		FileSystemUpdateEvent::Pause => "Pause".to_string(),
-		FileSystemUpdateEvent::Resume => "Resume".to_string(),
+		match self {
+			FileSystemUpdateEvent::FileSaved(path, _) => format!("FileSaved({:?} {})", path, content_type),
+			FileSystemUpdateEvent::FileDeleted(path) => format!("FileDeleted({:?} {})", path, content_type),
+			FileSystemUpdateEvent::Pause => "Pause".to_string(),
+			FileSystemUpdateEvent::Resume => "Resume".to_string(),
+		}
+	}
+}
+
+impl ToShortForm for Vec<FileSystemUpdateEvent> {
+	fn to_short_form(&self) -> String {
+		self.iter().map(|e| e.to_short_form()).collect::<Vec<String>>().join(", ")
 	}
 }
 
@@ -704,7 +721,7 @@ impl FileSystemDriver {
 
 	pub fn batch_update_blocking(&self, updates: Vec<FileSystemUpdateEvent>) -> Vec<FileSystemEvent> {
 		tracing::debug!("starting batch_update_blocking, # of updates: {:?}", updates.len());
-		tracing::trace!("updates: [{}]", updates.iter().map(|e| debug_fmt_update_event(e)).collect::<Vec<String>>().join(", "));
+		tracing::trace!("updates: [{}]", updates.to_short_form());
 		self.pause_task_blocking();
 		tracing::trace!("batch_update_blocking after pause");
 		let mut events: Vec<FileSystemEvent> = Vec::new();
@@ -751,7 +768,7 @@ impl FileSystemDriver {
 		tracing::trace!("batch_update_blocking done, before resume");
 		self.resume_task_blocking();
 		tracing::debug!("batch_update_blocking done, updated files: {:?}", events.len());
-		tracing::trace!("events: [{}]", events.iter().map(|e| debug_fmt_file_system_event(e)).collect::<Vec<String>>().join(", "));
+		tracing::trace!("events: [{}]", events.to_short_form());
 		events
 	}
 
@@ -987,7 +1004,7 @@ mod tests {
 
 
         if let Some(event) = driver.next_timeout(Duration::from_millis(WAIT_TIME)).await {
-            panic!("Unexpected event {:?}", debug_fmt_file_system_event(&event));
+            panic!("Unexpected event {:?}", event.to_short_form());
         }
 		{
 			// Modify the ignored file (should not trigger an event)
@@ -1116,7 +1133,7 @@ mod tests {
             } else if let FileSystemEvent::FileModified(path, _) = event {
 				path
 			} else {
-				panic!("Unexpected event type {:?}", debug_fmt_file_system_event(&event));
+				panic!("Unexpected event type {:?}", event.to_short_form());
             };
             found_paths.insert(event_path);
 			if found_paths.len() == test_paths.len() {
@@ -1155,7 +1172,7 @@ mod tests {
 		}
 		// there should be no events emitted
 		if let Some(event) = driver.next_timeout(Duration::from_millis(100)).await {
-			assert!(false, "Unexpected event type {:?}", debug_fmt_file_system_event(&event));
+			assert!(false, "Unexpected event type {:?}", event.to_short_form());
 		}
 		sleep(Duration::from_millis(1000)).await;
 		// write a single file
@@ -1208,7 +1225,7 @@ mod tests {
 		}
 		// there should be no events emitted
 		if let Some(event) = driver.try_next() {
-			assert!(false, "Unexpected event type {:?}", debug_fmt_file_system_event(&event));
+			assert!(false, "Unexpected event type {:?}", event.to_short_form());
 		}
 		std::thread::sleep(Duration::from_millis(1000));
 		// write a single file

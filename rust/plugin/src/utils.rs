@@ -350,3 +350,46 @@ impl ToGodotExt for PeerConnectionInfo {
 		peer_connection_info_to_dict(self).to_variant()
 	}
 }
+
+pub trait ToShortForm {
+    fn to_short_form(&self) -> String;
+}
+
+impl ToShortForm for ChangeHash {
+    fn to_short_form(&self) -> String {
+        self.to_string().chars().take(7).collect::<String>()
+    }
+}
+
+impl ToShortForm for Option<&ChangeHash> {
+    fn to_short_form(&self) -> String {
+        match self {
+            Some(change_hash) => change_hash.to_short_form(),
+            None => "<NONE>".to_string(),
+        }
+    }
+}
+
+impl ToShortForm for Option<ChangeHash> {
+    fn to_short_form(&self) -> String {
+        match self {
+            Some(change_hash) => change_hash.to_short_form(),
+            None => "<NONE>".to_string(),
+        }
+    }
+}
+
+impl ToShortForm for Vec<ChangeHash> {
+    fn to_short_form(&self) -> String {
+        self.iter().map(|h| h.to_short_form()).collect::<Vec<String>>().join(", ")
+    }
+}
+
+impl ToShortForm for Option<&Vec<ChangeHash>> {
+    fn to_short_form(&self) -> String {
+        match self {
+            Some(change_hashes) => change_hashes.to_short_form(),
+            None => "<NONE>".to_string(),
+        }
+    }
+}
