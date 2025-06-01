@@ -692,6 +692,7 @@ impl GodotProjectImpl {
 		}).unwrap_or(None)
 	}
 
+	#[instrument(skip_all, level = tracing::Level::DEBUG)]
 	fn _get_files_on_branch_at(&self, branch_doc_id: DocumentId, heads: &Option<Vec<ChangeHash>>) -> HashMap<String, FileContent> {
 
         let mut files = HashMap::new();
@@ -741,6 +742,8 @@ impl GodotProjectImpl {
 			let linked_file_content: Option<FileContent> = self._get_linked_file(&doc_id);
 			if let Some(file_content) = linked_file_content {
 				files.insert(path, file_content);
+			} else {
+				tracing::warn!("linked file {:?} not found", path);
 			}
 		}
 
@@ -1098,12 +1101,12 @@ impl GodotProjectImpl {
         }
     }
 
+	#[instrument(skip_all, level = tracing::Level::DEBUG)]
     fn _get_changes_between(
         &self,
         old_heads: Vec<ChangeHash>,
         curr_heads: Vec<ChangeHash>,
     ) -> Dictionary {
-		tracing::debug!("getting changes between");
         let checked_out_branch_state = match self.get_checked_out_branch_state() {
             Some(branch_state) => branch_state,
             None => return Dictionary::new(),
@@ -1114,6 +1117,8 @@ impl GodotProjectImpl {
         } else {
             curr_heads
         };
+
+		tracing::debug!("branch {:?}, getting changes between {:?} and {:?}", checked_out_branch_state.name, old_heads, curr_heads);
 
         // only get the first 6 chars of the hash
         let patches = checked_out_branch_state.doc_handle.with_doc(|d| {
@@ -1931,7 +1936,7 @@ impl GodotProjectImpl {
         self.stop();
 	}
 
-	#[instrument(target = "patchwork_rust_core::godot_project::inner_process", level = "trace", skip_all)]
+	#[instrument(target = "patchwork_rust_core::godot_project::inner_process", level = "debug", skip_all)]
 	fn _process(&mut self, _delta: f64) -> (Vec<FileSystemEvent>, Vec<GodotProjectSignal>) {
 		let mut signals: Vec<GodotProjectSignal> = Vec::new();
 
@@ -2454,7 +2459,7 @@ impl INode for GodotProject {
         // Perform typical plugin operations here.
     }
 
-	#[instrument(target = "patchwork_rust_core::godot_project::outer_process", level = "trace", skip_all)]
+	#[instrument(target = "patchwork_rust_core::godot_project::outer_process", level = "debug", skip_all)]
     fn process(&mut self, _delta: f64) {
 		let (updates, signals) = self.project._process(_delta);
 		if updates.len() > 0 {
