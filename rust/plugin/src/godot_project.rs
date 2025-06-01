@@ -1166,34 +1166,38 @@ impl GodotProjectImpl {
 		tracing::debug!("branch {:?}, getting changes between {:?} and {:?}", checked_out_branch_state.name, old_heads, curr_heads);
 
         // only get the first 6 chars of the hash
-        let patches = checked_out_branch_state.doc_handle.with_doc(|d| {
+        let patches: Vec<Patch> = checked_out_branch_state.doc_handle.with_doc(|d| {
             d.diff(
                 &old_heads,
                 &curr_heads,
                 TextRepresentation::String(TextEncoding::Utf8CodeUnit),
             )
         });
-		let changed_files_set: HashSet<String> = get_changed_files_vec(&patches).into_iter().map(|path| path).collect();
         let mut changed_files_map = HashMap::new();
         let mut scene_files = Vec::new();
 
         let mut all_diff: HashMap<String, Dictionary> = HashMap::new();
         // Get old and new content
+		let new_file_contents = self._get_changed_file_content_between(None, checked_out_branch_state.doc_handle.document_id().clone(), old_heads.clone(), curr_heads.clone());
+		let changed_files_set: HashSet<String> = new_file_contents.iter().map(|event|
+			match event {
+				FileSystemEvent::FileCreated(path, _) => path.to_string_lossy().to_string(),
+				FileSystemEvent::FileModified(path, _) => path.to_string_lossy().to_string(),
+				FileSystemEvent::FileDeleted(path) => path.to_string_lossy().to_string(),
+			}
+		).collect::<HashSet<String>>();
 		let old_file_contents = self._get_files_on_branch_at(&checked_out_branch_state, Some(&old_heads), Some(&changed_files_set));
-		let new_file_contents = self._get_files_on_branch_at(&checked_out_branch_state, Some(&curr_heads), Some(&changed_files_set));
 
-        for path in changed_files_set.iter() {
-			let old_file_content = old_file_contents.get(path).unwrap_or(&FileContent::Deleted);
-			let new_file_content = new_file_contents.get(path).unwrap_or(&FileContent::Deleted);
+        for event in new_file_contents.iter() {
+            let (path, new_file_content, change_type) = match event {
+                FileSystemEvent::FileCreated(path, content) => (path.to_string_lossy().to_string(), content, "added"),
+                FileSystemEvent::FileModified(path, content) => (path.to_string_lossy().to_string(), content, "modified"),
+                FileSystemEvent::FileDeleted(path) => (path.to_string_lossy().to_string(), &FileContent::Deleted, "removed"),
+            };
+			let old_file_content = old_file_contents.get(&path).unwrap_or(&FileContent::Deleted);
             let old_content_type = old_file_content.get_variant_type();
             let new_content_type = new_file_content.get_variant_type();
-            let change_type = if old_file_content == &FileContent::Deleted {
-                "added"
-            } else if new_file_content == &FileContent::Deleted {
-                "deleted"
-            } else {
-                "modified"
-            };
+
             changed_files_map.insert(path.clone(), change_type.to_string());
             if old_content_type != VariantType::OBJECT && new_content_type != VariantType::OBJECT {
                 // if both the old and new one are binary, or if one is none and the other is binary, then we can use the resource diff
