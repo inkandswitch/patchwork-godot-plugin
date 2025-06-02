@@ -12,7 +12,7 @@ use autosurgeon::{Hydrate, Reconcile};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use godot::classes::file_access::ModeFlags;
 use godot::classes::resource_loader::CacheMode;
-use godot::classes::{Control, EditorFileSystem, MarginContainer};
+use godot::classes::{Control, EditorFileSystem, HBoxContainer, MarginContainer, MenuButton, VBoxContainer};
 use godot::classes::EditorInterface;
 use godot::classes::ProjectSettings;
 use godot::classes::ResourceLoader;
@@ -172,11 +172,19 @@ impl PatchworkEditorAccessor {
 		).to::<bool>()
 	}
 
-	fn reload_scripts() {
+	fn reload_scripts(scripts: &Vec<String>) {
 		ClassDb::singleton().class_call_static(
 			"PatchworkEditor",
 			"reload_scripts",
-			&[false.to_variant()],
+			&[scripts.to_variant()],
+		);
+	}
+
+	fn force_refresh_editor_inspector() {
+		ClassDb::singleton().class_call_static(
+			"PatchworkEditor",
+			"force_refresh_editor_inspector",
+			&[],
 		);
 	}
 }
@@ -2363,13 +2371,68 @@ impl GodotProjectImpl {
 }
 
 
+#[derive(Debug, Default)]
+pub struct PendingEditorUpdate {
+	added_files: HashSet<String>,
+	deleted_files: HashSet<String>,
+	scripts_to_reload: HashSet<String>,
+	scenes_to_reload: HashMap<String, FileContent>,
+	reimport_files: HashSet<String>,
+	uids_to_add: HashMap<String, String>,
+	inspector_refresh_queue_time: f64,
+}
+
+impl PendingEditorUpdate {
+	fn merge(&mut self, other: PendingEditorUpdate) {
+		self.added_files.extend(other.added_files);
+		self.deleted_files.extend(other.deleted_files);
+		self.scripts_to_reload.extend(other.scripts_to_reload);
+		for (path, content) in other.scenes_to_reload.into_iter() {
+			self.scenes_to_reload.insert(path, content);
+		}
+		self.reimport_files.extend(other.reimport_files);
+		for (path, uid) in other.uids_to_add.into_iter() {
+			self.uids_to_add.insert(path, uid);
+		}
+	}
+	fn added_or_deleted_files(&self) -> bool {
+		self.added_files.len() > 0 || self.deleted_files.len() > 0
+	}
+	fn any_changes(&self) -> bool {
+		self.any_file_changes() || self.has_inspector_refresh_queued()
+	}
+
+	fn any_file_changes(&self) -> bool {
+		self.scripts_to_reload.len() > 0 || self.scenes_to_reload.len() > 0 || self.reimport_files.len() > 0 || self.uids_to_add.len() > 0 || self.added_or_deleted_files()
+	}
+
+	fn has_inspector_refresh_queued(&self) -> bool {
+		self.inspector_refresh_queue_time > 0.0_f64
+	}
+
+	fn queue_inspector_dock_refresh(&mut self) {
+		// don't use Godot classes for this
+		self.inspector_refresh_queue_time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64();
+	}
+
+
+	fn refresh_inspector_dock(&mut self) {
+		let current_time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64();
+		if current_time - self.inspector_refresh_queue_time < 0.1_f64 {
+			return;
+		}
+		PatchworkEditorAccessor::force_refresh_editor_inspector();
+		self.inspector_refresh_queue_time = 0.0_f64;
+	}
+}
+
 #[derive(GodotClass, Debug)]
 #[class(base=Node)]
 pub struct GodotProject {
 	base: Base<Node>,
 	project: GodotProjectImpl,
+	pending_editor_update: PendingEditorUpdate,
 }
-
 
 #[godot_api]
 impl GodotProject {
@@ -2510,11 +2573,12 @@ impl GodotProject {
         self.project._get_changes_between(old_heads, new_heads)
     }
 
-	fn add_new_uid(path: GString, uid: String) {
-        let id = ResourceUid::singleton().text_to_id(&uid);
+	fn add_new_uid(path: &str, uid: &str) {
+        let id = ResourceUid::singleton().text_to_id(uid);
         if id == ResourceUid::INVALID_ID as i64 {
             return;
         }
+		let path = GString::from(path);
         if !ResourceUid::singleton().has_id(id) {
             ResourceUid::singleton().add_id(id, &path);
         } else if ResourceUid::singleton().get_id_path(id) != path {
@@ -2522,23 +2586,20 @@ impl GodotProject {
         }
     }
 
-	fn update_godot_after_sync(&mut self, events: Vec<FileSystemEvent>) {
-        let mut reload_scripts = false;
-        let mut scenes_to_reload = Vec::new();
-        let mut reimport_files = HashSet::new();
+	fn process_godot_updates(&self, events: Vec<FileSystemEvent>) -> PendingEditorUpdate {
+		let mut pending_editor_update = PendingEditorUpdate::default();
 		let mut files_changed = Vec::new();
-		let mut file_created_or_deleted = true;
         for event in events {
 			let mut file_created = false;
             let (abs_path, content) = match event {
                 FileSystemEvent::FileCreated(path, content) => {
-					file_created_or_deleted = true;
+					pending_editor_update.added_files.insert(self.project.localize_path(&path.to_string_lossy().to_string()));
 					file_created = true;
 					(path, content)
 				},
                 FileSystemEvent::FileModified(path, content) => (path, content),
-                FileSystemEvent::FileDeleted(_) => {
-					file_created_or_deleted = true;
+                FileSystemEvent::FileDeleted(path) => {
+					pending_editor_update.deleted_files.insert(self.project.localize_path(&path.to_string_lossy().to_string()));
 					continue;
 				},
             };
@@ -2546,29 +2607,29 @@ impl GodotProject {
             let res_path = self.project.localize_path(&abs_path.to_string_lossy().to_string());
             let extension = abs_path.extension().unwrap_or_default().to_string_lossy().to_string();
             if extension == "gd" {
-                reload_scripts = true;
+				pending_editor_update.scripts_to_reload.insert(res_path);
             } else if extension == "tscn" {
-                scenes_to_reload.push(res_path);
+                pending_editor_update.scenes_to_reload.insert(res_path, content);
             } else if extension == "import" {
 				let mut pb = PathBuf::from(res_path);
 				pb.set_extension("");
 				let base = pb.to_string_lossy().to_string();
 				if !file_created {
-					reimport_files.insert(base.clone());
+					pending_editor_update.reimport_files.insert(base.clone());
 				}
                 if let FileContent::String(string) = content {
                     // go line by line, find the line that begins with "uid="
                     for line in string.lines() {
                         if line.starts_with("uid=") {
                             let uid = line.split("=").nth(1).unwrap_or_default().to_string();
-                            Self::add_new_uid(GString::from(base), uid);
+                            pending_editor_update.uids_to_add.insert(base, uid);
                             break;
                         }
                     }
                 }
             } else if extension == "uid" {
                 if let FileContent::String(string) = content {
-                    Self::add_new_uid(GString::from(res_path), string);
+                    pending_editor_update.uids_to_add.insert(res_path.to_string(), string);
                 }
             // check if a file with .import added exists
             } else  {
@@ -2576,16 +2637,28 @@ impl GodotProject {
 				import_path.set_extension(abs_path.extension().unwrap_or_default().to_string_lossy().to_string() + ".import");
                 if import_path.exists() {
 					if !file_created {
-						reimport_files.insert(res_path.to_string());
+						pending_editor_update.reimport_files.insert(res_path.to_string());
 					}
                 }
             }
         }
 		tracing::info!("---------- files_changed: {:?}", files_changed);
-		let any_changes = file_created_or_deleted || reload_scripts || scenes_to_reload.len() > 0 || reimport_files.len() > 0;
-		if !any_changes {
+		return pending_editor_update;
+	}
+
+	fn update_godot_after_sync(&mut self) {
+		if !self.pending_editor_update.any_changes() {
 			return;
 		}
+		if !GodotProjectImpl::safe_to_update_godot() {
+			return;
+		}
+		// refresh the editor inspector AFTER all the file changes have been applied
+		if !self.pending_editor_update.any_file_changes() && self.pending_editor_update.has_inspector_refresh_queued() {
+			self.pending_editor_update.refresh_inspector_dock();
+			return;
+		}
+		self.pending_editor_update.queue_inspector_dock_refresh();
 		// We have to turn off process here because:
 		// * This was probably called from `process()`
 		// * Any of these functions we're about to call could result in popping up and stepping the ProgressDialog modal
@@ -2593,31 +2666,77 @@ impl GodotProject {
 		// * calling `process()` on us again will cause gd_ext to attempt to re-bind_mut() the GodotProject singleton
 		// * This will cause a panic because we're already in the middle of `process()` with a bound mut ref to base
 		self.base_mut().set_process(false);
-		// This is causing segfaults
-        // if reload_scripts {
-        //     PatchworkEditorAccessor::reload_scripts();
-        // }
-		if reimport_files.len() > 0 {
-			EditorFilesystemAccessor::reimport_files(&reimport_files.into_iter().map(|path| path).collect::<Vec<String>>());
-        }
-		if scenes_to_reload.len() > 0 {
+
+
+		let reload_scene_func = |scene_path: &str| {
+			if PatchworkEditorAccessor::is_changing_scene() {
+				tracing::warn!("Editor is changing scene BEFORE RELOADING SCENE, skipping reload of {}", scene_path);
+				return false;
+			}
+			// we don't need to do this and it may cause issues with the scripts
+			// let scene = force_reload_resource(scene_path);
+			if PatchworkEditorAccessor::is_changing_scene() {
+				tracing::warn!("Editor is changing scene AFTER RELOADING SCENE, skipping reload of {}", scene_path);
+				return false;
+			} else {
+				EditorFilesystemAccessor::reload_scene_from_path(&scene_path);
+			}
+			true
+		};
+
+		if self.pending_editor_update.uids_to_add.len() > 0 {
+			tracing::debug!("adding uids");
+			for (path, uid) in self.pending_editor_update.uids_to_add.iter() {
+				Self::add_new_uid(path, uid);
+			}
+			self.pending_editor_update.uids_to_add.clear();
+		}
+		// if there are scripts to reload, we need to reload them first and let it run `process()` at least once
+		// before we start reloading anything else because the ScriptEditor forces the reload to run deferred
+		// (i.e. AFTER the current process() call)
+		if self.pending_editor_update.scripts_to_reload.len() > 0 {
+			PatchworkEditorAccessor::reload_scripts(&self.pending_editor_update.scripts_to_reload.iter().map(|path| path.clone()).collect::<Vec<String>>());
+			self.pending_editor_update.scripts_to_reload.clear();
+			self.base_mut().set_process(true);
+			return;
+		}
+
+		// scene instances require scripts to be reloaded first
+		if self.pending_editor_update.scenes_to_reload.len() > 0 {
 			tracing::debug!("reloading scenes");
-			for scene_path in scenes_to_reload {
-				let scene = force_reload_resource(&scene_path);
-				if let Some(scene) = scene {
-					if PatchworkEditorAccessor::is_changing_scene() {
-						tracing::warn!("Editor is changing scene, skipping reload of {}", scene_path);
-					} else {
-						EditorFilesystemAccessor::reload_scene_from_path(&scene_path);
-					}
-				} else {
-					tracing::error!("failed to reload scene: {}", scene_path);
+			let scene_root = EditorInterface::singleton().get_edited_scene_root();
+			let scene_root_path = if let Some(scene_root) = scene_root {
+				 scene_root.get_scene_file_path().to_string()
+			} else {
+				"".to_string()
+			};
+			let mut reloaded_scenes = HashSet::new();
+			if let Some(_) = self.pending_editor_update.scenes_to_reload.remove(&scene_root_path) {
+				if reload_scene_func(&scene_root_path) {
+					reloaded_scenes.insert(scene_root_path.clone());
+				}
+			}
+
+			for (scene_path, _scene) in self.pending_editor_update.scenes_to_reload.iter() {
+				if reload_scene_func(scene_path) {
+					reloaded_scenes.insert(scene_path.clone());
 				}
             }
+			let _ = reloaded_scenes.into_iter().map(|p|self.pending_editor_update.scenes_to_reload.remove(&p));
         }
+		if self.pending_editor_update.reimport_files.len() > 0 {
+			EditorFilesystemAccessor::reimport_files(&self.pending_editor_update.reimport_files.iter().map(|path| path.clone()).collect::<Vec<String>>());
+			self.pending_editor_update.reimport_files.clear();
+        }
+
 		EditorFilesystemAccessor::scan();
+		self.pending_editor_update.added_files.clear();
+		self.pending_editor_update.deleted_files.clear();
+
+
 		self.base_mut().set_process(true);
     }
+
 }
 
 
@@ -2627,6 +2746,7 @@ impl INode for GodotProject {
         GodotProject {
 			base: _base,
 			project: GodotProjectImpl::_init(ProjectSettings::singleton().globalize_path("res://").to_string()),
+			pending_editor_update: PendingEditorUpdate::default(),
 		}
     }
 
@@ -2643,7 +2763,10 @@ impl INode for GodotProject {
     fn process(&mut self, _delta: f64) {
 		let (updates, signals) = self.project._process(_delta);
 		if updates.len() > 0 {
-			self.update_godot_after_sync(updates);
+			self.pending_editor_update.merge(self.process_godot_updates(updates));
+		}
+		if self.pending_editor_update.any_changes() {
+			self.update_godot_after_sync();
 		}
 		for signal in signals {
 			match signal {

@@ -11,6 +11,7 @@
 #include <editor/editor_interface.h>
 #include <editor/editor_undo_redo_manager.h>
 #include <editor/plugins/script_editor_plugin.h>
+#include <modules/gdscript/gdscript.h>
 #include <scene/resources/packed_scene.h>
 
 PatchworkEditor::PatchworkEditor() {
@@ -450,9 +451,33 @@ PackedStringArray PatchworkEditor::get_unsaved_scripts() {
 	return EditorInterface::get_singleton()->get_script_editor()->get_unsaved_scripts();
 }
 
-void PatchworkEditor::reload_scripts(bool p_refresh_only) {
+void PatchworkEditor::reload_scripts(PackedStringArray p_scripts) {
 	// Call deferred to make sure it runs on the main thread.
-	EditorInterface::get_singleton()->get_script_editor()->reload_scripts(p_refresh_only);
+	print_line("Reloading scripts: " + String(", ").join(p_scripts));
+	Array scripts;
+	for (auto &script : p_scripts) {
+		auto sc = ResourceLoader::load(script, "", ResourceFormatLoader::CACHE_MODE_REPLACE_DEEP);
+		if (sc.is_valid()) {
+			scripts.append(sc);
+		}
+	}
+	// soft_reload = false means it will reload all the script instances too
+	GDScriptLanguage::get_singleton()->reload_scripts(scripts, false);
+	// now get all the open scripts in the editor
+	auto script_editor = EditorInterface::get_singleton()->get_script_editor();
+	for (auto &script : script_editor->get_open_scripts()) {
+		// If it has one of these scripts open, we have to reload it
+		if (p_scripts.has(script->get_path())) {
+			// call it with refresh_only = false (Forces it to reload the text)
+			script_editor->reload_scripts(false);
+			break;
+		}
+	}
+	// EditorInterface::get_singleton()->get_script_editor()->reload_scripts(p_scripts);
+}
+
+void PatchworkEditor::force_refresh_editor_inspector() {
+	EditorInterface::get_singleton()->get_inspector()->update_tree();
 }
 
 // not bound
@@ -495,8 +520,9 @@ void PatchworkEditor::_bind_methods() {
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("save_all_scenes_and_scripts"), &PatchworkEditor::save_all_scenes_and_scripts);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("save_all_scripts"), &PatchworkEditor::save_all_scripts);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_unsaved_scripts"), &PatchworkEditor::get_unsaved_scripts);
-	ClassDB::bind_static_method(get_class_static(), D_METHOD("reload_scripts", "refresh_only"), &PatchworkEditor::reload_scripts);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("reload_scripts", "scripts"), &PatchworkEditor::reload_scripts);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("is_editor_importing"), &PatchworkEditor::is_editor_importing);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("is_changing_scene"), &PatchworkEditor::is_changing_scene);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_unsaved_files"), &PatchworkEditor::get_unsaved_files);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("force_refresh_editor_inspector"), &PatchworkEditor::force_refresh_editor_inspector);
 }
