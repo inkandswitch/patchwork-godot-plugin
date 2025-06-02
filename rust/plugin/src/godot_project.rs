@@ -513,29 +513,25 @@ impl GodotProjectImpl {
 			panic!("_get_descendent_document: previous_heads is empty");
 		}
 
-		let previous_keys = branch_state.doc_handle.with_doc(|d| {
-			d.get_obj_id_at(ROOT, "files", &previous_heads).is_some()
-		});
-		let current_keys = branch_state.doc_handle.with_doc(|d| {
-			d.get_obj_id_at(ROOT, "files", &current_heads).is_some()
-		});
-		if !previous_keys || !current_keys {
-			// try it with the other doc_id
-			let other_branch_state = match self.branch_states.get(&previous_branch_id) {
-				Some(branch_state) => branch_state,
-				None => return None,
-			};
-			let previous_keys = other_branch_state.doc_handle.with_doc(|d| {
-				d.get_obj_id_at(ROOT, "files", &previous_heads).is_some()
-			});
-			let current_keys = other_branch_state.doc_handle.with_doc(|d| {
+		if branch_state.doc_handle.with_doc(|d| {
+				d.get_obj_id_at(ROOT, "files", &previous_heads).is_some() &&
 				d.get_obj_id_at(ROOT, "files", &current_heads).is_some()
-			});
-			if previous_keys && current_keys {
-				return Some(previous_branch_id);
-			}
-		} else {
+		}) {
 			return Some(current_doc_id);
+		}
+		// try it with the other doc_id
+		let other_branch_state = match self.branch_states.get(&previous_branch_id) {
+			Some(branch_state) => branch_state,
+			None => {
+				tracing::error!("previous branch id {} not found", previous_branch_id);
+				return None;
+			}
+		};
+		if other_branch_state.doc_handle.with_doc(|d| {
+			d.get_obj_id_at(ROOT, "files", &previous_heads).is_some() &&
+			d.get_obj_id_at(ROOT, "files", &current_heads).is_some()
+		}) {
+			return Some(previous_branch_id);
 		}
 
 
@@ -652,13 +648,11 @@ impl GodotProjectImpl {
 			} else {
 				d.keys_at(&curr_files_id.unwrap(), &curr_heads).into_iter().collect::<HashSet<String>>()
 			};
-			let patches = branch_state.doc_handle.with_doc(|d| {
-				d.diff(
-					&previous_heads,
-					&curr_heads,
-					TextRepresentation::String(TextEncoding::Utf8CodeUnit),
-				)
-			});
+			let patches = d.diff(
+				&previous_heads,
+				&curr_heads,
+				TextRepresentation::String(TextEncoding::Utf8CodeUnit),
+			);
 			(patches, old_file_set, curr_file_set)
 		});
 
