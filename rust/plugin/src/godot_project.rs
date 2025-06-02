@@ -137,6 +137,29 @@ pub struct GodotProjectImpl {
 	project_dir: String,
 }
 
+impl Default for GodotProjectImpl {
+	fn default() -> Self {
+		// TODO: Move driver input tx and output rx to the GodotProjectImpl struct, like in FileSystemDriver
+		let (driver_input_tx, _) = futures::channel::mpsc::unbounded();
+		let (_, driver_output_rx) = futures::channel::mpsc::unbounded();
+		Self {
+            sync_server_connection_info: None,
+            doc_handles: HashMap::new(),
+            branch_states: HashMap::new(),
+            checked_out_branch_state: CheckedOutBranchState::NothingCheckedOut(None),
+            project_doc_id: None,
+            new_project: true,
+			should_update_godot: false,
+			just_checked_out_new_branch: false,
+            driver: None,
+            driver_input_tx,
+            driver_output_rx,
+            file_system_driver: None,
+			project_dir: "".to_string(),
+		}
+	}
+}
+
 enum ChangeOp {
     Added,
     Removed,
@@ -2083,28 +2106,11 @@ impl GodotProjectImpl {
 		}
 	}
 
-	fn _init(project_dir: String) -> Self {
-
-        let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
-        let (driver_output_tx, driver_output_rx) = futures::channel::mpsc::unbounded();
-
-        let mut ret = Self {
-            sync_server_connection_info: None,
-            doc_handles: HashMap::new(),
-            branch_states: HashMap::new(),
-            checked_out_branch_state: CheckedOutBranchState::NothingCheckedOut(None),
-            project_doc_id: None,
-            new_project: true,
-			should_update_godot: false,
-			just_checked_out_new_branch: false,
-            driver: None,
-            driver_input_tx,
-            driver_output_rx,
-            file_system_driver: None,
+	fn new(project_dir: String) -> Self {
+		Self {
 			project_dir,
-        };
-        // process it a few times to get it to check out the branch
-        ret
+			..Default::default()
+		}
 	}
 
 	fn _enter_tree(&mut self) {
@@ -2787,7 +2793,7 @@ impl INode for GodotProject {
     fn init(_base: Base<Node>) -> Self {
         GodotProject {
 			base: _base,
-			project: GodotProjectImpl::_init(ProjectSettings::singleton().globalize_path("res://").to_string()),
+			project: GodotProjectImpl::new(ProjectSettings::singleton().globalize_path("res://").to_string()),
 			pending_editor_update: PendingEditorUpdate::default(),
 		}
     }
