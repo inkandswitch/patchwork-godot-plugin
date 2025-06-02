@@ -985,9 +985,10 @@ impl GodotScene {
             tracing::error!("resource with no resource tag!!");
         }
 
+		let mut node_paths_visited: HashMap<String, i64> = HashMap::new();
         if !self.nodes.is_empty() && self.root_node_id.is_some() {
             if let Some(root_node) = self.nodes.get(self.root_node_id.as_ref().unwrap()) {
-                self.serialize_node(&mut output, root_node);
+                self.serialize_node(&mut output, root_node, &mut node_paths_visited);
 				if self.connections.len() == 0  && self.editable_instances.len() == 0 {
 					// prevent an extra trailing new line
 					output.pop();
@@ -998,7 +999,16 @@ impl GodotScene {
         let mut connections: Vec<(&String, &GodotConnection)> =
             self.connections.iter().collect::<Vec<_>>();
 
-        connections.sort_by(|(id_a, _), (id_b, _)| id_a.cmp(id_b));
+        connections.sort_by(|(id_a, conn_a), (id_b, conn_b)| {
+			let sort_a = node_paths_visited.get(&conn_a.from_node_id).unwrap_or(&-1);
+			let sort_b = node_paths_visited.get(&conn_b.from_node_id).unwrap_or(&-1);
+			if sort_a == sort_b {
+				// compare the signal
+				conn_a.signal.cmp(&conn_b.signal)
+			} else {
+				sort_a.cmp(sort_b)
+			}
+		});
 
         for (_, connection) in connections {
             let from_path = self.get_node_path(&connection.from_node_id);
@@ -1026,7 +1036,7 @@ impl GodotScene {
         output
     }
 
-    fn serialize_node(&self, output: &mut String, node: &GodotNode) {
+    fn serialize_node(&self, output: &mut String, node: &GodotNode, node_paths_visited: &mut HashMap<String, i64>) {
         output.push_str(&format!("[node name=\"{}\"", node.name));
 
         if let TypeOrInstance::Type(t) = &node.type_or_instance {
@@ -1042,6 +1052,8 @@ impl GodotScene {
 
             output.push_str(&format!(" parent=\"{}\"", parent_name));
         }
+
+		node_paths_visited.insert(node.id.clone(), node_paths_visited.len() as i64);
 
         if let Some(node_paths) = &node.node_paths {
             output.push_str(&format!(" node_paths={}", node_paths));
@@ -1082,7 +1094,7 @@ impl GodotScene {
         // Recursively serialize children
         for child_id in &node.child_node_ids {
             if let Some(child_node) = self.nodes.get(child_id) {
-                self.serialize_node(output, child_node);
+                self.serialize_node(output, child_node, node_paths_visited);
             }
         }
     }
