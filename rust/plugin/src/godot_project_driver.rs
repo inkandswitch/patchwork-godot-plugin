@@ -37,6 +37,7 @@ use tokio::{net::TcpStream, runtime::Runtime};
 
 use crate::{doc_utils::SimpleDocReader, godot_project::Branch};
 
+// TODO: need to change this to point to a configuration setting for local development
 const SERVER_URL: &str = "104.131.179.247:8080";
 // const SERVER_URL: &str = "0.0.0.0:8080";
 
@@ -408,6 +409,7 @@ impl GodotProjectDriver {
 
                     next = sync_server_conn_info_changes.next() => {
                         if let Some(info) = next {
+                            // TODO: do we need to update the synced_heads here?
                             tx.unbounded_send(OutputEvent::PeerConnectionInfoChanged { peer_connection_info: info.clone() }).unwrap();
                         };
                     },

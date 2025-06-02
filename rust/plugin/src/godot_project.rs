@@ -89,9 +89,9 @@ pub struct Branch {
 
 #[derive(Debug, Clone)]
 enum CheckedOutBranchState {
-    NothingCheckedOut,
-    CheckingOut(DocumentId, Option<(DocumentId, Vec<ChangeHash>)>),
-    CheckedOut(DocumentId, Option<(DocumentId, Vec<ChangeHash>)>),
+    NothingCheckedOut(Option<DocumentId>),
+    CheckingOut(DocumentId, Option<DocumentId>),
+    CheckedOut(DocumentId, Option<DocumentId>),
 }
 
 enum VariantStrValue {
@@ -176,7 +176,7 @@ impl PatchworkEditorAccessor {
 		ClassDb::singleton().class_call_static(
 			"PatchworkEditor",
 			"reload_scripts",
-			&[],
+			&[false.to_variant()],
 		);
 	}
 }
@@ -358,11 +358,13 @@ impl GodotProjectImpl {
         self.driver_input_tx
             .unbounded_send(InputEvent::CreateBranch {
                 name,
-                source_branch_doc_id,
+                source_branch_doc_id: source_branch_doc_id.clone(),
             })
             .unwrap();
 
-        self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut;
+		// TODO: do we want to set this? or let _process set it?
+        // self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut(Some(source_branch_doc_id));
+		self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut(None);
     }
 
 
@@ -396,20 +398,15 @@ impl GodotProjectImpl {
 
 	fn _checkout_branch(&mut self, branch_doc_id: DocumentId) {
 		let current_branch = match &self.checked_out_branch_state {
-			CheckedOutBranchState::CheckedOut(doc_id, _) => doc_id.clone(),
+			CheckedOutBranchState::CheckedOut(doc_id, _) => Some(doc_id.clone()),
 			CheckedOutBranchState::CheckingOut(doc_id, _) => {
-				tracing::error!("CHECKING OUT BRANCH WHILE STILL CHECKING OUT?!?!?! {:?}", doc_id);
-				doc_id.clone()
+				tracing::error!("**@#%@#%!@#%#@!*** CHECKING OUT BRANCH WHILE STILL CHECKING OUT?!?!?! {:?}", doc_id);
+				Some(doc_id.clone())
 			},
-			CheckedOutBranchState::NothingCheckedOut => {
-				panic!("couldn't checkout branch, no checked out branch");
+			CheckedOutBranchState::NothingCheckedOut(current_branch_id) => {
+				tracing::error!("**@#%@#%!@#%#@!*** We're checking out a branch while not checked out on any branch????");
+				current_branch_id.clone()
 			}
-		};
-		// Do we want the current heads or the synced heads?
-		// let current_heads = self.get_current_heads_at_branch(current_branch.clone());
-		let current_heads = match self.branch_states.get(&current_branch) {
-			Some(branch_state) => branch_state.synced_heads.clone(),
-			None => vec![]
 		};
         let target_branch_state = match self.branch_states.get(&branch_doc_id) {
             Some(branch_state) => branch_state,
@@ -423,14 +420,14 @@ impl GodotProjectImpl {
             self.checked_out_branch_state =
                 CheckedOutBranchState::CheckedOut(
 					branch_doc_id.clone(),
-					Some((current_branch.clone(), current_heads)));
+					current_branch.clone());
 			self.just_checked_out_new_branch = true;
         } else {
 			tracing::debug!("checked out branch {:?} has unsynced heads", target_branch_state.name);
             self.checked_out_branch_state =
 				CheckedOutBranchState::CheckingOut(
 					branch_doc_id.clone(),
-					Some((current_branch.clone(), current_heads))
+					current_branch.clone()
 				);
         }
     }
@@ -1908,7 +1905,7 @@ impl GodotProjectImpl {
 
         self.checked_out_branch_state = match DocumentId::from_str(&checked_out_branch_doc_id) {
             Ok(doc_id) => CheckedOutBranchState::CheckingOut(doc_id, None),
-            Err(_) => CheckedOutBranchState::NothingCheckedOut,
+            Err(_) => CheckedOutBranchState::NothingCheckedOut(None),
         };
 
         tracing::debug!(
@@ -1929,7 +1926,7 @@ impl GodotProjectImpl {
 
     fn stop(&mut self) {
         self._stop_driver();
-        self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut;
+        self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut(None);
         self.sync_server_connection_info = None;
         self.project_doc_id = None;
         self.doc_handles.clear();
@@ -1956,20 +1953,29 @@ impl GodotProjectImpl {
 			}
 		};
 		let current_doc_id = current_branch_state.doc_handle.document_id();
+		// TODO: Do we want synced heads or the current heads?
 		let current_heads = current_branch_state.synced_heads.clone();
-		let previous_heads = match &previous_branch_id {
-			Some(branch_id) => {
-				match self.branch_states.get(branch_id) {
-					Some(branch_state) => {
-						branch_state.synced_heads.clone()
-					}
-					None => {
-						Vec::new()
+		let previous_heads = if previous_branch_heads.len() > 0 {
+			previous_branch_heads
+		} else {
+			match &previous_branch_id {
+				Some(branch_id) => {
+					match self.branch_states.get(branch_id) {
+						Some(branch_state) => {
+							tracing::warn!("no previous branch heads, using current branch heads on {:?}", branch_state.name);
+							// TODO: Do we want synced heads or the current heads?
+							branch_state.synced_heads.clone()
+						}
+						None => {
+							tracing::error!("NO PREVIOUS BRANCH STATE?!?!?! Getting all changes from start to current_heads");
+							Vec::new()
+						}
 					}
 				}
-			}
-			None => {
-				Vec::new()
+				None => {
+					tracing::info!("no previous branch id, getting all changes from start to current_heads");
+					Vec::new()
+				}
 			}
 		};
 		tracing::debug!("syncing branch {:?} from {}{} to {}", current_branch_state.name,
@@ -2035,6 +2041,14 @@ impl GodotProjectImpl {
         };
     }
 
+	fn _get_previous_branch_id(&self) -> Option<DocumentId> {
+		match &self.checked_out_branch_state {
+			CheckedOutBranchState::NothingCheckedOut(prev_branch_id) => prev_branch_id.clone(),
+			CheckedOutBranchState::CheckingOut(_, prev_branch_id) => prev_branch_id.clone(),
+			CheckedOutBranchState::CheckedOut(_, prev_branch_id) => prev_branch_id.clone(),
+		}
+	}
+
 	fn _init(project_dir: String) -> Self {
 
         let (driver_input_tx, driver_input_rx) = futures::channel::mpsc::unbounded();
@@ -2044,7 +2058,7 @@ impl GodotProjectImpl {
             sync_server_connection_info: None,
             doc_handles: HashMap::new(),
             branch_states: HashMap::new(),
-            checked_out_branch_state: CheckedOutBranchState::NothingCheckedOut,
+            checked_out_branch_state: CheckedOutBranchState::NothingCheckedOut(None),
             project_doc_id: None,
             new_project: true,
 			should_update_godot: false,
@@ -2120,16 +2134,17 @@ impl GodotProjectImpl {
                     let mut checking_out_new_branch = false;
 
                     let (active_branch_state, prev_branch_info) = match &self.checked_out_branch_state {
-                        CheckedOutBranchState::NothingCheckedOut => {
+                        CheckedOutBranchState::NothingCheckedOut(prev_branch_id) => {
                             // check out main branch if we haven't checked out anything yet
+							let cloned_prev_branch_id = prev_branch_id.clone();
                             if branch_state.is_main {
                                 checking_out_new_branch = true;
 
                                 self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(
                                     branch_state.doc_handle.document_id(),
-                                    None,
+                                    prev_branch_id.clone(),
                                 );
-                                (Some(&branch_state), None)
+                                (Some(&branch_state), cloned_prev_branch_id)
                             } else {
 								panic!("NOTHING CHECKED OUT AND WE'RE NOT CHECKING OUT A NEW BRANCH?!?!?! {:?}", branch_state.name);
                                 (None, None)
@@ -2175,7 +2190,7 @@ impl GodotProjectImpl {
 
                 OutputEvent::CompletedCreateBranch { branch_doc_id } => {
                     self.checked_out_branch_state =
-                        CheckedOutBranchState::CheckingOut(branch_doc_id, None);
+                        CheckedOutBranchState::CheckingOut(branch_doc_id, self._get_previous_branch_id());
                 }
 
                 OutputEvent::CompletedShutdown => {
@@ -2260,7 +2275,7 @@ impl GodotProjectImpl {
 			return (Vec::new(), signals);
 		}
 		let (branch_state, previous_branch_info) = match &self.checked_out_branch_state{
-			CheckedOutBranchState::NothingCheckedOut => (None, None),
+			CheckedOutBranchState::NothingCheckedOut(_) => (None, None),
 			CheckedOutBranchState::CheckingOut(_, _) => (None, None),
 			CheckedOutBranchState::CheckedOut(_, prev_branch_info) => (self.get_checked_out_branch_state(), prev_branch_info.clone()),
 		};
@@ -2273,19 +2288,29 @@ impl GodotProjectImpl {
 			}
 			return (Vec::new(), signals);
 		}
+		// TODO: check if the heads are actually synced
 		let branch_state = branch_state.unwrap();
-		let (previous_branch_id, mut previous_branch_heads) = previous_branch_info.map(|(id, heads)| (Some(id), heads)).unwrap_or((None, Vec::new()));
-		if let Some(previous_branch_id) = &previous_branch_id {
-			previous_branch_heads = self.branch_states.get(previous_branch_id).map(|branch_state| branch_state.synced_heads.clone()).unwrap_or_default();
+		let mut previous_branch_id = previous_branch_info;
+		let mut previous_branch_heads = if previous_branch_id.is_some() {
+			self.branch_states.get(previous_branch_id.as_ref().unwrap()).map(|branch_state| branch_state.synced_heads.clone()).unwrap_or_default()
 		} else {
-			previous_branch_heads = branch_state.synced_heads.clone();
-		}
+			Vec::new()
+		};
 		let mut updates = Vec::new();
 		if self.just_checked_out_new_branch {
 			tracing::debug!("just checked out branch {:?}", branch_state.name);
 			let checked_out_branch_doc_id = branch_state
 														.doc_handle
 														.document_id();
+
+			if previous_branch_id.is_none() && !self.new_project {
+				// check if this is not a merge preview branch
+				if !branch_state.merge_info.is_some() && branch_state.fork_info.is_some() {
+					previous_branch_id = Some(branch_state.fork_info.as_ref().unwrap().forked_from.clone());
+					previous_branch_heads = branch_state.fork_info.as_ref().unwrap().forked_at.clone();
+					self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(checked_out_branch_doc_id.clone(), previous_branch_id.clone());
+				}
+			}
 			self.just_checked_out_new_branch = false;
 			if self.new_project {
 				self.new_project = false;
@@ -2329,7 +2354,7 @@ impl GodotProjectImpl {
 					}
 				).collect::<Vec<(PathBuf, FileContent)>>();
 
-				self._sync_files_at(branch_state.doc_handle.clone(), files, Some(branch_state.synced_heads.clone()));
+				self._sync_files_at(branch_state.doc_handle.clone(), files, None);
 			}
         }
 
@@ -2702,6 +2727,7 @@ impl GodotProjectPlugin {
 		} else {
 			tracing::warn!("no sidebar to remove");
 		}
+		self.sidebar_scene = None;
 	}
 }
 
