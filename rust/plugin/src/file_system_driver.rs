@@ -195,39 +195,11 @@ impl FileSystemTask {
 		self.found_ignored_paths = found_ignored_paths;
     }
 
-
-
-    fn desymlinkify(path: &PathBuf, sym_links: &HashMap<PathBuf, PathBuf>) -> PathBuf {
-        let mut new_path = path.clone();
-        // let mut target_max_len = 0;
-        // for (src, target) in sym_links.iter() {
-        // 	if path.starts_with(target) && target.to_str().unwrap().len() > target_max_len {
-        // 		target_max_len = target.to_str().unwrap().len();
-        // 		new_path = src.join(path.strip_prefix(target).unwrap());
-        // 	}
-        // }
-        new_path
-    }
-
     // Handle file creation and modification events
     async fn handle_file_event(
         &self,
         path: PathBuf,
-        sym_links: &mut HashMap<PathBuf, PathBuf>,
     ) -> Result<Option<FileSystemEvent>, notify::Error> {
-        // Process symlinks and get the actual path
-        let path = if let Ok(metadata) = std::fs::metadata(&path) {
-            if metadata.is_symlink() {
-                let target = std::fs::read_link(&path).unwrap();
-                sym_links.insert(path.clone(), target);
-                path.clone()
-            } else {
-                Self::desymlinkify(&path, sym_links)
-            }
-        } else {
-            Self::desymlinkify(&path, sym_links)
-        };
-
         // Skip if path matches any ignore pattern
         if self.should_ignore(&path) {
             return Ok(None);
@@ -359,7 +331,6 @@ impl FileSystemTask {
 	async fn _scan_for_additive_changes(
 		&self,
 		watch_path: &PathBuf,
-		sym_links: &mut HashMap<PathBuf, PathBuf>,
 	) -> Vec<FileSystemEvent>
 	{
 		let mut events = Vec::new();
@@ -374,29 +345,23 @@ impl FileSystemTask {
 			if self.should_ignore(&path) {
 				continue;
 			}
-			if let Ok(metadata) = path.metadata() {
-				if metadata.is_symlink() {
-					let target = std::fs::read_link(&path).unwrap();
-					sym_links.insert(path.clone(), target);
-				}
-			}
 
 			if path.is_file() {
-				let res = self.handle_file_event(path, sym_links).await;
+				let res = self.handle_file_event(path).await;
 				if let Ok(Some(ret)) = res{
 					events.push(ret);
 				}
 			} else if path.is_dir() {
 				// Use Box::pin for the recursive call to avoid infinitely sized future
-				let sub_events = Box::pin(self._scan_for_additive_changes(&path, sym_links)).await;
+				let sub_events = Box::pin(self._scan_for_additive_changes(&path)).await;
 				events.extend(sub_events);
 			}
 		}
 		events
 	}
 
-	async fn scan_for_changes(&self, sym_links: &mut HashMap<PathBuf, PathBuf>) -> Vec<FileSystemEvent> {
-		let mut events = self._scan_for_additive_changes(&self.watch_path, sym_links).await;
+	async fn scan_for_changes(&self) -> Vec<FileSystemEvent> {
+		let mut events = self._scan_for_additive_changes(&self.watch_path).await;
 		// check the file_hashes for removed files
 		let mut to_remove = Vec::new();
 		let mut file_hashes = self.file_hashes.lock().await;
@@ -430,7 +395,7 @@ impl FileSystemTask {
 								self.found_ignored_paths.insert(event.path);
 								continue;
 							}
-							let result = self.handle_file_event(event.path.clone(), &mut sym_links).await;
+							let result = self.handle_file_event(event.path.clone()).await;
 							if let Ok(Some(ret)) = result {
 								if event.path.file_name() == Some(OsStr::new("main.tscn")) {
 									tracing::debug!("main.tscn updated {:?}", event.path);
