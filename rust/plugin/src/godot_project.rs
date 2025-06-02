@@ -294,19 +294,18 @@ impl GodotProjectImpl {
     }
 
 	fn _get_changes(&self) -> Vec<CommitInfo> {
-        let checked_out_branch_doc = match &self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state.doc_handle.with_doc(|d| d.clone()),
-            _ => return Vec::new(),
-        };
-
-        checked_out_branch_doc
-            .get_changes(&[])
-            .to_vec()
-            .iter()
-            .map(|c| {
-                CommitInfo::from(c)
-            })
-            .collect::<Vec<CommitInfo>>()
+        match self._get_checked_out_branch_state() {
+            Some(branch_state) => branch_state.doc_handle.with_doc(|d|
+				d.get_changes(&[])
+				.to_vec()
+				.iter()
+				.map(|c| {
+					CommitInfo::from(c)
+				})
+				.collect::<Vec<CommitInfo>>()
+			),
+            _ => Vec::new(),
+        }
     }
 
 	fn _get_main_branch(&self) -> Option<&BranchState> {
