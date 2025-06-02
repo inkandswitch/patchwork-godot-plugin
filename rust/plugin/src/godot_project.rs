@@ -2723,12 +2723,23 @@ impl GodotProject {
 				}
 			}
 
-			for (scene_path, _scene) in self.pending_editor_update.scenes_to_reload.iter() {
-				if reload_scene_func(scene_path) {
-					reloaded_scenes.insert(scene_path.clone());
-				}
-            }
-			let _ = reloaded_scenes.into_iter().map(|p|self.pending_editor_update.scenes_to_reload.remove(&p));
+			// TODO: we want to reload all the scenes, but the editor changes scenes every time we reload a scene,
+			// (and refuses to reload a scene when doing so)
+			// so we're just going to only reload the current scene and then rescan
+			self.pending_editor_update.scenes_to_reload.clear();
+			// for (scene_path, _scene) in self.pending_editor_update.scenes_to_reload.iter() {
+			// 	if reload_scene_func(scene_path) {
+			// 		reloaded_scenes.insert(scene_path.clone());
+			// 	} else {
+			// 		break;
+			// 	}
+            // }
+			// let _ = reloaded_scenes.into_iter().map(|p|self.pending_editor_update.scenes_to_reload.remove(&p));
+			// if self.pending_editor_update.scenes_to_reload.len() > 0 {
+			// 	// try on the next process() call
+			// 	self.base_mut().set_process(true);
+			// 	return;
+			// }
         }
 		if self.pending_editor_update.reimport_files.len() > 0 {
 			EditorFilesystemAccessor::reimport_files(&self.pending_editor_update.reimport_files.iter().map(|path| path.clone()).collect::<Vec<String>>());
