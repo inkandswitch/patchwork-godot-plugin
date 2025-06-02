@@ -15,6 +15,7 @@ use tokio::{task::JoinHandle, time::{sleep, Duration}};
 use notify::{Watcher, RecursiveMode, Config, Event, EventHandler};
 use notify_debouncer_mini::{new_debouncer_opt, DebouncedEvent, Debouncer};
 use notify::RecommendedWatcher as WatcherImpl;
+use tracing::instrument;
 use std::sync::mpsc::channel;
 use std::time::Duration as StdDuration;
 use std::collections::{HashMap, HashSet};
@@ -27,7 +28,6 @@ use std::io;
 use crate::file_utils::{calculate_file_hash, get_buffer_and_hash, FileContent};
 
 use crate::utils::ToShortForm;
-use crate::{godot_parser::{parse_scene, recognize_scene, GodotScene}};
 
 // static const var for debounce time
 const DEBOUNCE_TIME: u64 = 100;
@@ -257,10 +257,14 @@ impl FileSystemTask {
 			if file_hashes.contains_key(&path) {
 				let old_hash = file_hashes.get(&path).unwrap();
 				if old_hash != &new_hash {
+					// TODO: make this use level trace instead
+					tracing::debug!("file {:?} changed, hash {} -> {}", path, old_hash, new_hash);
+					file_hashes.insert(path.clone(), new_hash);
 					return Ok(Some(FileSystemEvent::FileModified(path, FileContent::from_buf(content))));
 				}
 			} else {
 				// If the file is newly created, we want to emit a created event
+				tracing::debug!("file {:?} created, hash {}", path, new_hash);
 				file_hashes.insert(path.clone(), new_hash);
 				return Ok(Some(FileSystemEvent::FileCreated(path, FileContent::from_buf(content))));
 			}
@@ -432,7 +436,7 @@ impl FileSystemTask {
 									tracing::debug!("main.tscn updated {:?}", event.path);
 									if let FileSystemEvent::FileModified(_path, content) = &ret {
 										if let FileContent::Scene(scene) = &content {
-											tracing::debug!("main.tscn node count! {:?}", scene.nodes.len());
+											tracing::debug!("main.tscn node count: {:?}, hash: {}", scene.nodes.len(), content.to_hash());
 										}
 									}
 								}
@@ -719,8 +723,9 @@ impl FileSystemDriver {
 		self.resume_task().await;
 	}
 
+	#[instrument(skip_all, level = tracing::Level::INFO)]
 	pub fn batch_update_blocking(&self, updates: Vec<FileSystemUpdateEvent>) -> Vec<FileSystemEvent> {
-		tracing::debug!("starting batch_update_blocking, # of updates: {:?}", updates.len());
+		tracing::debug!("# of updates: {:?}", updates.len());
 		tracing::trace!("updates: [{}]", updates.to_short_form());
 		self.pause_task_blocking();
 		tracing::trace!("batch_update_blocking after pause");
@@ -733,7 +738,7 @@ impl FileSystemDriver {
 						let new_hash_str = content.to_hash();
 						let mut modified = false;
 						let mut created = false;
-						if let Some(old_hash) = file_hashes.get_mut(&path) {
+						if let Some(old_hash) = file_hashes.get(&path) {
 							if old_hash != &new_hash_str {
 								modified = true;
 							}
@@ -742,15 +747,23 @@ impl FileSystemDriver {
 						}
 						if modified || created {
 							if let Ok(hash_str) = FileContent::write_file_content(&path, &content) {
+								if new_hash_str != hash_str {
+									tracing::error!("THIS SHOULD NOT HAPPEN: file {:?} previous calced hash {:?} != written hash {:?}", path, new_hash_str, hash_str);
+								}
 								if modified {
+									// TODO: make this use level trace instead
+									tracing::debug!("file {:?} changed, hash {} -> {}", path, file_hashes.get(&path).unwrap(), new_hash_str);
 									events.push(FileSystemEvent::FileModified(path.clone(), content));
 								} else {
+									tracing::debug!("file {:?} created, hash {}", path, new_hash_str);
 									events.push(FileSystemEvent::FileCreated(path.clone(), content));
 								}
 								file_hashes.insert(path, hash_str);
 							} else {
 								tracing::error!("failed to write file {:?}", path);
 							}
+						} else {
+							tracing::debug!("file {:?} already exists with same hash {:?}", path, new_hash_str);
 						}
 					}
 					FileSystemUpdateEvent::FileDeleted(path) => {
