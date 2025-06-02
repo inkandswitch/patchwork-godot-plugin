@@ -1928,9 +1928,10 @@ impl GodotProjectImpl {
 	}
 
 
-
+	#[instrument(skip_all, level = tracing::Level::INFO)]
     fn sync_patchwork_to_godot(&mut self, previous_branch_id: Option<DocumentId>, previous_branch_heads: Vec<ChangeHash>) -> Vec<FileSystemEvent> {
-		tracing::debug!("sync_patchwork_to_godot");
+		println!("");
+		tracing::debug!("*** SYNC PATCHWORK TO GODOT");
 		let current_branch_state = match self.get_checked_out_branch_state() {
 			Some(branch_state) => branch_state,
 			None => {
@@ -1962,6 +1963,7 @@ impl GodotProjectImpl {
 			"".to_string()
 		}, previous_heads.to_short_form(), current_heads.to_short_form());
 		let events = self._get_changed_file_content_between(previous_branch_id, current_doc_id, previous_heads, current_heads);
+		println!("");
 
         let mut updates = Vec::new();
         for event in events {
@@ -2230,9 +2232,14 @@ impl GodotProjectImpl {
 			signals.push(GodotProjectSignal::BranchesChanged(branches));
 		}
 
+		let has_pending_updates = self.just_checked_out_new_branch || self.should_update_godot;
+		let fs_driver_has_pending_updates = self.file_system_driver.as_ref().map(|driver| driver.has_events_pending()).unwrap_or(false);
 		if !Self::safe_to_update_godot() {
-			if self.just_checked_out_new_branch || self.should_update_godot || self.file_system_driver.as_ref().map(|driver| driver.has_events_pending()).unwrap_or(false) {
-				tracing::info!("Pending changes, but we're not safe to update godot");
+			if has_pending_updates {
+				tracing::info!("Pending changes, but not safe to update godot, skipping...");
+			}
+			if fs_driver_has_pending_updates {
+				tracing::info!("Pending editor changes to sync, but not safe to update godot, skipping...");
 			}
 			return (Vec::new(), signals);
 		}
@@ -2242,6 +2249,12 @@ impl GodotProjectImpl {
 			CheckedOutBranchState::CheckedOut(_, prev_branch_info) => (self.get_checked_out_branch_state(), prev_branch_info.clone()),
 		};
 		if branch_state.is_none() {
+			if has_pending_updates {
+				tracing::info!("Pending changes, but we're not checked out on a branch, skipping...");
+			}
+			if fs_driver_has_pending_updates {
+				tracing::info!("Pending editor changes to sync, but we're not checked out on a branch, skipping...");
+			}
 			return (Vec::new(), signals);
 		}
 		let branch_state = branch_state.unwrap();
