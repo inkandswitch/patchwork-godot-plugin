@@ -25,6 +25,10 @@ pub struct GodotScene {
     pub connections: HashMap<String, GodotConnection>, // key is concatenation of all properties of the connection
     pub editable_instances: HashSet<String>,
     pub main_resource: Option<SubResourceNode>,
+	 // TODO: this is a hack to force the frontend to resave the scene
+	 // if we add a new node id to a node in the scene, it's not serialized
+	 // or saved to the doc
+	pub requires_resave: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -900,6 +904,7 @@ impl GodotScene {
             connections,
             editable_instances,
             main_resource,
+			requires_resave: false
         })
     }
 
@@ -1176,6 +1181,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
 
     let mut parsed_node_ids = HashSet::new();
 
+	let mut required_resave = false;
     return match result {
         Some(tree) => {
             let content_bytes = source.as_bytes();
@@ -1350,11 +1356,13 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         // generate a new id if the patchwork_id is already used by another node
                         // this can happen if a node is copied and pasted in Godot
                         if parsed_node_ids.contains(&parsed_node_id) {
+							required_resave = true;
                             uuid::Uuid::new_v4().simple().to_string()
                         } else {
                             parsed_node_id
                         }
                     } else {
+						required_resave = true;
                         // Generate a UUID if no patchwork_id exists
                         uuid::Uuid::new_v4().simple().to_string()
                     };
@@ -1607,6 +1615,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 connections,
                 editable_instances,
                 main_resource,
+				requires_resave: required_resave,
             })
         }
         None => Err("Failed to parse scene file".to_string()),

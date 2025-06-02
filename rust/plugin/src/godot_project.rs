@@ -843,11 +843,16 @@ impl GodotProjectImpl {
 		).collect::<Vec<String>>().join(", "));
         let stored_files = self._get_files_at(heads.as_ref(), Some(&filter));
 		let files_len = files.len();
+		let mut requires_resave = false;
         let changed_files: Vec<(String, FileContent)> = files.into_iter().filter_map(|(path, content)| {
             let path = path.to_string_lossy().to_string();
             let stored_content = stored_files.get(&path);
-            if let Some(stored_content) = stored_content {
-                if stored_content == &content {
+			if let FileContent::Scene(scene) = &content {
+				if scene.requires_resave {
+					requires_resave = true;
+				}
+			} else if let Some(stored_content) = stored_content {
+				if stored_content == &content {
                     return None;
                 }
             }
@@ -857,12 +862,23 @@ impl GodotProjectImpl {
 		tracing::trace!("syncing actually changed files: [{}]", changed_files.iter().map(|(path, content)|
 			format!("{}: {}", path, content.to_short_form())
 		).collect::<Vec<String>>().join(", "));
-        let _ = self.driver_input_tx
-            .unbounded_send(InputEvent::SaveFiles {
+		if requires_resave {
+			tracing::debug!("updates require resave");
+			// TODO: rethink this system; how do we handle resaves? SHOULD we even have nodes with IDs?
+			let _ = self.driver_input_tx
+            .unbounded_send(InputEvent::InitialCheckin {
                 branch_doc_handle,
                 heads,
                 files: changed_files,
             });
+		} else {
+			let _ = self.driver_input_tx
+				.unbounded_send(InputEvent::SaveFiles {
+					branch_doc_handle,
+					heads,
+					files: changed_files,
+				});
+		}
     }
 
 
