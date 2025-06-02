@@ -234,10 +234,10 @@ impl PatchworkConfigAccessor {
 
 enum GodotProjectSignal {
 	Started,
-	CheckedOutBranch(BranchState),
+	CheckedOutBranch,
 	FilesChanged,
 	SavedChanges,
-	BranchesChanged(Vec<BranchState>),
+	BranchesChanged,
 	ShutdownCompleted,
 	SyncServerConnectionInfoChanged(PeerConnectionInfo),
 	ConnectionThreadFailed,
@@ -2266,12 +2266,7 @@ impl GodotProjectImpl {
         }
 
 		if branches_changed {
-			let branches = self
-				._get_branches()
-				.into_iter()
-				.map(|branch| branch.clone())
-				.collect::<Vec<BranchState>>();
-			signals.push(GodotProjectSignal::BranchesChanged(branches));
+			signals.push(GodotProjectSignal::BranchesChanged);
 		}
 
 		let has_pending_updates = self.just_checked_out_new_branch || self.should_update_godot;
@@ -2311,26 +2306,30 @@ impl GodotProjectImpl {
 		};
 		let mut updates = Vec::new();
 		if self.just_checked_out_new_branch {
-			let branch_state = self.get_checked_out_branch_state().cloned().unwrap();
-			tracing::debug!("just checked out branch {:?}", branch_state.name);
-			let checked_out_branch_doc_id = branch_state
-														.doc_handle
-														.document_id();
-
+			self.just_checked_out_new_branch = false;
+			self.should_update_godot = false;
+			let (branch_name, checked_out_branch_doc_id) = self.get_checked_out_branch_state().map(|branch_state|
+				(branch_state.name.clone(), branch_state.doc_handle.document_id().clone())
+			).unwrap();
+			tracing::debug!("just checked out branch {:?}", branch_name);
 			if previous_branch_id.is_none() && !self.new_project {
 				// check if this is not a merge preview branch
-				if !branch_state.merge_info.is_some() && branch_state.fork_info.is_some() {
-					previous_branch_id = Some(branch_state.fork_info.as_ref().unwrap().forked_from.clone());
-					previous_branch_heads = branch_state.fork_info.as_ref().unwrap().forked_at.clone();
+
+				if !self.get_checked_out_branch_state().unwrap().merge_info.is_some() && self.get_checked_out_branch_state().unwrap().fork_info.is_some() {
+					(previous_branch_id, previous_branch_heads) = {
+						let branch_state = self.get_checked_out_branch_state().unwrap();
+						(
+							Some(branch_state.fork_info.as_ref().unwrap().forked_from.clone()),
+							branch_state.fork_info.as_ref().unwrap().forked_at.clone()
+						)
+					};
 					self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(checked_out_branch_doc_id.clone(), previous_branch_id.clone());
 				}
 			}
-			self.just_checked_out_new_branch = false;
 			if self.new_project {
 				self.new_project = false;
 				self.sync_godot_to_patchwork(true);
 			} else {
-				self.should_update_godot = false;
 				updates = self.sync_patchwork_to_godot(previous_branch_id, previous_branch_heads);
 			}
 			// NOTE: it is VERY important that we save the project config AFTER we sync,
@@ -2340,7 +2339,7 @@ impl GodotProjectImpl {
 				None => "".to_string(),
 			});
 			PatchworkConfigAccessor::set_project_value("checked_out_branch_doc_id", &checked_out_branch_doc_id.to_string());
-			signals.push(GodotProjectSignal::CheckedOutBranch(branch_state));
+			signals.push(GodotProjectSignal::CheckedOutBranch);
 		} else if self.should_update_godot {
 			tracing::debug!("should update godot");
 			self.should_update_godot = false;
@@ -2787,8 +2786,9 @@ impl INode for GodotProject {
 		}
 		for signal in signals {
 			match signal {
-				GodotProjectSignal::CheckedOutBranch(branch) => {
-					self.signals().checked_out_branch().emit(branch.to_godot());
+				GodotProjectSignal::CheckedOutBranch => {
+					let branch = self.project.get_checked_out_branch_state().unwrap().to_godot();
+					self.signals().checked_out_branch().emit(branch);
 				}
 				GodotProjectSignal::FilesChanged => {
 					self.signals().files_changed().emit();
@@ -2796,8 +2796,9 @@ impl INode for GodotProject {
 				GodotProjectSignal::SavedChanges => {
 					self.signals().saved_changes().emit();
 				}
-				GodotProjectSignal::BranchesChanged(branches) => {
-					self.signals().branches_changed().emit(branches.into_iter().map(|branch| branch.to_godot()).collect::<Array<Dictionary>>());
+				GodotProjectSignal::BranchesChanged => {
+					let branches = self.get_branches();
+					self.signals().branches_changed().emit(branches);
 				}
 				GodotProjectSignal::Started => {
 					self.signals().started().emit();
