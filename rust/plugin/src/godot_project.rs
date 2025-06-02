@@ -2528,6 +2528,10 @@ impl GodotProject {
             }
         }
 		tracing::info!("---------- files_changed: {:?}", files_changed);
+		let any_changes = file_created_or_deleted || reload_scripts || scenes_to_reload.len() > 0 || reimport_files.len() > 0;
+		if !any_changes {
+			return;
+		}
 		// We have to turn off process here because:
 		// * This was probably called from `process()`
 		// * Any of these functions we're about to call could result in popping up and stepping the ProgressDialog modal
@@ -2535,9 +2539,10 @@ impl GodotProject {
 		// * calling `process()` on us again will cause gd_ext to attempt to re-bind_mut() the GodotProject singleton
 		// * This will cause a panic because we're already in the middle of `process()` with a bound mut ref to base
 		self.base_mut().set_process(false);
-        if reload_scripts {
-            PatchworkEditorAccessor::reload_scripts();
-        }
+		// This is causing segfaults
+        // if reload_scripts {
+        //     PatchworkEditorAccessor::reload_scripts();
+        // }
 		if reimport_files.len() > 0 {
 			EditorFilesystemAccessor::reimport_files(&reimport_files.into_iter().map(|path| path).collect::<Vec<String>>());
         }
@@ -2556,9 +2561,7 @@ impl GodotProject {
 				}
             }
         }
-		if file_created_or_deleted {
-			EditorFilesystemAccessor::scan();
-		}
+		EditorFilesystemAccessor::scan();
 		self.base_mut().set_process(true);
     }
 }
