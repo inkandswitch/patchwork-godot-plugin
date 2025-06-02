@@ -2330,6 +2330,7 @@ impl GodotProjectImpl {
 				self.new_project = false;
 				self.sync_godot_to_patchwork(true);
 			} else {
+				self.should_update_godot = false;
 				updates = self.sync_patchwork_to_godot(previous_branch_id, previous_branch_heads);
 			}
 			// NOTE: it is VERY important that we save the project config AFTER we sync,
