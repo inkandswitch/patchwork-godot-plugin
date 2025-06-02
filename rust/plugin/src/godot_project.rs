@@ -2580,7 +2580,7 @@ impl GodotProject {
 	}
     #[func]
     fn get_checked_out_branch(&self) -> Variant /* {name: String, id: String, is_main: bool}? */ {
-		self.project.get_checked_out_branch_state().cloned().to_variant()
+		self.project.get_checked_out_branch_state().map(|b|b.to_godot().to_variant()).unwrap_or_default()
 	}
 
     #[func]
