@@ -734,7 +734,7 @@ impl FileSystemDriver {
 			let mut file_hashes = self.task.file_hashes.blocking_lock();
 			for update in updates {
 				match update {
-					FileSystemUpdateEvent::FileSaved(path, content) => {
+					FileSystemUpdateEvent::FileSaved(path, mut content) => {
 						let new_hash_str = content.to_hash();
 						let mut modified = false;
 						let mut created = false;
@@ -749,6 +749,9 @@ impl FileSystemDriver {
 							if let Ok(hash_str) = FileContent::write_file_content(&path, &content) {
 								if new_hash_str != hash_str {
 									tracing::error!("THIS SHOULD NOT HAPPEN: file {:?} previous calced hash {:?} != written hash {:?}", path, new_hash_str, hash_str);
+								}
+								if let FileContent::Scene(content) = &mut content {
+									content.requires_resave = false;
 								}
 								if modified {
 									// TODO: make this use level trace instead

@@ -2026,24 +2026,49 @@ impl GodotProjectImpl {
                 // syncing the filesystem to patchwork
                 // get_files_at returns patchwork stuff, we need to get the files from the filesystem
                 if let Some(driver) = &mut driver {
-                    let files = driver.get_all_files_blocking().into_iter().map(
+                    let mut files = driver.get_all_files_blocking().into_iter().map(
                         |(path, content)| {
                             (self.localize_path(&path.to_string_lossy().to_string()).to_string(), content)
                         }
                     ).collect::<Vec<(String, FileContent)>>();
 					if new_project {
-						let _ = self.driver_input_tx
-						.unbounded_send(InputEvent::InitialCheckin {
-							branch_doc_handle: branch_state.doc_handle.clone(),
-							heads: Some(branch_state.synced_heads.clone()),
-							files: files
-						});
-					} else {
-						self._sync_files_at(
-							branch_state.doc_handle.clone(),
-							files.into_iter().map(|(path, content)| (PathBuf::from(path), content)).collect::<Vec<(PathBuf, FileContent)>>(),
-							Some(branch_state.synced_heads.clone()));
+						// Hack to prevent long reloads when opening a new project; we just resave all the scenes that need it
+						let mut driver_updates: Vec<FileSystemUpdateEvent> = Vec::new();
+						let before_size: usize = files.len();
+						files = files.into_iter().filter_map(
+						|(path, content)|{
+							if let FileContent::Scene(content) = content {
+								if content.requires_resave {
+									driver_updates.push(FileSystemUpdateEvent::FileSaved(PathBuf::from(self.globalize_path(&path)), FileContent::Scene(content)));
+									return None;
+								}
+								return Some((path, FileContent::Scene(content)));
+							}
+							Some((path, content))
+						}
+						).collect::<Vec<_>>();
+						let events: Vec<FileSystemEvent> = driver.batch_update_blocking(driver_updates);
+						if before_size - files.len() != events.len() {
+							tracing::error!("**** THIS SHOULD NOT HAPPEN: resaved {} files, but expected {} files back", before_size - files.len(), events.len());
+							files = driver.get_all_files_blocking().into_iter().map(
+								|(path, content)| {
+									(self.localize_path(&path.to_string_lossy().to_string()).to_string(), content)
+								}
+							).collect::<Vec<(String, FileContent)>>();
+						} else {
+							files.extend(events.into_iter().map(|event| {
+								match event {
+									FileSystemEvent::FileCreated(path, content) => (self.localize_path(&path.to_string_lossy().to_string()), content),
+									FileSystemEvent::FileModified(path, content) => (self.localize_path(&path.to_string_lossy().to_string()), content),
+									FileSystemEvent::FileDeleted(path) => (self.localize_path(&path.to_string_lossy().to_string()), FileContent::Deleted)
+								}
+							}));
+						}
 					}
+					self._sync_files_at(
+						branch_state.doc_handle.clone(),
+						files.into_iter().map(|(path, content)| (PathBuf::from(path), content)).collect::<Vec<(PathBuf, FileContent)>>(),
+						Some(branch_state.synced_heads.clone()));
                 }
             }
             None => panic!("couldn't save files, no checked out branch"),
