@@ -229,14 +229,13 @@ impl FileSystemTask {
 			if file_hashes.contains_key(&path) {
 				let old_hash = file_hashes.get(&path).unwrap();
 				if old_hash != &new_hash {
-					// TODO: make this use level trace instead
-					tracing::debug!("file {:?} changed, hash {} -> {}", path, old_hash, new_hash);
+					tracing::trace!("file {:?} changed, hash {} -> {}", path, old_hash, new_hash);
 					file_hashes.insert(path.clone(), new_hash);
 					return Ok(Some(FileSystemEvent::FileModified(path, FileContent::from_buf(content))));
 				}
 			} else {
 				// If the file is newly created, we want to emit a created event
-				tracing::debug!("file {:?} created, hash {}", path, new_hash);
+				tracing::trace!("file {:?} created, hash {}", path, new_hash);
 				file_hashes.insert(path.clone(), new_hash);
 				return Ok(Some(FileSystemEvent::FileCreated(path, FileContent::from_buf(content))));
 			}
@@ -377,6 +376,31 @@ impl FileSystemTask {
 		events
 	}
 
+	async fn process_notify_events(&mut self, notify_event: Vec<DebouncedEvent>, output_tx: &UnboundedSender<FileSystemEvent>) {
+		for event in notify_event {
+			if self.found_ignored_paths.contains(&event.path) {
+				continue;
+			}
+			if self.should_ignore(&event.path) {
+				self.found_ignored_paths.insert(event.path);
+				continue;
+			}
+			let result = self.handle_file_event(event.path.clone()).await;
+			if let Ok(Some(ret)) = result {
+				if event.path.file_name() == Some(OsStr::new("main.tscn")) {
+					tracing::debug!("main.tscn updated {:?}", event.path);
+					if let FileSystemEvent::FileModified(_path, content) = &ret {
+						if let FileContent::Scene(scene) = &content {
+							tracing::debug!("main.tscn node count: {:?}, hash: {}", scene.nodes.len(), content.to_hash());
+						}
+					}
+				}
+				output_tx.unbounded_send(ret).ok();
+			}
+		}
+	}
+
+
 	async fn main_loop(&mut self, notify_rx: &mut UnboundedReceiver<Result<Vec<DebouncedEvent>, notify::Error>>, input_rx: &mut UnboundedReceiver<FileSystemUpdateEvent>, output_tx: &UnboundedSender<FileSystemEvent>) {
 		let mut sym_links = HashMap::new();
 		self.initialize_file_hashes(&mut sym_links).await;
@@ -387,27 +411,7 @@ impl FileSystemTask {
 				// Handle file system events
 				Some(notify_result) = notify_rx.next() => {
 					if let Ok(notify_event) = notify_result {
-						for event in notify_event {
-							if self.found_ignored_paths.contains(&event.path) {
-								continue;
-							}
-							if self.should_ignore(&event.path) {
-								self.found_ignored_paths.insert(event.path);
-								continue;
-							}
-							let result = self.handle_file_event(event.path.clone()).await;
-							if let Ok(Some(ret)) = result {
-								if event.path.file_name() == Some(OsStr::new("main.tscn")) {
-									tracing::debug!("main.tscn updated {:?}", event.path);
-									if let FileSystemEvent::FileModified(_path, content) = &ret {
-										if let FileContent::Scene(scene) = &content {
-											tracing::debug!("main.tscn node count: {:?}, hash: {}", scene.nodes.len(), content.to_hash());
-										}
-									}
-								}
-								output_tx.unbounded_send(ret).ok();
-							}
-						}
+						self.process_notify_events(notify_event, output_tx).await;
 					}
 				},
 				// Handle update events
@@ -426,8 +430,8 @@ impl FileSystemTask {
 							}
 						}
 						FileSystemUpdateEvent::Pause => {
-							self.pause();
 							self.stop_watching_path(&self.watch_path).await;
+							self.pause();
 						}
 						FileSystemUpdateEvent::Resume => {
 							self.start_watching_path(&self.watch_path).await;
@@ -719,11 +723,10 @@ impl FileSystemDriver {
 									content.requires_resave = false;
 								}
 								if modified {
-									// TODO: make this use level trace instead
-									tracing::debug!("file {:?} changed, hash {} -> {}", path, file_hashes.get(&path).unwrap(), new_hash_str);
+									tracing::trace!("file {:?} changed, hash {} -> {}", path, file_hashes.get(&path).unwrap(), new_hash_str);
 									events.push(FileSystemEvent::FileModified(path.clone(), content));
 								} else {
-									tracing::debug!("file {:?} created, hash {}", path, new_hash_str);
+									tracing::trace!("file {:?} created, hash {}", path, new_hash_str);
 									events.push(FileSystemEvent::FileCreated(path.clone(), content));
 								}
 								file_hashes.insert(path, hash_str);
