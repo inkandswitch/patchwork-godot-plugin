@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::{collections::HashMap, fmt::Display};
 
@@ -152,5 +153,19 @@ impl<D: Display> ToGodotExt for Vec<D> {
 	fn _to_variant(&self) -> Variant {
 		let thingy = self.iter().map(|s| GString::from(s.to_string())).collect::<PackedStringArray>();
 		thingy.to_variant()
+	}
+}
+
+impl GodotConvertExt for PathBuf {
+	type Via = GString;
+}
+
+impl ToGodotExt for PathBuf {
+	type ToVia<'v> = GString where Self: 'v;
+	fn _to_godot(&self) -> Self::ToVia<'_> {
+		GString::from(self.display().to_string())
+	}
+	fn _to_variant(&self) -> Variant {
+		self._to_godot().to_variant()
 	}
 }
