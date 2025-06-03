@@ -129,6 +129,7 @@ pub struct GodotProjectImpl {
     new_project: bool,
 	should_update_godot: bool,
 	just_checked_out_new_branch: bool,
+	last_synced: Option<(DocumentId, Vec<ChangeHash>)>,
     driver: Option<GodotProjectDriver>,
     driver_input_tx: UnboundedSender<InputEvent>,
     driver_output_rx: UnboundedReceiver<OutputEvent>,
@@ -151,6 +152,7 @@ impl Default for GodotProjectImpl {
             new_project: true,
 			should_update_godot: false,
 			just_checked_out_new_branch: false,
+			last_synced: None,
             driver: None,
             driver_input_tx,
             driver_output_rx,
@@ -393,8 +395,8 @@ impl GodotProjectImpl {
             .unwrap();
 
 		// TODO: do we want to set this? or let _process set it?
-        // self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut(Some(source_branch_doc_id));
-		self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut(None);
+        self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut(Some(source_branch_doc_id));
+		// self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut(None);
     }
 
 
@@ -541,6 +543,8 @@ impl GodotProjectImpl {
 
 
 	// INTERNAL FUNCTIONS
+	/// Gets the current file content on the current branch @ the current synced heads that changed
+	/// between the previous branch @ the previous heads and the current branch @ the current heads
 	#[instrument(skip_all, level = tracing::Level::DEBUG)]
 	fn _get_changed_file_content_between(
 		&self,
@@ -577,7 +581,11 @@ impl GodotProjectImpl {
 		}
 
 		let descendent_doc_id: Option<DocumentId> = if let Some(previous_branch_id) = previous_branch_id.clone() {
-			self._get_descendent_document(previous_branch_id, current_doc_id.clone(), previous_heads.clone(), curr_heads.clone())
+			if previous_branch_id == current_doc_id {
+				Some(current_doc_id.clone())
+			} else {
+				self._get_descendent_document(previous_branch_id, current_doc_id.clone(), previous_heads.clone(), curr_heads.clone())
+			}
 		} else {
 			Some(current_doc_id.clone())
 		};
@@ -1966,8 +1974,14 @@ impl GodotProjectImpl {
 	}
 
 
+	/// Syncs the local state of the patchwork project document(s) from the
+	/// current local state to the current state at the current branch @ the current synced heads
+	/// the current local state is defined by the given branch @ the given heads
+	///
+	/// from_branch_id is the branch that the current local state is on
+	/// from_heads is the heads that the current local state is on
 	#[instrument(skip_all, level = tracing::Level::INFO)]
-    fn sync_patchwork_to_godot(&mut self, previous_branch_id: Option<DocumentId>, previous_branch_heads: Vec<ChangeHash>) -> Vec<FileSystemEvent> {
+    fn sync_patchwork_to_godot(&mut self, from_branch_id: Option<DocumentId>, from_heads: Vec<ChangeHash>) -> Vec<FileSystemEvent> {
 		println!("");
 		tracing::debug!("*** SYNC PATCHWORK TO GODOT");
 		let current_branch_state = match self.get_checked_out_branch_state() {
@@ -1980,10 +1994,10 @@ impl GodotProjectImpl {
 		let current_doc_id = current_branch_state.doc_handle.document_id();
 		// TODO: Do we want synced heads or the current heads?
 		let current_heads = current_branch_state.synced_heads.clone();
-		let previous_heads = if previous_branch_heads.len() > 0 {
-			previous_branch_heads
+		let previous_heads = if from_heads.len() > 0 {
+			from_heads
 		} else {
-			match &previous_branch_id {
+			match &from_branch_id {
 				Some(branch_id) => {
 					match self.branch_states.get(branch_id) {
 						Some(branch_state) => {
@@ -2003,18 +2017,22 @@ impl GodotProjectImpl {
 				}
 			}
 		};
+		if &current_doc_id == from_branch_id.as_ref().unwrap_or(&current_doc_id) && current_heads == previous_heads {
+			tracing::debug!("heads are the same, no changes to sync");
+			return Vec::new();
+		}
 		tracing::debug!("syncing branch {:?} from {}{} to {}", current_branch_state.name,
-		if previous_branch_id.is_some() {
-			format!("{} @ ", self._get_branch_name(previous_branch_id.as_ref().unwrap()))
-		} else {
-			"".to_string()
-		}, previous_heads.to_short_form(), current_heads.to_short_form());
-		let events = self._get_changed_file_content_between(previous_branch_id, current_doc_id, previous_heads, current_heads);
+			if from_branch_id.as_ref().unwrap_or(&current_doc_id) != &current_doc_id {
+				format!("{} @ ", self._get_branch_name(from_branch_id.as_ref().unwrap()))
+			} else {
+				"".to_string()
+			}, previous_heads.to_short_form(), current_heads.to_short_form());
+		let events = self._get_changed_file_content_between(from_branch_id, current_doc_id.clone(), previous_heads, current_heads);
 		println!("");
 
         let mut updates = Vec::new();
         for event in events {
-            match event{
+            match event {
                 FileSystemEvent::FileDeleted(path) => {
                     updates.push(FileSystemUpdateEvent::FileDeleted(PathBuf::from(self.globalize_path(&path.to_string_lossy().to_string()).to_string())));
                 }
@@ -2027,6 +2045,7 @@ impl GodotProjectImpl {
             }
         }
 		if updates.len() == 0 {
+			tracing::debug!("no updates to sync");
 			return Vec::new();
 		}
         if let Some(driver) = &mut self.file_system_driver {
@@ -2037,12 +2056,11 @@ impl GodotProjectImpl {
     }
 
     fn sync_godot_to_patchwork(&mut self, new_project: bool) {
-		let mut driver = &self.file_system_driver;
-        match &mut self.get_checked_out_branch_state() {
+        match self.get_checked_out_branch_state() {
             Some(branch_state) => {
                 // syncing the filesystem to patchwork
                 // get_files_at returns patchwork stuff, we need to get the files from the filesystem
-                if let Some(driver) = &mut driver {
+                if let Some(driver) = &self.file_system_driver {
                     let mut files = driver.get_all_files_blocking().into_iter().map(
                         |(path, content)| {
                             (self.localize_path(&path.to_string_lossy().to_string()).to_string(), content)
@@ -2158,12 +2176,13 @@ impl GodotProjectImpl {
                         .insert(doc_handle.document_id(), doc_handle.clone());
                 }
                 OutputEvent::BranchStateChanged {
-                    branch_state,
+                    branch_state: new_branch_state,
                     trigger_reload,
                 } => {
-					let branch_state_doc_handle = branch_state.doc_handle.clone();
+					let new_branch_state_doc_handle = new_branch_state.doc_handle.clone();
+					let new_branch_state_doc_id = new_branch_state_doc_handle.document_id();
                     self.branch_states
-                        .insert(branch_state_doc_handle.document_id(), branch_state);
+                        .insert(new_branch_state_doc_id.clone(), new_branch_state);
 
 					branches_changed = true;
                     let mut checking_out_new_branch = false;
@@ -2172,7 +2191,7 @@ impl GodotProjectImpl {
                         CheckedOutBranchState::NothingCheckedOut(prev_branch_id) => {
                             // check out main branch if we haven't checked out anything yet
 							let cloned_prev_branch_id = prev_branch_id.clone();
-							let branch_state = self.branch_states.get(&branch_state_doc_handle.document_id()).unwrap();
+							let branch_state = self.branch_states.get(&new_branch_state_doc_handle.document_id()).unwrap();
                             if branch_state.is_main {
                                 checking_out_new_branch = true;
 
@@ -2225,6 +2244,8 @@ impl GodotProjectImpl {
                 }
 
                 OutputEvent::CompletedCreateBranch { branch_doc_id } => {
+					// PLEASE NOTE: If we change the logic such that we don't check out a new branch when we create one,
+					// we need to change _create_branch to not populate the previous branch id
                     self.checked_out_branch_state =
                         CheckedOutBranchState::CheckingOut(branch_doc_id, self._get_previous_branch_id());
                 }
@@ -2322,13 +2343,7 @@ impl GodotProjectImpl {
 			}
 			return (Vec::new(), signals);
 		}
-		// TODO: check if the heads are actually synced
-		let mut previous_branch_id = previous_branch_info;
-		let mut previous_branch_heads = if previous_branch_id.is_some() {
-			self.branch_states.get(previous_branch_id.as_ref().unwrap()).map(|branch_state| branch_state.synced_heads.clone()).unwrap_or_default()
-		} else {
-			Vec::new()
-		};
+
 		let mut updates = Vec::new();
 		if self.just_checked_out_new_branch {
 			self.just_checked_out_new_branch = false;
@@ -2337,27 +2352,31 @@ impl GodotProjectImpl {
 				(branch_state.name.clone(), branch_state.doc_handle.document_id().clone())
 			).unwrap();
 			tracing::debug!("just checked out branch {:?}", branch_name);
-			if previous_branch_id.is_none() && !self.new_project {
-				// check if this is not a merge preview branch
 
-				if !self.get_checked_out_branch_state().unwrap().merge_info.is_some() && self.get_checked_out_branch_state().unwrap().fork_info.is_some() {
-					(previous_branch_id, previous_branch_heads) = {
-						let branch_state = self.get_checked_out_branch_state().unwrap();
-						(
-							Some(branch_state.fork_info.as_ref().unwrap().forked_from.clone()),
-							branch_state.fork_info.as_ref().unwrap().forked_at.clone()
-						)
-					};
-					self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(checked_out_branch_doc_id.clone(), previous_branch_id.clone());
-				}
-			}
+			let (previous_branch_id, previous_branch_heads) =
+				if self.new_project {
+					(None, Vec::new())
+				} else if previous_branch_info.is_some() {
+					let heads = self.branch_states.get(previous_branch_info.as_ref().unwrap()).map(|branch_state| branch_state.synced_heads.clone()).unwrap_or_default();
+					(previous_branch_info, heads)
+				} else if self.last_synced.is_some() && self.get_checked_out_branch_state().unwrap().merge_info.is_none() && self.last_synced.as_ref().map(|(doc_id, _)| doc_id) == Some(&checked_out_branch_doc_id){
+					// TODO: this doesn't handle the case where we're starting up the editor and we're syncing the current doc state to the editor,
+					// the last_synced heads will be empty.
+					// We need to think about how to handle this case; if changes happened while outside of the editor, we want to sync everything.
+					// setting the from branch id to None to ensure it doesn't just sync the current heads
+					self.last_synced.as_ref().map(|(_doc_id, synced_heads)| (None, synced_heads.clone())).unwrap_or_default()
+				} else {
+					(None, Vec::new())
+				};
+
 			if self.new_project {
 				self.new_project = false;
 				self.sync_godot_to_patchwork(true);
 			} else {
-				self.should_update_godot = false;
+				// Sync from the previous branch @ synced_heads to the current branch @ synced_heads
 				updates = self.sync_patchwork_to_godot(previous_branch_id, previous_branch_heads);
 			}
+			self.last_synced = self.get_checked_out_branch_state().map(|branch_state| (branch_state.doc_handle.document_id().clone(), branch_state.synced_heads.clone()));
 			// NOTE: it is VERY important that we save the project config AFTER we sync,
 			// because this will trigger a file scan and then resave the current project files in the editor
 			PatchworkConfigAccessor::set_project_value("project_doc_id", &match &self._get_project_doc_id() {
@@ -2367,9 +2386,19 @@ impl GodotProjectImpl {
 			PatchworkConfigAccessor::set_project_value("checked_out_branch_doc_id", &checked_out_branch_doc_id.to_string());
 			signals.push(GodotProjectSignal::CheckedOutBranch);
 		} else if self.should_update_godot {
+			// * Sync from the current branch @ previously synced_heads to the current branch @ synced_heads
 			tracing::debug!("should update godot");
 			self.should_update_godot = false;
-			updates = self.sync_patchwork_to_godot(previous_branch_id, previous_branch_heads);
+			let current_branch_id = self.get_checked_out_branch_state().unwrap().doc_handle.document_id().clone();
+			let last_synced_heads = self.last_synced.as_ref().map(|(branch_id, synced_heads)|
+				if branch_id == &current_branch_id {
+					synced_heads.clone()
+				} else {
+					Vec::new()
+				}
+			).unwrap_or_default();
+			updates = self.sync_patchwork_to_godot(Some(current_branch_id), last_synced_heads);
+			self.last_synced = self.get_checked_out_branch_state().map(|branch_state| (branch_state.doc_handle.document_id().clone(), branch_state.synced_heads.clone()));
 		} else if let Some(fs_driver) = self.file_system_driver.as_mut() {
 			let mut new_files = Vec::new();
 			while let Some(event) = fs_driver.try_next() {
@@ -2393,6 +2422,7 @@ impl GodotProjectImpl {
 					}
 				).collect::<Vec<(PathBuf, FileContent)>>();
 
+				// TODO: Ask Paul about this tomorrow
 				self._sync_files_at(self.get_checked_out_branch_state().unwrap().doc_handle.clone(), files, None);
 			}
         }
