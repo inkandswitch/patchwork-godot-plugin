@@ -2230,7 +2230,7 @@ impl GodotProjectImpl {
 
 								self.just_checked_out_new_branch = true;
                             } else {
-								self.should_update_godot = self.should_update_godot || trigger_reload;
+                                self.should_update_godot = self.should_update_godot || (new_branch_state_doc_id == active_branch_state.doc_handle.document_id() && trigger_reload);
                                 if !trigger_reload {
                                     tracing::debug!("TRIGGER saved changes: {}", active_branch_state.name);
                                     signals.push(GodotProjectSignal::SavedChanges);
