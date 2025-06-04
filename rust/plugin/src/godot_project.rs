@@ -21,6 +21,7 @@ use godot::global::str_to_var;
 use godot::meta::{AsArg, ParamType};
 use godot::classes::{ResourceUid, ConfigFile, DirAccess, FileAccess, ResourceImporter};
 use godot::prelude::*;
+use godot::prelude::Dictionary;
 use tracing::instrument;
 use std::any::Any;
 use std::collections::{hash_set, HashSet};
@@ -3055,7 +3056,7 @@ impl INode for GodotProject {
 			match signal {
 				GodotProjectSignal::CheckedOutBranch => {
 					let branch = self.project.get_checked_out_branch_state().unwrap().to_godot();
-					self.signals().checked_out_branch().emit(branch);
+					self.signals().checked_out_branch().emit(&branch);
 				}
 				GodotProjectSignal::FilesChanged => {
 					self.signals().files_changed().emit();
@@ -3065,7 +3066,7 @@ impl INode for GodotProject {
 				}
 				GodotProjectSignal::BranchesChanged => {
 					let branches = self.get_branches();
-					self.signals().branches_changed().emit(branches);
+					self.signals().branches_changed().emit(&branches);
 				}
 				GodotProjectSignal::Started => {
 					self.signals().started().emit();
@@ -3074,7 +3075,7 @@ impl INode for GodotProject {
 					self.signals().shutdown_completed().emit();
 				}
 				GodotProjectSignal::SyncServerConnectionInfoChanged(peer_connection_info) => {
-					self.signals().sync_server_connection_info_changed().emit(peer_connection_info.to_godot());
+					self.signals().sync_server_connection_info_changed().emit(&peer_connection_info.to_godot());
 				}
 				GodotProjectSignal::ConnectionThreadFailed => {
 					self.signals().connection_thread_failed().emit();
