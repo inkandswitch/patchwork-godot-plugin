@@ -313,6 +313,7 @@ fn test_resconcile_and_hydrate() {
                 binds: None,
             },
         )]),
+        requires_resave: false,
     };
 
     // write to automerge doc

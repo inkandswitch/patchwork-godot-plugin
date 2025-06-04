@@ -1,7 +1,7 @@
 [gd_scene load_steps=19 format=3 uid="uid://cxyjgsyba1v85"]
 
 [ext_resource type="Script" uid="uid://bxgybx6gjahju" path="res://addons/patchwork/gdscript/sidebar.gd" id="1_ebh36"]
-[ext_resource type="Texture2D" uid="uid://4c2gr0ggkl2t" path="res://addons/patchwork/icons/circle-alert.svg" id="2_fxo71"]
+[ext_resource type="Texture2D" uid="uid://ceyam02frwm6g" path="res://addons/patchwork/icons/circle-check.svg" id="2_of6ia"]
 [ext_resource type="Texture2D" uid="uid://xec6o14n4y2v" path="res://addons/patchwork/icons/person.svg" id="3_m2w8q"]
 [ext_resource type="Theme" uid="uid://hr3cor4s2ov2" path="res://addons/patchwork/gdscript/diff_editor_theme.tres" id="4_7letu"]
 [ext_resource type="Texture2D" uid="uid://blu0iomxyyu3k" path="res://addons/patchwork/icons/collapsable-open.svg" id="4_of6ia"]
@@ -72,8 +72,8 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
-tooltip_text = "Unknown sync status"
-texture_normal = ExtResource("2_fxo71")
+tooltip_text = "Fully synced"
+texture_normal = ExtResource("2_of6ia")
 
 [node name="BranchLabel" type="Label" parent="VBoxContainer/HBoxContainer2"]
 layout_mode = 2
@@ -92,7 +92,7 @@ unique_name_in_owner = true
 z_index = 1
 z_as_relative = false
 layout_mode = 2
-text = "main"
+text = "Nikita's remix"
 icon = ExtResource("7_qb0q7")
 alignment = 0
 
@@ -112,10 +112,14 @@ stretch_mode = 4
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-selected = 0
-item_count = 1
+selected = 1
+item_count = 3
 popup/item_0/text = "main"
 popup/item_0/id = 0
+popup/item_1/text = "└─ Nikita's remix"
+popup/item_1/id = 1
+popup/item_2/text = "    └─ Nikita's remix"
+popup/item_2/id = 2
 
 [node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/HBoxContainer2"]
 layout_mode = 2
@@ -129,8 +133,6 @@ text = "Remix
 [node name="MergeButton" type="Button" parent="VBoxContainer/HBoxContainer2"]
 unique_name_in_owner = true
 layout_mode = 2
-tooltip_text = "Can't merge main because it's not a remix of another branch"
-disabled = true
 text = "Merge"
 
 [node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
@@ -172,7 +174,30 @@ size_flags_vertical = 3
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-
+item_count = 23
+item_0/text = "↪️ Nikita merged \"Nikita's remix\" branch - 2 hours ago"
+item_1/text = "Nikita made some changes - 3 hours ago"
+item_2/text = "Nikita made some changes - 3 hours ago"
+item_3/text = "Nikita made some changes - 3 hours ago"
+item_4/text = "Nikita made some changes - 3 hours ago"
+item_5/text = "Nikita made some changes - 3 hours ago"
+item_6/text = "Nikita made some changes - 3 hours ago"
+item_7/text = "Nikita made some changes - 3 hours ago"
+item_8/text = "Nikita made some changes - 5 hours ago"
+item_9/text = "Nikita made some changes - 5 hours ago"
+item_10/text = "Nikita made some changes - 6 hours ago"
+item_11/text = "Nikita made some changes - 6 hours ago"
+item_12/text = "Nikita made some changes - 6 hours ago"
+item_13/text = "Nikita made some changes - 6 hours ago"
+item_14/text = "Nikita made some changes - 6 hours ago"
+item_15/text = "Nikita made some changes - 6 hours ago"
+item_16/text = "Nikita made some changes - 6 hours ago"
+item_17/text = "Nikita made some changes - 6 hours ago"
+item_18/text = "Nikita made some changes - 21 hours ago"
+item_19/text = "Nikita made some changes - 21 hours ago"
+item_20/text = "Nikita made some changes - 21 hours ago"
+item_21/text = "Nikita made some changes - 21 hours ago"
+item_22/text = "Nikita made some changes - 21 hours ago"
 
 [node name="DiffSectionHeader" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
@@ -198,7 +223,6 @@ size_flags_vertical = 3
 
 [node name="BigDiffer" type="DiffInspector" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/DiffSectionBody/MainDiffContainer"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
 size_flags_vertical = 3
 theme = ExtResource("4_7letu")
@@ -223,16 +247,36 @@ theme_override_constants/separation = 16
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
 
-[node name="LoggedInLabel" type="Label" parent="VBoxContainer/HBoxContainer"]
+[node name="ReloadExtensionButton" type="Button" parent="VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 10
+size_flags_vertical = 4
+disabled = true
+text = "Reload Extension"
+
+[node name="ReloadUIButton" type="Button" parent="VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_direction = 2
+layout_mode = 2
+size_flags_horizontal = 8
+size_flags_vertical = 4
+text = "Reload UI"
+
+[node name="HSeparator" type="VSeparator" parent="VBoxContainer/HBoxContainer"]
+custom_minimum_size = Vector2(30, 0)
+layout_mode = 2
+
+[node name="LoggedInLabel" type="Label" parent="VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 8
 text = "Logged in as "
 
 [node name="UserButton" type="Button" parent="VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
-text = "Paul"
+text = "Nikita"
 icon = ExtResource("3_m2w8q")
 
 [node name="ConfirmationDialog" type="ConfirmationDialog" parent="."]

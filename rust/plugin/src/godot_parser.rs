@@ -25,6 +25,10 @@ pub struct GodotScene {
     pub connections: HashMap<String, GodotConnection>, // key is concatenation of all properties of the connection
     pub editable_instances: HashSet<String>,
     pub main_resource: Option<SubResourceNode>,
+	 // TODO: this is a hack to force the frontend to resave the scene
+	 // if we add a new node id to a node in the scene, it's not serialized
+	 // or saved to the doc
+	pub requires_resave: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -261,7 +265,7 @@ impl GodotScene {
             // Remove main_resource if it exists but we don't have one
             tx.delete(&structured_content, "main_resource").unwrap();
         } else if self.resource_type != "PackedScene" {
-            println!("PackedScene with no main resource!!");
+            tracing::error!("PackedScene with no main resource!!");
         }
 
         // Store root node id
@@ -402,7 +406,7 @@ impl GodotScene {
                     .get_obj_id(&properties_obj, key)
                     .unwrap_or_else(|| tx.put_object(&properties_obj, key, ObjType::Map).unwrap());
 
-                // println!("reconcile {:?} {:?}", key, property);
+                // tracing::debug!("reconcile {:?} {:?}", key, property);
 
                 let value = tx.get_string(&value_obj, "value");
                 if value != Some(property.value.clone()) {
@@ -629,15 +633,15 @@ impl GodotScene {
             if let Ok(sub_resource) = result {
                 Some(sub_resource)
             } else if let Err(e) = result {
-				println!("Error hydrating main resource: {}", e);
+				tracing::error!("Error hydrating main resource: {}", e);
                 None
             } else {
-				println!("Error hydrating main resource: unknown error");
+				tracing::error!("Error hydrating main resource: unknown error");
                 None
             }
         } else {
 			if resource_type != "PackedScene" {
-				println!("resource with no main resource!!");
+				tracing::error!("resource with no main resource!!");
 			}
             None
         };
@@ -900,6 +904,7 @@ impl GodotScene {
             connections,
             editable_instances,
             main_resource,
+			requires_resave: false
         })
     }
 
@@ -979,24 +984,36 @@ impl GodotScene {
             for (key, property) in sorted_props {
                 output.push_str(&format!("{} = {}\n", key, property.value));
             }
-
-            output.push('\n');
             // short circuit if we have a main resource, no nodes or connections
             return output;
         } else if self.resource_type != "PackedScene" {
-            println!("resource with no resource tag!!");
+            tracing::error!("resource with no resource tag!!");
         }
 
+		let mut node_paths_visited: HashMap<String, i64> = HashMap::new();
         if !self.nodes.is_empty() && self.root_node_id.is_some() {
             if let Some(root_node) = self.nodes.get(self.root_node_id.as_ref().unwrap()) {
-                self.serialize_node(&mut output, root_node);
+                self.serialize_node(&mut output, root_node, &mut node_paths_visited);
+				if self.connections.len() == 0  && self.editable_instances.len() == 0 {
+					// prevent an extra trailing new line
+					output.pop();
+				}
             }
         }
 
         let mut connections: Vec<(&String, &GodotConnection)> =
             self.connections.iter().collect::<Vec<_>>();
 
-        connections.sort_by(|(id_a, _), (id_b, _)| id_a.cmp(id_b));
+        connections.sort_by(|(id_a, conn_a), (id_b, conn_b)| {
+			let sort_a = node_paths_visited.get(&conn_a.from_node_id).unwrap_or(&-1);
+			let sort_b = node_paths_visited.get(&conn_b.from_node_id).unwrap_or(&-1);
+			if sort_a == sort_b {
+				// compare the signal
+				conn_a.signal.cmp(&conn_b.signal)
+			} else {
+				sort_a.cmp(sort_b)
+			}
+		});
 
         for (_, connection) in connections {
             let from_path = self.get_node_path(&connection.from_node_id);
@@ -1024,7 +1041,7 @@ impl GodotScene {
         output
     }
 
-    fn serialize_node(&self, output: &mut String, node: &GodotNode) {
+    fn serialize_node(&self, output: &mut String, node: &GodotNode, node_paths_visited: &mut HashMap<String, i64>) {
         output.push_str(&format!("[node name=\"{}\"", node.name));
 
         if let TypeOrInstance::Type(t) = &node.type_or_instance {
@@ -1040,6 +1057,8 @@ impl GodotScene {
 
             output.push_str(&format!(" parent=\"{}\"", parent_name));
         }
+
+		node_paths_visited.insert(node.id.clone(), node_paths_visited.len() as i64);
 
         if let Some(node_paths) = &node.node_paths {
             output.push_str(&format!(" node_paths={}", node_paths));
@@ -1080,7 +1099,7 @@ impl GodotScene {
         // Recursively serialize children
         for child_id in &node.child_node_ids {
             if let Some(child_node) = self.nodes.get(child_id) {
-                self.serialize_node(output, child_node);
+                self.serialize_node(output, child_node, node_paths_visited);
             }
         }
     }
@@ -1162,6 +1181,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
 
     let mut parsed_node_ids = HashSet::new();
 
+	let mut required_resave = false;
     return match result {
         Some(tree) => {
             let content_bytes = source.as_bytes();
@@ -1336,11 +1356,13 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         // generate a new id if the patchwork_id is already used by another node
                         // this can happen if a node is copied and pasted in Godot
                         if parsed_node_ids.contains(&parsed_node_id) {
+							required_resave = true;
                             uuid::Uuid::new_v4().simple().to_string()
                         } else {
                             parsed_node_id
                         }
                     } else {
+						required_resave = true;
                         // Generate a UUID if no patchwork_id exists
                         uuid::Uuid::new_v4().simple().to_string()
                     };
@@ -1593,6 +1615,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 connections,
                 editable_instances,
                 main_resource,
+				requires_resave: required_resave,
             })
         }
         None => Err("Failed to parse scene file".to_string()),

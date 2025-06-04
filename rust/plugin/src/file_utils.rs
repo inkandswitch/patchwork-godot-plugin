@@ -1,14 +1,20 @@
+use core::fmt;
 use std::fs::File;
 use std::io;
 use std::io::{Read, Write};
 use std::path::{PathBuf};
 use std::str;
+use automerge::{Automerge, ChangeHash, ObjType, ReadDoc};
+use automerge::ObjId;
+use automerge_repo::{DocHandle, DocumentId};
+use autosurgeon::Hydrate;
 use godot::builtin::{GString, PackedByteArray, Variant, VariantType};
-use godot::classes::ProjectSettings;
 use godot::meta::{GodotConvert, ToGodot};
 use ya_md5::{Md5Hasher, Hash, Md5Error};
 
+use crate::doc_utils::SimpleDocReader;
 use crate::godot_parser::{GodotScene, recognize_scene, parse_scene};
+use crate::utils::{parse_automerge_url, ToShortForm};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FileContent {
@@ -19,12 +25,6 @@ pub enum FileContent {
 }
 
 impl FileContent {
-
-	pub fn write_res_file_content(path: &PathBuf, content: &FileContent) -> std::io::Result<String> {
-		let global_path = ProjectSettings::singleton().globalize_path(&path.to_string_lossy().to_string()).to_string();
-		FileContent::write_file_content(&PathBuf::from(&global_path), content)
-	}
-
 	// Write file content to disk
 	pub fn write_file_content(path: &PathBuf, content: &FileContent) -> std::io::Result<String> {
 		// Check if the file exists
@@ -120,6 +120,69 @@ impl FileContent {
 			FileContent::Deleted => VariantType::NIL,
 		}
 	}
+
+	// NOTE: Probably not appropriate to put here, should have this in BranchState
+	pub fn hydrate_content_at(file_entry: ObjId, doc: &Automerge, path: &String, heads: &Vec<ChangeHash>) -> Result<FileContent, Result<DocumentId, io::Error>> {
+		let structured_content = doc
+		.get_at(&file_entry, "structured_content", heads)
+		.unwrap()
+		.map(|(value, _)| value);
+
+		if structured_content.is_some() {
+			let scene: GodotScene = GodotScene::hydrate_at(doc, path, heads).ok().unwrap();
+			return Ok(FileContent::Scene(scene));
+		}
+
+		if let Ok(Some((_, _))) = doc.get_at(&file_entry, "deleted", &heads) {
+			return Ok(FileContent::Deleted);
+		}
+
+		// try to read file as text
+		let content = doc.get_at(&file_entry, "content", &heads);
+
+		match content {
+			Ok(Some((automerge::Value::Object(ObjType::Text), content))) => {
+				match doc.text_at(content, &heads) {
+					Ok(text) => {
+						return Ok(FileContent::String(text.to_string()));
+					}
+					Err(e) => {
+						return Err(Err(io::Error::new(io::ErrorKind::Other, format!("failed to read text file {:?}: {:?}", path, e))));
+					}
+				}
+			}
+			_ => match doc.get_string_at(&file_entry, "content", &heads) {
+				Some(s) => {
+					return Ok(FileContent::String(s.to_string()));
+				}
+				_ => {
+					// return Err(io::Error::new(io::ErrorKind::Other, "Failed to read file"));
+				}
+			},
+		}
+		// ... otherwise, check the rul
+		let linked_file_content = doc
+		.get_string_at(&file_entry, "url", &heads)
+		.map(|url| parse_automerge_url(&url)).flatten();
+		if linked_file_content.is_some() {
+			return Err(Ok(linked_file_content.unwrap()));
+		}
+		Err(Err(io::Error::new(io::ErrorKind::Other, "Failed to url!")))
+
+	}
+
+}
+
+
+impl ToShortForm for FileContent {
+	fn to_short_form(&self) -> String {
+		match self {
+			FileContent::String(_) => "String".to_string(),
+			FileContent::Binary(_) => "Binary".to_string(),
+			FileContent::Scene(_) => "Scene".to_string(),
+			FileContent::Deleted => "Deleted".to_string(),
+		}
+	}
 }
 
 //
@@ -143,7 +206,7 @@ impl ToGodot for FileContent {
 	type ToVia < 'v > = Variant;
 	fn to_godot(&self) -> Self::ToVia < '_ > {
 		// < Self as crate::obj::EngineBitfield > ::ord(* self)
-		self.to_variant().to_godot()
+		self.to_variant()
 	}
 	fn to_variant(&self) -> Variant {
 		match self {

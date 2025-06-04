@@ -1,8 +1,10 @@
 use core::str;
 use std::ffi::OsStr;
+use std::fmt::Display;
 use std::sync::atomic::Ordering;
 use std::{path::PathBuf, sync::atomic::AtomicBool};
 use std::sync::Arc;
+use futures::Stream;
 use futures::{
     channel::mpsc::{UnboundedReceiver, UnboundedSender},
     StreamExt,
@@ -12,11 +14,8 @@ use rlimit::{setrlimit, getrlimit, Resource};
 use tokio::{task::JoinHandle, time::{sleep, Duration}};
 use notify::{Watcher, RecursiveMode, Config, Event, EventHandler};
 use notify_debouncer_mini::{new_debouncer_opt, DebouncedEvent, Debouncer};
-// if on macos, use kqueue, otherwise use recommended
-#[cfg(target_os = "macos")]
-use notify::KqueueWatcher as WatcherImpl;
-#[cfg(not(target_os = "macos"))]
 use notify::RecommendedWatcher as WatcherImpl;
+use tracing::instrument;
 use std::sync::mpsc::channel;
 use std::time::Duration as StdDuration;
 use std::collections::{HashMap, HashSet};
@@ -28,7 +27,7 @@ use glob::Pattern;
 use std::io;
 use crate::file_utils::{calculate_file_hash, get_buffer_and_hash, FileContent};
 
-use crate::{godot_parser::{parse_scene, recognize_scene, GodotScene}};
+use crate::utils::ToShortForm;
 
 // static const var for debounce time
 const DEBOUNCE_TIME: u64 = 100;
@@ -53,12 +52,73 @@ pub enum FileSystemEvent {
     FileDeleted(PathBuf),
 }
 
+impl ToShortForm for FileSystemEvent {
+	fn to_short_form(&self) -> String {
+		let content_type = match self {
+			FileSystemEvent::FileCreated(_, content) => match content {
+				FileContent::Scene(_) => "scene",
+				FileContent::String(_) => "text",
+				FileContent::Binary(_) => "binary",
+				FileContent::Deleted => "deleted",
+			},
+			FileSystemEvent::FileModified(_, content) => match content {
+				FileContent::Scene(_) => "scene",
+				FileContent::String(_) => "text",
+				FileContent::Binary(_) => "binary",
+				FileContent::Deleted => "deleted",
+			},
+			_ => "deleted",
+		};
+		match self {
+			FileSystemEvent::FileCreated(path, _) => format!("FileCreated({:?}, {})", path, content_type),
+			FileSystemEvent::FileModified(path_buf, _) => format!("FileModified({:?}, {})", path_buf, content_type),
+			FileSystemEvent::FileDeleted(path_buf) => format!("FileDeleted({:?}, {})", path_buf, content_type),
+		}
+	}
+}
+
+impl ToShortForm for Vec<FileSystemEvent> {
+	fn to_short_form(&self) -> String {
+		self.iter().map(|e| e.to_short_form()).collect::<Vec<String>>().join(", ")
+	}
+}
+
+
 #[derive(Debug)]
 pub enum FileSystemUpdateEvent {
     FileSaved(PathBuf, FileContent),
     FileDeleted(PathBuf),
 	Pause,
 	Resume
+}
+
+impl ToShortForm for FileSystemUpdateEvent {
+	fn to_short_form(&self) -> String {
+		let content_type = match self {
+			FileSystemUpdateEvent::FileSaved(_, content) => match content {
+				FileContent::Scene(_) => "scene",
+				FileContent::String(_) => "text",
+				FileContent::Binary(_) => "binary",
+				FileContent::Deleted => "deleted",
+			},
+			FileSystemUpdateEvent::FileDeleted(_) => "deleted",
+			FileSystemUpdateEvent::Pause => "<NONE>",
+			FileSystemUpdateEvent::Resume => "<NONE>",
+		};
+
+		match self {
+			FileSystemUpdateEvent::FileSaved(path, _) => format!("FileSaved({:?} {})", path, content_type),
+			FileSystemUpdateEvent::FileDeleted(path) => format!("FileDeleted({:?} {})", path, content_type),
+			FileSystemUpdateEvent::Pause => "Pause".to_string(),
+			FileSystemUpdateEvent::Resume => "Resume".to_string(),
+		}
+	}
+}
+
+impl ToShortForm for Vec<FileSystemUpdateEvent> {
+	fn to_short_form(&self) -> String {
+		self.iter().map(|e| e.to_short_form()).collect::<Vec<String>>().join(", ")
+	}
 }
 
 #[derive(Debug, Clone)]
@@ -84,6 +144,14 @@ pub struct FileSystemDriver {
 impl FileSystemTask {
     // Check if a path should be ignored based on glob patterns
     fn should_ignore(&self, path: &PathBuf) -> bool {
+		// TODO: We should check if it's a symlink or not, but right now it's sufficient to just check if it's outside of the watch path
+		// check if it's outside of the watch path
+		if path.is_symlink() {
+			return true;
+		}
+		if !path.starts_with(&self.watch_path) {
+			return true;
+		}
         let path_str = path.to_string_lossy();
         self.ignore_globs.iter().any(|pattern| pattern.matches(&path_str))
     }
@@ -127,39 +195,11 @@ impl FileSystemTask {
 		self.found_ignored_paths = found_ignored_paths;
     }
 
-
-
-    fn desymlinkify(path: &PathBuf, sym_links: &HashMap<PathBuf, PathBuf>) -> PathBuf {
-        let mut new_path = path.clone();
-        // let mut target_max_len = 0;
-        // for (src, target) in sym_links.iter() {
-        // 	if path.starts_with(target) && target.to_str().unwrap().len() > target_max_len {
-        // 		target_max_len = target.to_str().unwrap().len();
-        // 		new_path = src.join(path.strip_prefix(target).unwrap());
-        // 	}
-        // }
-        new_path
-    }
-
     // Handle file creation and modification events
     async fn handle_file_event(
         &self,
         path: PathBuf,
-        sym_links: &mut HashMap<PathBuf, PathBuf>,
     ) -> Result<Option<FileSystemEvent>, notify::Error> {
-        // Process symlinks and get the actual path
-        let path = if let Ok(metadata) = std::fs::metadata(&path) {
-            if metadata.is_symlink() {
-                let target = std::fs::read_link(&path).unwrap();
-                sym_links.insert(path.clone(), target);
-                path.clone()
-            } else {
-                Self::desymlinkify(&path, sym_links)
-            }
-        } else {
-            Self::desymlinkify(&path, sym_links)
-        };
-
         // Skip if path matches any ignore pattern
         if self.should_ignore(&path) {
             return Ok(None);
@@ -181,7 +221,7 @@ impl FileSystemTask {
 				result = get_buffer_and_hash(&path);
 			}
 			if result.is_err() {
-				println!("rust: failed to get file content {:?}", result);
+				tracing::error!("failed to get file content {:?}", result);
 				return Err(notify::Error::new(notify::ErrorKind::Generic("Failed to get file content".to_string())));
 			}
 			let (content, new_hash) = result.unwrap();
@@ -189,10 +229,13 @@ impl FileSystemTask {
 			if file_hashes.contains_key(&path) {
 				let old_hash = file_hashes.get(&path).unwrap();
 				if old_hash != &new_hash {
+					tracing::trace!("file {:?} changed, hash {} -> {}", path, old_hash, new_hash);
+					file_hashes.insert(path.clone(), new_hash);
 					return Ok(Some(FileSystemEvent::FileModified(path, FileContent::from_buf(content))));
 				}
 			} else {
 				// If the file is newly created, we want to emit a created event
+				tracing::trace!("file {:?} created, hash {}", path, new_hash);
 				file_hashes.insert(path.clone(), new_hash);
 				return Ok(Some(FileSystemEvent::FileCreated(path, FileContent::from_buf(content))));
 			}
@@ -287,7 +330,6 @@ impl FileSystemTask {
 	async fn _scan_for_additive_changes(
 		&self,
 		watch_path: &PathBuf,
-		sym_links: &mut HashMap<PathBuf, PathBuf>,
 	) -> Vec<FileSystemEvent>
 	{
 		let mut events = Vec::new();
@@ -302,29 +344,23 @@ impl FileSystemTask {
 			if self.should_ignore(&path) {
 				continue;
 			}
-			if let Ok(metadata) = path.metadata() {
-				if metadata.is_symlink() {
-					let target = std::fs::read_link(&path).unwrap();
-					sym_links.insert(path.clone(), target);
-				}
-			}
 
 			if path.is_file() {
-				let res = self.handle_file_event(path, sym_links).await;
+				let res = self.handle_file_event(path).await;
 				if let Ok(Some(ret)) = res{
 					events.push(ret);
 				}
 			} else if path.is_dir() {
 				// Use Box::pin for the recursive call to avoid infinitely sized future
-				let sub_events = Box::pin(self._scan_for_additive_changes(&path, sym_links)).await;
+				let sub_events = Box::pin(self._scan_for_additive_changes(&path)).await;
 				events.extend(sub_events);
 			}
 		}
 		events
 	}
 
-	async fn scan_for_changes(&self, sym_links: &mut HashMap<PathBuf, PathBuf>) -> Vec<FileSystemEvent> {
-		let mut events = self._scan_for_additive_changes(&self.watch_path, sym_links).await;
+	async fn scan_for_changes(&self) -> Vec<FileSystemEvent> {
+		let mut events = self._scan_for_additive_changes(&self.watch_path).await;
 		// check the file_hashes for removed files
 		let mut to_remove = Vec::new();
 		let mut file_hashes = self.file_hashes.lock().await;
@@ -340,6 +376,31 @@ impl FileSystemTask {
 		events
 	}
 
+	async fn process_notify_events(&mut self, notify_event: Vec<DebouncedEvent>, output_tx: &UnboundedSender<FileSystemEvent>) {
+		for event in notify_event {
+			if self.found_ignored_paths.contains(&event.path) {
+				continue;
+			}
+			if self.should_ignore(&event.path) {
+				self.found_ignored_paths.insert(event.path);
+				continue;
+			}
+			let result = self.handle_file_event(event.path.clone()).await;
+			if let Ok(Some(ret)) = result {
+				if event.path.file_name() == Some(OsStr::new("main.tscn")) {
+					tracing::debug!("main.tscn updated {:?}", event.path);
+					if let FileSystemEvent::FileModified(_path, content) = &ret {
+						if let FileContent::Scene(scene) = &content {
+							tracing::debug!("main.tscn node count: {:?}, hash: {}", scene.nodes.len(), content.to_hash());
+						}
+					}
+				}
+				output_tx.unbounded_send(ret).ok();
+			}
+		}
+	}
+
+
 	async fn main_loop(&mut self, notify_rx: &mut UnboundedReceiver<Result<Vec<DebouncedEvent>, notify::Error>>, input_rx: &mut UnboundedReceiver<FileSystemUpdateEvent>, output_tx: &UnboundedSender<FileSystemEvent>) {
 		let mut sym_links = HashMap::new();
 		self.initialize_file_hashes(&mut sym_links).await;
@@ -350,27 +411,7 @@ impl FileSystemTask {
 				// Handle file system events
 				Some(notify_result) = notify_rx.next() => {
 					if let Ok(notify_event) = notify_result {
-						for event in notify_event {
-							if self.found_ignored_paths.contains(&event.path) {
-								continue;
-							}
-							if self.should_ignore(&event.path) {
-								self.found_ignored_paths.insert(event.path);
-								continue;
-							}
-							let result = self.handle_file_event(event.path.clone(), &mut sym_links).await;
-							if let Ok(Some(ret)) = result {
-								if event.path.file_name() == Some(OsStr::new("main.tscn")) {
-									println!("rust: main.tscn updated!!!!!!! {:?}", event.path);
-									if let FileSystemEvent::FileModified(_path, content) = &ret {
-										if let FileContent::Scene(scene) = &content {
-											println!("rust: main.tscn node count! {:?}", scene.nodes.len());
-										}
-									}
-								}
-								output_tx.unbounded_send(ret).ok();
-							}
-						}
+						self.process_notify_events(notify_event, output_tx).await;
 					}
 				},
 				// Handle update events
@@ -379,18 +420,18 @@ impl FileSystemTask {
 						FileSystemUpdateEvent::FileSaved(path, content) => {
 							let result = self.handle_file_update(path, content).await;
 							if result.is_err() {
-								println!("rust: failed to handle file update {:?}", result);
+								tracing::error!("failed to handle file update {:?}", result);
 							}
 						}
 						FileSystemUpdateEvent::FileDeleted(path) => {
 							let result = self.handle_delete_update(path).await;
 							if result.is_err() {
-								println!("rust: failed to handle file delete {:?}", result);
+								tracing::error!("failed to handle file delete {:?}", result);
 							}
 						}
 						FileSystemUpdateEvent::Pause => {
-							self.pause();
 							self.stop_watching_path(&self.watch_path).await;
+							self.pause();
 						}
 						FileSystemUpdateEvent::Resume => {
 							self.start_watching_path(&self.watch_path).await;
@@ -411,9 +452,6 @@ impl FileSystemTask {
 		let mut watcher = self.watcher.lock().await;
 		for path in paths.iter() {
 			let _ret = watcher.watcher().unwatch(path);
-			// if let Err(err) = _ret {
-				// println!("rust: failed to stop watching path {:?}", err);
-			// }
 		}
 	}
 
@@ -462,10 +500,10 @@ impl FileSystemDriver {
 			let mut new_hard_limit = MAX_OPEN_FILES;
 			let previous_result = getrlimit(Resource::NOFILE);
 			if let Err(e) = previous_result {
-				println!("rust: failed to get ulimit {:?}", e);
+				tracing::error!("failed to get ulimit {:?}", e);
 			} else if let Ok((soft_limit, hard_limit)) = previous_result {
-				println!("rust: soft ulimit {:?}", soft_limit);
-				println!("rust: hard ulimit {:?}", hard_limit);
+				tracing::debug!("soft ulimit {:?}", soft_limit);
+				tracing::debug!("hard ulimit {:?}", hard_limit);
 				if hard_limit > MAX_OPEN_FILES {
 					new_hard_limit = hard_limit;
 				}
@@ -475,16 +513,14 @@ impl FileSystemDriver {
 			}
 
 			if let Err(e) = setrlimit(Resource::NOFILE, new_soft_limit, new_hard_limit) {
-				println!("rust: failed to set ulimit {:?}", e);
+				tracing::error!("failed to set ulimit {:?}", e);
 			}
 			let result = getrlimit(Resource::NOFILE);
 			if let Err(e) = result {
-				println!("rust: failed to set ulimit {:?}", e);
+				tracing::error!("failed to set ulimit {:?}", e);
 			} else if let Ok((soft_limit, hard_limit)) = result {
 				if soft_limit < MAX_OPEN_FILES || hard_limit < MAX_OPEN_FILES {
-					println!("rust: failed to set ulimit");
-					println!("rust: soft ulimit {:?}", soft_limit);
-					println!("rust: hard ulimit {:?}", hard_limit);
+					tracing::error!("failed to set ulimit; soft ulimit {:?}, hard ulimit {:?}", soft_limit, hard_limit);
 				}
 			}
 		}
@@ -638,7 +674,7 @@ impl FileSystemDriver {
 						if let Ok(hash_str) = FileContent::write_file_content(&path, &content) {
 							file_hashes.insert(path.clone(), hash_str);
 						} else {
-							println!("rust: failed to write file {:?}", path);
+							tracing::error!("failed to write file {:?}", path);
 						}
 					}
 					FileSystemUpdateEvent::FileDeleted(path) => {
@@ -656,20 +692,22 @@ impl FileSystemDriver {
 		self.resume_task().await;
 	}
 
+	#[instrument(skip_all, level = tracing::Level::INFO)]
 	pub fn batch_update_blocking(&self, updates: Vec<FileSystemUpdateEvent>) -> Vec<FileSystemEvent> {
-		println!("rust: batch_update_blocking before pause");
+		tracing::debug!("# of updates: {:?}", updates.len());
+		tracing::trace!("updates: [{}]", updates.to_short_form());
 		self.pause_task_blocking();
-		println!("rust: batch_update_blocking after pause");
+		tracing::trace!("batch_update_blocking after pause");
 		let mut events: Vec<FileSystemEvent> = Vec::new();
 		{
 			let mut file_hashes = self.task.file_hashes.blocking_lock();
 			for update in updates {
 				match update {
-					FileSystemUpdateEvent::FileSaved(path, content) => {
+					FileSystemUpdateEvent::FileSaved(path, mut content) => {
 						let new_hash_str = content.to_hash();
 						let mut modified = false;
 						let mut created = false;
-						if let Some(old_hash) = file_hashes.get_mut(&path) {
+						if let Some(old_hash) = file_hashes.get(&path) {
 							if old_hash != &new_hash_str {
 								modified = true;
 							}
@@ -678,18 +716,29 @@ impl FileSystemDriver {
 						}
 						if modified || created {
 							if let Ok(hash_str) = FileContent::write_file_content(&path, &content) {
+								if new_hash_str != hash_str {
+									tracing::error!("THIS SHOULD NOT HAPPEN: file {:?} previous calced hash {:?} != written hash {:?}", path, new_hash_str, hash_str);
+								}
+								if let FileContent::Scene(content) = &mut content {
+									content.requires_resave = false;
+								}
 								if modified {
+									tracing::trace!("file {:?} changed, hash {} -> {}", path, file_hashes.get(&path).unwrap(), new_hash_str);
 									events.push(FileSystemEvent::FileModified(path.clone(), content));
 								} else {
+									tracing::trace!("file {:?} created, hash {}", path, new_hash_str);
 									events.push(FileSystemEvent::FileCreated(path.clone(), content));
 								}
 								file_hashes.insert(path, hash_str);
 							} else {
-								println!("rust: failed to write file {:?}", path);
+								tracing::error!("failed to write file {:?}", path);
 							}
+						} else {
+							tracing::debug!("file {:?} already exists with same hash {:?}", path, new_hash_str);
 						}
 					}
 					FileSystemUpdateEvent::FileDeleted(path) => {
+						let _ = std::fs::remove_file(&path);
 						if file_hashes.remove(&path).is_some() {
 							events.push(FileSystemEvent::FileDeleted(path));
 						}
@@ -700,9 +749,10 @@ impl FileSystemDriver {
 				}
 			}
 		}
-		println!("rust: batch_update_blocking done before resume; updated files: {:?}", events.len());
+		tracing::trace!("batch_update_blocking done, before resume");
 		self.resume_task_blocking();
-		println!("rust: batch_update_blocking done after resume");
+		tracing::debug!("batch_update_blocking done, updated files: {:?}", events.len());
+		tracing::trace!("events: [{}]", events.to_short_form());
 		events
 	}
 
@@ -722,6 +772,10 @@ impl FileSystemDriver {
 		self.task.stop_watching_path_blocking(&path);
 		let result = self.task.handle_delete_update_blocking(path.clone());
 		return result;
+	}
+
+	pub fn has_events_pending(&self) -> bool {
+		self.output_rx.size_hint().0 > 0
 	}
 
 	pub fn try_next(&mut self) -> Option<FileSystemEvent> {
@@ -934,7 +988,7 @@ mod tests {
 
 
         if let Some(event) = driver.next_timeout(Duration::from_millis(WAIT_TIME)).await {
-            panic!("Unexpected event {:?}", event);
+            panic!("Unexpected event {:?}", event.to_short_form());
         }
 		{
 			// Modify the ignored file (should not trigger an event)
@@ -1063,7 +1117,7 @@ mod tests {
             } else if let FileSystemEvent::FileModified(path, _) = event {
 				path
 			} else {
-				panic!("Unexpected event type {:?}", event);
+				panic!("Unexpected event type {:?}", event.to_short_form());
             };
             found_paths.insert(event_path);
 			if found_paths.len() == test_paths.len() {
@@ -1102,7 +1156,7 @@ mod tests {
 		}
 		// there should be no events emitted
 		if let Some(event) = driver.next_timeout(Duration::from_millis(100)).await {
-			assert!(false, "Unexpected event type {:?}", event);
+			assert!(false, "Unexpected event type {:?}", event.to_short_form());
 		}
 		sleep(Duration::from_millis(1000)).await;
 		// write a single file
@@ -1155,7 +1209,7 @@ mod tests {
 		}
 		// there should be no events emitted
 		if let Some(event) = driver.try_next() {
-			assert!(false, "Unexpected event type {:?}", event);
+			assert!(false, "Unexpected event type {:?}", event.to_short_form());
 		}
 		std::thread::sleep(Duration::from_millis(1000));
 		// write a single file

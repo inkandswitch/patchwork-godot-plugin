@@ -5,10 +5,11 @@ on:
 # Global Settings
 # SCONS_CACHE for windows must be set in the build environment
 env:
+  GODOT_REPOSITORY: nikitalita/godot
   GODOT_BASE_BRANCH: master
   # Change the README too
-  GODOT_MAIN_SYNC_REF: 4.4
-  SCONSFLAGS: verbose=yes warnings=all werror=no module_text_server_fb_enabled=yes minizip=yes deprecated=yes debug_symbols=yes module_patchwork_editor_enabled=yes
+  GODOT_MAIN_SYNC_REF: patchwork-4.4
+  SCONSFLAGS: verbose=yes warnings=all werror=no module_text_server_fb_enabled=yes minizip=yes deprecated=yes debug_symbols=no module_patchwork_editor_enabled=yes
   SCONSFLAGS_TEMPLATE: no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no
   SCONS_CACHE_MSVC_CONFIG: true
 
@@ -54,7 +55,7 @@ jobs:
       - name: checkout-godot
         uses: actions/checkout@v4
         with:
-          repository: godotengine/godot
+          repository: ${{env.GODOT_REPOSITORY}}
           ref: ${{env.GODOT_MAIN_SYNC_REF}}
 
       - name: checkout-patchwork_editor
@@ -182,7 +183,7 @@ jobs:
   #     - name: checkout-godot
   #       uses: actions/checkout@v4
   #       with:
-  #         repository: godotengine/godot
+  #         repository: GODOT_REPOSITORY
   #         ref: ${{env.GODOT_MAIN_SYNC_REF}}
 
   #     - name: checkout-patchwork_editor

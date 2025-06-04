@@ -45,32 +45,40 @@ var highlight_changes = false
 const CREATE_BRANCH_IDX = 1
 const MERGE_BRANCH_IDX = 2
 
+signal reload_ui();
 
 
 func _update_ui_on_branches_changed(_branches: Array):
 	print("update_ui_on_branches_changed")
-	update_ui()
+	update_ui(false)
 
 func _update_ui_on_files_saved():
 	print("update_ui_on_files_saved")
-	update_ui()
+	update_ui(true)
 
 func _update_ui_on_files_changed():
 	print("update_ui_on_files_changed")
-	update_ui()
+	update_ui(true)
 
 func _update_ui_on_branch_checked_out(_branch):
 	print("update_ui_on_branch_checked_out")
-	update_ui()
+	update_ui(true)
+
+func _on_sync_server_connection_info_changed(_peer_connection_info: Dictionary) -> void:
+	update_ui(false)
 
 func _on_initial_checked_out_branch(_branch):
 	print("on_initial_checked_out_branch")
 	GodotProject.disconnect("checked_out_branch", self._on_initial_checked_out_branch)
 	init()
+	
+func _on_reload_ui_button_pressed():
+	reload_ui.emit()
 
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
 	print("Sidebar: ready!")
+	%ReloadUIButton.pressed.connect(self._on_reload_ui_button_pressed)
 	# need to add task_modal as a child to the plugin otherwise process won't be called
 	add_child(task_modal)
 	# The singleton class accessor is still pointing to the old GodotProject singleton
@@ -89,7 +97,7 @@ func _ready() -> void:
 func init() -> void:
 	print("Sidebar initialized!")
 	task_modal.end_task("Loading Patchwork")
-	update_ui()
+	update_ui(true)
 
 	# @Paul: I think somewhere besides the plugin sidebar gets instantiated. Is this something godot does?
 	# to paper over this we check if plugin and godot_project are set
@@ -146,8 +154,6 @@ func _on_sync_status_icon_pressed():
 	print("=====================================", )
 
 
-func _on_sync_server_connection_info_changed(_peer_connection_info: Dictionary) -> void:
-	update_ui()
 
 func _on_user_button_pressed():
 	var dialog = ConfirmationDialog.new()
@@ -176,7 +182,7 @@ func _on_user_button_pressed():
 			PatchworkConfig.set_user_value("user_name", new_user_name)
 			GodotProject.set_user_name(new_user_name)
 
-		update_ui()
+		update_ui(false)
 		dialog.queue_free()
 	)
 
@@ -188,7 +194,7 @@ func _on_branch_picker_item_selected(_index: int) -> void:
 
 	# reset selection in branch picker in case checkout_branch fails
 	# once branch is actually checked out, the branch picker will update
-	update_ui()
+	update_ui(false)
 
 	if "is_not_loaded" in selected_branch && selected_branch.is_not_loaded:
 		# Show warning dialog that branch is not synced correctly
@@ -213,7 +219,7 @@ func _on_branch_picker_item_selected(_index: int) -> void:
 
 func _on_highlight_changes_checkbox_toggled(pressed: bool) -> void:
 	highlight_changes = pressed
-	update_ui()
+	update_ui(true)
 
 static var void_func = func(): return
 static func popup_box(parent_window: Node, dialog: AcceptDialog, message: String, box_title: String, confirm_func: Callable = void_func, cancel_func: Callable = void_func):
@@ -401,18 +407,20 @@ func fold_section(section_header: Button, section_body: Control):
 	section_header.icon = load("res://addons/patchwork/icons/collapsable-closed.svg")
 	section_body.visible = false
 
-func update_ui() -> void:
+func update_ui(update_diff: bool = false) -> void:
 	var checked_out_branch = GodotProject.get_checked_out_branch()
-
+	var main_branch = GodotProject.get_main_branch()
+	var all_branches = GodotProject.get_branches()
 
 	# update branch pickers
 
-	update_branch_picker()
+	update_branch_picker(main_branch, checked_out_branch, all_branches)
 
 	# update history
 
+	var peer_connection_info = GodotProject.get_sync_server_connection_info()
 	var history = GodotProject.get_changes()
-	var unsynced_changes = get_unsynced_changes()
+	var unsynced_changes = get_unsynced_changes(peer_connection_info, checked_out_branch, history)
 
 
 	history_list.clear()
@@ -450,7 +458,7 @@ func update_ui() -> void:
 
 
 	# update sync status
-	update_sync_status()
+	update_sync_status(peer_connection_info, checked_out_branch, history)
 
 	# update action buttons
 
@@ -498,6 +506,9 @@ func update_ui() -> void:
 
 	# DIFF
 
+	if !update_diff:
+		return
+
 	# show no diff for main branch
 	if checked_out_branch.is_main:
 		update_highlight_changes({}, checked_out_branch)
@@ -518,19 +529,17 @@ func update_ui() -> void:
 		# print("heads_before: ", heads_before)
 		# print("heads_after: ", heads_after)
 
-		var diff = update_properties_diff(heads_before, heads_after)
+		var diff = update_properties_diff(checked_out_branch, history, heads_before, heads_after)
 
 		inspector.visible = true
 
 
 		update_highlight_changes(diff, checked_out_branch)
 
-func update_sync_status() -> void:
-	var checked_out_branch = GodotProject.get_checked_out_branch()
+func update_sync_status(peer_connection_info, checked_out_branch, changes) -> void:
 	if !checked_out_branch:
 		return
 
-	var peer_connection_info = GodotProject.get_sync_server_connection_info()
 	if !peer_connection_info:
 		printerr("no peer connection info")
 		return
@@ -560,7 +569,7 @@ func update_sync_status() -> void:
 	else:
 		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
 
-		var unsynced_changes = get_unsynced_changes()
+		var unsynced_changes = get_unsynced_changes(peer_connection_info, checked_out_branch, changes)
 		var unsynced_changes_count = unsynced_changes.size()
 
 		if unsynced_changes_count == 1:
@@ -569,21 +578,16 @@ func update_sync_status() -> void:
 			sync_status_icon.tooltip_text = "Disconnected - %s local changes that haven't been synced" % [unsynced_changes_count]
 
 
-func get_unsynced_changes():
+func get_unsynced_changes(connection_info, checked_out_branch, changes):
 	var dict = {}
 
-	var checked_out_branch = GodotProject.get_checked_out_branch()
 	if not checked_out_branch:
 		printerr("no checked out branch")
 		return
 
-	var changes = GodotProject.get_changes()
-
 	for change in changes:
 		dict[change.hash] = true
 
-
-	var connection_info = GodotProject.get_sync_server_connection_info()
 
 	if !connection_info:
 		return dict
@@ -617,20 +621,14 @@ func get_unsynced_changes():
 
 	return dict
 
-func update_branch_picker() -> void:
+func update_branch_picker(main_branch, checked_out_branch, all_branches) -> void:
 	branch_picker.clear()
-
-	var checked_out_branch = GodotProject.get_checked_out_branch()
 
 	if !checked_out_branch:
 		return
 
-	var main_branch = GodotProject.get_main_branch()
-
 	if !main_branch:
 		return
-
-	var all_branches = GodotProject.get_branches()
 
 	branch_picker_cover.text = checked_out_branch.name
 	add_branch_with_forks(main_branch, all_branches, checked_out_branch.id)
@@ -705,7 +703,7 @@ func human_readable_timestamp(timestamp: int) -> String:
 	else:
 		return str(int(diff / 31536000)) + " years ago"
 
-func update_highlight_changes(diff: Dictionary, checked_out_branch) -> void:
+func update_highlight_changes(diff: Dictionary, checked_out_branch: Dictionary) -> void:
 	var edited_root = EditorInterface.get_edited_scene_root()
 
 	# reflect highlight changes checkbox state
@@ -725,16 +723,14 @@ func update_highlight_changes(diff: Dictionary, checked_out_branch) -> void:
 var prev_heads_before
 var prev_heads_after
 var last_diff: Dictionary = {}
-func update_properties_diff(heads_before, heads_after) -> Dictionary:
-	var checked_out_branch = GodotProject.get_checked_out_branch()
+func update_properties_diff(checked_out_branch, changes, heads_before, heads_after) -> Dictionary:
 
 	if (!inspector):
 		return last_diff
 	if (!checked_out_branch):
 		return last_diff
 
-	var change: Array[Dictionary] = GodotProject.get_changes()
-	if (change.size() < 2):
+	if (changes.size() < 2):
 		return last_diff
 
 	if (prev_heads_before == heads_before && prev_heads_after == heads_after):

@@ -17,16 +17,14 @@ doc = false
 
 [dependencies]
 automerge = "0.6.0"
-automerge_repo = { git = "https://github.com/automerge/automerge-repo-rs", branch = "conn-finished-reason", features = [
+automerge_repo = { git = "https://github.com/automerge/automerge-repo-rs", branch = "fix-stuck-sync", features = [
   "tokio",
 ] }
 autosurgeon = "0.8.7"
 futures = "0.3.31"
-godot = { git = "https://github.com/godot-rust/gdext", branch = "master", features = [
-  "experimental-threads",
-] }
+godot = "0.3.0"
 tokio = { version = "1.41.1", features = ["full"] }
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
 tree-sitter = "0.25.4"
 tree-sitter-godot-resource = { git = "https://github.com/nikitalita/tree-sitter-godot-resource.git", branch = "fix-string-names" }
 safer-ffi = "0.1.13"
@@ -35,11 +33,14 @@ uuid = "1.5.0"
 pretty_assertions = "1.4.1"
 similar = { version = "2.4.0", features = ["unicode"] }
 # notify = { version = "8.0.0", features = ["macos_kqueue"] }
-notify = { git = "https://github.com/nikitalita/notify", features = ["macos_kqueue", "macos_fsevent"] }
-notify-debouncer-mini = { git = "https://github.com/nikitalita/notify", features = ["macos_kqueue", "macos_fsevent"] }
+notify = { git = "https://github.com/nikitalita/notify", features = [
+  "macos_fsevent",
+] }
+notify-debouncer-mini = { git = "https://github.com/nikitalita/notify", features = [
+  "macos_fsevent",
+] }
 # notify = { path = "/Users/nikita/Workspace/godot-ws/notify/notify", features = ["macos_kqueue"] }
 # notify-debouncer-mini = { path = "/Users/nikita/Workspace/godot-ws/notify/notify-debouncer-mini", features = ["macos_kqueue"] }
-
 
 
 # patchwork_rust_post_build_script = { path = "patchwork_rust_post_build_script" }
@@ -47,6 +48,8 @@ serde = { version = "1.0", features = ["derive"] }
 yet-another-md5 = "2.0.0"
 glob = "0.3.1"
 rlimit = "0.10.2"
+tracing = "0.1.40"
+tracing-appender = "0.2.2"
 
 [build-dependencies]
 cbindgen = "^0.27"

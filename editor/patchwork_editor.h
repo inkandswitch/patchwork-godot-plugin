@@ -51,10 +51,12 @@ public:
 	static Vector<String> get_unsaved_files();
 
 	static bool is_editor_importing();
+	static bool is_changing_scene();
 	static void save_all_scenes_and_scripts();
 	static void save_all_scripts();
 	static PackedStringArray get_unsaved_scripts();
-	static void reload_scripts(bool b_refresh_only = false);
+	static void reload_scripts(PackedStringArray p_scripts);
+	static void force_refresh_editor_inspector();
 };
 
 #endif // PATCHWORK_EDITOR_H
