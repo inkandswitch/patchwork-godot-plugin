@@ -141,6 +141,24 @@ impl ToVariantExt for Option<DocumentId> {
 //     }
 // }
 
+pub fn get_scene_path_for_node(node: &Gd<Node>) -> String {
+	let mut node = node.clone();
+	while node.get_scene_file_path().is_empty() && node.get_parent().is_some() {
+		node = node.get_parent().unwrap();
+	}
+	node.get_scene_file_path().to_string()
+}
+
+pub fn get_resource_or_scene_path_for_object(object: &Gd<Object>) -> String {
+	if let Ok(node) = object.clone().try_cast::<Node>() {
+		get_scene_path_for_node(&node)
+	} else if let Ok(resource) = object.clone().try_cast::<Resource>() {
+		resource.get_path().to_string()
+	} else {
+		"".to_string()
+	}
+}
+
 impl<D: Display> GodotConvertExt for Vec<D> {
 	type Via = PackedStringArray;
 }

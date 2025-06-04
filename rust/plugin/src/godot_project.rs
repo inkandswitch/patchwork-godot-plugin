@@ -12,7 +12,7 @@ use autosurgeon::{Hydrate, Reconcile};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use godot::classes::file_access::ModeFlags;
 use godot::classes::resource_loader::CacheMode;
-use godot::classes::{Control, EditorFileSystem, HBoxContainer, MarginContainer, MenuButton, VBoxContainer};
+use godot::classes::{ConfirmationDialog, Control, EditorFileSystem, HBoxContainer, MarginContainer, MenuButton, Panel, Script, VBoxContainer};
 use godot::classes::EditorInterface;
 use godot::classes::ProjectSettings;
 use godot::classes::ResourceLoader;
@@ -28,7 +28,7 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{collections::HashMap, str::FromStr};
-use crate::godot_helpers::{ToGodotExt, ToVariantExt};
+use crate::godot_helpers::{get_resource_or_scene_path_for_object, ToGodotExt, ToVariantExt};
 use crate::godot_helpers::{ToRust};
 use crate::file_system_driver::{FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
 use crate::godot_parser::{self, GodotScene, TypeOrInstance};
@@ -168,6 +168,73 @@ enum ChangeOp {
     Modified,
 }
 
+// This is the worst thing I've ever done
+// Get the file system
+// get the parent of the file system, that's the editor node
+// look for the first Panel child of the editor node, that's the gui base
+// look for ConfirmationDialog children of the gui base
+// it's unique in that it has a vbox container with a tree child; just look for that
+// if we find it, get the signals
+// find the signals connected to the confirmed signal
+// the first is the _reload_modified_scenes callable
+// the second is the _reload_project_settings callable
+// steal those, call _reload_modified_scenes
+fn steal_editor_node_private_reload_methods_from_dialog_signal_handlers() -> Option<(Callable, Callable)> {
+		// get the editor node
+	let editor_file_system = EditorInterface::singleton().get_resource_filesystem();
+	let editor_node = if let Some(editor_file_system) = editor_file_system {
+		// get the parent of the editor file system, that's the editor node
+		editor_file_system.get_parent()
+	} else {
+		return None;
+	};
+	if let Some(editor_node) = editor_node {
+			// get the first Panel child of the editor node, that's the gui base
+		let children = editor_node.get_children();
+		// it should be the first panel
+		if let Some(gui_base) = children.iter_shared().find(|c| c.get_class().to_string() == "Panel") {
+			// find the disk_changed dialog child of the gui base
+			let children = gui_base.get_children();
+			if let Some(disk_changed_dialog_node) = children.iter_shared().find(|c|{
+				if c.get_class().to_string() == "ConfirmationDialog" {
+					// check that one of the children is a VBoxContainer
+					let children = c.get_children();
+					if let Some(vbox_container) = children.iter_shared().find(|c| c.get_class().to_string() == "VBoxContainer") {
+						// check that one of the children is a Tree
+						let children = vbox_container.get_children();
+						if let Some(_) = children.iter_shared().find(|c| c.get_class().to_string() == "Tree") {
+							return true;
+						}
+					}
+				}
+				false
+			}) {
+				let disk_changed_dialog = match disk_changed_dialog_node.try_cast::<ConfirmationDialog>() {
+					Ok(dialog) => dialog,
+					Err(_) => return None,
+				};
+				let signals = disk_changed_dialog.get_signal_connection_list("confirmed");
+				if signals.len() >= 2 {
+					// the first two should be the _reload_modified_scenes and _reload_project_settings signals
+					let reload_modified_scenes_callable = signals.get(0).unwrap().get("callable").unwrap().to::<Callable>();
+					let reload_project_settings_callable = signals.get(1).unwrap().get("callable").unwrap().to::<Callable>();
+					return Some((reload_modified_scenes_callable, reload_project_settings_callable));
+				} else {
+					return None;
+				}
+			} else {
+				return None;
+			}
+		} else {
+			return None;
+		}
+	}
+
+	None
+}
+
+
+
 // PatchworkEditor accessor functions
 struct PatchworkEditorAccessor{
 }
@@ -212,6 +279,28 @@ impl PatchworkEditorAccessor {
 			&[],
 		);
 	}
+
+	fn progress_add_task(task: &str, label: &str, steps: i32, can_cancel: bool) {
+		ClassDb::singleton().class_call_static(
+			"PatchworkEditor",
+			"progress_add_task",
+			&[task.to_variant(), label.to_variant(), steps.to_variant(), can_cancel.to_variant()],
+		);
+	}
+	fn progress_task_step(task: &str, state: &str, step: i32, force_refresh: bool) {
+		ClassDb::singleton().class_call_static(
+			"PatchworkEditor",
+			"progress_task_step",
+			&[task.to_variant(), state.to_variant(), step.to_variant(), force_refresh.to_variant()],
+		);
+	}
+	fn progress_end_task(task: &str) {
+		ClassDb::singleton().class_call_static(
+			"PatchworkEditor",
+			"progress_end_task",
+			&[task.to_variant()],
+		);
+	}
 }
 
 struct EditorFilesystemAccessor{
@@ -233,6 +322,10 @@ impl EditorFilesystemAccessor {
 
 	fn scan() {
 		EditorInterface::singleton().get_resource_filesystem().unwrap().scan();
+	}
+
+	fn get_inspector_edited_object() -> Option<Gd<Object>> {
+		EditorInterface::singleton().get_inspector().unwrap().get_edited_object()
 	}
 }
 
@@ -2432,6 +2525,7 @@ impl GodotProjectImpl {
 }
 
 
+const MODAL_TASK_NAME: &str = "Reloading scene";
 #[derive(Debug, Default)]
 pub struct PendingEditorUpdate {
 	added_files: HashSet<String>,
@@ -2440,7 +2534,10 @@ pub struct PendingEditorUpdate {
 	scenes_to_reload: HashMap<String, FileContent>,
 	reimport_files: HashSet<String>,
 	uids_to_add: HashMap<String, String>,
-	inspector_refresh_queue_time: f64,
+	reload_project_settings: bool,
+	inspector_refresh_queue_time: u128,
+	changing_scene_cooldown: i64,
+	modal_shown: bool,
 }
 
 impl PendingEditorUpdate {
@@ -2455,12 +2552,13 @@ impl PendingEditorUpdate {
 		for (path, uid) in other.uids_to_add.into_iter() {
 			self.uids_to_add.insert(path, uid);
 		}
+		self.reload_project_settings = self.reload_project_settings || other.reload_project_settings;
 	}
 	fn added_or_deleted_files(&self) -> bool {
 		self.added_files.len() > 0 || self.deleted_files.len() > 0
 	}
 	fn any_changes(&self) -> bool {
-		self.any_file_changes() || self.has_inspector_refresh_queued()
+		self.any_file_changes() || self.has_inspector_refresh_queued() || self.modal_shown
 	}
 
 	fn any_file_changes(&self) -> bool {
@@ -2468,22 +2566,22 @@ impl PendingEditorUpdate {
 	}
 
 	fn has_inspector_refresh_queued(&self) -> bool {
-		self.inspector_refresh_queue_time > 0.0_f64
+		self.inspector_refresh_queue_time > 0
 	}
 
 	fn queue_inspector_dock_refresh(&mut self) {
 		// don't use Godot classes for this
-		self.inspector_refresh_queue_time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64();
+		self.inspector_refresh_queue_time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
 	}
 
 
 	fn refresh_inspector_dock(&mut self) {
-		let current_time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64();
-		if current_time - self.inspector_refresh_queue_time < 0.1_f64 {
+		let current_time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+		if current_time - self.inspector_refresh_queue_time < 500 {
 			return;
 		}
 		PatchworkEditorAccessor::force_refresh_editor_inspector();
-		self.inspector_refresh_queue_time = 0.0_f64;
+		self.inspector_refresh_queue_time = 0;
 	}
 }
 
@@ -2493,6 +2591,8 @@ pub struct GodotProject {
 	base: Base<Node>,
 	project: GodotProjectImpl,
 	pending_editor_update: PendingEditorUpdate,
+	reload_modified_scenes_callable: Option<Callable>,
+	reload_project_settings_callable: Option<Callable>,
 }
 
 #[godot_api]
@@ -2666,7 +2766,7 @@ impl GodotProject {
             };
 			files_changed.push(abs_path.to_string_lossy().to_string());
             let res_path = self.project.localize_path(&abs_path.to_string_lossy().to_string());
-            let extension = abs_path.extension().unwrap_or_default().to_string_lossy().to_string();
+            let extension = abs_path.extension().unwrap_or_default().to_string_lossy().to_string().to_ascii_lowercase();
             if extension == "gd" {
 				pending_editor_update.scripts_to_reload.insert(res_path);
             } else if extension == "tscn" {
@@ -2692,6 +2792,8 @@ impl GodotProject {
                 if let FileContent::String(string) = content {
                     pending_editor_update.uids_to_add.insert(res_path.to_string(), string);
                 }
+			} else if extension == "godot" {
+				pending_editor_update.reload_project_settings = true;
             // check if a file with .import added exists
             } else  {
                 let mut import_path = abs_path.clone();
@@ -2707,6 +2809,23 @@ impl GodotProject {
 		return pending_editor_update;
 	}
 
+	fn reload_modified_scenes(&self) -> bool {
+		if PatchworkEditorAccessor::is_changing_scene() {
+			return false;
+		}
+		if let Some(reload_modified_scenes_callable) = &self.reload_modified_scenes_callable {
+			reload_modified_scenes_callable.call(&[]);
+			return true;
+		}
+		false
+	}
+
+	fn reload_project_settings(&self) {
+		if let Some(reload_project_settings_callable) = &self.reload_project_settings_callable {
+			reload_project_settings_callable.call(&[]);
+		}
+	}
+
 	fn update_godot_after_sync(&mut self) {
 		if !self.pending_editor_update.any_changes() {
 			return;
@@ -2714,12 +2833,49 @@ impl GodotProject {
 		if !GodotProjectImpl::safe_to_update_godot() {
 			return;
 		}
-		// refresh the editor inspector AFTER all the file changes have been applied
-		if !self.pending_editor_update.any_file_changes() && self.pending_editor_update.has_inspector_refresh_queued() {
-			self.pending_editor_update.refresh_inspector_dock();
+		if !self.pending_editor_update.any_file_changes() {
+			// refresh the editor inspector AFTER all the file changes have been applied
+			if self.pending_editor_update.has_inspector_refresh_queued() {
+				self.pending_editor_update.refresh_inspector_dock();
+			}
+			// if self.pending_editor_update.modal_shown {
+			// 	PatchworkEditorAccessor::progress_end_task(MODAL_TASK_NAME);
+			// }
 			return;
 		}
-		self.pending_editor_update.queue_inspector_dock_refresh();
+
+
+		let obj = EditorFilesystemAccessor::get_inspector_edited_object();
+		let inspector_dock_needs_refresh = if let Some(obj) = obj {
+			let obj_path = get_resource_or_scene_path_for_object(&obj);
+			if obj_path == "" {
+				false
+			} else if self.pending_editor_update.scenes_to_reload.contains_key(&obj_path) {
+				true
+			} else if self.pending_editor_update.scripts_to_reload.contains(&obj_path) {
+				true
+			} else if self.pending_editor_update.reimport_files.contains(&obj_path) {
+				true
+			} else {
+				// get the script from the object
+				let var = obj.get_script();
+				let res_obj: Result<Gd<Object>, _> = var.try_to::<Gd<Object>>();
+				if let Ok(o) = res_obj {
+					if let Ok(script) = o.try_cast::<Script>() {
+						self.pending_editor_update.scripts_to_reload.contains(&script.get_path().to_string())
+					} else {
+						false
+					}
+				} else {
+					false
+				}
+			}
+		} else {
+			false
+		};
+		if inspector_dock_needs_refresh {
+			self.pending_editor_update.queue_inspector_dock_refresh();
+		}
 		// We have to turn off process here because:
 		// * This was probably called from `process()`
 		// * Any of these functions we're about to call could result in popping up and stepping the ProgressDialog modal
@@ -2731,13 +2887,13 @@ impl GodotProject {
 
 		let reload_scene_func = |scene_path: &str| {
 			if PatchworkEditorAccessor::is_changing_scene() {
-				tracing::warn!("Editor is changing scene BEFORE RELOADING SCENE, skipping reload of {}", scene_path);
+				tracing::debug!("Editor is changing scene BEFORE RELOADING SCENE, skipping reload of {}", scene_path);
 				return false;
 			}
 			// we don't need to do this and it may cause issues with the scripts
 			// let scene = force_reload_resource(scene_path);
 			if PatchworkEditorAccessor::is_changing_scene() {
-				tracing::warn!("Editor is changing scene AFTER RELOADING SCENE, skipping reload of {}", scene_path);
+				tracing::debug!("Editor is changing scene AFTER RELOADING SCENE, skipping reload of {}", scene_path);
 				return false;
 			} else {
 				EditorFilesystemAccessor::reload_scene_from_path(&scene_path);
@@ -2755,6 +2911,7 @@ impl GodotProject {
 		// if there are scripts to reload, we need to reload them first and let it run `process()` at least once
 		// before we start reloading anything else because the ScriptEditor forces the reload to run deferred
 		// (i.e. AFTER the current process() call)
+		// TODO: remove this after PR lands
 		if self.pending_editor_update.scripts_to_reload.len() > 0 {
 			PatchworkEditorAccessor::reload_scripts(&self.pending_editor_update.scripts_to_reload.iter().map(|path| path.clone()).collect::<Vec<String>>());
 			self.pending_editor_update.scripts_to_reload.clear();
@@ -2764,48 +2921,83 @@ impl GodotProject {
 
 		// scene instances require scripts to be reloaded first
 		if self.pending_editor_update.scenes_to_reload.len() > 0 {
-			tracing::debug!("reloading scenes");
-			let scene_root = EditorInterface::singleton().get_edited_scene_root();
-			let scene_root_path = if let Some(scene_root) = scene_root {
-				 scene_root.get_scene_file_path().to_string()
-			} else {
-				"".to_string()
-			};
-			let mut reloaded_scenes = HashSet::new();
-			if let Some(_) = self.pending_editor_update.scenes_to_reload.remove(&scene_root_path) {
-				if reload_scene_func(&scene_root_path) {
-					reloaded_scenes.insert(scene_root_path.clone());
-				}
+			// TODO: NO longer needed, but keeping it around because not needing this depends on upstream patches.
+			// let scene_root = EditorInterface::singleton().get_edited_scene_root();
+			// let scene_root_path = if let Some(scene_root) = scene_root {
+			// 	 scene_root.get_scene_file_path().to_string()
+			// } else {
+			// 	"".to_string()
+			// };
+			// let mut updating_current_scene = self.pending_editor_update.scenes_to_reload.contains_key(&scene_root_path);
+			// let open_scene_paths = EditorInterface::singleton().get_open_scenes().to_vec().iter().map(|scene_path| scene_path.to_string()).collect::<HashSet<String>>();
+
+			// // if the current edited scene is in the list of scenes to reload, reload ONLY that scene,
+			// // then scan and wait until it's done to reload the rest of the scenes.
+			// // Otherwise, the editor will completely fuck up and screw up the user's viewport.
+			// let updating_scenes_not_in_open_scenes = self.pending_editor_update.scenes_to_reload.iter().find(|(path, _)| !open_scene_paths.contains(*path)).is_some();
+			// // this is just to keep a reference to the main scene resource so it stays cached if needed
+			// let mut _main_scene_resource = None;
+			// if updating_scenes_not_in_open_scenes && !updating_current_scene {
+			// 	let current_scene_content = if scene_root_path == "" {
+			// 		None
+			// 	} else if let Some(content) = self.pending_editor_update.scenes_to_reload.remove(&scene_root_path) {
+			// 		Some(content)
+			// 	} else if !updating_current_scene { // the scene we're updating may be a dependency of another scene, so we need to get the content
+			// 		self.project._get_file_at(scene_root_path.clone(), None)
+			// 	} else {
+			// 		None
+			// 	};
+			// 	if let Some(FileContent::Scene(scene)) = &current_scene_content {
+			// 			// check if any of the external dependencies are in the list of scenes to reload
+			// 		for (path, _) in scene.ext_resources.iter() {
+			// 			if self.pending_editor_update.scenes_to_reload.contains_key(path) {
+			// 				// force update the main scene
+			// 				updating_current_scene = true;
+			// 				_main_scene_resource = force_reload_resource(&scene_root_path);
+			// 				break;
+			// 				// tracing::debug!("scene {} depends on scene {}, popping up modal", scene_root_path, path);
+			// 				// self.pending_editor_update.modal_shown = true;
+			// 				// PatchworkEditorAccessor::progress_add_task(MODAL_TASK_NAME, "Reloading scenes", 2, false);
+			// 			}
+			// 		}
+			// 	}
+			// }
+			// if self.pending_editor_update.scenes_to_reload.contains_key(&scene_root_path) {
+			// 	// reload the current scene manually so it retains the state
+			// 	reload_scene_func(&scene_root_path);
+			// }
+			if !self.reload_modified_scenes() {
+				self.pending_editor_update.changing_scene_cooldown = 6;
 			}
 
-			// TODO: we want to reload all the scenes, but the editor changes scenes every time we reload a scene,
-			// (and refuses to reload a scene when doing so)
-			// so we're just going to only reload the current scene and then rescan
+
 			self.pending_editor_update.scenes_to_reload.clear();
-			// for (scene_path, _scene) in self.pending_editor_update.scenes_to_reload.iter() {
-			// 	if reload_scene_func(scene_path) {
-			// 		reloaded_scenes.insert(scene_path.clone());
-			// 	} else {
-			// 		break;
-			// 	}
-            // }
-			// let _ = reloaded_scenes.into_iter().map(|p|self.pending_editor_update.scenes_to_reload.remove(&p));
-			// if self.pending_editor_update.scenes_to_reload.len() > 0 {
-			// 	// try on the next process() call
-			// 	self.base_mut().set_process(true);
-			// 	return;
-			// }
+			// let mut reloaded_scenes = HashSet::new();
+			// let mut updating_current_scene = self.pending_editor_update.scenes_to_reload.contains_key(&scene_root_path);
+			// let open_scene_paths = EditorInterface::singleton().get_open_scenes().to_vec().iter().map(|scene_path| scene_path.to_string()).collect::<HashSet<String>>();
+
         }
 		if self.pending_editor_update.reimport_files.len() > 0 {
 			EditorFilesystemAccessor::reimport_files(&self.pending_editor_update.reimport_files.iter().map(|path| path.clone()).collect::<Vec<String>>());
 			self.pending_editor_update.reimport_files.clear();
         }
 
-		EditorFilesystemAccessor::scan();
-		self.pending_editor_update.added_files.clear();
-		self.pending_editor_update.deleted_files.clear();
+		if self.pending_editor_update.reload_project_settings {
+			self.reload_project_settings();
+			self.pending_editor_update.reload_project_settings = false;
+		}
 
-
+		if self.pending_editor_update.changing_scene_cooldown > 0 {
+			self.pending_editor_update.changing_scene_cooldown -= 1;
+		}
+		if self.pending_editor_update.changing_scene_cooldown == 0 {
+			self.pending_editor_update.changing_scene_cooldown = 0;
+			EditorFilesystemAccessor::scan();
+			self.pending_editor_update.added_files.clear();
+			self.pending_editor_update.deleted_files.clear();
+		} else {
+			tracing::debug!("waiting to scan until after main scene is reloaded, scenes pending: {:?}", self.pending_editor_update.scenes_to_reload.len());
+		}
 		self.base_mut().set_process(true);
     }
 
@@ -2819,11 +3011,21 @@ impl INode for GodotProject {
 			base: _base,
 			project: GodotProjectImpl::new(ProjectSettings::singleton().globalize_path("res://").to_string()),
 			pending_editor_update: PendingEditorUpdate::default(),
+			reload_modified_scenes_callable: None,
+			reload_project_settings_callable: None,
 		}
     }
 
     fn enter_tree(&mut self) {
 		self.project._enter_tree();
+		let callables = steal_editor_node_private_reload_methods_from_dialog_signal_handlers();
+		if let Some((reload_modified_scenes_callable, reload_project_settings_callable)) = callables {
+			self.reload_modified_scenes_callable = Some(reload_modified_scenes_callable);
+			self.reload_project_settings_callable = Some(reload_project_settings_callable);
+		} else {
+			// if we rebase and this fails, we're going to have to do something else
+			panic!("Failed to steal reload methods from dialog signal handlers");
+		}
     }
 
     fn exit_tree(&mut self) {
