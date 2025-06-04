@@ -17,7 +17,7 @@ doc = false
 
 [dependencies]
 automerge = "0.6.0"
-automerge_repo = { git = "https://github.com/automerge/automerge-repo-rs", branch = "conn-finished-reason", features = [
+automerge_repo = { git = "https://github.com/automerge/automerge-repo-rs", branch = "fix-stuck-sync", features = [
   "tokio",
 ] }
 autosurgeon = "0.8.7"
@@ -35,11 +35,14 @@ uuid = "1.5.0"
 pretty_assertions = "1.4.1"
 similar = { version = "2.4.0", features = ["unicode"] }
 # notify = { version = "8.0.0", features = ["macos_kqueue"] }
-notify = { git = "https://github.com/nikitalita/notify", features = ["macos_fsevent"] }
-notify-debouncer-mini = { git = "https://github.com/nikitalita/notify", features = ["macos_fsevent"] }
+notify = { git = "https://github.com/nikitalita/notify", features = [
+  "macos_fsevent",
+] }
+notify-debouncer-mini = { git = "https://github.com/nikitalita/notify", features = [
+  "macos_fsevent",
+] }
 # notify = { path = "/Users/nikita/Workspace/godot-ws/notify/notify", features = ["macos_kqueue"] }
 # notify-debouncer-mini = { path = "/Users/nikita/Workspace/godot-ws/notify/notify-debouncer-mini", features = ["macos_kqueue"] }
-
 
 
 # patchwork_rust_post_build_script = { path = "patchwork_rust_post_build_script" }
