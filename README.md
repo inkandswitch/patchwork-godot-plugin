@@ -1,9 +1,9 @@
 # patchwork_editor
 
-To build this, clone godotengine/godot @ master, then clone this repository into the `modules/patchwork_editor` directory.
+To build this, clone [nikitalita/godot @ patchwork-4.4](https://github.com/nikitalita/godot/tree/patchwork-4.4), then clone this repository into the `modules/patchwork_editor` directory.
 
 ```
-git clone https://github.com/godotengine/godot
+git clone -b patchwork-4.4 https://github.com/nikitalita/godot
 cd godot/modules
 git clone https://github.com/nikitalita/patchwork_editor patchwork_editor --recurse-submodules
 
