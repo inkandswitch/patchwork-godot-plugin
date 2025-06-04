@@ -301,6 +301,13 @@ impl PatchworkEditorAccessor {
 			&[task.to_variant()],
 		);
 	}
+	fn unsaved_files_open() -> bool {
+		ClassDb::singleton().class_call_static(
+			"PatchworkEditor",
+			"unsaved_files_open",
+			&[],
+		).to::<bool>()
+	}
 }
 
 struct EditorFilesystemAccessor{
@@ -2063,7 +2070,9 @@ impl GodotProjectImpl {
 	fn safe_to_update_godot() -> bool {
 		return !(EditorFilesystemAccessor::is_scanning() ||
 		PatchworkEditorAccessor::is_editor_importing() ||
-		PatchworkEditorAccessor::is_changing_scene());
+		PatchworkEditorAccessor::is_changing_scene() ||
+		PatchworkEditorAccessor::unsaved_files_open()
+	);
 	}
 
 
