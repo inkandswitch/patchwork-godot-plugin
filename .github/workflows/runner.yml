@@ -88,9 +88,45 @@ jobs:
         with:
           path: ws/patchwork-godot-plugin.zip
           name: patchwork-godot-plugin
+      - uses: actions/checkout@v4
+        with:
+          repository: inkandswitch/moddable-platformer
+          ref: master
+          path: moddable-platformer
+          fetch-depth: 0
+      - name: Copy addons to moddable-platformer
+        run: |
+          cp -R ws/addons/patchwork moddable-platformer/addons/patchwork
+      - name: Zip moddable-platformer
+        run: |
+          zip -r9 moddable-platformer-with-patchwork.zip moddable-platformer
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          path: moddable-platformer-with-patchwork.zip
+          name: moddable-platformer-with-patchwork
+      - uses: actions/checkout@v4
+        with:
+          repository: endlessm/threadbare
+          ref: master
+          path: threadbare
+          fetch-depth: 0
+      - name: Copy addons to threadbare
+        run: |
+          cp -R ws/addons/patchwork threadbare/addons/patchwork
+      - name: Zip threadbare
+        run: |
+          zip -r9 threadbare-with-patchwork.zip threadbare
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          path: threadbare-with-patchwork.zip
+          name: threadbare-with-patchwork
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: nikitalita/action-gh-release@v1.0
         with:
           files: |
             ws/patchwork-godot-plugin.zip
+            moddable-platformer-with-patchwork.zip
+            threadbare-with-patchwork.zip
