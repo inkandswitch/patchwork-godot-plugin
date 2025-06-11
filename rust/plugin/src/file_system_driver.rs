@@ -27,18 +27,6 @@ use crate::utils::ToShortForm;
 const DEBOUNCE_TIME: u64 = 100;
 
 
-// Custom event handler that bridges between std::sync::mpsc and futures::channel::mpsc
-struct UnboundedEventHandler {
-    sender: UnboundedSender<Result<Event, notify::Error>>,
-}
-
-impl EventHandler for UnboundedEventHandler {
-    fn handle_event(&mut self, event: Result<Event, notify::Error>) {
-        // Forward the event to the UnboundedSender
-        let _ = self.sender.unbounded_send(event);
-    }
-}
-
 #[derive(Debug)]
 pub enum FileSystemEvent {
     FileCreated(PathBuf, FileContent),

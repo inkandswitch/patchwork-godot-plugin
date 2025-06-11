@@ -109,13 +109,6 @@ impl std::fmt::Display for VariantStrValue {
     }
 }
 
-#[derive(Debug, Clone)]
-struct GodotProjectState {
-    checked_out_doc_id: DocumentId,
-    branches_metadata_doc_id: DocumentId,
-}
-
-
 #[derive(Debug)]
 pub struct GodotProjectImpl {
     doc_handles: HashMap<DocumentId, DocHandle>,
@@ -158,11 +151,6 @@ impl Default for GodotProjectImpl {
 	}
 }
 
-enum ChangeOp {
-    Added,
-    Removed,
-    Modified,
-}
 
 const DEFAULT_SERVER_URL: &str = "104.131.179.247:8080";
 
@@ -1482,26 +1470,6 @@ impl GodotProjectImpl {
             let mut all_changed_sub_resource_ids: HashSet<String> = HashSet::new();
 
             let mut changed_node_ids: HashSet<String> = HashSet::new();
-            let mut added_node_ids: HashSet<String> = HashSet::new();
-            let mut deleted_node_ids: HashSet<String> = HashSet::new();
-
-            let mut node_modifications: HashMap<String, Vec<ChangeOp>> = HashMap::new();
-
-            let mut insert_node_modification = |node_id: &String, change_op: ChangeOp| {
-                let entry = node_modifications
-                    .entry(node_id.clone())
-                    .or_insert(Vec::new());
-                // if the last change_op is add and the current one is deleted, remove the last one
-                if (matches!(entry.last(), Some(&ChangeOp::Added))
-                    && matches!(change_op, ChangeOp::Removed))
-                    || (matches!(entry.last(), Some(&ChangeOp::Removed))
-                    && matches!(change_op, ChangeOp::Added))
-                {
-                    entry.pop();
-                } else {
-                    entry.push(change_op);
-                }
-            };
 
             for patch in patches.iter() {
                 match_path(&patch_path, &patch).inspect(
@@ -3102,10 +3070,7 @@ impl GodotProjectPlugin {
 	}
 
 	fn add_sidebar(&mut self) {
-		self.sidebar_scene = ResourceLoader::singleton()
-            .load_ex("res://addons/patchwork/gdscript/sidebar.tscn")
-			.cache_mode(CacheMode::REPLACE_DEEP) // REPLACE_DEEP to ensure we get the latest version of the sidebar upon reloading the plugin
-			.done()
+		self.sidebar_scene = force_reload_resource("res://addons/patchwork/gdscript/sidebar.tscn")
 			.map(|scene| scene.try_cast::<PackedScene>().ok())
 			.flatten();
 		self.sidebar = if let Some(Some(sidebar)) = self.sidebar_scene.as_ref().map(|scene| scene.instantiate()) {
