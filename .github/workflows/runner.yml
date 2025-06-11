@@ -91,7 +91,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: inkandswitch/moddable-platformer
-          ref: master
+          ref: main
           path: moddable-platformer
           fetch-depth: 0
       - name: Copy addons to moddable-platformer
@@ -108,7 +108,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: endlessm/threadbare
-          ref: master
+          ref: main
           path: threadbare
           fetch-depth: 0
       - name: Copy addons to threadbare
