@@ -207,6 +207,7 @@ pub struct GodotProjectDriver {
 impl GodotProjectDriver {
     pub fn create(storage_folder_path: String, server_url: String) -> Self {
         let runtime: Runtime = tokio::runtime::Builder::new_multi_thread()
+			.worker_threads(4)
             .enable_all()
 			.thread_name("GodotProjectDriver: worker thread")
             .build()
