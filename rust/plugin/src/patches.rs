@@ -1,7 +1,5 @@
 use std::collections::HashSet;
 
-use godot::builtin::{GString, PackedStringArray};
-
 pub fn get_changed_files_vec(patches: &Vec<automerge::Patch>) -> Vec<String> {
     let mut changed_files = HashSet::new();
 

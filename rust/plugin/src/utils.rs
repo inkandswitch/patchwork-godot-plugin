@@ -1,17 +1,16 @@
 use std::{
     collections::HashMap,
     str::FromStr,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use crate::{doc_utils::SimpleDocReader, godot_helpers::{GodotConvertExt, ToGodotExt, ToVariantExt}, godot_project_driver::BranchState};
 use automerge::{
     transaction::{CommitOptions, Transaction}, Change, ChangeHash, ReadDoc, ROOT
 };
-use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo, RepoHandle};
-use godot::{builtin::{dict, Array, Dictionary, GString, PackedStringArray, Variant}, meta::ToGodot, prelude::GodotConvert};
+use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
+use godot::{builtin::{dict, Dictionary, GString, PackedStringArray, Variant}, meta::ToGodot, prelude::GodotConvert};
 use serde::{Deserialize, Serialize};
-use serde_json::Serializer;
 
 pub(crate) fn get_linked_docs_of_branch(
     branch_doc_handle: &DocHandle,

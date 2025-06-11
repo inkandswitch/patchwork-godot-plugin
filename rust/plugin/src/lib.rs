@@ -6,9 +6,9 @@ use godot::{
 };
 use godot_project::GodotProject;
 use patchwork_config::PatchworkConfig;
-use tracing_appender::{non_blocking::{NonBlocking, WorkerGuard}, rolling};
+use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
-    fmt::{self, format::Writer, time::FormatTime},
+    fmt::{format::Writer, time::FormatTime},
     layer::SubscriberExt,
     util::SubscriberInitExt,
     EnvFilter, Layer,

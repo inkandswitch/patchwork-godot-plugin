@@ -6,8 +6,6 @@ use automerge::Automerge;
 use patchwork_rust_core::godot_parser;
 use patchwork_rust_core::godot_parser::GodotConnection;
 use patchwork_rust_core::godot_parser::GodotScene;
-use patchwork_rust_core::godot_project;
-use patchwork_rust_core::utils;
 // use pretty_assertions::{assert_eq, assert_ne};
 
 fn get_test_scene_source() -> String {

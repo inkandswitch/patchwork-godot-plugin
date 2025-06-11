@@ -1,6 +1,5 @@
 use core::str;
 use std::ffi::OsStr;
-use std::fmt::Display;
 use std::sync::atomic::Ordering;
 use std::{path::PathBuf, sync::atomic::AtomicBool};
 use std::sync::Arc;
@@ -12,19 +11,14 @@ use futures::{
 #[cfg(not(target_os = "windows"))]
 use rlimit::{setrlimit, getrlimit, Resource};
 use tokio::{task::JoinHandle, time::{sleep, Duration}};
-use notify::{Watcher, RecursiveMode, Config, Event, EventHandler};
+use notify::{RecursiveMode, Config};
 use notify_debouncer_mini::{new_debouncer_opt, DebouncedEvent, Debouncer};
 use notify::RecommendedWatcher as WatcherImpl;
 use tracing::instrument;
-use std::sync::mpsc::channel;
 use std::time::Duration as StdDuration;
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::{Read, Write};
-use ya_md5::{Md5Hasher, Hash, Md5Error};
 use tokio::sync::Mutex;
 use glob::Pattern;
-use std::io;
 use crate::file_utils::{calculate_file_hash, get_buffer_and_hash, FileContent};
 
 use crate::utils::ToShortForm;

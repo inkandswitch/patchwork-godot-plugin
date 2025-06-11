@@ -2,11 +2,7 @@
 use std::fmt;
 use std::io::Write;
 
-use tracing_subscriber::fmt::format::{Compact, Format, Writer};
-use tracing_subscriber::fmt::time::FormatTime;
-use tracing::{Event, Subscriber};
-use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields};
-use tracing_subscriber::registry::LookupSpan;
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TimeNoDate {

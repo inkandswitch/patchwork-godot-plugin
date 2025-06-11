@@ -1,7 +1,7 @@
 use godot::classes::{ConfigFile, Engine, FileAccess};
 use godot::global::Error;
 use godot::prelude::*;
-use godot::builtin::{Variant, VariantType};
+use godot::builtin::{Variant};
 
 #[derive(GodotClass)]
 #[class(no_init, base=Object)]

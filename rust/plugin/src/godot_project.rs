@@ -1,9 +1,8 @@
 use crate::file_utils::{FileContent};
 use godot::classes::editor_plugin::DockSlot;
 use ::safer_ffi::prelude::*;
-use automerge::op_tree::B;
 use automerge::{
-    patches::TextRepresentation, transaction::Transactable, ChangeHash, ObjType, ReadDoc,
+    patches::TextRepresentation, ChangeHash, ObjType, ReadDoc,
     TextEncoding, ROOT,
 };
 use automerge::{Automerge, ObjId, Patch, PatchAction, Prop};
@@ -12,31 +11,27 @@ use autosurgeon::{Hydrate, Reconcile};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use godot::classes::file_access::ModeFlags;
 use godot::classes::resource_loader::CacheMode;
-use godot::classes::{ConfirmationDialog, Control, EditorFileSystem, HBoxContainer, MarginContainer, MenuButton, Panel, Script, VBoxContainer};
+use godot::classes::{ConfirmationDialog, Control, Script};
 use godot::classes::EditorInterface;
 use godot::classes::ProjectSettings;
 use godot::classes::ResourceLoader;
 use godot::classes::{ClassDb, EditorPlugin, Engine, IEditorPlugin};
 use godot::global::str_to_var;
-use godot::meta::{AsArg, ParamType};
-use godot::classes::{ResourceUid, ConfigFile, DirAccess, FileAccess, ResourceImporter};
+use godot::classes::{ResourceUid, DirAccess, FileAccess};
 use godot::prelude::*;
 use godot::prelude::Dictionary;
 use tracing::instrument;
 use std::any::Any;
-use std::collections::{hash_set, HashSet};
-use std::ops::Deref;
+use std::collections::{HashSet};
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{collections::HashMap, str::FromStr};
 use crate::godot_helpers::{get_resource_or_scene_path_for_object, ToGodotExt, ToVariantExt};
-use crate::godot_helpers::{ToRust};
 use crate::file_system_driver::{FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
 use crate::godot_parser::{self, GodotScene, TypeOrInstance};
 use crate::godot_project_driver::{BranchState, ConnectionThreadError, DocHandleType};
 use crate::patches::{get_changed_files_vec};
 use crate::patchwork_config::PatchworkConfig;
-use crate::utils::{array_to_heads, heads_to_array, parse_automerge_url, CommitInfo, ToShortForm};
+use crate::utils::{array_to_heads, CommitInfo, ToShortForm};
 use crate::{
     doc_utils::SimpleDocReader,
     godot_project_driver::{GodotProjectDriver, InputEvent, OutputEvent},
