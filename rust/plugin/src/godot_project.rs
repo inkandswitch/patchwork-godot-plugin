@@ -1052,7 +1052,7 @@ impl GodotProjectImpl {
         // do the mkdir
         // get the first part "e.g. res:// or user://"
         let root = path.split("//").nth(0).unwrap_or("").to_string() + "//";
-        let mut dir_access = DirAccess::open(&root);
+        let dir_access = DirAccess::open(&root);
         if let Some(mut dir_access) = dir_access {
             let _ = dir_access.make_dir_recursive(&GString::from(dir));
         }
@@ -1085,9 +1085,9 @@ impl GodotProjectImpl {
                 .unwrap()
                 .trim()
                 .to_string();
-            if (prop_value.contains("SubResource(")) {
+            if prop_value.contains("SubResource(") {
                 return VariantStrValue::SubResourceID(id);
-            } else if (prop_value.contains("ExtResource(")) {
+            } else if prop_value.contains("ExtResource(") {
                 return VariantStrValue::ExtResourceID(id);
             } else {
                 // Resource()
@@ -1311,7 +1311,7 @@ impl GodotProjectImpl {
     ) -> Dictionary {
         let old_content_type = old_content.unwrap_or(&FileContent::Deleted).get_variant_type();
         let new_content_type = new_content.unwrap_or(&FileContent::Deleted).get_variant_type();
-        if (change_type == "unchanged") {
+        if change_type == "unchanged" {
             return dict! {
                 "path" : path.to_variant(),
                 "diff_type" : "file_unchanged".to_variant(),
@@ -1320,7 +1320,7 @@ impl GodotProjectImpl {
                 "new_content": new_content.unwrap_or(&FileContent::Deleted).to_variant(),
             };
         }
-        if (old_content_type != VariantType::STRING && new_content_type != VariantType::STRING) {
+        if old_content_type != VariantType::STRING && new_content_type != VariantType::STRING {
             return self._get_resource_diff(
                 &path,
                 &change_type,
@@ -1329,8 +1329,8 @@ impl GodotProjectImpl {
                 &old_heads,
                 &curr_heads,
             );
-        } else if (old_content_type != VariantType::PACKED_BYTE_ARRAY
-            && new_content_type != VariantType::PACKED_BYTE_ARRAY)
+        } else if old_content_type != VariantType::PACKED_BYTE_ARRAY
+            && new_content_type != VariantType::PACKED_BYTE_ARRAY
         {
             return self._get_text_file_diff(&path, &change_type, old_content, new_content);
         } else {
@@ -1529,7 +1529,7 @@ impl GodotProjectImpl {
                     },
                 );
                 match_path(&ext_resources_path, &patch).inspect(
-                    |PathWithAction { path, action }| match path.first() {
+                    |PathWithAction { path, action: _action }| match path.first() {
                         Some((_, Prop::Map(ext_id))) => {
                             if let Some((_, Prop::Map(key))) = path.last() {
                                 if key != "idx" {
@@ -1642,7 +1642,7 @@ impl GodotProjectImpl {
 
             let fn_get_class_name = |type_or_instance: &TypeOrInstance,
                                      scene: &Option<GodotScene>,
-                                     content_key: &str| {
+                                     _content_key: &str| {
                 match type_or_instance {
                     TypeOrInstance::Type(type_name) => type_name.clone(),
                     TypeOrInstance::Instance(instance_id) => {
@@ -1697,7 +1697,7 @@ impl GodotProjectImpl {
                             return resource;
                         }
                     }
-                    if (!loaded_ext_resources.contains_key(&path)) {
+                    if !loaded_ext_resources.contains_key(&path) {
                         // load it
                         let resource_content = self._get_file_at(
                             path.clone(),
@@ -1785,7 +1785,7 @@ impl GodotProjectImpl {
                                 || all_changed_ext_resource_paths.contains(new_resource_path)
                             {
                                 return Some(get_changed_prop_dict(prop, old_value, new_value));
-                            } else if (resource_path != new_resource_path) {
+                            } else if resource_path != new_resource_path {
                                 return Some(get_changed_prop_dict(prop, old_value, new_value));
                             }
                         }
@@ -1826,30 +1826,30 @@ impl GodotProjectImpl {
 
                 if old_has && !new_has {
                     let mut node_info = Dictionary::new();
-                    node_info.insert("change_type", "removed");
+                    let _ = node_info.insert("change_type", "removed");
                     if let Some(scene) = &old_scene {
-                        node_info.insert("node_path", scene.get_node_path(&node_id));
+                        let _ = node_info.insert("node_path", scene.get_node_path(&node_id));
                         if let Some(content) = scene.get_node_content(&node_id) {
-                            node_info.insert("old_content", content);
+                            let _ = node_info.insert("old_content", content);
                         }
                     }
                     changed_nodes.push(&node_info.to_variant());
                 } else if !old_has && new_has {
                     let mut node_info = Dictionary::new();
-                    node_info.insert("change_type", "added");
+                    let _ = node_info.insert("change_type", "added");
                     if let Some(scene) = &new_scene {
-                        node_info.insert("node_path", scene.get_node_path(&node_id));
+                        let _ = node_info.insert("node_path", scene.get_node_path(&node_id));
                         if let Some(content) = scene.get_node_content(&node_id) {
-                            node_info.insert("new_content", content);
+                            let _ = node_info.insert("new_content", content);
                         }
                     }
                     changed_nodes.push(&node_info.to_variant());
                 } else if old_has && new_has && changed_node_ids.contains(node_id) {
                     let mut node_info = Dictionary::new();
-                    node_info.insert("change_type", "modified");
+                    let _ = node_info.insert("change_type", "modified");
 
                     if let Some(scene) = &new_scene {
-                        node_info.insert("node_path", scene.get_node_path(node_id));
+                        let _ = node_info.insert("node_path", scene.get_node_path(node_id));
                     }
                     let mut old_props = Dictionary::new();
                     let mut new_props = Dictionary::new();
@@ -1864,7 +1864,7 @@ impl GodotProjectImpl {
                             if let Some(props) = content.get("properties") {
                                 old_props = props.to::<Dictionary>();
                             }
-                            node_info.insert("old_content", content);
+                            let _ = node_info.insert("old_content", content);
                         }
                     }
 
@@ -1876,7 +1876,7 @@ impl GodotProjectImpl {
                             if let Some(props) = content.get("properties") {
                                 new_props = props.to::<Dictionary>();
                             }
-                            node_info.insert("new_content", content);
+                            let _ = node_info.insert("new_content", content);
                         }
                     }
                     // old_type and new_type
@@ -1884,14 +1884,14 @@ impl GodotProjectImpl {
                     let new_class_name = fn_get_class_name(&new_type, &new_scene, "new_content");
 
                     if old_class_name != new_class_name {
-                        node_info.insert("change_type", "type_changed");
+                        let _ = node_info.insert("change_type", "type_changed");
                     } else {
                         let mut props: HashSet<String> = HashSet::new();
                         for (key, _) in old_props.iter_shared() {
-                            props.insert(key.to_string());
+                            let _ = props.insert(key.to_string());
                         }
                         for (key, _) in new_props.iter_shared() {
-                            props.insert(key.to_string());
+                            let _ = props.insert(key.to_string());
                         }
                         for prop in props {
                             let old_prop = if let Some(old_prop) = old_props.get(prop.as_str()) {
@@ -1911,13 +1911,13 @@ impl GodotProjectImpl {
                             }
                         }
                         if changed_props.len() > 0 {
-                            node_info.insert("changed_props", changed_props);
+                            let _ = node_info.insert("changed_props", changed_props);
                         }
                         changed_nodes.push(&node_info.to_variant());
                     }
                 }
             }
-            result.insert("changed_nodes", changed_nodes);
+            let _ = result.insert("changed_nodes", changed_nodes);
             result
         };
         let mut scene_diffs: Vec<(String, Dictionary)> = Vec::new();
@@ -2303,7 +2303,6 @@ impl GodotProjectImpl {
                                 (Some(branch_state), cloned_prev_branch_id)
                             } else {
 								panic!("NOTHING CHECKED OUT AND WE'RE NOT CHECKING OUT A NEW BRANCH?!?!?! {:?}", branch_state.name);
-                                (None, None)
                             }
                         }
                         CheckedOutBranchState::CheckingOut(branch_doc_id, prev_branch_info) => {
@@ -2893,21 +2892,21 @@ impl GodotProject {
 		self.base_mut().set_process(false);
 
 
-		let reload_scene_func = |scene_path: &str| {
-			if PatchworkEditorAccessor::is_changing_scene() {
-				tracing::debug!("Editor is changing scene BEFORE RELOADING SCENE, skipping reload of {}", scene_path);
-				return false;
-			}
-			// we don't need to do this and it may cause issues with the scripts
-			// let scene = force_reload_resource(scene_path);
-			if PatchworkEditorAccessor::is_changing_scene() {
-				tracing::debug!("Editor is changing scene AFTER RELOADING SCENE, skipping reload of {}", scene_path);
-				return false;
-			} else {
-				EditorFilesystemAccessor::reload_scene_from_path(&scene_path);
-			}
-			true
-		};
+		// let reload_scene_func = |scene_path: &str| {
+		// 	if PatchworkEditorAccessor::is_changing_scene() {
+		// 		tracing::debug!("Editor is changing scene BEFORE RELOADING SCENE, skipping reload of {}", scene_path);
+		// 		return false;
+		// 	}
+		// 	// we don't need to do this and it may cause issues with the scripts
+		// 	// let scene = force_reload_resource(scene_path);
+		// 	if PatchworkEditorAccessor::is_changing_scene() {
+		// 		tracing::debug!("Editor is changing scene AFTER RELOADING SCENE, skipping reload of {}", scene_path);
+		// 		return false;
+		// 	} else {
+		// 		EditorFilesystemAccessor::reload_scene_from_path(&scene_path);
+		// 	}
+		// 	true
+		// };
 
 		if self.pending_editor_update.uids_to_add.len() > 0 {
 			tracing::debug!("adding uids");

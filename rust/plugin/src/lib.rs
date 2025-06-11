@@ -27,7 +27,7 @@ mod patches;
 pub mod utils;
 
 fn unregister_singleton(singleton_name: &str) {
-    if (Engine::singleton().has_singleton(singleton_name)) {
+    if Engine::singleton().has_singleton(singleton_name) {
         let my_singleton = Engine::singleton().get_singleton(singleton_name);
         Engine::singleton().unregister_singleton(singleton_name);
         if let Some(my_singleton) = my_singleton {
@@ -53,13 +53,13 @@ fn get_user_dir() -> String {
     user_dir
 }
 
-static mut m_file_writer_mutex: Option<WorkerGuard> = None;
+static mut M_FILE_WRITER_MUTEX: Option<WorkerGuard> = None;
 fn initialize_tracing() {
 
     let file_appender = tracing_appender::rolling::daily(get_user_dir(), "patchwork.log");
     let (non_blocking_file_writer, _guard) = tracing_appender::non_blocking(file_appender);
 	// if the mutex gets dropped, the file writer will be closed, so we need to keep it alive
-	unsafe{m_file_writer_mutex = Some(_guard);}
+	unsafe{M_FILE_WRITER_MUTEX = Some(_guard);}
     println!("!!! Logging to {:?}/patchwork.log", get_user_dir());
     let stdout_layer = tracing_subscriber::fmt::layer()
         .with_timer(CompactTime)
