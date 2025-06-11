@@ -37,9 +37,6 @@ use tokio::{net::TcpStream, runtime::Runtime};
 
 use crate::{doc_utils::SimpleDocReader, godot_project::Branch};
 
-// TODO: need to change this to point to a configuration setting for local development
-const SERVER_URL: &str = "104.131.179.247:8080";
-// const SERVER_URL: &str = "0.0.0.0:8080";
 
 const SERVER_REPO_ID: &str = "sync-server";
 
@@ -200,7 +197,7 @@ pub enum ConnectionThreadError {
 pub struct GodotProjectDriver {
     runtime: Runtime,
     repo_handle: RepoHandle,
-
+	server_url: String,
 	connection_thread_output_rx: Option<UnboundedReceiver<String>>,
 	retries: u32,
     connection_thread: Option<JoinHandle<()>>,
@@ -208,7 +205,7 @@ pub struct GodotProjectDriver {
 }
 
 impl GodotProjectDriver {
-    pub fn create(storage_folder_path: String) -> Self {
+    pub fn create(storage_folder_path: String, server_url: String) -> Self {
         let runtime: Runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
 			.thread_name("GodotProjectDriver: worker thread")
@@ -225,6 +222,7 @@ impl GodotProjectDriver {
         return Self {
             runtime,
             repo_handle,
+			server_url,
 			retries: 0,
 			connection_thread_output_rx: None,
             connection_thread: None,
@@ -305,6 +303,7 @@ impl GodotProjectDriver {
     fn spawn_connection_task(&self, connection_thread_tx: UnboundedSender<String>) -> JoinHandle<()> {
         let repo_handle_clone = self.repo_handle.clone();
 		let retries = self.retries;
+		let server_url = self.server_url.clone();
         return self.runtime.spawn(async move {
             tracing::info!("start a client");
 			let backoff = 2_f64.powf(retries as f64) * 100.0;
@@ -317,7 +316,7 @@ impl GodotProjectDriver {
                 // Start a client.
                 let stream = loop {
                     // Try to connect to a peer
-                    let res = TcpStream::connect(SERVER_URL).await;
+                    let res = TcpStream::connect(server_url.clone()).await;
                     if let Err(e) = res {
                         tracing::error!("error connecting: {:?}", e);
                         // sleep for 1 second
@@ -329,7 +328,7 @@ impl GodotProjectDriver {
                 tracing::info!("Connected successfully!");
 
                 match repo_handle_clone
-                    .connect_tokio_io(SERVER_URL, stream, ConnDirection::Outgoing)
+                    .connect_tokio_io(server_url.clone(), stream, ConnDirection::Outgoing)
                     .await
                 {
                     Ok(completed) => {

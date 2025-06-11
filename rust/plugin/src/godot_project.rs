@@ -169,6 +169,8 @@ enum ChangeOp {
     Modified,
 }
 
+const DEFAULT_SERVER_URL: &str = "104.131.179.247:8080";
+
 // This is the worst thing I've ever done
 // Get the file system
 // get the parent of the file system, that's the editor node
@@ -1949,7 +1951,8 @@ impl GodotProjectImpl {
         self.driver_output_rx = driver_output_rx;
 
         let storage_folder_path = self.globalize_path(&"res://.patchwork".to_string());
-        let mut driver: GodotProjectDriver = GodotProjectDriver::create(storage_folder_path);
+		let server_url = PatchworkConfigAccessor::get_project_value("server_url", DEFAULT_SERVER_URL);
+        let mut driver: GodotProjectDriver = GodotProjectDriver::create(storage_folder_path, server_url);
         let maybe_user_name: String = PatchworkConfigAccessor::get_user_value("user_name", "");
         driver.spawn(
             driver_input_rx,
