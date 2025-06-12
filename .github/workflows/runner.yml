@@ -96,7 +96,7 @@ jobs:
           fetch-depth: 0
       - name: Copy addons to moddable-platformer
         run: |
-          cp -R ws/addons/patchwork moddable-platformer/addons/patchwork
+          cp -R ws/addons/patchwork moddable-platformer/addons
       - name: Zip moddable-platformer
         run: |
           zip -r9 moddable-platformer-with-patchwork.zip moddable-platformer
@@ -113,7 +113,7 @@ jobs:
           fetch-depth: 0
       - name: Copy addons to threadbare
         run: |
-          cp -R ws/addons/patchwork threadbare/addons/patchwork
+          cp -R ws/addons/patchwork threadbare/addons
       - name: Zip threadbare
         run: |
           zip -r9 threadbare-with-patchwork.zip threadbare
