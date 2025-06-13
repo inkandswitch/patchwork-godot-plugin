@@ -831,7 +831,7 @@ impl DriverState {
                 }
             }
         }
-        let (commit_hash, patch_log) = branch_doc_handle.with_doc_mut(|d| {
+        branch_doc_handle.with_doc_mut(|d| {
             let mut tx = match heads {
                 Some(heads) => d.transaction_at(
                     PatchLog::inactive(TextRepresentation::String(TextEncoding::Utf8CodeUnit)),
@@ -896,14 +896,14 @@ impl DriverState {
                     branch_id: Some(branch_doc_state.doc_handle.document_id().to_string()),
                     merge_metadata: None,
                 },
-            )
+            );
         });
 
         // update heads in frontend
-		if !new_project && commit_hash.is_some() {
+		if !new_project {
 			self.heads_in_frontend.insert(
 				branch_doc_handle.document_id(),
-				vec![commit_hash.unwrap()],
+				branch_doc_handle.with_doc(|d| d.get_heads()),
 			);
 		}
 
