@@ -2204,6 +2204,10 @@ impl GodotProjectImpl {
         self.stop();
 	}
 
+	fn _has_pending_file_events(&self) -> bool {
+		self.file_system_driver.as_ref().map(|driver| driver.has_events_pending()).unwrap_or(false)
+	}
+
 	#[instrument(target = "patchwork_rust_core::godot_project::inner_process", level = tracing::Level::DEBUG, skip_all)]
 	fn _process(&mut self, _delta: f64) -> (Vec<FileSystemEvent>, Vec<GodotProjectSignal>) {
 		let mut signals: Vec<GodotProjectSignal> = Vec::new();
@@ -2227,157 +2231,160 @@ impl GodotProjectImpl {
 		}
 
 		let mut branches_changed = false;
-        while let Ok(Some(event)) = self.driver_output_rx.try_next() {
-            match event {
-                OutputEvent::NewDocHandle {
-                    doc_handle,
-                    doc_handle_type,
-                } => {
-                    if doc_handle_type == DocHandleType::Binary {
-                        tracing::trace!(
-                            "NewBinaryDocHandle !!!! {} {} changes",
-                            doc_handle.document_id(),
-                            doc_handle.with_doc(|d| d.get_heads().len())
-                        );
-                    }
 
-                    self.doc_handles
-                        .insert(doc_handle.document_id(), doc_handle.clone());
-                }
-                OutputEvent::BranchStateChanged {
-                    branch_state: new_branch_state,
-                    trigger_reload,
-                } => {
-					let new_branch_state_doc_handle = new_branch_state.doc_handle.clone();
-					let new_branch_state_doc_id = new_branch_state_doc_handle.document_id();
-                    self.branch_states
-                        .insert(new_branch_state_doc_id.clone(), new_branch_state);
+		if !self._has_pending_file_events() {
+			while let Ok(Some(event)) = self.driver_output_rx.try_next() {
+				match event {
+					OutputEvent::NewDocHandle {
+						doc_handle,
+						doc_handle_type,
+					} => {
+						if doc_handle_type == DocHandleType::Binary {
+							tracing::trace!(
+								"NewBinaryDocHandle !!!! {} {} changes",
+								doc_handle.document_id(),
+								doc_handle.with_doc(|d| d.get_heads().len())
+							);
+						}
 
-					branches_changed = true;
-                    let mut checking_out_new_branch = false;
+						self.doc_handles
+							.insert(doc_handle.document_id(), doc_handle.clone());
+					}
+					OutputEvent::BranchStateChanged {
+						branch_state: new_branch_state,
+						trigger_reload,
+					} => {
+						let new_branch_state_doc_handle = new_branch_state.doc_handle.clone();
+						let new_branch_state_doc_id = new_branch_state_doc_handle.document_id();
+						self.branch_states
+							.insert(new_branch_state_doc_id.clone(), new_branch_state);
 
-                    let (active_branch_state, prev_branch_info) = match &self.checked_out_branch_state {
-                        CheckedOutBranchState::NothingCheckedOut(prev_branch_id) => {
-                            // check out main branch if we haven't checked out anything yet
-							let cloned_prev_branch_id = prev_branch_id.clone();
-							let branch_state = self.branch_states.get(&new_branch_state_doc_handle.document_id()).unwrap();
-                            if branch_state.is_main {
-                                checking_out_new_branch = true;
+						branches_changed = true;
+						let mut checking_out_new_branch = false;
 
-                                self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(
-                                    branch_state.doc_handle.document_id(),
-                                    prev_branch_id.clone(),
-                                );
-                                (Some(branch_state), cloned_prev_branch_id)
-                            } else {
-								panic!("NOTHING CHECKED OUT AND WE'RE NOT CHECKING OUT A NEW BRANCH?!?!?! {:?}", branch_state.name);
-                            }
-                        }
-                        CheckedOutBranchState::CheckingOut(branch_doc_id, prev_branch_info) => {
-							checking_out_new_branch = true;
-                            (self.branch_states.get(branch_doc_id), prev_branch_info.clone())
-                        }
-                        CheckedOutBranchState::CheckedOut(branch_doc_id, prev_branch_info) => {
-                            (self.branch_states.get(branch_doc_id), prev_branch_info.clone())
-                        }
-                    };
+						let (active_branch_state, prev_branch_info) = match &self.checked_out_branch_state {
+							CheckedOutBranchState::NothingCheckedOut(prev_branch_id) => {
+								// check out main branch if we haven't checked out anything yet
+								let cloned_prev_branch_id = prev_branch_id.clone();
+								let branch_state = self.branch_states.get(&new_branch_state_doc_handle.document_id()).unwrap();
+								if branch_state.is_main {
+									checking_out_new_branch = true;
 
-                    // only trigger update if checked out branch is fully synced
-                    if let Some(active_branch_state) = active_branch_state {
-                        if active_branch_state.is_synced() {
-                            if checking_out_new_branch {
-                                tracing::info!(
-                                    "TRIGGER checked out new branch: {}",
-                                    active_branch_state.name
-                                );
+									self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(
+										branch_state.doc_handle.document_id(),
+										prev_branch_id.clone(),
+									);
+									(Some(branch_state), cloned_prev_branch_id)
+								} else {
+									panic!("NOTHING CHECKED OUT AND WE'RE NOT CHECKING OUT A NEW BRANCH?!?!?! {:?}", branch_state.name);
+								}
+							}
+							CheckedOutBranchState::CheckingOut(branch_doc_id, prev_branch_info) => {
+								checking_out_new_branch = true;
+								(self.branch_states.get(branch_doc_id), prev_branch_info.clone())
+							}
+							CheckedOutBranchState::CheckedOut(branch_doc_id, prev_branch_info) => {
+								(self.branch_states.get(branch_doc_id), prev_branch_info.clone())
+							}
+						};
 
-                                self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(
-                                    active_branch_state.doc_handle.document_id(),
-									prev_branch_info,
-                                );
+						// only trigger update if checked out branch is fully synced
+						if let Some(active_branch_state) = active_branch_state {
+							if active_branch_state.is_synced() {
+								if checking_out_new_branch {
+									tracing::info!(
+										"TRIGGER checked out new branch: {}",
+										active_branch_state.name
+									);
 
-								self.just_checked_out_new_branch = true;
-                            } else {
-                                self.should_update_godot = self.should_update_godot || (new_branch_state_doc_id == active_branch_state.doc_handle.document_id() && trigger_reload);
-                                if !trigger_reload {
-                                    tracing::debug!("TRIGGER saved changes: {}", active_branch_state.name);
-                                    signals.push(GodotProjectSignal::SavedChanges);
-                                }
-                            }
-                        }
-                    }
-                }
-                OutputEvent::Initialized { project_doc_id } => {
-                    self.project_doc_id = Some(project_doc_id);
-                }
+									self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(
+										active_branch_state.doc_handle.document_id(),
+										prev_branch_info,
+									);
 
-                OutputEvent::CompletedCreateBranch { branch_doc_id } => {
-					// PLEASE NOTE: If we change the logic such that we don't check out a new branch when we create one,
-					// we need to change _create_branch to not populate the previous branch id
-                    self.checked_out_branch_state =
-                        CheckedOutBranchState::CheckingOut(branch_doc_id, self._get_previous_branch_id());
-                }
+									self.just_checked_out_new_branch = true;
+								} else {
+									self.should_update_godot = self.should_update_godot || (new_branch_state_doc_id == active_branch_state.doc_handle.document_id() && trigger_reload);
+									if !trigger_reload {
+										tracing::debug!("TRIGGER saved changes: {}", active_branch_state.name);
+										signals.push(GodotProjectSignal::SavedChanges);
+									}
+								}
+							}
+						}
+					}
+					OutputEvent::Initialized { project_doc_id } => {
+						self.project_doc_id = Some(project_doc_id);
+					}
 
-                OutputEvent::CompletedShutdown => {
-                    tracing::debug!("CompletedShutdown event");
-                    signals.push(GodotProjectSignal::ShutdownCompleted);
-                }
+					OutputEvent::CompletedCreateBranch { branch_doc_id } => {
+						// PLEASE NOTE: If we change the logic such that we don't check out a new branch when we create one,
+						// we need to change _create_branch to not populate the previous branch id
+						self.checked_out_branch_state =
+							CheckedOutBranchState::CheckingOut(branch_doc_id, self._get_previous_branch_id());
+					}
 
-                OutputEvent::PeerConnectionInfoChanged {
-                    peer_connection_info,
-                } => {
-                    let new_sync_server_connection_info = match self
-                        .sync_server_connection_info
-                        .as_mut()
-                    {
-                        None => {
-                            self.sync_server_connection_info = Some(peer_connection_info.clone());
-                            peer_connection_info
-                        }
+					OutputEvent::CompletedShutdown => {
+						tracing::debug!("CompletedShutdown event");
+						signals.push(GodotProjectSignal::ShutdownCompleted);
+					}
 
-                        Some(sync_server_connection_info) => {
-                            sync_server_connection_info.last_received =
-                                peer_connection_info.last_received;
-                            sync_server_connection_info.last_sent = peer_connection_info.last_sent;
+					OutputEvent::PeerConnectionInfoChanged {
+						peer_connection_info,
+					} => {
+						let new_sync_server_connection_info = match self
+							.sync_server_connection_info
+							.as_mut()
+						{
+							None => {
+								self.sync_server_connection_info = Some(peer_connection_info.clone());
+								peer_connection_info
+							}
 
-                            peer_connection_info
-                                .docs
-                                .iter()
-                                .for_each(|(doc_id, doc_state)| {
-                                    let had_previously_heads = sync_server_connection_info
-                                        .docs
-                                        .get(doc_id)
-                                        .is_some_and(|doc_state| {
-                                            doc_state
-                                                .clone()
-                                                .last_acked_heads
-                                                .is_some_and(|heads| heads.len() > 0)
-                                        });
+							Some(sync_server_connection_info) => {
+								sync_server_connection_info.last_received =
+									peer_connection_info.last_received;
+								sync_server_connection_info.last_sent = peer_connection_info.last_sent;
 
-                                    // don't overwrite the doc state if it had previously had heads
-                                    // but now doesn't have any heads
-                                    if had_previously_heads
-                                        && doc_state
-                                            .clone()
-                                            .last_acked_heads
-                                            .is_some_and(|heads| heads.len() == 0)
-                                    {
-                                        return;
-                                    }
+								peer_connection_info
+									.docs
+									.iter()
+									.for_each(|(doc_id, doc_state)| {
+										let had_previously_heads = sync_server_connection_info
+											.docs
+											.get(doc_id)
+											.is_some_and(|doc_state| {
+												doc_state
+													.clone()
+													.last_acked_heads
+													.is_some_and(|heads| heads.len() > 0)
+											});
 
-                                    sync_server_connection_info
-                                        .docs
-                                        .insert(doc_id.clone(), doc_state.clone());
-                                });
+										// don't overwrite the doc state if it had previously had heads
+										// but now doesn't have any heads
+										if had_previously_heads
+											&& doc_state
+												.clone()
+												.last_acked_heads
+												.is_some_and(|heads| heads.len() == 0)
+										{
+											return;
+										}
 
-                            peer_connection_info
-                        }
-                    };
+										sync_server_connection_info
+											.docs
+											.insert(doc_id.clone(), doc_state.clone());
+									});
 
-                    signals.push(GodotProjectSignal::SyncServerConnectionInfoChanged(new_sync_server_connection_info));
-                }
-            }
-        }
+								peer_connection_info
+							}
+						};
+
+						signals.push(GodotProjectSignal::SyncServerConnectionInfoChanged(new_sync_server_connection_info));
+					}
+				}
+			}
+		}
 
 		if branches_changed {
 			signals.push(GodotProjectSignal::BranchesChanged);
@@ -2453,20 +2460,6 @@ impl GodotProjectImpl {
 			});
 			PatchworkConfigAccessor::set_project_value("checked_out_branch_doc_id", &checked_out_branch_doc_id.to_string());
 			signals.push(GodotProjectSignal::CheckedOutBranch);
-		} else if self.should_update_godot {
-			// * Sync from the current branch @ previously synced_heads to the current branch @ synced_heads
-			tracing::debug!("should update godot");
-			self.should_update_godot = false;
-			let current_branch_id = self.get_checked_out_branch_state().unwrap().doc_handle.document_id().clone();
-			let last_synced_heads = self.last_synced.as_ref().map(|(branch_id, synced_heads)|
-				if branch_id == &current_branch_id {
-					synced_heads.clone()
-				} else {
-					Vec::new()
-				}
-			).unwrap_or_default();
-			updates = self.sync_patchwork_to_godot(Some(current_branch_id), last_synced_heads);
-			self.last_synced = self.get_checked_out_branch_state().map(|branch_state| (branch_state.doc_handle.document_id().clone(), branch_state.synced_heads.clone()));
 		} else if let Some(fs_driver) = self.file_system_driver.as_mut() {
 			let mut new_files = Vec::new();
 			while let Some(event) = fs_driver.try_next() {
@@ -2500,6 +2493,20 @@ impl GodotProjectImpl {
 				).unwrap_or_default();
 				self._sync_files_at(doc_handle, files, last_synced_heads);
 			}
+		} else if self.should_update_godot {
+			// * Sync from the current branch @ previously synced_heads to the current branch @ synced_heads
+			tracing::debug!("should update godot");
+			self.should_update_godot = false;
+			let current_branch_id = self.get_checked_out_branch_state().unwrap().doc_handle.document_id().clone();
+			let last_synced_heads = self.last_synced.as_ref().map(|(branch_id, synced_heads)|
+				if branch_id == &current_branch_id {
+					synced_heads.clone()
+				} else {
+					Vec::new()
+				}
+			).unwrap_or_default();
+			updates = self.sync_patchwork_to_godot(Some(current_branch_id), last_synced_heads);
+			self.last_synced = self.get_checked_out_branch_state().map(|branch_state| (branch_state.doc_handle.document_id().clone(), branch_state.synced_heads.clone()));
         }
 
 		(updates, signals)
