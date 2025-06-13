@@ -6,7 +6,7 @@ use automerge::{
     TextEncoding, ROOT,
 };
 use automerge::{Automerge, ObjId, Patch, PatchAction, Prop};
-use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
+use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo, PeerDocState};
 use autosurgeon::{Hydrate, Reconcile};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use godot::classes::file_access::ModeFlags;
@@ -24,6 +24,7 @@ use tracing::instrument;
 use std::any::Any;
 use std::collections::{HashSet};
 use std::path::PathBuf;
+use std::time::SystemTime;
 use std::{collections::HashMap, str::FromStr};
 use crate::godot_helpers::{get_resource_or_scene_path_for_object, ToGodotExt, ToVariantExt};
 use crate::file_system_driver::{FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
@@ -118,7 +119,7 @@ pub struct GodotProjectImpl {
     new_project: bool,
 	should_update_godot: bool,
 	just_checked_out_new_branch: bool,
-	last_synced: Option<(DocumentId, Vec<ChangeHash>)>,
+	last_synced_to_disk: Option<(DocumentId, Vec<ChangeHash>)>,
     driver: Option<GodotProjectDriver>,
     driver_input_tx: UnboundedSender<InputEvent>,
     driver_output_rx: UnboundedReceiver<OutputEvent>,
@@ -141,7 +142,7 @@ impl Default for GodotProjectImpl {
             new_project: true,
 			should_update_godot: false,
 			just_checked_out_new_branch: false,
-			last_synced: None,
+			last_synced_to_disk: None,
             driver: None,
             driver_input_tx,
             driver_output_rx,
@@ -2437,12 +2438,12 @@ impl GodotProjectImpl {
 				} else if previous_branch_info.is_some() {
 					let heads = self.branch_states.get(previous_branch_info.as_ref().unwrap()).map(|branch_state| branch_state.synced_heads.clone()).unwrap_or_default();
 					(previous_branch_info, heads)
-				} else if self.last_synced.is_some() && self.get_checked_out_branch_state().unwrap().merge_info.is_none() && self.last_synced.as_ref().map(|(doc_id, _)| doc_id) == Some(&checked_out_branch_doc_id){
+				} else if self.last_synced_to_disk.is_some() && self.get_checked_out_branch_state().unwrap().merge_info.is_none() && self.last_synced_to_disk.as_ref().map(|(doc_id, _)| doc_id) == Some(&checked_out_branch_doc_id){
 					// TODO: this doesn't handle the case where we're starting up the editor and we're syncing the current doc state to the editor,
 					// the last_synced heads will be empty.
 					// We need to think about how to handle this case; if changes happened while outside of the editor, we want to sync everything.
 					// setting the from branch id to None to ensure it doesn't just sync the current heads
-					self.last_synced.as_ref().map(|(_doc_id, synced_heads)| (None, synced_heads.clone())).unwrap_or_default()
+					self.last_synced_to_disk.as_ref().map(|(_doc_id, synced_heads)| (None, synced_heads.clone())).unwrap_or_default()
 				} else {
 					(None, Vec::new())
 				};
@@ -2454,7 +2455,7 @@ impl GodotProjectImpl {
 				// Sync from the previous branch @ synced_heads to the current branch @ synced_heads
 				updates = self.sync_patchwork_to_godot(previous_branch_id, previous_branch_heads);
 			}
-			self.last_synced = self.get_checked_out_branch_state().map(|branch_state| (branch_state.doc_handle.document_id().clone(), branch_state.synced_heads.clone()));
+			self.last_synced_to_disk = self.get_checked_out_branch_state().map(|branch_state| (branch_state.doc_handle.document_id().clone(), branch_state.synced_heads.clone()));
 			// NOTE: it is VERY important that we save the project config AFTER we sync,
 			// because this will trigger a file scan and then resave the current project files in the editor
 			PatchworkConfigAccessor::set_project_value("project_doc_id", &match &self._get_project_doc_id() {
@@ -2487,7 +2488,7 @@ impl GodotProjectImpl {
 				).collect::<Vec<(PathBuf, FileContent)>>();
 
 				let doc_handle = self.get_checked_out_branch_state().unwrap().doc_handle.clone();
-				let last_synced_heads = self.last_synced.as_ref().map(|(doc_id, synced_heads)|
+				let last_synced_heads = self.last_synced_to_disk.as_ref().map(|(doc_id, synced_heads)|
 					if doc_id == &doc_handle.document_id() {
 						Some(synced_heads.clone())
 					} else {
@@ -2501,7 +2502,7 @@ impl GodotProjectImpl {
 			tracing::debug!("should update godot");
 			self.should_update_godot = false;
 			let current_branch_id = self.get_checked_out_branch_state().unwrap().doc_handle.document_id().clone();
-			let last_synced_heads = self.last_synced.as_ref().map(|(branch_id, synced_heads)|
+			let last_synced_heads = self.last_synced_to_disk.as_ref().map(|(branch_id, synced_heads)|
 				if branch_id == &current_branch_id {
 					synced_heads.clone()
 				} else {
@@ -2509,7 +2510,7 @@ impl GodotProjectImpl {
 				}
 			).unwrap_or_default();
 			updates = self.sync_patchwork_to_godot(Some(current_branch_id), last_synced_heads);
-			self.last_synced = self.get_checked_out_branch_state().map(|branch_state| (branch_state.doc_handle.document_id().clone(), branch_state.synced_heads.clone()));
+			self.last_synced_to_disk = self.get_checked_out_branch_state().map(|branch_state| (branch_state.doc_handle.document_id().clone(), branch_state.synced_heads.clone()));
         }
 
 		(updates, signals)
