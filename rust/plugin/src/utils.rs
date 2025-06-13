@@ -6,7 +6,7 @@ use std::{
 
 use crate::{doc_utils::SimpleDocReader, godot_helpers::{GodotConvertExt, ToGodotExt, ToVariantExt}, godot_project_driver::BranchState};
 use automerge::{
-    transaction::{CommitOptions, Transaction}, Change, ChangeHash, ReadDoc, ROOT
+    transaction::{CommitOptions, Transaction}, Change, ChangeHash, PatchLog, ReadDoc, ROOT
 };
 use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
 use godot::{builtin::{dict, Dictionary, GString, PackedStringArray, Variant}, meta::ToGodot, prelude::GodotConvert};
@@ -95,7 +95,7 @@ pub struct CommitMetadata {
     pub merge_metadata: Option<MergeMetadata>,
 }
 
-pub(crate) fn commit_with_attribution_and_timestamp(tx: Transaction, metadata: &CommitMetadata) {
+pub(crate) fn commit_with_attribution_and_timestamp(tx: Transaction, metadata: &CommitMetadata) -> (Option<ChangeHash>, PatchLog) {
     let timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
@@ -107,7 +107,7 @@ pub(crate) fn commit_with_attribution_and_timestamp(tx: Transaction, metadata: &
         CommitOptions::default()
             .with_message(message)
             .with_time(timestamp),
-    );
+    )
 }
 
 pub(crate) fn print_branch_state(message: &str, branch_state: &BranchState) {
