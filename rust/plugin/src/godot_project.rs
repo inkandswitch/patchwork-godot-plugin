@@ -2390,10 +2390,10 @@ impl GodotProjectImpl {
 		}
 		if !Self::safe_to_update_godot() {
 			if has_pending_updates {
-				tracing::info!("Pending changes, but not safe to update godot, skipping...");
+				tracing::info!("Pending updates from patchwork to editor, but not safe to update godot, skipping...");
 			}
 			if fs_driver_has_pending_updates {
-				tracing::info!("Pending editor changes to sync, but not safe to update godot, skipping...");
+				tracing::info!("Pending editor changes to sync to patchwork, but not safe to update godot, skipping...");
 			}
 			return (Vec::new(), signals);
 		}
@@ -2490,8 +2490,15 @@ impl GodotProjectImpl {
 					}
 				).collect::<Vec<(PathBuf, FileContent)>>();
 
-				// TODO: Ask Paul about this tomorrow
-				self._sync_files_at(self.get_checked_out_branch_state().unwrap().doc_handle.clone(), files, None);
+				let doc_handle = self.get_checked_out_branch_state().unwrap().doc_handle.clone();
+				let last_synced_heads = self.last_synced.as_ref().map(|(doc_id, synced_heads)|
+					if doc_id == &doc_handle.document_id() {
+						Some(synced_heads.clone())
+					} else {
+						None
+					}
+				).unwrap_or_default();
+				self._sync_files_at(doc_handle, files, last_synced_heads);
 			}
         }
 
@@ -3040,6 +3047,7 @@ impl INode for GodotProject {
 					self.signals().shutdown_completed().emit();
 				}
 				GodotProjectSignal::SyncServerConnectionInfoChanged(peer_connection_info) => {
+					tracing::event!(tracing::Level::DEBUG, "SyncServerConnectionInfoChanged");
 					self.signals().sync_server_connection_info_changed().emit(&peer_connection_info.to_godot());
 				}
 				GodotProjectSignal::ConnectionThreadFailed => {
