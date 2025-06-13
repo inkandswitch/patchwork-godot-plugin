@@ -2210,6 +2210,9 @@ impl GodotProjectImpl {
 
 	#[instrument(target = "patchwork_rust_core::godot_project::inner_process", level = tracing::Level::DEBUG, skip_all)]
 	fn _process(&mut self, _delta: f64) -> (Vec<FileSystemEvent>, Vec<GodotProjectSignal>) {
+		if !Self::safe_to_update_godot() {
+			return (Vec::new(), Vec::new());
+		}
 		let mut signals: Vec<GodotProjectSignal> = Vec::new();
 
 		if let Some(driver) = &mut self.driver {
