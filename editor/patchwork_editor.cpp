@@ -1,7 +1,5 @@
 #include "patchwork_editor.h"
-#include "diff_result.h"
 #include "editor/plugins/shader_editor_plugin.h"
-#include "missing_resource_container.h"
 
 #include <core/io/json.h>
 #include <core/io/missing_resource.h>

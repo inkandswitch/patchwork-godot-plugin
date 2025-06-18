@@ -9,11 +9,6 @@
 #include "scene/gui/control.h"
 #include "scene/main/node.h"
 
-class DiffResult;
-class FileDiffResult;
-class ObjectDiffResult;
-class NodeDiffResult;
-
 class PatchworkEditor : public Node {
 	GDCLASS(PatchworkEditor, Node);
 

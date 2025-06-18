@@ -35,7 +35,6 @@
 #include "scene/gui/scroll_container.h"
 #include "scene/resources/style_box_flat.h"
 class EditorProperty;
-class PropertyDiffResult;
 
 class DiffInspectorSection : public Container {
 	GDCLASS(DiffInspectorSection, Container);

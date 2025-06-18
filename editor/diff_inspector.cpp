@@ -32,7 +32,6 @@
 
 #include "core/error/error_macros.h"
 #include "core/object/object.h"
-#include "editor/diff_result.h"
 #include "editor/editor_inspector.h"
 #include "editor/editor_string_names.h"
 #include "editor/themes/editor_scale.h"
