@@ -9,7 +9,7 @@ env:
   GODOT_BASE_BRANCH: master
   # Change the README too
   GODOT_MAIN_SYNC_REF: patchwork-4.4
-  SCONSFLAGS: verbose=yes warnings=all werror=no module_text_server_fb_enabled=no minizip=yes deprecated=yes debug_symbols=no module_patchwork_editor_enabled=yes
+  SCONSFLAGS: verbose=yes warnings=all werror=no module_text_server_fb_enabled=no minizip=yes deprecated=yes module_patchwork_editor_enabled=yes
   SCONSFLAGS_TEMPLATE: no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no
   SCONS_CACHE_MSVC_CONFIG: true
 
@@ -31,7 +31,7 @@ jobs:
             id: windows-editor
             platform: windows
             target: editor
-            sconsflags: tests=yes
+            sconsflags: tests=yes debug_symbols=yes
             bin: ./bin/godot.windows.editor.x86_64.exe
 
           - name: "🐧 Linux Editor"
@@ -40,7 +40,7 @@ jobs:
             platform: linux
             target: editor
             sconsflags: tests=yes
-            sconsflags-template: optimize=size use_lto=yes
+            sconsflags-template: optimize=size use_lto=yes debug_symbols=no
             bin: ./bin/godot.linuxbsd.editor.x86_64
 
           - name: "🍎 macOS Editor"
@@ -48,7 +48,7 @@ jobs:
             id: macos-editor
             platform: macos
             target: editor
-            sconsflags: tests=yes use_volk=no vulkan_sdk_path=$VULKAN_SDK_PATH use_lto=yes
+            sconsflags: tests=yes use_volk=no vulkan_sdk_path=$VULKAN_SDK_PATH use_lto=yes debug_symbols=no
             bin: ./bin/godot.macos.editor.arm64
 
     steps:
@@ -122,17 +122,17 @@ jobs:
           rm -f ./bin/godot.macos.*
           chmod +x bin/godot_macos_editor.app/Contents/MacOS/Godot
 
+      - name: Prepare artifact
+      # Stripping the debug symbols screws up lipo'd binaries on macos, so don't do it
+        if: matrix.platform != 'macos'
+        uses: ./.github/actions/godot-prepare-artifact
+
       - name: Save Godot build cache
         # if: success() || (steps.restore-cache.outputs.cache-hit == 'false' && (steps.compile-editor.outcome != 'skipped' || steps.compile-template.outcome != 'skipped'))
         uses: ./.github/actions/godot-cache-save
         with:
           cache-name: ${{ matrix.id }}-${{ matrix.target }}
         continue-on-error: true
-
-      # - name: Prepare artifact
-      # # Stripping the debug symbols screws up lipo'd binaries on macos, so don't do it
-      #   if: matrix.platform != 'macos'
-      #   uses: ./.github/actions/godot-prepare-artifact
 
       - name: Mac Sign
         if: matrix.platform == 'macos' && matrix.target == 'editor'
