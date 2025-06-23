@@ -152,7 +152,7 @@ impl Default for GodotProjectImpl {
 }
 
 
-const DEFAULT_SERVER_URL: &str = "104.131.179.247:8080";
+const DEFAULT_SERVER_URL: &str = "24.199.97.236:8080";
 
 // This is the worst thing I've ever done
 // Get the file system
