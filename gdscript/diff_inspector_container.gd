@@ -438,6 +438,7 @@ func reset() -> void:
 	changed_nodes.clear()
 	added_nodes.clear()
 	deleted_nodes.clear()
+	node_map.clear()
 	# changed_resources.clear()
 
 
