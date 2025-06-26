@@ -359,6 +359,9 @@ void DiffInspectorSection::gui_input(const Ref<InputEvent> &p_event) {
 				} else {
 					fold();
 				}
+			} else {
+				// otherwise, emit a signal
+				emit_signal(SNAME("box_clicked"), section);
 			}
 		} else {
 			// otherwise, emit a signal
