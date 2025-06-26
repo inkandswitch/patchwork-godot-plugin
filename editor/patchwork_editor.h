@@ -52,6 +52,7 @@ public:
 	static PackedStringArray get_unsaved_scripts();
 	static void reload_scripts(PackedStringArray p_scripts);
 	static void force_refresh_editor_inspector();
+	static void open_script_file(const String &p_script);
 };
 
 #endif // PATCHWORK_EDITOR_H

@@ -46,6 +46,7 @@ class DiffInspectorSection : public Container {
 	bool foldable = false;
 	int indent_depth = 0;
 	int level = 1;
+	Point2 arrow_position;
 
 	Timer *dropping_unfold_timer = nullptr;
 	bool dropping = false;

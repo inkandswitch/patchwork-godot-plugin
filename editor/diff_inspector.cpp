@@ -171,8 +171,8 @@ void DiffInspectorSection::_notification(int p_what) {
 
 				// - Arrow.
 				Ref<Texture2D> arrow = _get_arrow();
+				arrow_position = Point2();
 				if (arrow.is_valid()) {
-					Point2 arrow_position;
 					if (rtl) {
 						arrow_position.x = get_size().width - (margin_start + arrow->get_width());
 					} else {
@@ -335,21 +335,34 @@ void DiffInspectorSection::gui_input(const Ref<InputEvent> &p_event) {
 
 	Ref<InputEventMouseButton> mb = p_event;
 	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT) {
-		if (object->editor_is_section_unfolded(section)) {
-			int header_height = _get_header_height();
+		// check the position of the arrow texture
+		Ref<Texture2D> arrow = _get_arrow();
+		if (arrow.is_valid()) {
+			constexpr int FUDGE_FACTOR = 10;
+			int bounding_width = arrow->get_width() + arrow_position.x + FUDGE_FACTOR;
+			int bounding_height = get_size().y;
+			Rect2 bounding_box = Rect2({ 0, 0 }, Vector2(bounding_width, bounding_height));
+			if (bounding_box.has_point(mb->get_position())) {
+				if (object->editor_is_section_unfolded(section)) {
+					int header_height = _get_header_height();
 
-			if (mb->get_position().y >= header_height) {
-				return;
+					if (mb->get_position().y >= header_height) {
+						return;
+					}
+				}
+
+				accept_event();
+
+				bool should_unfold = !object->editor_is_section_unfolded(section);
+				if (should_unfold) {
+					unfold();
+				} else {
+					fold();
+				}
 			}
-		}
-
-		accept_event();
-
-		bool should_unfold = !object->editor_is_section_unfolded(section);
-		if (should_unfold) {
-			unfold();
 		} else {
-			fold();
+			// otherwise, emit a signal
+			emit_signal(SNAME("box_clicked"), section);
 		}
 	} else if (mb.is_valid() && !mb->is_pressed()) {
 		queue_redraw();
@@ -422,6 +435,8 @@ void DiffInspectorSection::_bind_methods() {
 	// set/get bg color
 	ClassDB::bind_method(D_METHOD("set_bg_color", "bg_color"), &DiffInspectorSection::set_bg_color);
 	ClassDB::bind_method(D_METHOD("get_bg_color"), &DiffInspectorSection::get_bg_color);
+
+	ADD_SIGNAL(MethodInfo("box_clicked", PropertyInfo(Variant::STRING, "section")));
 }
 
 DiffInspectorSection::DiffInspectorSection() {

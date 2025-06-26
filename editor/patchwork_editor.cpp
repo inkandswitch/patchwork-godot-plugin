@@ -474,6 +474,10 @@ void PatchworkEditor::reload_scripts(PackedStringArray p_scripts) {
 	// EditorInterface::get_singleton()->get_script_editor()->reload_scripts(p_scripts);
 }
 
+void PatchworkEditor::open_script_file(const String &p_script) {
+	EditorInterface::get_singleton()->get_script_editor()->open_file(p_script);
+}
+
 void PatchworkEditor::force_refresh_editor_inspector() {
 	EditorInterface::get_singleton()->get_inspector()->update_tree();
 }
@@ -523,4 +527,5 @@ void PatchworkEditor::_bind_methods() {
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("is_changing_scene"), &PatchworkEditor::is_changing_scene);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_unsaved_files"), &PatchworkEditor::get_unsaved_files);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("force_refresh_editor_inspector"), &PatchworkEditor::force_refresh_editor_inspector);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("open_script_file", "script"), &PatchworkEditor::open_script_file);
 }

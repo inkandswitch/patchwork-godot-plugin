@@ -53,19 +53,25 @@ var diff_result: Dictionary
 
 var categories: Array = []
 var sections: Array = []
+var node_map: Dictionary = {}
 var changed_nodes: Array = []
 var added_nodes: Array = []
 var deleted_nodes: Array = []
 # this is really just to keep a reference to the resources that have been changed;
 var changed_resources: Array = []
 var changed_files: Array = []
+var waiting_callables: Array = []
+
 func _ready() -> void:
 	pass
 
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _process(delta: float) -> void:
-	pass
+	var to_call = waiting_callables.duplicate()
+	waiting_callables.clear()
+	for callable in to_call:
+		callable.call()
 
 func _on_button_pressed() -> void:
 	pass
@@ -226,7 +232,52 @@ func get_prop_diffs_from_properties(properties: Dictionary, change_type: String)
 		prop_diffs[prop] = prop_diff
 	return prop_diffs
 
-func add_NodeDiffResult(file_section: DiffInspectorSection, node_diff: Dictionary) -> void:
+
+func _on_node_box_clicked(section: String) -> void:
+	print("!!! box clicked: ", section)
+	if !section.begins_with("res://"):
+		var file_path = node_map.get(section, "")
+		if file_path == "":
+			return
+		var node_path = section
+		if section.begins_with("./"):
+			node_path = node_path.substr(2)
+
+		if PatchworkEditor.is_changing_scene():
+			waiting_callables.append(func():
+				self._on_node_box_clicked(section)
+			)
+			return
+		var node: Node = EditorInterface.get_edited_scene_root()
+		if node.scene_file_path != file_path:
+			EditorInterface.open_scene_from_path(file_path)
+			waiting_callables.append(func():
+				self._on_node_box_clicked(section)
+			)
+			return
+		var node_to_select: Node = node.get_node(node_path)
+		if is_instance_valid(node_to_select):
+			EditorInterface.edit_node(node_to_select)
+			EditorInterface.set_main_screen_editor("2D")
+
+func _on_resource_box_clicked(section: String) -> void:
+	var file_path = section
+	var extension = file_path.get_extension().to_lower()
+	if extension == "tscn" or extension == "scn":
+		EditorInterface.open_scene_from_path(file_path)
+		EditorInterface.set_main_screen_editor("2D")
+	else:
+		EditorInterface.get_inspector().edit_resource(ResourceLoader.load(file_path))
+
+func _on_text_box_clicked(section: String) -> void:
+	var file_path = section
+	var extension = file_path.get_extension().to_lower()
+	PatchworkEditor.open_script_file(file_path)
+	EditorInterface.set_main_screen_editor("Script")
+
+
+
+func add_NodeDiffResult(file_section: DiffInspectorSection, node_diff: Dictionary, parent_path: String) -> void:
 	var node_name: String = node_diff["node_path"] # remove the leading "./"
 	var node_label: String = node_name
 	var change_type: String = node_diff["change_type"]
@@ -274,7 +325,9 @@ func add_NodeDiffResult(file_section: DiffInspectorSection, node_diff: Dictionar
 		add_PropertyDiffResult(inspector_section, prop_diffs[prop_name])
 		i += 1
 	inspector_section.unfold()
+	inspector_section.connect("box_clicked", self._on_node_box_clicked)
 	sections.append(inspector_section)
+	node_map[node_name] = parent_path
 	file_section.get_vbox().add_child(inspector_section)
 
 
@@ -338,20 +391,23 @@ func add_FileDiffResult(file_path: String, file_diff: Dictionary) -> void:
 		var res_old = file_diff.get("old_resource", null)
 		var res_new = file_diff.get("new_resource", null)
 		add_resource_diff(inspector_section, change_type, file_path, res_old, res_new)
+		inspector_section.connect("box_clicked", self._on_resource_box_clicked)
 	elif type == "text_changed":
 		var text_diff = file_diff["text_diff"]
 		add_text_diff(inspector_section, text_diff)
+		inspector_section.connect("box_clicked", self._on_text_box_clicked)
 	elif type == "scene_changed":
 		var node_diffs: Array = file_diff["changed_nodes"]
 		node_diffs.sort_custom(func(a, b): return a["node_path"] < b["node_path"])
-	
+		inspector_section.connect("box_clicked", self._on_resource_box_clicked)
+
 		# print("node_diff size: ", node_diffs.size())
 		for node in node_diffs:
 			var node_path: String = node["node_path"]
 			# skip temporary nodes created by the instance
 			if (node_path.contains("@")):
 				continue
-			add_NodeDiffResult(inspector_section, node)
+			add_NodeDiffResult(inspector_section, node, file_path)
 	sections.append(inspector_section)
 	main_vbox.add_child(inspector_section)
 
