@@ -267,7 +267,7 @@ func _on_resource_box_clicked(section: String) -> void:
 		EditorInterface.open_scene_from_path(file_path)
 		EditorInterface.set_main_screen_editor("2D")
 	else:
-		EditorInterface.get_inspector().edit_resource(ResourceLoader.load(file_path))
+		EditorInterface.get_inspector().edit(ResourceLoader.load(file_path))
 
 func _on_text_box_clicked(section: String) -> void:
 	var file_path = section
