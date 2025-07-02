@@ -42,6 +42,9 @@ var task_modal: TaskModal = TaskModal.new()
 var highlight_changes = false
 
 
+var deterred_highlight_update = null
+
+
 const CREATE_BRANCH_IDX = 1
 const MERGE_BRANCH_IDX = 2
 
@@ -93,6 +96,12 @@ func _ready() -> void:
 			init()
 	else:
 		print("!!!!!!GodotProject not initialized!")
+
+
+func _process(delta: float) -> void:
+	if deterred_highlight_update:
+		deterred_highlight_update.call()
+		deterred_highlight_update = null
 
 func init() -> void:
 	print("Sidebar initialized!")
@@ -704,6 +713,10 @@ func human_readable_timestamp(timestamp: int) -> String:
 		return str(int(diff / 31536000)) + " years ago"
 
 func update_highlight_changes(diff: Dictionary, checked_out_branch: Dictionary) -> void:
+	if (PatchworkEditor.is_changing_scene()):
+		deterred_highlight_update = func(): update_highlight_changes(diff, checked_out_branch)
+		return
+
 	var edited_root = EditorInterface.get_edited_scene_root()
 
 	# reflect highlight changes checkbox state
