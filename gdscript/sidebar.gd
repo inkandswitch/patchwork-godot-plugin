@@ -31,6 +31,8 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 @onready var diff_section_body: Control = %DiffSectionBody
 @onready var branch_picker_cover: Button = %BranchPickerCover
 
+const DIFF_SECTION_HEADER_TEXT_FORMAT = "Changes: Showing diff between %s and %s"
+
 const TEMP_DIR = "user://tmp"
 
 var DEBUG_MODE = false
@@ -134,6 +136,8 @@ func init() -> void:
 
 	history_section_header.pressed.connect(func(): toggle_section(history_section_header, history_section_body))
 	diff_section_header.pressed.connect(func(): toggle_section(diff_section_header, diff_section_body))
+	history_list.item_clicked.connect(_on_history_list_item_selected)
+	history_list.empty_clicked.connect(_on_empty_clicked)
 
 func _on_sync_status_icon_pressed():
 	var sync_info = GodotProject.get_sync_server_connection_info()
@@ -422,6 +426,7 @@ func update_ui(update_diff: bool = false) -> void:
 	var all_branches = GodotProject.get_branches()
 
 	# update branch pickers
+	diff_section_header.text = "Changes"
 
 	update_branch_picker(main_branch, checked_out_branch, all_branches)
 
@@ -461,6 +466,7 @@ func update_ui(update_diff: bool = false) -> void:
 
 		else:
 			history_list.add_item(prefix + change_author + " made some changes - " + change_timestamp + "")
+			history_list.set_item_metadata(history_list.get_item_count() - 1, change.hash)
 
 		if unsynced_changes.has(change.hash):
 			history_list.set_item_custom_fg_color(history_list.get_item_count() - 1, Color(0.5, 0.5, 0.5))
@@ -736,6 +742,29 @@ func update_highlight_changes(diff: Dictionary, checked_out_branch: Dictionary) 
 var prev_heads_before
 var prev_heads_after
 var last_diff: Dictionary = {}
+
+func _on_history_list_item_selected(index: int, _button, _modifiers) -> void:
+	var change_hash = history_list.get_item_metadata(index)
+	if change_hash:
+		# we're just updating the diff
+		var prev_idx = index - 1
+		if prev_idx < 0:
+			return
+		var prev_change_hash = history_list.get_item_metadata(prev_idx)
+		if prev_change_hash:
+			diff_section_header.text = DIFF_SECTION_HEADER_TEXT_FORMAT % [prev_change_hash.substr(0, 7), change_hash.substr(0, 7)]
+			var checked_out_branch = GodotProject.get_checked_out_branch()
+			var diff = update_properties_diff(checked_out_branch, ["foo", "bar"], PackedStringArray([prev_change_hash]), PackedStringArray([change_hash]))
+			inspector.visible = true
+			update_highlight_changes(diff, checked_out_branch)
+		else:
+			printerr("no prev change hash")
+	else:
+		printerr("no change hash")
+
+func _on_empty_clicked(_vec2, idx):
+	update_ui(true)
+
 func update_properties_diff(checked_out_branch, changes, heads_before, heads_after) -> Dictionary:
 
 	if (!inspector):
