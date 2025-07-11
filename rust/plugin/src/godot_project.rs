@@ -1615,6 +1615,8 @@ impl GodotProjectImpl {
                     TypeOrInstance::Type(type_name) => type_name.clone(),
                     TypeOrInstance::Instance(instance_id) => {
                         if let Some(scene) = scene {
+							// strip the "ExtResource(" and ")" from the instance_id
+							let instance_id = instance_id.trim_start_matches("ExtResource(\"").trim_end_matches("\")");
                             if let Some(ext_resource) = scene.ext_resources.get(instance_id) {
                                 return format!("Resource({})", ext_resource.path);
                             }
@@ -1853,7 +1855,10 @@ impl GodotProjectImpl {
 
                     if old_class_name != new_class_name {
                         let _ = node_info.insert("change_type", "type_changed");
+						let _ = node_info.insert("old_type", old_class_name);
+						let _ = node_info.insert("new_type", new_class_name);
                     } else {
+						let _ = node_info.insert("type", new_class_name);
                         let mut props: HashSet<String> = HashSet::new();
                         for (key, _) in old_props.iter_shared() {
                             let _ = props.insert(key.to_string());

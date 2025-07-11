@@ -175,13 +175,27 @@ func add_old_and_new(inspector_section: DiffInspectorSection, change_type: Strin
 		var prop_editor = get_prop_editor(inspector_section.get_object(), prop_name + "_new", new_prop_value, "added", label if !has_old else "")
 		inspector_section.get_vbox().add_child(prop_editor)
 
+func get_default_val_for_class(node_type: String, prop_name):
+	# We can't get the default value for a script instance
+	if node_type.begins_with("Resource(") || node_type.begins_with("ExtResource("):
+		return "<default_value>"
+	else:
+		return ClassDB.class_get_property_default_value(node_type, prop_name)
 
-func add_PropertyDiffResult(inspector_section: DiffInspectorSection, property_diff: Dictionary) -> void:
+		
+
+func add_PropertyDiffResult(inspector_section: DiffInspectorSection, property_diff: Dictionary, node_type: String) -> void:
 	var change_type = property_diff["change_type"]
 	var prop_name = property_diff["name"]
 	var prop_label = snake_case_to_human_readable(property_diff["name"])
 	var prop_old = property_diff["old_value"]
 	var prop_new = property_diff["new_value"]
+	if node_type != "":
+		if prop_old == null and change_type != "added":
+			prop_old = get_default_val_for_class(node_type, prop_name)
+		if prop_new == null and change_type != "removed":
+			prop_new = get_default_val_for_class(node_type, prop_name)
+		
 	# print("!!! adding property diff result for ", prop_name, " with type ", change_type)
 	# print("!!! prop_old: ", prop_old)
 	# print("!!! prop_new: ", prop_new)
@@ -288,14 +302,15 @@ func add_NodeDiffResult(file_section: DiffInspectorSection, node_diff: Dictionar
 	var vbox = inspector_section.get_vbox()
 	var fake_node = MissingResource.new()
 
-	var node_type: String = ""
+	var node_type: String = node_diff.get("type", "")
+	if (node_type == ""):
+		print(node_diff)
 	var color: Color = added_color
 	if change_type == "added":
 		color = added_color
 		node_label += " (Added)"
 		# TODO: make rust code do this
 		prop_diffs = get_prop_diffs_from_properties(node_diff["new_content"]["properties"], "added")
-		# node_type = node_diff["new_content"]["type"]
 		# print("adding node added box")
 		added_nodes.append(fake_node)
 	elif change_type == "removed":
@@ -303,13 +318,11 @@ func add_NodeDiffResult(file_section: DiffInspectorSection, node_diff: Dictionar
 		node_label += " (Deleted)"
 		# print("adding node deleted box")
 		prop_diffs = get_prop_diffs_from_properties(node_diff["old_content"]["properties"], "removed")
-		# node_type = node_diff["old_content"]["type"]
 		deleted_nodes.append(fake_node)
 	else:
 		color = modified_color
 		node_label += " (Modified)"
 		prop_diffs = node_diff["changed_props"]
-		# node_type = node_diff["new_content"]["type"]
 		changed_nodes.append(fake_node)
 	inspector_section.setup(node_name, node_label, fake_node, color, true, 1, 2)
 	inspector_section.set_type(change_type)
@@ -322,7 +335,7 @@ func add_NodeDiffResult(file_section: DiffInspectorSection, node_diff: Dictionar
 		if i > 0:
 			var divider = HSeparator.new()
 			vbox.add_child(divider)
-		add_PropertyDiffResult(inspector_section, prop_diffs[prop_name])
+		add_PropertyDiffResult(inspector_section, prop_diffs[prop_name], node_type)
 		i += 1
 	inspector_section.unfold()
 	inspector_section.connect("box_clicked", self._on_node_box_clicked)
