@@ -121,6 +121,16 @@ pub(crate) fn print_branch_state(message: &str, branch_state: &BranchState) {
 	tracing::trace!("synced heads: {:?}", branch_state.synced_heads);
 }
 
+pub(crate) fn are_valid_heads(packed_string_array: &PackedStringArray) -> bool {
+    // check if these are all hex strings
+	for h in packed_string_array.to_vec().iter() {
+		if !h.to_string().chars().all(|c| c.is_ascii_hexdigit()) {
+			return false;
+		}
+	}
+	return true;
+}
+
 pub(crate) fn array_to_heads(packed_string_array: PackedStringArray) -> Vec<ChangeHash> {
     packed_string_array
         .to_vec()

@@ -31,7 +31,7 @@ use crate::godot_parser::{self, GodotScene, TypeOrInstance};
 use crate::godot_project_driver::{BranchState, ConnectionThreadError, DocHandleType};
 use crate::patches::{get_changed_files_vec};
 use crate::patchwork_config::PatchworkConfig;
-use crate::utils::{array_to_heads, CommitInfo, ToShortForm};
+use crate::utils::{are_valid_heads, array_to_heads, CommitInfo, ToShortForm};
 use crate::{
     doc_utils::SimpleDocReader,
     godot_project_driver::{GodotProjectDriver, InputEvent, OutputEvent},
@@ -2709,6 +2709,10 @@ impl GodotProject {
         old_heads: PackedStringArray,
         curr_heads: PackedStringArray,
     ) -> Dictionary {
+		if !are_valid_heads(&old_heads) || !are_valid_heads(&curr_heads) {
+			tracing::error!("invalid heads: {:?}, {:?}", old_heads, curr_heads);
+			return Dictionary::new();
+		}
         let old_heads = array_to_heads(old_heads);
         let new_heads = array_to_heads(curr_heads);
         self.project._get_changes_between(old_heads, new_heads)
