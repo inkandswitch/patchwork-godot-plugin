@@ -76,7 +76,7 @@ func _on_initial_checked_out_branch(_branch):
 	print("on_initial_checked_out_branch")
 	GodotProject.disconnect("checked_out_branch", self._on_initial_checked_out_branch)
 	init()
-	
+
 func _on_reload_ui_button_pressed():
 	reload_ui.emit()
 
@@ -746,15 +746,27 @@ var last_diff: Dictionary = {}
 func _on_history_list_item_selected(index: int, _button, _modifiers) -> void:
 	var change_hash = history_list.get_item_metadata(index)
 	if change_hash:
+		var change_heads = PackedStringArray([change_hash])
 		# we're just updating the diff
-		var prev_idx = index - 1
-		if prev_idx < 0:
-			return
-		var prev_change_hash = history_list.get_item_metadata(prev_idx)
-		if prev_change_hash:
-			diff_section_header.text = DIFF_SECTION_HEADER_TEXT_FORMAT % [prev_change_hash.substr(0, 7), change_hash.substr(0, 7)]
-			var checked_out_branch = GodotProject.get_checked_out_branch()
-			var diff = update_properties_diff(checked_out_branch, ["foo", "bar"], PackedStringArray([prev_change_hash]), PackedStringArray([change_hash]))
+		var checked_out_branch = GodotProject.get_checked_out_branch()
+		# we show changes from most recent to oldest, so the previous change is the next index
+		var prev_idx = index + 1
+		var previous_heads: PackedStringArray = []
+		if prev_idx >= history_list.get_item_count():
+			# return
+			# get the root hash from the checked_out_branch
+			var root_hash = checked_out_branch.forked_at
+			previous_heads = root_hash
+		else:
+			previous_heads = [history_list.get_item_metadata(prev_idx)]
+
+		if previous_heads.size() > 0:
+			# diff_section_header.text = DIFF_SECTION_HEADER_TEXT_FORMAT % [prev_change_hash.substr(0, 7), change_hash.substr(0, 7)]
+			var text = history_list.get_item_text(index)
+			var name = text.split(" ")[0]
+			var date = text.split("-")[1].strip_edges()
+			diff_section_header.text = "Showing changes from %s - %s" % [name, date]
+			var diff = update_properties_diff(checked_out_branch, ["foo", "bar"], previous_heads, change_heads)
 			inspector.visible = true
 			update_highlight_changes(diff, checked_out_branch)
 		else:
