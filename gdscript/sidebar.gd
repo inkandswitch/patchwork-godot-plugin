@@ -81,10 +81,38 @@ func _on_initial_checked_out_branch(_branch):
 func _on_reload_ui_button_pressed():
 	reload_ui.emit()
 
+func wait_for_checked_out_branch():
+	var godot_project = Engine.get_singleton("GodotProject")
+	if not godot_project.get_checked_out_branch():
+		godot_project.connect("checked_out_branch", self._on_initial_checked_out_branch)
+		task_modal.start_task("Loading Patchwork")
+	else:
+		init()
+
+
+func _on_init_button_pressed():
+	var godot_project = Engine.get_singleton("GodotProject")
+	godot_project.start()
+	make_init_button_invisible()
+	wait_for_checked_out_branch()
+
+func make_init_button_visible():
+	%InitPanelContainer.visible = true
+	%MainVSplit.visible = false
+
+func make_init_button_invisible():
+	%InitPanelContainer.visible = false
+	%MainVSplit.visible = true
+
+func get_doc_id() -> String:
+	var patchwork_config = Engine.get_singleton("PatchworkConfig")
+	return patchwork_config.get_project_value("project_doc_id", "")
+
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
 	print("Sidebar: ready!")
 	%ReloadUIButton.pressed.connect(self._on_reload_ui_button_pressed)
+	%InitializeButton.pressed.connect(self._on_init_button_pressed)
 	# need to add task_modal as a child to the plugin otherwise process won't be called
 	add_child(task_modal)
 	# The singleton class accessor is still pointing to the old GodotProject singleton
@@ -92,11 +120,13 @@ func _ready() -> void:
 	# The rest of the accessor uses outside of _ready() should be fine.
 	var godot_project = Engine.get_singleton("GodotProject")
 	if godot_project:
-		if not godot_project.get_checked_out_branch():
-			godot_project.connect("checked_out_branch", self._on_initial_checked_out_branch)
-			task_modal.start_task("Loading Patchwork")
+		var doc_id = get_doc_id()
+		if not godot_project.is_started() and doc_id.is_empty():
+			make_init_button_visible()
+			return
 		else:
-			init()
+			make_init_button_invisible()
+			wait_for_checked_out_branch()
 	else:
 		print("!!!!!!GodotProject not initialized!")
 

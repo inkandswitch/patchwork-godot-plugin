@@ -125,6 +125,7 @@ pub struct GodotProjectImpl {
     sync_server_connection_info: Option<PeerConnectionInfo>,
     file_system_driver: Option<FileSystemDriver>,
 	project_dir: String,
+	is_started: bool,
 }
 
 impl Default for GodotProjectImpl {
@@ -147,6 +148,7 @@ impl Default for GodotProjectImpl {
             driver_output_rx,
             file_system_driver: None,
 			project_dir: "".to_string(),
+			is_started: false,
 		}
 	}
 }
@@ -336,6 +338,10 @@ struct PatchworkConfigAccessor{
 impl PatchworkConfigAccessor {
 	fn get_project_value(name: &str, default: &str) -> String {
 		PatchworkConfig::singleton().bind().get_project_value(GString::from(name), default.to_variant()).to::<String>()
+	}
+
+	fn get_project_doc_id() -> String {
+		PatchworkConfigAccessor::get_project_value("project_doc_id", "")
 	}
 
 	fn get_user_value(name: &str, default: &str) -> String {
@@ -2028,6 +2034,7 @@ impl GodotProjectImpl {
 
         self._start_driver();
         self._start_file_system_driver();
+        self.is_started = true;
         // get the project path
     }
 
@@ -2038,13 +2045,20 @@ impl GodotProjectImpl {
     }
 
     fn stop(&mut self) {
+		if !self.is_started {
+			return;
+		}
         self._stop_driver();
+		if let Some(mut driver) = self.file_system_driver.take() {
+			driver.stop();
+		}
         self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut(None);
         self.sync_server_connection_info = None;
         self.project_doc_id = None;
         self.doc_handles.clear();
         self.branch_states.clear();
         self.file_system_driver = None;
+        self.is_started = false;
     }
 
 	fn safe_to_update_godot() -> bool {
@@ -2205,16 +2219,6 @@ impl GodotProjectImpl {
 			project_dir,
 			..Default::default()
 		}
-	}
-
-	fn _enter_tree(&mut self) {
-		tracing::debug!("** GodotProject: enter_tree");
-		self.start();
-	}
-
-	fn _exit_tree(&mut self) {
-        tracing::debug!("** GodotProject: exit_tree");
-        self.stop();
 	}
 
 	#[instrument(target = "patchwork_rust_core::godot_project::inner_process", level = tracing::Level::DEBUG, skip_all)]
@@ -2510,6 +2514,10 @@ impl GodotProjectImpl {
 
 		(updates, signals)
 	}
+
+	fn is_started(&self) -> bool {
+		self.is_started
+	}
 }
 
 
@@ -2583,6 +2591,28 @@ pub struct GodotProject {
 	reload_project_settings_callable: Option<Callable>,
 }
 
+
+
+// macro for handling when the project is not started
+macro_rules! check_project_started {
+	($self:ident) => {
+		if !$self.project.is_started() {
+			tracing::error!("GodotProject is not started, skipping...");
+			// return the default value for the type
+			return;
+		}
+	};
+}
+
+macro_rules! check_project_started_and_return_default {
+	($self:ident, $default:expr) => {
+		if !$self.project.is_started() {
+			tracing::error!("GodotProject is not started, returning default value");
+			return $default;
+		}
+	};
+}
+
 #[godot_api]
 impl GodotProject {
 	#[signal]
@@ -2609,10 +2639,12 @@ impl GodotProject {
 	#[signal]
 	fn connection_thread_failed();
 
+
 	// PUBLIC API
 
 	#[func]
 	fn set_user_name(&self, name: String) {
+		check_project_started!(self);
 		self.project.driver_input_tx
 			.unbounded_send(InputEvent::SetUserName { name })
 			.unwrap();
@@ -2620,6 +2652,7 @@ impl GodotProject {
 
 	#[func]
 	fn shutdown(&self) {
+		check_project_started!(self);
 		self.project.driver_input_tx
 			.unbounded_send(InputEvent::StartShutdown)
 			.unwrap();
@@ -2627,17 +2660,20 @@ impl GodotProject {
 
 	#[func]
 	fn get_project_doc_id(&self) -> Variant {
+		check_project_started_and_return_default!(self, Variant::nil());
 		self.project._get_project_doc_id().to_variant()
 	}
 
 	#[func]
 	fn get_heads(&self) -> PackedStringArray /* String[] */ {
+		check_project_started_and_return_default!(self, PackedStringArray::new());
 		self.project._get_heads().to_godot()
 	}
 
 
 	#[func]
 	fn get_files(&self) -> PackedStringArray {
+		check_project_started_and_return_default!(self, PackedStringArray::new());
 		self.project._get_files().to_godot()
 	}
 
@@ -2651,26 +2687,31 @@ impl GodotProject {
 
     #[func]
     fn get_changes(&self) -> Array<Dictionary> /* String[]  */ {
+		check_project_started_and_return_default!(self, Array::new());
 		let changes = self.project._get_changes();
 		changes.iter().map(|c| c.to_godot()).collect::<Array<Dictionary>>()
 	}
 
     #[func]
     fn get_main_branch(&self) -> Variant /* Branch? */ {
+		check_project_started_and_return_default!(self, Variant::nil());
 		self.project._get_main_branch().to_variant()
 	}
 
     #[func]
     fn get_branch_by_id(&self, branch_id: String) -> Variant /* Branch? */ {
+		check_project_started_and_return_default!(self, Variant::nil());
 		self.project._get_branch_by_id(&branch_id).to_variant()
 	}
     #[func]
     fn merge_branch(&mut self, source_branch_doc_id: String, target_branch_doc_id: String) {
+		check_project_started!(self);
 		self.project._merge_branch(DocumentId::from_str(&source_branch_doc_id).unwrap(), DocumentId::from_str(&target_branch_doc_id).unwrap());
 	}
 
     #[func]
     fn create_branch(&mut self, name: String) {
+		check_project_started!(self);
 		self.project._create_branch(name);
 	}
     #[func]
@@ -2679,30 +2720,36 @@ impl GodotProject {
         source_branch_doc_id: String,
         target_branch_doc_id: String,
     ) {
+		check_project_started!(self);
 		let source_branch_doc_id = DocumentId::from_str(&source_branch_doc_id).unwrap();
         let target_branch_doc_id = DocumentId::from_str(&target_branch_doc_id).unwrap();
 		self.project._create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id);
 	}
     #[func]
     fn delete_branch(&mut self, branch_doc_id: String) {
+		check_project_started!(self);
 		self.project._delete_branch(DocumentId::from_str(&branch_doc_id).unwrap());
 	}
     #[func]
     fn checkout_branch(&mut self, branch_doc_id: String) {
+		check_project_started!(self);
 		self.project._checkout_branch(DocumentId::from_str(&branch_doc_id).unwrap());
 	}
     // filters out merge preview branches
     #[func]
     fn get_branches(&self) -> Array<Dictionary> /* { name: String, id: String }[] */ {
+		check_project_started_and_return_default!(self, Array::new());
 		self.project._get_branches().iter().map(|b| b.to_godot()).collect::<Array<Dictionary>>()
 	}
     #[func]
     fn get_checked_out_branch(&self) -> Variant /* {name: String, id: String, is_main: bool}? */ {
+		check_project_started_and_return_default!(self, Variant::nil());
 		self.project.get_checked_out_branch_state().map(|b|b.to_godot().to_variant()).unwrap_or_default()
 	}
 
     #[func]
     fn get_sync_server_connection_info(&self) -> Variant {
+		check_project_started_and_return_default!(self, Variant::nil());
         match self.project._get_sync_server_connection_info() {
             Some(peer_connection_info) => {
                 peer_connection_info.to_variant()
@@ -2717,6 +2764,7 @@ impl GodotProject {
         old_heads: PackedStringArray,
         curr_heads: PackedStringArray,
     ) -> Dictionary {
+		check_project_started_and_return_default!(self, Dictionary::new());
 		if !are_valid_heads(&old_heads) || !are_valid_heads(&curr_heads) {
 			tracing::error!("invalid heads: {:?}, {:?}", old_heads, curr_heads);
 			return Dictionary::new();
@@ -2997,6 +3045,26 @@ impl GodotProject {
 		self.base_mut().set_process(true);
     }
 
+	#[func]
+	fn start(&mut self) {
+		if !self.project.is_started() {
+			self.project.start();
+		} else {
+			tracing::info!("GodotProject is already started, skipping...");
+		}
+	}
+
+	#[func]
+	fn is_started(&self) -> bool {
+		self.project.is_started()
+	}
+
+	#[func]
+	fn stop(&mut self) {
+		if self.project.is_started() {
+			self.project.stop();
+		}
+	}
 }
 
 
@@ -3013,7 +3081,6 @@ impl INode for GodotProject {
     }
 
     fn enter_tree(&mut self) {
-		self.project._enter_tree();
 		let callables = steal_editor_node_private_reload_methods_from_dialog_signal_handlers();
 		if let Some((reload_modified_scenes_callable, reload_project_settings_callable)) = callables {
 			self.reload_modified_scenes_callable = Some(reload_modified_scenes_callable);
@@ -3022,15 +3089,26 @@ impl INode for GodotProject {
 			// if we rebase and this fails, we're going to have to do something else
 			panic!("Failed to steal reload methods from dialog signal handlers");
 		}
+		let project_id = PatchworkConfigAccessor::get_project_doc_id();
+		if project_id == "" {
+			tracing::info!("Patchwork config has no project id, not autostarting...");
+			return;
+		}
+		self.project.start();
     }
 
     fn exit_tree(&mut self) {
-		self.project._exit_tree();
+		if self.project.is_started() {
+			self.project.stop();
+		}
         // Perform typical plugin operations here.
     }
 
 	#[instrument(target = "patchwork_rust_core::godot_project::outer_process", level = tracing::Level::DEBUG, skip_all)]
     fn process(&mut self, _delta: f64) {
+		if !self.project.is_started() {
+			return;
+		}
 		let (updates, signals) = self.project._process(_delta);
 		if updates.len() > 0 {
 			self.pending_editor_update.merge(self.process_godot_updates(updates));
