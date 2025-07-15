@@ -743,7 +743,7 @@ func update_highlight_changes(diff: Dictionary, checked_out_branch: Dictionary, 
 	highlight_changes_checkbox.button_pressed = highlight_changes
 
 	if edited_root:
-		if (highlight_changes || force_highlight) && !checked_out_branch.is_main:
+		if force_highlight || (highlight_changes && !checked_out_branch.is_main):
 				var path = edited_root.scene_file_path
 				var scene_changes = diff.get(path)
 				if scene_changes:
