@@ -43,10 +43,10 @@ void DiffInspectorSection::_test_unfold() {
 	}
 }
 
-Ref<Texture2D> DiffInspectorSection::_get_arrow() {
+Ref<Texture2D> DiffInspectorSection::_get_arrow() const {
 	Ref<Texture2D> arrow;
 	if (foldable) {
-		if (object->editor_is_section_unfolded(section)) {
+		if (object && object->editor_is_section_unfolded(section)) {
 			arrow = get_theme_icon(SNAME("arrow"), SNAME("Tree"));
 		} else {
 			if (is_layout_rtl()) {
@@ -59,7 +59,7 @@ Ref<Texture2D> DiffInspectorSection::_get_arrow() {
 	return arrow;
 }
 
-int DiffInspectorSection::_get_header_height() {
+int DiffInspectorSection::_get_header_height() const {
 	Ref<Font> font = get_theme_font(SNAME("bold"), EditorStringName(EditorFonts));
 	int font_size = get_theme_font_size(SNAME("bold_size"), EditorStringName(EditorFonts));
 
@@ -158,6 +158,15 @@ void DiffInspectorSection::_notification(int p_what) {
 			c.a *= 0.4;
 			if (foldable && header_rect.has_point(get_local_mouse_position())) {
 				c = c.lightened(Input::get_singleton()->is_mouse_button_pressed(MouseButton::LEFT) ? -0.05 : 0.2);
+				if (!entered) {
+					entered = true;
+					call_deferred("emit_signal", SNAME("section_mouse_entered"), section);
+				}
+			} else {
+				if (entered) {
+					entered = false;
+					call_deferred("emit_signal", SNAME("section_mouse_exited"), section);
+				}
 			}
 			draw_rect(header_rect, c);
 
@@ -273,6 +282,30 @@ void DiffInspectorSection::_notification(int p_what) {
 	}
 }
 
+Rect2 DiffInspectorSection::get_header_rect() const {
+	int section_indent = 0;
+	int section_indent_size = get_theme_constant(SNAME("indent_size"), SNAME("DiffInspectorSection"));
+	if (indent_depth > 0 && section_indent_size > 0) {
+		section_indent = indent_depth * section_indent_size;
+	}
+	Ref<StyleBoxFlat> section_indent_style = get_theme_stylebox(SNAME("indent_box"), SNAME("DiffInspectorSection"));
+	if (indent_depth > 0 && section_indent_style.is_valid()) {
+		section_indent += section_indent_style->get_margin(SIDE_LEFT) + section_indent_style->get_margin(SIDE_RIGHT);
+	}
+
+	int header_width = get_size().width - section_indent;
+	int header_offset_x = 0.0;
+	bool rtl = is_layout_rtl();
+	if (!rtl) {
+		header_offset_x += section_indent;
+	}
+
+	// Draw header area.
+	int header_height = _get_header_height();
+	Rect2 header_rect = Rect2(Vector2(header_offset_x, 0.0), Vector2(header_width, header_height));
+	return header_rect;
+}
+
 Size2 DiffInspectorSection::get_minimum_size() const {
 	Size2 ms;
 	for (int i = 0; i < get_child_count(); i++) {
@@ -372,6 +405,18 @@ void DiffInspectorSection::gui_input(const Ref<InputEvent> &p_event) {
 	} else if (mb.is_valid() && !mb->is_pressed()) {
 		queue_redraw();
 	}
+	Ref<InputEventMouseMotion> mm = p_event;
+	if (mm.is_valid()) {
+		if (!entered) {
+			if (get_header_rect().has_point(mm->get_position())) {
+				queue_redraw();
+			}
+		} else {
+			if (!get_header_rect().has_point(mm->get_position())) {
+				queue_redraw();
+			}
+		}
+	}
 }
 
 VBoxContainer *DiffInspectorSection::get_vbox() {
@@ -404,6 +449,10 @@ void DiffInspectorSection::fold() {
 	queue_redraw();
 }
 
+bool DiffInspectorSection::is_folded() const {
+	return !object || !object->editor_is_section_unfolded(section);
+}
+
 void DiffInspectorSection::set_bg_color(const Color &p_bg_color) {
 	bg_color = p_bg_color;
 	queue_redraw();
@@ -429,6 +478,10 @@ void DiffInspectorSection::property_can_revert_changed(const String &p_path, boo
 	}
 }
 
+String DiffInspectorSection::get_section() const {
+	return section;
+}
+
 void DiffInspectorSection::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("setup", "section", "label", "object", "bg_color", "foldable", "indent_depth", "level"), &DiffInspectorSection::setup, DEFVAL(0), DEFVAL(1));
 	ClassDB::bind_method(D_METHOD("get_vbox"), &DiffInspectorSection::get_vbox);
@@ -437,11 +490,15 @@ void DiffInspectorSection::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_type", "type"), &DiffInspectorSection::set_type);
 	ClassDB::bind_method(D_METHOD("get_type"), &DiffInspectorSection::get_type);
 	ClassDB::bind_method(D_METHOD("get_object"), &DiffInspectorSection::get_object);
+	ClassDB::bind_method(D_METHOD("is_folded"), &DiffInspectorSection::is_folded);
+	ClassDB::bind_method(D_METHOD("get_section"), &DiffInspectorSection::get_section);
 	// set/get bg color
 	ClassDB::bind_method(D_METHOD("set_bg_color", "bg_color"), &DiffInspectorSection::set_bg_color);
 	ClassDB::bind_method(D_METHOD("get_bg_color"), &DiffInspectorSection::get_bg_color);
 
 	ADD_SIGNAL(MethodInfo("box_clicked", PropertyInfo(Variant::STRING, "section")));
+	ADD_SIGNAL(MethodInfo("section_mouse_entered", PropertyInfo(Variant::STRING, "section")));
+	ADD_SIGNAL(MethodInfo("section_mouse_exited", PropertyInfo(Variant::STRING, "section")));
 }
 
 DiffInspectorSection::DiffInspectorSection() {

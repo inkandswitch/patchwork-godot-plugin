@@ -43,6 +43,7 @@ var task_modal: TaskModal = TaskModal.new()
 
 var highlight_changes = false
 
+var waiting_callables: Array = []
 
 var deterred_highlight_update = null
 
@@ -102,8 +103,15 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	if deterred_highlight_update:
-		deterred_highlight_update.call()
+		var c = deterred_highlight_update
 		deterred_highlight_update = null
+		c.call()
+
+	if waiting_callables.size() > 0:
+		var callables = waiting_callables.duplicate()
+		for callable in callables:
+			callable.call()
+		waiting_callables.clear()
 
 func init() -> void:
 	print("Sidebar initialized!")
@@ -138,6 +146,8 @@ func init() -> void:
 	diff_section_header.pressed.connect(func(): toggle_section(diff_section_header, diff_section_body))
 	history_list.item_clicked.connect(_on_history_list_item_selected)
 	history_list.empty_clicked.connect(_on_empty_clicked)
+	inspector.node_hovered.connect(_on_node_hovered)
+	inspector.node_unhovered.connect(_on_node_unhovered)
 
 func _on_sync_status_icon_pressed():
 	var sync_info = GodotProject.get_sync_server_connection_info()
@@ -718,7 +728,7 @@ func human_readable_timestamp(timestamp: int) -> String:
 	else:
 		return str(int(diff / 31536000)) + " years ago"
 
-func update_highlight_changes(diff: Dictionary, checked_out_branch: Dictionary) -> void:
+func update_highlight_changes(diff: Dictionary, checked_out_branch: Dictionary, force_highlight: bool = false) -> void:
 	if (PatchworkEditor.is_changing_scene()):
 		deterred_highlight_update = func(): update_highlight_changes(diff, checked_out_branch)
 		return
@@ -730,7 +740,7 @@ func update_highlight_changes(diff: Dictionary, checked_out_branch: Dictionary) 
 	highlight_changes_checkbox.button_pressed = highlight_changes
 
 	if edited_root:
-		if highlight_changes && !checked_out_branch.is_main:
+		if (highlight_changes || force_highlight) && !checked_out_branch.is_main:
 				var path = edited_root.scene_file_path
 				var scene_changes = diff.get(path)
 				if scene_changes:
@@ -742,6 +752,35 @@ func update_highlight_changes(diff: Dictionary, checked_out_branch: Dictionary) 
 var prev_heads_before
 var prev_heads_after
 var last_diff: Dictionary = {}
+
+
+func _on_node_hovered(file_path: String, node_path: NodePath) -> void:
+	# print("on_node_hovered: ", file_path, node_path)
+	var node: Node = EditorInterface.get_edited_scene_root()
+	if node.scene_file_path != file_path:
+		# don't highlight changes for other files
+		return
+	var lst_diff = last_diff
+	# create a diff that only contains the changes for the hovered node
+	for file in lst_diff.keys():
+		if file == file_path:
+			var diff: Dictionary = lst_diff[file].duplicate()
+			var scene_changes = diff["changed_nodes"].duplicate()
+			var new_scene_changes = []
+			for node_change in scene_changes:
+				var np: String = node_change["node_path"]
+				if np == String(node_path) || np == "./" + String(node_path):
+					new_scene_changes.append(node_change)
+					break
+			diff["changed_nodes"] = new_scene_changes
+			lst_diff = {}
+			lst_diff[file] = diff
+			break
+	# print("Updating highlight changes")
+	self.update_highlight_changes(lst_diff, GodotProject.get_checked_out_branch(), true)
+
+func _on_node_unhovered(file_path: String, node_path: NodePath) -> void:
+	self.update_highlight_changes(last_diff, GodotProject.get_checked_out_branch(), false)
 
 func _on_history_list_item_selected(index: int, _button, _modifiers) -> void:
 	var change_hash = history_list.get_item_metadata(index)
