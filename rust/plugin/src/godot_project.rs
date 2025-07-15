@@ -294,6 +294,14 @@ impl PatchworkEditorAccessor {
 			&[],
 		).to::<bool>()
 	}
+
+	fn clear_editor_selection() {
+		ClassDb::singleton().class_call_static(
+			"PatchworkEditor",
+			"clear_editor_selection",
+			&[],
+		);
+	}
 }
 
 struct EditorFilesystemAccessor{
@@ -2868,6 +2876,10 @@ impl GodotProject {
 		// * This will cause a panic because we're already in the middle of `process()` with a bound mut ref to base
 		self.base_mut().set_process(false);
 
+		// To prevent crashes when switching branches after selecting a node or resource
+		// TODO: This can lead to a bad user experience because we lose the selection history and the user can't go back to any previous selection(s)
+		// we may not need to do this if we can properly handle the state for the TileMap editor and other editors
+		PatchworkEditorAccessor::clear_editor_selection();
 
 		// let reload_scene_func = |scene_path: &str| {
 		// 	if PatchworkEditorAccessor::is_changing_scene() {
