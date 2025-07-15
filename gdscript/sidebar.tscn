@@ -92,7 +92,7 @@ unique_name_in_owner = true
 z_index = 1
 z_as_relative = false
 layout_mode = 2
-text = "Nikita's remix"
+text = "main"
 icon = ExtResource("7_qb0q7")
 alignment = 0
 
@@ -112,7 +112,7 @@ stretch_mode = 4
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-selected = 2
+selected = 0
 item_count = 3
 popup/item_0/text = "main"
 popup/item_0/id = 0
@@ -133,6 +133,8 @@ text = "Remix
 [node name="MergeButton" type="Button" parent="VBoxContainer/HBoxContainer2"]
 unique_name_in_owner = true
 layout_mode = 2
+tooltip_text = "Can't merge main because it's not a remix of another branch"
+disabled = true
 text = "Merge"
 
 [node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
@@ -152,7 +154,7 @@ theme_override_constants/margin_top = 8
 theme_override_constants/margin_right = 8
 theme_override_constants/margin_bottom = 8
 
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer"]
+[node name="VBoxContainer" type="VSplitContainer" parent="VBoxContainer/PanelContainer/MarginContainer"]
 layout_mode = 2
 
 [node name="HistoryVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
@@ -179,21 +181,13 @@ size_flags_vertical = 3
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-item_count = 14
-item_0/text = "Nikita made some changes - 21 minutes ago"
-item_1/text = "Nikita made some changes - 12 hours ago"
-item_2/text = "Nikita made some changes - 12 hours ago"
-item_3/text = "Nikita made some changes - 12 hours ago"
-item_4/text = "Nikita made some changes - 12 hours ago"
-item_5/text = "Nikita made some changes - 12 hours ago"
-item_6/text = "Nikita made some changes - 12 hours ago"
-item_7/text = "Nikita made some changes - 12 hours ago"
-item_8/text = "Nikita made some changes - 12 hours ago"
-item_9/text = "Nikita made some changes - 12 hours ago"
-item_10/text = "Nikita made some changes - 13 hours ago"
-item_11/text = "Nikita made some changes - 13 hours ago"
-item_12/text = "Nikita made some changes - 13 hours ago"
-item_13/text = "Nikita made some changes - 13 hours ago"
+item_count = 6
+item_0/text = "Nikita made some changes - 12 hours ago"
+item_1/text = "Nikita made some changes - 13 hours ago"
+item_2/text = "Nikita made some changes - 13 hours ago"
+item_3/text = "Nikita made some changes - 13 hours ago"
+item_4/text = "Nikita made some changes - 13 hours ago"
+item_5/text = "Nikita made some changes - 13 hours ago"
 
 [node name="DiffVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
@@ -224,6 +218,7 @@ size_flags_vertical = 3
 
 [node name="BigDiffer" type="DiffInspector" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/DiffVBox/DiffSectionBody/MainDiffContainer"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 size_flags_vertical = 3
 theme = ExtResource("4_7letu")
