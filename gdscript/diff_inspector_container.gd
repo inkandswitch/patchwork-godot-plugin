@@ -277,15 +277,36 @@ func _on_node_box_clicked(section: String) -> void:
 func _on_resource_box_clicked(section: String) -> void:
 	var file_path = section
 	var extension = file_path.get_extension().to_lower()
+	EditorInterface.get_file_system_dock().navigate_to_path(file_path)
 	if extension == "tscn" or extension == "scn":
-		EditorInterface.open_scene_from_path(file_path)
+		var curr_root = EditorInterface.get_edited_scene_root()
+		if curr_root.scene_file_path == file_path:
+			pass
+			# var curr_obj = EditorInterface.get_inspector().get_edited_object()
+			# var reedit = false
+			# if curr_obj != curr_root:
+			# 	# print("NOT THE SAME OBJECT")
+			# 	reedit = true
+			# 	if curr_obj is Node && curr_root.is_ancestor_of(curr_obj):
+			# 		reedit = false
+			# if reedit:
+			# 	EditorInterface.inspect_object(curr_root, "", false)
+		else:
+			EditorInterface.open_scene_from_path(file_path)
+		# last_inspected_resource = null
 		EditorInterface.set_main_screen_editor("2D")
 	else:
-		EditorInterface.get_inspector().edit(ResourceLoader.load(file_path))
+		pass
+		# TODO: re-enable this, it's causing a crash when switching branches
+		# var ff = ResourceLoader.load(file_path)
+		# if is_instance_valid(ff):
+		# 	EditorInterface.inspect_object(ff, "", true)
+			# last_inspected_resource = ff
 
 func _on_text_box_clicked(section: String) -> void:
 	var file_path = section
 	var extension = file_path.get_extension().to_lower()
+	EditorInterface.get_file_system_dock().navigate_to_path(file_path)
 	PatchworkEditor.open_script_file(file_path)
 	EditorInterface.set_main_screen_editor("Script")
 
