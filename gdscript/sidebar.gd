@@ -755,15 +755,16 @@ func _on_history_list_item_selected(index: int, _button, _modifiers) -> void:
 		if prev_idx >= history_list.get_item_count():
 			# return
 			# get the root hash from the checked_out_branch
-			var root_hash = checked_out_branch.forked_at
-			previous_heads = root_hash
+			previous_heads = checked_out_branch.get("forked_at", PackedStringArray([]))
 		else:
 			previous_heads = [history_list.get_item_metadata(prev_idx)]
 
 		if previous_heads.size() > 0:
 			# diff_section_header.text = DIFF_SECTION_HEADER_TEXT_FORMAT % [prev_change_hash.substr(0, 7), change_hash.substr(0, 7)]
 			var text = history_list.get_item_text(index)
-			var name = text.split(" ")[0]
+			var name = text.split(" ")[0].strip_edges()
+			if name == "↪️":
+				name = text.split(" ")[1].strip_edges() + "'s merged branch"
 			var date = text.split("-")[1].strip_edges()
 			diff_section_header.text = "Showing changes from %s - %s" % [name, date]
 			var diff = update_properties_diff(checked_out_branch, ["foo", "bar"], previous_heads, change_heads)
