@@ -415,12 +415,15 @@ func confirm_merge_preview():
 	)
 
 func toggle_section(section_header: Button, section_body: Control):
+	var parent_vbox = section_header.get_parent()
 	if section_body.visible:
 		section_header.icon = load("res://addons/patchwork/icons/collapsable-closed.svg")
 		section_body.visible = false
+		parent_vbox.set_v_size_flags(Control.SIZE_FILL)
 	else:
 		section_header.icon = load("res://addons/patchwork/icons/collapsable-open.svg")
 		section_body.visible = true
+		parent_vbox.set_v_size_flags(Control.SIZE_EXPAND_FILL)
 
 func unfold_section(section_header: Button, section_body: Control):
 	section_header.icon = load("res://addons/patchwork/icons/collapsable-open.svg")
