@@ -69,6 +69,10 @@ jobs:
         run: |
           cp -R modules/patchwork_editor/.github/actions/* .github/actions/
 
+      - name: Select Xcode 16
+        if: matrix.platform == 'macos'
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app
+
       - name: Restore Godot build cache
         uses: ./.github/actions/godot-cache-restore
         id: restore-cache
