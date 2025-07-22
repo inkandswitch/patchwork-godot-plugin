@@ -788,7 +788,7 @@ var prev_heads_after
 var last_diff: Dictionary = {}
 
 
-func _on_node_hovered(file_path: String, node_path: NodePath) -> void:
+func _on_node_hovered(file_path: String, node_paths: Array) -> void:
 	# print("on_node_hovered: ", file_path, node_path)
 	var node: Node = EditorInterface.get_edited_scene_root()
 	if node.scene_file_path != file_path:
@@ -803,9 +803,8 @@ func _on_node_hovered(file_path: String, node_path: NodePath) -> void:
 			var new_scene_changes = []
 			for node_change in scene_changes:
 				var np: String = node_change["node_path"]
-				if np == String(node_path) || np == "./" + String(node_path):
+				if node_paths.has(NodePath(np)):
 					new_scene_changes.append(node_change)
-					break
 			diff["changed_nodes"] = new_scene_changes
 			lst_diff = {}
 			lst_diff[file] = diff
@@ -813,7 +812,7 @@ func _on_node_hovered(file_path: String, node_path: NodePath) -> void:
 	# print("Updating highlight changes")
 	self.update_highlight_changes(lst_diff, GodotProject.get_checked_out_branch(), true)
 
-func _on_node_unhovered(file_path: String, node_path: NodePath) -> void:
+func _on_node_unhovered(file_path: String, node_path: Array) -> void:
 	self.update_highlight_changes(last_diff, GodotProject.get_checked_out_branch(), false)
 
 func _on_history_list_item_selected(index: int, _button, _modifiers) -> void:
