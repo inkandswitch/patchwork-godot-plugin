@@ -113,13 +113,9 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
-item_count = 3
+item_count = 1
 popup/item_0/text = "main"
 popup/item_0/id = 0
-popup/item_1/text = "├─ Nikita's 2nd"
-popup/item_1/id = 1
-popup/item_2/text = "└─ Nikita's remix"
-popup/item_2/id = 2
 
 [node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/HBoxContainer2"]
 layout_mode = 2
@@ -154,15 +150,26 @@ theme_override_constants/margin_top = 8
 theme_override_constants/margin_right = 8
 theme_override_constants/margin_bottom = 8
 
-[node name="VBoxContainer" type="VSplitContainer" parent="VBoxContainer/PanelContainer/MarginContainer"]
+[node name="InitPanelContainer" type="PanelContainer" parent="VBoxContainer/PanelContainer/MarginContainer"]
+unique_name_in_owner = true
+visible = false
 layout_mode = 2
 
-[node name="HistoryVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
+[node name="InitializeButton" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/InitPanelContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Click here to create a new repository from current project..."
+
+[node name="MainVSplit" type="VSplitContainer" parent="VBoxContainer/PanelContainer/MarginContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="HistoryVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="HistorySectionHeader" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/HistoryVBox"]
+[node name="HistorySectionHeader" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/HistoryVBox"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_styles/focus = SubResource("StyleBoxFlat_qb0q7")
@@ -172,51 +179,48 @@ text = "History"
 icon = ExtResource("4_of6ia")
 alignment = 0
 
-[node name="HistorySectionBody" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/HistoryVBox"]
+[node name="HistorySectionBody" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/HistoryVBox"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="HistoryList" type="ItemList" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/HistoryVBox/HistorySectionBody"]
+[node name="HistoryList" type="ItemList" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/HistoryVBox/HistorySectionBody"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-item_count = 6
-item_0/text = "Nikita made some changes - 12 hours ago"
-item_1/text = "Nikita made some changes - 13 hours ago"
-item_2/text = "Nikita made some changes - 13 hours ago"
-item_3/text = "Nikita made some changes - 13 hours ago"
-item_4/text = "Nikita made some changes - 13 hours ago"
-item_5/text = "Nikita made some changes - 13 hours ago"
+item_count = 3
+item_0/text = "Nikita made some changes - 29 minutes ago"
+item_1/text = "Nikita made some changes - 30 minutes ago"
+item_2/text = "Nikita made some changes - 30 minutes ago"
 
-[node name="DiffVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
+[node name="DiffVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="DiffSectionHeader" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/DiffVBox"]
+[node name="DiffSectionHeader" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/DiffVBox"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Changes"
 icon = ExtResource("4_of6ia")
 alignment = 0
 
-[node name="DiffSectionBody" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/DiffVBox"]
+[node name="DiffSectionBody" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/DiffVBox"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="HighlightChangesCheckbox" type="CheckBox" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/DiffVBox/DiffSectionBody"]
+[node name="HighlightChangesCheckbox" type="CheckBox" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/DiffVBox/DiffSectionBody"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Highlight changes in scene"
 
-[node name="MainDiffContainer" type="MarginContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/DiffVBox/DiffSectionBody"]
+[node name="MainDiffContainer" type="MarginContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/DiffVBox/DiffSectionBody"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="BigDiffer" type="DiffInspector" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/DiffVBox/DiffSectionBody/MainDiffContainer"]
+[node name="BigDiffer" type="DiffInspector" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/DiffVBox/DiffSectionBody/MainDiffContainer"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
@@ -229,7 +233,7 @@ removed_icon = ExtResource("6_ha5pl")
 modified_icon = ExtResource("7_o8jin")
 metadata/_custom_type_script = "uid://d145i10hos3c6"
 
-[node name="DifferMainVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/DiffVBox/DiffSectionBody/MainDiffContainer/BigDiffer"]
+[node name="DifferMainVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/DiffVBox/DiffSectionBody/MainDiffContainer/BigDiffer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
