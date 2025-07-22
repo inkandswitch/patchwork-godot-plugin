@@ -58,8 +58,6 @@ var diff_result: Dictionary
 
 var categories: Array = []
 var sections: Array = []
-var node_to_file_map: Dictionary = {}
-var node_to_children_map: Dictionary = {}
 var changed_nodes: Array = []
 var added_nodes: Array = []
 var deleted_nodes: Array = []
@@ -254,29 +252,26 @@ func get_prop_diffs_from_properties(properties: Dictionary, change_type: String)
 	return prop_diffs
 
 
-func _on_node_box_clicked(section: String) -> void:
-	do_node_box_click(section, false)
+func _on_node_box_clicked(sec: DiffInspectorSection, file_path: String, section: String) -> void:
+	do_node_box_click(sec, file_path, section, false)
 
-func do_node_box_click(section: String, changed_scene: bool = false) -> void:
+func do_node_box_click(sec: DiffInspectorSection, file_path: String, section: String, changed_scene: bool = false) -> void:
 	print("!!! box clicked: ", section)
 	if !section.begins_with("res://"):
-		var file_path = node_to_file_map.get(section, "")
-		if file_path == "":
-			return
 		var node_path = section
 		if section.begins_with("./"):
 			node_path = node_path.substr(2)
 
 		if PatchworkEditor.is_changing_scene():
 			waiting_callables.append(func():
-				self.do_node_box_click(section, true)
+				self.do_node_box_click(sec, file_path, section, true)
 			)
 			return
 		var node: Node = EditorInterface.get_edited_scene_root()
 		if node.scene_file_path != file_path:
 			EditorInterface.open_scene_from_path(file_path)
 			waiting_callables.append(func():
-				self.do_node_box_click(section, true)
+				self.do_node_box_click(sec, file_path, section, true)
 			)
 			return
 		var node_to_select: Node = node.get_node(node_path)
@@ -285,13 +280,18 @@ func do_node_box_click(section: String, changed_scene: bool = false) -> void:
 			EditorInterface.set_main_screen_editor("2D")
 		# if we changed the scene, emit the hovered signal so the sidebar can update the highlight changes
 		if changed_scene:
-			node_hovered.emit(file_path, [NodePath(node_path)])
+			_on_parent_node_box_hovered(sec, file_path)
 
 func _on_resource_box_clicked(section: String) -> void:
+	do_resource_box_click(section)
+
+func do_resource_box_click(section: String) -> bool:
 	var file_path = section
 	var extension = file_path.get_extension().to_lower()
 	EditorInterface.get_file_system_dock().navigate_to_path(file_path)
+	var changed_scene = false
 	if extension == "tscn" or extension == "scn":
+		changed_scene = true
 		var curr_root = EditorInterface.get_edited_scene_root()
 		if is_instance_valid(curr_root) && curr_root.scene_file_path == file_path:
 			pass
@@ -312,6 +312,13 @@ func _on_resource_box_clicked(section: String) -> void:
 		var ff = ResourceLoader.load(file_path)
 		if is_instance_valid(ff):
 			EditorInterface.edit_resource(ff)
+	return changed_scene
+
+func _on_scene_resource_box_clicked(sec: DiffInspectorSection, section: String) -> void:
+	if do_resource_box_click(section):
+		waiting_callables.append(func():
+			self._on_parent_node_box_hovered(sec, section)
+		)
 
 func _on_text_box_clicked(section: String) -> void:
 	var file_path = section
@@ -321,48 +328,41 @@ func _on_text_box_clicked(section: String) -> void:
 	EditorInterface.set_main_screen_editor("Script")
 
 
-func _on_node_box_mouse_entered(section: String) -> void:
-	var node_path = section
-	if section.begins_with("./"):
-		node_path = node_path.substr(2)
-	var file_path = node_to_file_map.get(section, "")
-	if file_path == "":
-		return
-	node_hovered.emit(file_path, [NodePath(node_path)])
-	print("!!! node box hovered: ", file_path, node_path)
+func node_has_editor_properties(node: DiffInspectorSection) -> bool:
+	for c in node.get_vbox().get_children():
+		if not(c is DiffInspectorSection or c is HSeparator or c is VSeparator):
+			return true
+	return false
 
-func _on_node_box_mouse_exited(section: String) -> void:
-	var node_path = section
-	if section.begins_with("./"):
-		node_path = node_path.substr(2)
-	var file_path = node_to_file_map.get(section, "")
-	if file_path == "":
-		return
-	node_unhovered.emit(file_path, [NodePath(node_path)])
-	print("!!! node box unhovered: ", file_path, node_path)
-
-func _on_parent_node_box_hovered(section: String) -> void:
-	var children = node_to_children_map[section]
+func get_children_paths(node: DiffInspectorSection) -> Array:
+	# var children = node_to_children_map[node.get_section()]
+	var children = node.get_vbox().get_children()
 	var child_paths = []
+	if node_has_editor_properties(node):
+		child_paths.append(NodePath(node.get_section()))
 	for child in children:
-		child_paths.append(NodePath(child["node_path"]))
+		if child is DiffInspectorSection:
+			var new_paths = get_children_paths(child)
+			if node_has_editor_properties(child):
+				child_paths.append(NodePath(child.get_section()))
+			child_paths.append_array(new_paths)
+
 	child_paths.sort()
-	node_hovered.emit(node_to_file_map[section], child_paths)
+	return child_paths
+
+
+func _on_parent_node_box_hovered(node: DiffInspectorSection, file_path: String) -> void:
+	var child_paths = get_children_paths(node)
+	node_hovered.emit(file_path, child_paths)
 	print("!!! parent node box hovered: ", child_paths)
 
-func _on_parent_node_box_unhovered(section: String) -> void:
-	var children = node_to_children_map[section]
-	var child_paths = []
-	for child in children:
-		child_paths.append(NodePath(child["node_path"]))
-	child_paths.sort()
-	node_unhovered.emit(node_to_file_map[section], child_paths)
-
+func _on_parent_node_box_unhovered(node: DiffInspectorSection, file_path: String) -> void:
+	var child_paths = get_children_paths(node)
+	node_unhovered.emit(file_path, child_paths)
 	print("!!! parent node box unhovered: ", child_paths)
 
-func add_NodeDiffResult(file_section: DiffInspectorSection, node_diff: Dictionary, parent_path: String):
+func create_node_diff_section(file_section: DiffInspectorSection, node_diff: Dictionary, parent_file_path: String, node_label: String):
 	var node_name: String = node_diff["node_path"] # remove the leading "./"
-	var node_label: String = node_name
 	var change_type: String = node_diff["change_type"]
 	# print("!!! adding node diff result for ", node_name, " with type ", change_type)
 
@@ -391,15 +391,15 @@ func add_NodeDiffResult(file_section: DiffInspectorSection, node_diff: Dictionar
 	else:
 		color = modified_color
 		node_label += " (Modified)"
-		prop_diffs = node_diff["changed_props"]
+		prop_diffs = node_diff.get("changed_props", {})
 		changed_nodes.append(fake_node)
+	if prop_diffs.size() == 0:
+		return null
 	inspector_section.setup(node_name, node_label, fake_node, color, true, 1, 2)
 	inspector_section.set_type(change_type)
 	# fake_node.original_class = node_type
 	var i = 0
 	# get the length of the prop_diffs dictionary
-	var prop_diffs_length = prop_diffs.keys().size()
-	# print("prop_diffs_length: ", prop_diffs_length)
 	for prop_name in prop_diffs.keys():
 		if i > 0:
 			var divider = HSeparator.new()
@@ -407,21 +407,13 @@ func add_NodeDiffResult(file_section: DiffInspectorSection, node_diff: Dictionar
 		add_PropertyDiffResult(inspector_section, prop_diffs[prop_name], node_type)
 		i += 1
 	inspector_section.unfold()
-	inspector_section.connect("box_clicked", self._on_node_box_clicked)
-	inspector_section.connect("section_mouse_entered", self._on_node_box_mouse_entered)
-	inspector_section.connect("section_mouse_exited", self._on_node_box_mouse_exited)
+	inspector_section.connect("box_clicked", func(section): self._on_node_box_clicked(inspector_section, parent_file_path, section))
+	inspector_section.connect("section_mouse_entered", func(_section): self._on_parent_node_box_hovered(inspector_section, parent_file_path))
+	inspector_section.connect("section_mouse_exited", func(_section): self._on_parent_node_box_unhovered(inspector_section, parent_file_path))
 	sections.append(inspector_section)
-	node_to_file_map[node_name] = parent_path
-	file_section.get_vbox().add_child(inspector_section)
+	# file_section.get_vbox().add_child(inspector_section)
 	return inspector_section
 
-
-# class DiffSet:
-# 	var prop_name: String
-# 	var change_type: String
-# 	var old_prop_value: Variant
-# 	var new_prop_value: Variant
-# 	var label: String
 
 func add_resource_diff(inspector_section: DiffInspectorSection, change_type: String, file_path: String, old_resource: Resource, new_resource: Resource) -> void:
 	# print("adding resource diff for ", file_path)
@@ -451,37 +443,112 @@ func add_text_diff(inspector_section: DiffInspectorSection, unified_diff: Dictio
 # 		 - Node5/ ->
 # 			 - Node6/ ->
 # start by popping off the lefthand side of the node paths
-func add_node_diff(file_section: DiffInspectorSection, file_path: String, node_diffs: Array) -> void:
+
+func count_children(sec: DiffInspectorSection) -> int:
+	var count = 0
+	for child in sec.get_vbox().get_children():
+		if child is DiffInspectorSection or child is PanelContainer:
+			count += 1
+	return count
+
+func pop_node_sections(name: String, map: Dictionary, parent_section: DiffInspectorSection, file_path: String, override_label = null):
+		var sec: DiffInspectorSection = null
+		override_label = override_label if override_label != null else name.get_file()
+		print("!!! pop_node_sections: ", name)
+		# merge the child sections into the parent section
+		if map.size() == 1 and not map.has("_diff"):
+			var child_key = map.keys()[0]
+			var child_diff = map[child_key]
+			var new_label = child_key.trim_prefix(name.get_base_dir() + "/")
+			pop_node_sections(child_key, child_diff, parent_section, file_path, new_label)
+			return
+
+		var added_diff = false
+		if map.has("_diff"):
+			sec = create_node_diff_section(parent_section, map["_diff"], file_path, override_label)
+			if sec != null:
+				added_diff = true
+				parent_section.get_vbox().add_child(sec)
+			elif map.size() == 1:
+				return
+		if sec == null:
+			var fake_node: MissingResource = MissingResource.new()
+			sec = DiffInspectorSection.new()
+			sec.setup(name, override_label, fake_node, modified_color, true)
+			sec.set_type("modified")
+			sec.get_vbox().add_child(HSeparator.new())
+			changed_nodes.append(fake_node)
+
+			sec.connect("box_clicked", func(section): self._on_node_box_clicked(sec, file_path, section))
+			sec.connect("section_mouse_entered", func(_section): self._on_parent_node_box_hovered(sec, file_path))
+			sec.connect("section_mouse_exited", func(_section): self._on_parent_node_box_unhovered(sec, file_path))
+
+		for key in map.keys():
+			if key == "_diff":
+				continue
+			else:
+				pop_node_sections(key, map[key], sec, file_path, null)
+		var count = count_children(sec)
+		# merge the child sections into the parent section if there are no diffs
+		if not added_diff:
+			if count > 1:
+				added_diff = true
+				parent_section.get_vbox().add_child(sec)
+			elif count == 1:
+				var child_sec: DiffInspectorSection = sec.get_vbox().get_child(1)
+				if child_sec is DiffInspectorSection:
+					child_sec.label = sec.label + "/" + child_sec.label
+					child_sec.reparent(parent_section.get_vbox())
+				else:
+					added_diff = true
+					parent_section.get_vbox().add_child(sec)
+		if not added_diff:
+			sec.queue_free()
+
+func _pop_child_map(node_diffs: Array) -> Dictionary:
+	var child_map: Dictionary = {}
+	var to_remove: Array = []
+	# node_diffs.sort_custom(func(a, b): return a["node_path"] > b["node_path"])
 	for node_diff in node_diffs:
 		var node_path: String = node_diff["node_path"]
+		# skip temporary nodes created by the instance
 		if (node_path.contains("@")):
 			continue
 
-		# skip temporary nodes created by the instance
-		var root = node_path.split("/")[0]
-		if !node_to_children_map.has(root):
-			node_to_children_map[root] = []
-		node_to_children_map[root].append(node_diff)
+		var parts = node_path.split("/")
+		if (parts.size() > 2):
+			print("!!! parts: ", parts)
+
+		for i in range(parts.size() - 1, -1, -1):
+			var parent = "/".join(parts.slice(0, i + 1))
+			if !child_map.has(parent):
+				child_map[parent] = {}
+			if i == parts.size() - 1:
+				child_map[parent]["_diff"] = node_diff
+			else:
+				var child = "/".join(parts.slice(0, i + 2))
+				child_map[parent][child] = child_map[child]
+			child_map[parent].sort()
+			if i != 0:
+				to_remove.append(parent)
+
+	for key in to_remove:
+		child_map.erase(key)
+	child_map.sort()
+	return child_map
 
 
 
-	for root in node_to_children_map.keys():
-		node_to_file_map[root] = file_path
-		var children = node_to_children_map[root]
-		var inspector_section = DiffInspectorSection.new()
-		var fake_node: MissingResource = MissingResource.new()
-		inspector_section.get_vbox().add_child(VSeparator.new())
-		inspector_section.setup(root, root, fake_node, modified_color, true)
-		inspector_section.set_type("modified")
-		changed_nodes.append(fake_node)
-		for child in children:
-			var sec = add_NodeDiffResult(inspector_section, child, file_path)
-		inspector_section.connect("box_clicked", self._on_node_box_clicked)
-		inspector_section.connect("section_mouse_entered", self._on_parent_node_box_hovered)
-		inspector_section.connect("section_mouse_exited", self._on_parent_node_box_unhovered)
-		inspector_section.unfold()
+func add_node_diff(file_section: DiffInspectorSection, file_path: String, node_diffs: Array) -> void:
+	file_section.get_vbox().add_child(HSeparator.new())
+	file_section.connect("section_mouse_entered", func(section): self._on_parent_node_box_hovered(file_section, file_path))
+	file_section.connect("section_mouse_exited", func(section): self._on_parent_node_box_unhovered(file_section, file_path))
 
-		file_section.get_vbox().add_child(inspector_section)
+	file_section.unfold()
+	var child_map = _pop_child_map(node_diffs)
+	for key in child_map.keys():
+		pop_node_sections(key, child_map[key], file_section, file_path)
+
 
 
 
@@ -525,7 +592,7 @@ func add_FileDiffResult(file_path: String, file_diff: Dictionary) -> void:
 	elif type == "scene_changed":
 		var node_diffs: Array = file_diff["changed_nodes"]
 		node_diffs.sort_custom(func(a, b): return a["node_path"] < b["node_path"])
-		inspector_section.connect("box_clicked", self._on_resource_box_clicked)
+		inspector_section.connect("box_clicked", func(section): self._on_scene_resource_box_clicked(inspector_section, section))
 		add_node_diff(inspector_section, file_path, node_diffs)
 		# print("node_diff size: ", node_diffs.size())
 		# for node in node_diffs:
@@ -565,7 +632,6 @@ func reset() -> void:
 	changed_nodes.clear()
 	added_nodes.clear()
 	deleted_nodes.clear()
-	node_to_file_map.clear()
 	# changed_resources.clear()
 
 
