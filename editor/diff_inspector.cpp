@@ -482,6 +482,15 @@ String DiffInspectorSection::get_section() const {
 	return section;
 }
 
+String DiffInspectorSection::get_label() const {
+	return label;
+}
+
+void DiffInspectorSection::set_label(const String &p_label) {
+	label = p_label;
+	queue_redraw();
+}
+
 void DiffInspectorSection::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("setup", "section", "label", "object", "bg_color", "foldable", "indent_depth", "level"), &DiffInspectorSection::setup, DEFVAL(0), DEFVAL(1));
 	ClassDB::bind_method(D_METHOD("get_vbox"), &DiffInspectorSection::get_vbox);
@@ -495,6 +504,11 @@ void DiffInspectorSection::_bind_methods() {
 	// set/get bg color
 	ClassDB::bind_method(D_METHOD("set_bg_color", "bg_color"), &DiffInspectorSection::set_bg_color);
 	ClassDB::bind_method(D_METHOD("get_bg_color"), &DiffInspectorSection::get_bg_color);
+
+	ClassDB::bind_method(D_METHOD("set_label", "label"), &DiffInspectorSection::set_label);
+	ClassDB::bind_method(D_METHOD("get_label"), &DiffInspectorSection::get_label);
+
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "label"), "set_label", "get_label");
 
 	ADD_SIGNAL(MethodInfo("box_clicked", PropertyInfo(Variant::STRING, "section")));
 	ADD_SIGNAL(MethodInfo("section_mouse_entered", PropertyInfo(Variant::STRING, "section")));

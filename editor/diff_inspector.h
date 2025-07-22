@@ -90,6 +90,9 @@ public:
 	bool is_folded() const;
 	String get_section() const;
 
+	String get_label() const;
+	void set_label(const String &p_label);
+
 	Rect2 get_header_rect() const;
 
 	DiffInspectorSection();
