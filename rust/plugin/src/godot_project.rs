@@ -536,7 +536,7 @@ impl GodotProjectImpl {
 				Some(doc_id.clone())
 			},
 			CheckedOutBranchState::NothingCheckedOut(current_branch_id) => {
-				tracing::error!("**@#%@#%!@#%#@!*** We're checking out a branch while not checked out on any branch????");
+				tracing::warn!("Checking out a branch while not checked out on any branch????");
 				current_branch_id.clone()
 			}
 		};
@@ -2013,6 +2013,9 @@ impl GodotProjectImpl {
         let project_doc_id: String = PatchworkConfigAccessor::get_project_value("project_doc_id", "");
         let checked_out_branch_doc_id = PatchworkConfigAccessor::get_project_value("checked_out_branch_doc_id", "");
         tracing::info!("Starting GodotProject with project doc id: {:?}", if project_doc_id == "" { "<NEW DOC>" } else { &project_doc_id });
+		self.should_update_godot = false;
+		self.just_checked_out_new_branch = false;
+		self.last_synced = None;
         self.project_doc_id = match DocumentId::from_str(&project_doc_id) {
             Ok(doc_id) => Some(doc_id),
             Err(e) => None,
@@ -2287,7 +2290,8 @@ impl GodotProjectImpl {
                                 );
                                 (Some(branch_state), cloned_prev_branch_id)
                             } else {
-								panic!("NOTHING CHECKED OUT AND WE'RE NOT CHECKING OUT A NEW BRANCH?!?!?! {:?}", branch_state.name);
+								// we're still waiting for the project to be fully synced
+								(None, None)
                             }
                         }
                         CheckedOutBranchState::CheckingOut(branch_doc_id, prev_branch_info) => {
