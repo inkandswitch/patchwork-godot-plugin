@@ -283,13 +283,12 @@ theme_override_constants/separation = 16
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
 
-[node name="ReloadExtensionButton" type="Button" parent="VBoxContainer/HBoxContainer"]
+[node name="ClearProjectButton" type="Button" parent="VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 10
 size_flags_vertical = 4
-disabled = true
-text = "Reload Extension"
+text = "Clear Project"
 
 [node name="ReloadUIButton" type="Button" parent="VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true

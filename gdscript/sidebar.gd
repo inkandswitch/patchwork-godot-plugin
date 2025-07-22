@@ -165,10 +165,25 @@ func _on_user_button_pressed(disable_cancel: bool = false):
 	else:
 		%UserNameDialog.get_cancel_button().visible = true
 
+func _on_clear_project_button_pressed():
+	popup_box(self, $ConfirmationDialog, "Are you sure you want to clear the project?", "Clear Project", func(): clear_project())
+
+func clear_project():
+	GodotProject.stop()
+	PatchworkConfig.set_user_value("user_name", "")
+	PatchworkConfig.set_project_value("project_doc_id", "")
+	PatchworkConfig.set_project_value("checked_out_branch_doc_id", "")
+	_on_reload_ui_button_pressed()
+
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
 	print("Sidebar: ready!")
 	%ReloadUIButton.pressed.connect(self._on_reload_ui_button_pressed)
+	if DEV_MODE:
+		%ClearProjectButton.visible = true
+		%ClearProjectButton.pressed.connect(self._on_clear_project_button_pressed)
+	else:
+		%ClearProjectButton.visible = false
 	%InitializeButton.pressed.connect(self._on_init_button_pressed)
 	%LoadExistingButton.pressed.connect(self._on_load_project_button_pressed)
 	_on_project_id_box_text_changed(%ProjectIDBox.text)
@@ -179,6 +194,7 @@ func _ready() -> void:
 	branch_picker.disabled = true
 	history_list.clear()
 	branch_picker.clear()
+
 
 	# need to add task_modal as a child to the plugin otherwise process won't be called
 	add_child(task_modal)
