@@ -31,6 +31,8 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 @onready var diff_section_body: Control = %DiffSectionBody
 @onready var branch_picker_cover: Button = %BranchPickerCover
 
+const DEV_MODE = true
+
 const DIFF_SECTION_HEADER_TEXT_FORMAT = "Changes: Showing diff between %s and %s"
 
 const TEMP_DIR = "user://tmp"
@@ -171,8 +173,18 @@ func _ready() -> void:
 	%LoadExistingButton.pressed.connect(self._on_load_project_button_pressed)
 	_on_project_id_box_text_changed(%ProjectIDBox.text)
 	user_button.pressed.connect(_on_user_button_pressed)
+	# branch_picker.disabled = true
+	merge_button.disabled = true
+	fork_button.disabled = true
+	branch_picker.disabled = true
+	history_list.clear()
+	branch_picker.clear()
+
 	# need to add task_modal as a child to the plugin otherwise process won't be called
 	add_child(task_modal)
+	waiting_callables.append(self._try_init)
+
+func _try_init():
 	# The singleton class accessor is still pointing to the old GodotProject singleton
 	# if we're hot-reloading, so we check the Engine for the singleton instead.
 	# The rest of the accessor uses outside of _ready() should be fine.
@@ -219,7 +231,9 @@ func init(end_task: bool = true) -> void:
 		GodotProject.connect("checked_out_branch", self._update_ui_on_branch_checked_out);
 		GodotProject.connect("sync_server_connection_info_changed", _on_sync_server_connection_info_changed)
 
-
+	branch_picker.disabled = false
+	merge_button.disabled = false
+	fork_button.disabled = false
 	merge_button.pressed.connect(create_merge_preview_branch)
 	fork_button.pressed.connect(create_new_branch)
 

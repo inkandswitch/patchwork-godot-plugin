@@ -137,7 +137,6 @@ text = "Remix
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Can't merge main because it's not a remix of another branch"
-disabled = true
 text = "Merge"
 
 [node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
@@ -159,6 +158,7 @@ theme_override_constants/margin_bottom = 8
 
 [node name="InitPanelContainer" type="PanelContainer" parent="VBoxContainer/PanelContainer/MarginContainer"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 
 [node name="MarginContainer" type="MarginContainer" parent="VBoxContainer/PanelContainer/MarginContainer/InitPanelContainer"]
@@ -189,11 +189,11 @@ placeholder_text = "Project ID"
 [node name="LoadExistingButton" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/InitPanelContainer/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
+disabled = true
 text = "Load Existing Project"
 
 [node name="MainVSplit" type="VSplitContainer" parent="VBoxContainer/PanelContainer/MarginContainer"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
 
 [node name="HistoryVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit"]
@@ -221,7 +221,7 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 item_count = 7
-item_0/text = "↪️ Nikita merged \"Nikita's remix2222\" branch - 1 minutes ago"
+item_0/text = "↪️ Nikita merged \"Nikita's remix2222\" branch - 1 hours ago"
 item_1/text = "Nikita made some changes - 5 days ago"
 item_2/text = "Nikita made some changes - 5 days ago"
 item_3/text = "Nikita made some changes - 5 days ago"
@@ -467,7 +467,6 @@ theme_override_constants/separation = 8
 unique_name_in_owner = true
 title = "Set User Name"
 position = Vector2i(0, 36)
-size = Vector2i(150, 100)
 min_size = Vector2i(100, 70)
 
 [node name="VBoxContainer" type="VBoxContainer" parent="UserNameDialog"]
