@@ -76,7 +76,7 @@ func _on_sync_server_connection_info_changed(_peer_connection_info: Dictionary) 
 func _on_initial_checked_out_branch(_branch):
 	print("on_initial_checked_out_branch")
 	GodotProject.disconnect("checked_out_branch", self._on_initial_checked_out_branch)
-	init()
+	init(true)
 
 func _on_reload_ui_button_pressed():
 	reload_ui.emit()
@@ -87,7 +87,7 @@ func wait_for_checked_out_branch():
 		godot_project.connect("checked_out_branch", self._on_initial_checked_out_branch)
 		task_modal.start_task("Loading Patchwork")
 	else:
-		init()
+		init(false)
 
 
 func _on_init_button_pressed():
@@ -143,9 +143,10 @@ func _process(delta: float) -> void:
 			callable.call()
 		waiting_callables.clear()
 
-func init() -> void:
+func init(end_task: bool = true) -> void:
 	print("Sidebar initialized!")
-	task_modal.end_task("Loading Patchwork")
+	if end_task:
+		task_modal.end_task("Loading Patchwork")
 	update_ui(true)
 
 	# @Paul: I think somewhere besides the plugin sidebar gets instantiated. Is this something godot does?
