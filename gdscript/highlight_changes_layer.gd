@@ -20,7 +20,7 @@ func _ready():
 	color_rect.size = Vector2(1000, 1000)
 	color_rect.name = "PatchworkColorRect"
 	add_child(color_rect)
-	
+
 	# Create and assign the shader material
 	shader_material = ShaderMaterial.new()
 	var shader = load("res://addons/patchwork/gdscript/highlight_shader.gdshader")
@@ -37,7 +37,7 @@ func update_overlay(scene_changes: Dictionary):
 
 	var normalized_rects = []
 	var rect_colors = []
-	
+
 	for node_change in scene_changes.changed_nodes:
 		var node_path = node_change.node_path
 		var node = scene_node.get_node_or_null(node_path)
@@ -47,11 +47,11 @@ func update_overlay(scene_changes: Dictionary):
 			continue
 
 		var box = _get_node_bounding_box(node)
-		
+
 		if box != null:
 			# Convert to coordinates relative to our overlay
 			var rel_pos = box.position - overlay_position
-			
+
 			# Normalize coordinates to 0-1 range
 			var normalized_rect = Vector4(
 				rel_pos.x / overlay_size.x,
@@ -59,7 +59,7 @@ func update_overlay(scene_changes: Dictionary):
 				box.size.x / overlay_size.x,
 				box.size.y / overlay_size.y
 			)
-			
+
 			normalized_rects.append(normalized_rect)
 
 			if node_change.change_type == "modified":
@@ -107,16 +107,17 @@ static func remove_highlight(root: Node):
 
 static func _get_node_bounding_box(node: Node):
 	var bounding_box
-	
+
 	# ignore HighlightChangesLayer
 	if node is HighlightChangesLayer:
 		return null
 
+	# TODO: Add box that don't have sizes
 	# Special handling for collision shapes
 	if node is CollisionShape2D:
 		var shape = node.shape
 		var rect = Rect2()
-		
+
 		if shape is CircleShape2D:
 			var radius = shape.radius
 			rect = Rect2(-radius, -radius, radius * 2, radius * 2)
@@ -127,7 +128,7 @@ static func _get_node_bounding_box(node: Node):
 			var radius = shape.radius
 			var height = shape.height
 			rect = Rect2(-radius, -height / 2 - radius, radius * 2, height + radius * 2)
-		
+
 		# Convert to global coordinates
 		var transform = node.get_global_transform()
 		rect = transform * rect
@@ -140,20 +141,20 @@ static func _get_node_bounding_box(node: Node):
 			var transform = node.get_global_transform()
 			rect = transform * rect
 		bounding_box = rect
-	
+
 	# Recursively process all children
 	for child in node.get_children():
 		# Get the bounding box of the child
 		var child_rect = _get_node_bounding_box(child)
-		
+
 		# Skip empty rects
 		if child_rect == null or child_rect.size.x <= 0 or child_rect.size.y <= 0:
 			continue
-			
+
 		# If this is the first valid rect, use it directly
 		if bounding_box == null:
 			bounding_box = child_rect
 		else:
 			bounding_box = bounding_box.merge(child_rect)
-		
+
 	return bounding_box

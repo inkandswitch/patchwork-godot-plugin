@@ -329,6 +329,7 @@ func _on_node_box_mouse_entered(section: String) -> void:
 	if file_path == "":
 		return
 	node_hovered.emit(file_path, [NodePath(node_path)])
+	print("!!! node box hovered: ", file_path, node_path)
 
 func _on_node_box_mouse_exited(section: String) -> void:
 	var node_path = section
@@ -338,8 +339,26 @@ func _on_node_box_mouse_exited(section: String) -> void:
 	if file_path == "":
 		return
 	node_unhovered.emit(file_path, [NodePath(node_path)])
+	print("!!! node box unhovered: ", file_path, node_path)
 
+func _on_parent_node_box_hovered(section: String) -> void:
+	var children = node_to_children_map[section]
+	var child_paths = []
+	for child in children:
+		child_paths.append(NodePath(child["node_path"]))
+	child_paths.sort()
+	node_hovered.emit(node_to_file_map[section], child_paths)
+	print("!!! parent node box hovered: ", child_paths)
 
+func _on_parent_node_box_unhovered(section: String) -> void:
+	var children = node_to_children_map[section]
+	var child_paths = []
+	for child in children:
+		child_paths.append(NodePath(child["node_path"]))
+	child_paths.sort()
+	node_unhovered.emit(node_to_file_map[section], child_paths)
+
+	print("!!! parent node box unhovered: ", child_paths)
 
 func add_NodeDiffResult(file_section: DiffInspectorSection, node_diff: Dictionary, parent_path: String):
 	var node_name: String = node_diff["node_path"] # remove the leading "./"
@@ -422,22 +441,6 @@ func add_text_diff(inspector_section: DiffInspectorSection, unified_diff: Dictio
 	text_diff.custom_minimum_size = Vector2(100, 500)
 	inspector_section.get_vbox().add_child(text_diff)
 
-func _on_parent_node_box_hovered(section: String) -> void:
-	var children = node_to_children_map[section]
-	var child_paths = []
-	for child in children:
-		child_paths.append(NodePath(child["node_path"]))
-	child_paths.sort()
-	node_hovered.emit(node_to_file_map[section], child_paths)
-	print("!!! parent node box hovered: ", child_paths)
-
-func _on_parent_node_box_unhovered(section: String) -> void:
-	var children = node_to_children_map[section]
-	var child_paths = []
-	for child in children:
-		child_paths.append(NodePath(child["node_path"]))
-	child_paths.sort()
-	node_unhovered.emit(node_to_file_map[section], child_paths)
 
 #we're going to group them together by their parent node(s)
 # e.g.: Node1/Node2/Node3/Node4
@@ -460,11 +463,14 @@ func add_node_diff(file_section: DiffInspectorSection, file_path: String, node_d
 			node_to_children_map[root] = []
 		node_to_children_map[root].append(node_diff)
 
+
+
 	for root in node_to_children_map.keys():
 		node_to_file_map[root] = file_path
 		var children = node_to_children_map[root]
 		var inspector_section = DiffInspectorSection.new()
 		var fake_node: MissingResource = MissingResource.new()
+		inspector_section.get_vbox().add_child(VSeparator.new())
 		inspector_section.setup(root, root, fake_node, modified_color, true)
 		inspector_section.set_type("modified")
 		changed_nodes.append(fake_node)
@@ -473,6 +479,8 @@ func add_node_diff(file_section: DiffInspectorSection, file_path: String, node_d
 		inspector_section.connect("box_clicked", self._on_node_box_clicked)
 		inspector_section.connect("section_mouse_entered", self._on_parent_node_box_hovered)
 		inspector_section.connect("section_mouse_exited", self._on_parent_node_box_unhovered)
+		inspector_section.unfold()
+
 		file_section.get_vbox().add_child(inspector_section)
 
 
@@ -526,6 +534,7 @@ func add_FileDiffResult(file_path: String, file_diff: Dictionary) -> void:
 		# 	if (node_path.contains("@")):
 		# 		continue
 		# 	add_NodeDiffResult(inspector_section, node, file_path)
+	inspector_section.unfold()
 	sections.append(inspector_section)
 	main_vbox.add_child(inspector_section)
 
