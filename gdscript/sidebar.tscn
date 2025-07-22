@@ -231,11 +231,6 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="HighlightChangesCheckbox" type="CheckBox" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/DiffVBox/DiffSectionBody"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Highlight changes in scene"
-
 [node name="MainDiffContainer" type="MarginContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/DiffVBox/DiffSectionBody"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -431,11 +426,6 @@ Be careful and review your changes before merging."
 modulate = Color(1, 1, 1, 0)
 layout_mode = 2
 theme_override_constants/separation = 16
-
-[node name="HighlightChangesCheckboxMP" type="CheckBox" parent="MergePreviewModal/MarginContainer/VBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Highlight changes in scene"
 
 [node name="MergePreviewDiffContainer" type="MarginContainer" parent="MergePreviewModal/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true

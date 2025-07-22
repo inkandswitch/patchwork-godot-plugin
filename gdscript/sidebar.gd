@@ -8,8 +8,6 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 @onready var branch_picker: OptionButton = %BranchPicker
 @onready var history_list: ItemList = %HistoryList
 @onready var user_button: Button = %UserButton
-@onready var highlight_changes_checkbox: CheckBox = %HighlightChangesCheckbox
-@onready var highlight_changes_checkbox_mp: CheckBox = %HighlightChangesCheckboxMP
 @onready var inspector: DiffInspectorContainer = %BigDiffer
 @onready var merge_preview_modal: Control = %MergePreviewModal
 @onready var cancel_merge_button: Button = %CancelMergeButton
@@ -253,8 +251,6 @@ func init(end_task: bool = true) -> void:
 
 	branch_picker.item_selected.connect(_on_branch_picker_item_selected)
 
-	highlight_changes_checkbox.toggled.connect(_on_highlight_changes_checkbox_toggled)
-	highlight_changes_checkbox_mp.toggled.connect(_on_highlight_changes_checkbox_toggled)
 	cancel_merge_button.pressed.connect(cancel_merge_preview)
 	confirm_merge_button.pressed.connect(confirm_merge_preview)
 
@@ -322,9 +318,6 @@ func _on_branch_picker_item_selected(_index: int) -> void:
 
 	checkout_branch(selected_branch.id)
 
-func _on_highlight_changes_checkbox_toggled(pressed: bool) -> void:
-	highlight_changes = pressed
-	update_ui(true)
 
 static var void_func = func(): return
 static func popup_box(parent_window: Node, dialog: AcceptDialog, message: String, box_title: String, confirm_func: Callable = void_func, cancel_func: Callable = void_func):
@@ -621,7 +614,6 @@ func update_ui(update_diff: bool = false) -> void:
 
 	# show no diff for main branch
 	if checked_out_branch.is_main:
-		update_highlight_changes({}, checked_out_branch)
 		inspector.visible = false
 
 	else:
@@ -644,7 +636,6 @@ func update_ui(update_diff: bool = false) -> void:
 		inspector.visible = true
 
 
-		update_highlight_changes(diff, checked_out_branch)
 
 func update_sync_status(peer_connection_info, checked_out_branch, changes) -> void:
 	if !checked_out_branch:
@@ -813,19 +804,17 @@ func human_readable_timestamp(timestamp: int) -> String:
 	else:
 		return str(int(diff / 31536000)) + " years ago"
 
-func update_highlight_changes(diff: Dictionary, checked_out_branch: Dictionary, force_highlight: bool = false) -> void:
+func update_highlight_changes(diff: Dictionary) -> void:
 	if (PatchworkEditor.is_changing_scene()):
-		deterred_highlight_update = func(): update_highlight_changes(diff, checked_out_branch)
+		deterred_highlight_update = func(): update_highlight_changes(diff)
 		return
 
 	var edited_root = EditorInterface.get_edited_scene_root()
 
 	# reflect highlight changes checkbox state
-	highlight_changes_checkbox_mp.button_pressed = highlight_changes
-	highlight_changes_checkbox.button_pressed = highlight_changes
 
 	if edited_root:
-		if force_highlight || (highlight_changes && !checked_out_branch.is_main):
+		if not (not diff || diff.is_empty()):
 				var path = edited_root.scene_file_path
 				var scene_changes = diff.get(path)
 				if scene_changes:
@@ -861,10 +850,10 @@ func _on_node_hovered(file_path: String, node_paths: Array) -> void:
 			lst_diff[file] = diff
 			break
 	# print("Updating highlight changes")
-	self.update_highlight_changes(lst_diff, GodotProject.get_checked_out_branch(), true)
+	self.update_highlight_changes(lst_diff)
 
 func _on_node_unhovered(file_path: String, node_path: Array) -> void:
-	self.update_highlight_changes(last_diff, GodotProject.get_checked_out_branch(), false)
+	self.update_highlight_changes({})
 
 func _on_history_list_item_selected(index: int, _button, _modifiers) -> void:
 	var change_hash = history_list.get_item_metadata(index)
@@ -892,13 +881,12 @@ func _on_history_list_item_selected(index: int, _button, _modifiers) -> void:
 			diff_section_header.text = "Showing changes from %s - %s" % [name, date]
 			var diff = update_properties_diff(checked_out_branch, ["foo", "bar"], previous_heads, change_heads)
 			inspector.visible = true
-			update_highlight_changes(diff, checked_out_branch)
 		else:
 			printerr("no prev change hash")
 	else:
 		printerr("no change hash")
 
-func _on_empty_clicked(_vec2, idx):
+func _on_empty_clicked(_vec2, _idx):
 	update_ui(true)
 
 func update_properties_diff(checked_out_branch, changes, heads_before, heads_after) -> Dictionary:
