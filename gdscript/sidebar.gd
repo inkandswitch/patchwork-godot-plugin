@@ -188,17 +188,16 @@ func _ready() -> void:
 	%LoadExistingButton.pressed.connect(self._on_load_project_button_pressed)
 	_on_project_id_box_text_changed(%ProjectIDBox.text)
 	user_button.pressed.connect(_on_user_button_pressed)
-	# branch_picker.disabled = true
-	merge_button.disabled = true
-	fork_button.disabled = true
-	branch_picker.disabled = true
 	history_list.clear()
 	branch_picker.clear()
 
 
 	# need to add task_modal as a child to the plugin otherwise process won't be called
 	add_child(task_modal)
-	waiting_callables.append(self._try_init)
+	if not EditorInterface.get_edited_scene_root() == self:
+		waiting_callables.append(self._try_init)
+	else:
+		print("Sidebar: in editor!!!!!!!!!!!!")
 
 func _try_init():
 	# The singleton class accessor is still pointing to the old GodotProject singleton

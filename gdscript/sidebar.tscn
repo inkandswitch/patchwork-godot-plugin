@@ -113,16 +113,7 @@ stretch_mode = 4
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-selected = 0
-item_count = 4
-popup/item_0/text = "main"
-popup/item_0/id = 0
-popup/item_1/text = "├─ Nikita's remix"
-popup/item_1/id = 1
-popup/item_2/text = "├─ Nikita's remix"
-popup/item_2/id = 2
-popup/item_3/text = "└─ Nikita's remix2222"
-popup/item_3/id = 3
+disabled = true
 
 [node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/HBoxContainer2"]
 layout_mode = 2
@@ -130,6 +121,7 @@ layout_mode = 2
 [node name="ForkButton" type="Button" parent="VBoxContainer/HBoxContainer2"]
 unique_name_in_owner = true
 layout_mode = 2
+disabled = true
 text = "Remix
 "
 
@@ -137,6 +129,7 @@ text = "Remix
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Can't merge main because it's not a remix of another branch"
+disabled = true
 text = "Merge"
 
 [node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
@@ -220,14 +213,6 @@ size_flags_vertical = 3
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-item_count = 7
-item_0/text = "↪️ Nikita merged \"Nikita's remix2222\" branch - 1 hours ago"
-item_1/text = "Nikita made some changes - 5 days ago"
-item_2/text = "Nikita made some changes - 5 days ago"
-item_3/text = "Nikita made some changes - 5 days ago"
-item_4/text = "Nikita made some changes - 5 days ago"
-item_5/text = "Nikita made some changes - 5 days ago"
-item_6/text = "Nikita made some changes - 5 days ago"
 
 [node name="DiffVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit"]
 unique_name_in_owner = true
