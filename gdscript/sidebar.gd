@@ -234,6 +234,8 @@ func init(end_task: bool = true) -> void:
 	print("Sidebar initialized!")
 	if end_task:
 		task_modal.end_task("Loading Patchwork")
+	branch_picker.disabled = false
+	fork_button.disabled = false
 	update_ui(true)
 
 	# @Paul: I think somewhere besides the plugin sidebar gets instantiated. Is this something godot does?
@@ -246,9 +248,6 @@ func init(end_task: bool = true) -> void:
 		GodotProject.connect("checked_out_branch", self._update_ui_on_branch_checked_out);
 		GodotProject.connect("sync_server_connection_info_changed", _on_sync_server_connection_info_changed)
 
-	branch_picker.disabled = false
-	merge_button.disabled = false
-	fork_button.disabled = false
 	merge_button.pressed.connect(create_merge_preview_branch)
 	fork_button.pressed.connect(create_new_branch)
 
