@@ -780,7 +780,7 @@ impl FileSystemDriver {
 		res.unwrap()
 	}
 
-	pub async fn stop(&self) {
+	pub fn stop(&self) {
 		self.handle.abort();
 	}
 

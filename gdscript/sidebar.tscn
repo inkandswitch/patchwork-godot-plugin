@@ -46,9 +46,10 @@ bg_color = Color(0.323009, 0.365738, 0.435143, 1)
 shadow_size = 2
 
 [node name="Patchwork" type="MarginContainer"]
-anchors_preset = 15
-anchor_right = 1.0
+anchors_preset = -1
+anchor_right = 0.562
 anchor_bottom = 1.0
+offset_right = 0.959961
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_vertical = 3
@@ -92,7 +93,7 @@ unique_name_in_owner = true
 z_index = 1
 z_as_relative = false
 layout_mode = 2
-text = "Nikita's remix"
+text = "main"
 icon = ExtResource("7_qb0q7")
 alignment = 0
 
@@ -112,14 +113,7 @@ stretch_mode = 4
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-selected = 1
-item_count = 3
-popup/item_0/text = "main"
-popup/item_0/id = 0
-popup/item_1/text = "└─ Nikita's remix"
-popup/item_1/id = 1
-popup/item_2/text = "    └─ Nikita's remix"
-popup/item_2/id = 2
+disabled = true
 
 [node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/HBoxContainer2"]
 layout_mode = 2
@@ -127,12 +121,15 @@ layout_mode = 2
 [node name="ForkButton" type="Button" parent="VBoxContainer/HBoxContainer2"]
 unique_name_in_owner = true
 layout_mode = 2
+disabled = true
 text = "Remix
 "
 
 [node name="MergeButton" type="Button" parent="VBoxContainer/HBoxContainer2"]
 unique_name_in_owner = true
 layout_mode = 2
+tooltip_text = "Can't merge main because it's not a remix of another branch"
+disabled = true
 text = "Merge"
 
 [node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
@@ -152,10 +149,52 @@ theme_override_constants/margin_top = 8
 theme_override_constants/margin_right = 8
 theme_override_constants/margin_bottom = 8
 
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer"]
+[node name="InitPanelContainer" type="PanelContainer" parent="VBoxContainer/PanelContainer/MarginContainer"]
+unique_name_in_owner = true
+visible = false
 layout_mode = 2
 
-[node name="HistorySectionHeader" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
+[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer/PanelContainer/MarginContainer/InitPanelContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/InitPanelContainer/MarginContainer"]
+layout_mode = 2
+alignment = 1
+
+[node name="InitializeButton" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/InitPanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Create a new project..."
+
+[node name="VSeparator" type="HSeparator" parent="VBoxContainer/PanelContainer/MarginContainer/InitPanelContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 25
+
+[node name="ProjectIDBox" type="LineEdit" parent="VBoxContainer/PanelContainer/MarginContainer/InitPanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "Project ID"
+
+[node name="LoadExistingButton" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/InitPanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "Load Existing Project"
+
+[node name="MainVSplit" type="VSplitContainer" parent="VBoxContainer/PanelContainer/MarginContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="HistoryVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="HistorySectionHeader" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/HistoryVBox"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_styles/focus = SubResource("StyleBoxFlat_qb0q7")
@@ -165,64 +204,57 @@ text = "History"
 icon = ExtResource("4_of6ia")
 alignment = 0
 
-[node name="HistorySectionBody" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
+[node name="HistorySectionBody" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/HistoryVBox"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="HistoryList" type="ItemList" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/HistorySectionBody"]
+[node name="HistoryList" type="ItemList" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/HistoryVBox/HistorySectionBody"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-item_count = 23
-item_0/text = "↪️ Nikita merged \"Nikita's remix\" branch - 2 hours ago"
-item_1/text = "Nikita made some changes - 3 hours ago"
-item_2/text = "Nikita made some changes - 3 hours ago"
-item_3/text = "Nikita made some changes - 3 hours ago"
-item_4/text = "Nikita made some changes - 3 hours ago"
-item_5/text = "Nikita made some changes - 3 hours ago"
-item_6/text = "Nikita made some changes - 3 hours ago"
-item_7/text = "Nikita made some changes - 3 hours ago"
-item_8/text = "Nikita made some changes - 5 hours ago"
-item_9/text = "Nikita made some changes - 5 hours ago"
-item_10/text = "Nikita made some changes - 6 hours ago"
-item_11/text = "Nikita made some changes - 6 hours ago"
-item_12/text = "Nikita made some changes - 6 hours ago"
-item_13/text = "Nikita made some changes - 6 hours ago"
-item_14/text = "Nikita made some changes - 6 hours ago"
-item_15/text = "Nikita made some changes - 6 hours ago"
-item_16/text = "Nikita made some changes - 6 hours ago"
-item_17/text = "Nikita made some changes - 6 hours ago"
-item_18/text = "Nikita made some changes - 21 hours ago"
-item_19/text = "Nikita made some changes - 21 hours ago"
-item_20/text = "Nikita made some changes - 21 hours ago"
-item_21/text = "Nikita made some changes - 21 hours ago"
-item_22/text = "Nikita made some changes - 21 hours ago"
 
-[node name="DiffSectionHeader" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
+[node name="DiffVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="DiffSectionHeader" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/DiffVBox"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Changes"
 icon = ExtResource("4_of6ia")
 alignment = 0
 
-[node name="DiffSectionBody" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer"]
+[node name="ClearDiffButton" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/DiffVBox/DiffSectionHeader"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.992
+anchor_top = 0.5
+anchor_right = 0.992
+anchor_bottom = 0.5
+offset_left = -8.0
+offset_top = -4.0
+offset_bottom = 4.0
+grow_horizontal = 0
+grow_vertical = 2
+text = "Clear"
+
+[node name="DiffSectionBody" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/DiffVBox"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="HighlightChangesCheckbox" type="CheckBox" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/DiffSectionBody"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Highlight changes in scene"
-
-[node name="MainDiffContainer" type="MarginContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/DiffSectionBody"]
+[node name="MainDiffContainer" type="MarginContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/DiffVBox/DiffSectionBody"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="BigDiffer" type="DiffInspector" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/DiffSectionBody/MainDiffContainer"]
+[node name="BigDiffer" type="DiffInspector" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/DiffVBox/DiffSectionBody/MainDiffContainer"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 size_flags_vertical = 3
 theme = ExtResource("4_7letu")
@@ -233,7 +265,7 @@ removed_icon = ExtResource("6_ha5pl")
 modified_icon = ExtResource("7_o8jin")
 metadata/_custom_type_script = "uid://d145i10hos3c6"
 
-[node name="DifferMainVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/VBoxContainer/DiffSectionBody/MainDiffContainer/BigDiffer"]
+[node name="DifferMainVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/DiffVBox/DiffSectionBody/MainDiffContainer/BigDiffer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -247,13 +279,12 @@ theme_override_constants/separation = 16
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
 
-[node name="ReloadExtensionButton" type="Button" parent="VBoxContainer/HBoxContainer"]
+[node name="ClearProjectButton" type="Button" parent="VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 10
 size_flags_vertical = 4
-disabled = true
-text = "Reload Extension"
+text = "Clear Project"
 
 [node name="ReloadUIButton" type="Button" parent="VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
@@ -412,11 +443,6 @@ modulate = Color(1, 1, 1, 0)
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="HighlightChangesCheckboxMP" type="CheckBox" parent="MergePreviewModal/MarginContainer/VBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Highlight changes in scene"
-
 [node name="MergePreviewDiffContainer" type="MarginContainer" parent="MergePreviewModal/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -426,3 +452,23 @@ size_flags_vertical = 3
 layout_mode = 2
 size_flags_horizontal = 8
 theme_override_constants/separation = 8
+
+[node name="UserNameDialog" type="ConfirmationDialog" parent="."]
+unique_name_in_owner = true
+title = "Set User Name"
+position = Vector2i(0, 36)
+min_size = Vector2i(100, 70)
+
+[node name="VBoxContainer" type="VBoxContainer" parent="UserNameDialog"]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 142.0
+offset_bottom = 51.0
+
+[node name="UserNameEntry" type="LineEdit" parent="UserNameDialog/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "User Name..."
+
+[connection signal="text_changed" from="VBoxContainer/PanelContainer/MarginContainer/InitPanelContainer/MarginContainer/VBoxContainer/ProjectIDBox" to="." method="_on_project_id_box_text_changed"]
+[connection signal="confirmed" from="UserNameDialog" to="." method="_on_user_name_confirmed"]

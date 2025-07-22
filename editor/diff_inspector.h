@@ -47,6 +47,7 @@ class DiffInspectorSection : public Container {
 	int indent_depth = 0;
 	int level = 1;
 	Point2 arrow_position;
+	bool entered = false;
 
 	Timer *dropping_unfold_timer = nullptr;
 	bool dropping = false;
@@ -54,9 +55,11 @@ class DiffInspectorSection : public Container {
 
 	HashSet<StringName> revertable_properties;
 
+	bool unfolded = true;
+
 	void _test_unfold();
-	int _get_header_height();
-	Ref<Texture2D> _get_arrow();
+	int _get_header_height() const;
+	Ref<Texture2D> _get_arrow() const;
 	String type = "changed";
 
 protected:
@@ -83,6 +86,14 @@ public:
 	String get_type() const;
 	Object *get_object() const;
 	void update_bg_color();
+
+	bool is_folded() const;
+	String get_section() const;
+
+	String get_label() const;
+	void set_label(const String &p_label);
+
+	Rect2 get_header_rect() const;
 
 	DiffInspectorSection();
 	~DiffInspectorSection();

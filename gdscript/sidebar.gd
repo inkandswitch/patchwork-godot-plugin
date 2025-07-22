@@ -8,8 +8,6 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 @onready var branch_picker: OptionButton = %BranchPicker
 @onready var history_list: ItemList = %HistoryList
 @onready var user_button: Button = %UserButton
-@onready var highlight_changes_checkbox: CheckBox = %HighlightChangesCheckbox
-@onready var highlight_changes_checkbox_mp: CheckBox = %HighlightChangesCheckboxMP
 @onready var inspector: DiffInspectorContainer = %BigDiffer
 @onready var merge_preview_modal: Control = %MergePreviewModal
 @onready var cancel_merge_button: Button = %CancelMergeButton
@@ -31,6 +29,8 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 @onready var diff_section_body: Control = %DiffSectionBody
 @onready var branch_picker_cover: Button = %BranchPickerCover
 
+const DEV_MODE = true
+
 const DIFF_SECTION_HEADER_TEXT_FORMAT = "Changes: Showing diff between %s and %s"
 
 const TEMP_DIR = "user://tmp"
@@ -43,6 +43,7 @@ var task_modal: TaskModal = TaskModal.new()
 
 var highlight_changes = false
 
+var waiting_callables: Array = []
 
 var deterred_highlight_update = null
 
@@ -51,6 +52,7 @@ const CREATE_BRANCH_IDX = 1
 const MERGE_BRANCH_IDX = 2
 
 signal reload_ui();
+signal user_name_initialized();
 
 
 func _update_ui_on_branches_changed(_branches: Array):
@@ -75,39 +77,163 @@ func _on_sync_server_connection_info_changed(_peer_connection_info: Dictionary) 
 func _on_initial_checked_out_branch(_branch):
 	print("on_initial_checked_out_branch")
 	GodotProject.disconnect("checked_out_branch", self._on_initial_checked_out_branch)
-	init()
+	init(true)
 
 func _on_reload_ui_button_pressed():
 	reload_ui.emit()
+
+func wait_for_checked_out_branch():
+	var godot_project = Engine.get_singleton("GodotProject")
+	if not godot_project.get_checked_out_branch():
+		godot_project.connect("checked_out_branch", self._on_initial_checked_out_branch)
+		task_modal.start_task("Loading Patchwork")
+	else:
+		init(false)
+
+
+
+func start_and_wait_for_checkout():
+	var godot_project = Engine.get_singleton("GodotProject")
+	godot_project.start()
+	make_init_button_invisible()
+	wait_for_checked_out_branch()
+
+func check_and_prompt_for_user_name(callback: Callable):
+	for connection in user_name_initialized.get_connections():
+		user_name_initialized.disconnect(connection.callable)
+	var user_name = PatchworkConfig.get_user_value("user_name", "")
+	if user_name.is_empty():
+		user_name_initialized.connect(callback)
+		_on_user_button_pressed(true)
+		return false
+	return true
+
+func _on_init_button_pressed():
+	if not check_and_prompt_for_user_name(self._on_init_button_pressed):
+		return
+	print("Initializing new project!")
+	start_and_wait_for_checkout()
+
+func _on_load_project_button_pressed():
+	if not check_and_prompt_for_user_name(self._on_load_project_button_pressed):
+		return
+	var doc_id = %ProjectIDBox.text.strip_edges()
+	if doc_id.is_empty():
+		popup_box(self, $ErrorDialog, "Project ID is empty", "Error")
+		return
+	print("Loading project ", doc_id)
+	PatchworkConfig.set_project_value("project_doc_id", doc_id)
+	start_and_wait_for_checkout()
+
+
+func _on_project_id_box_text_changed(new_text: String) -> void:
+	if new_text.is_empty():
+		%LoadExistingButton.disabled = true
+	else:
+		%LoadExistingButton.disabled = false
+
+func make_init_button_visible():
+	%InitPanelContainer.visible = true
+	%MainVSplit.visible = false
+
+func make_init_button_invisible():
+	%InitPanelContainer.visible = false
+	%MainVSplit.visible = true
+
+func get_doc_id() -> String:
+	var patchwork_config = Engine.get_singleton("PatchworkConfig")
+	return patchwork_config.get_project_value("project_doc_id", "")
+
+func _on_user_name_confirmed():
+	if %UserNameEntry.text.strip_edges() != "":
+		var current_name = PatchworkConfig.get_user_value("user_name", "")
+		var new_user_name = %UserNameEntry.text.strip_edges()
+		print(new_user_name)
+		PatchworkConfig.set_user_value("user_name", new_user_name)
+		GodotProject.set_user_name(new_user_name)
+		if current_name.is_empty():
+			user_name_initialized.emit()
+	update_ui(false)
+
+func _on_user_button_pressed(disable_cancel: bool = false):
+	%UserNameEntry.text = PatchworkConfig.get_user_value("user_name", "")
+	%UserNameDialog.popup_centered()
+	if disable_cancel:
+		%UserNameDialog.get_cancel_button().visible = false
+	else:
+		%UserNameDialog.get_cancel_button().visible = true
+
+func _on_clear_project_button_pressed():
+	popup_box(self, $ConfirmationDialog, "Are you sure you want to clear the project?", "Clear Project", func(): clear_project())
+
+func clear_project():
+	GodotProject.stop()
+	PatchworkConfig.set_user_value("user_name", "")
+	PatchworkConfig.set_project_value("project_doc_id", "")
+	PatchworkConfig.set_project_value("checked_out_branch_doc_id", "")
+	_on_reload_ui_button_pressed()
 
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
 	print("Sidebar: ready!")
 	%ReloadUIButton.pressed.connect(self._on_reload_ui_button_pressed)
+	if DEV_MODE:
+		%ClearProjectButton.visible = true
+		%ClearProjectButton.pressed.connect(self._on_clear_project_button_pressed)
+	else:
+		%ClearProjectButton.visible = false
+	%InitializeButton.pressed.connect(self._on_init_button_pressed)
+	%LoadExistingButton.pressed.connect(self._on_load_project_button_pressed)
+	_on_project_id_box_text_changed(%ProjectIDBox.text)
+	user_button.pressed.connect(_on_user_button_pressed)
+	history_list.clear()
+	branch_picker.clear()
+
+
 	# need to add task_modal as a child to the plugin otherwise process won't be called
 	add_child(task_modal)
+	if not EditorInterface.get_edited_scene_root() == self:
+		waiting_callables.append(self._try_init)
+	else:
+		print("Sidebar: in editor!!!!!!!!!!!!")
+
+func _try_init():
 	# The singleton class accessor is still pointing to the old GodotProject singleton
 	# if we're hot-reloading, so we check the Engine for the singleton instead.
 	# The rest of the accessor uses outside of _ready() should be fine.
 	var godot_project = Engine.get_singleton("GodotProject")
 	if godot_project:
-		if not godot_project.get_checked_out_branch():
-			godot_project.connect("checked_out_branch", self._on_initial_checked_out_branch)
-			task_modal.start_task("Loading Patchwork")
+		var doc_id = get_doc_id()
+		if not godot_project.is_started() and doc_id.is_empty():
+			print("Not initialized, showing init button")
+			make_init_button_visible()
+			return
 		else:
-			init()
+			print("Initialized, hiding init button")
+			make_init_button_invisible()
+			wait_for_checked_out_branch()
 	else:
 		print("!!!!!!GodotProject not initialized!")
 
 
 func _process(delta: float) -> void:
 	if deterred_highlight_update:
-		deterred_highlight_update.call()
+		var c = deterred_highlight_update
 		deterred_highlight_update = null
+		c.call()
 
-func init() -> void:
+	if waiting_callables.size() > 0:
+		var callables = waiting_callables.duplicate()
+		for callable in callables:
+			callable.call()
+		waiting_callables.clear()
+
+func init(end_task: bool = true) -> void:
 	print("Sidebar initialized!")
-	task_modal.end_task("Loading Patchwork")
+	if end_task:
+		task_modal.end_task("Loading Patchwork")
+	branch_picker.disabled = false
+	fork_button.disabled = false
 	update_ui(true)
 
 	# @Paul: I think somewhere besides the plugin sidebar gets instantiated. Is this something godot does?
@@ -120,15 +246,12 @@ func init() -> void:
 		GodotProject.connect("checked_out_branch", self._update_ui_on_branch_checked_out);
 		GodotProject.connect("sync_server_connection_info_changed", _on_sync_server_connection_info_changed)
 
-
 	merge_button.pressed.connect(create_merge_preview_branch)
 	fork_button.pressed.connect(create_new_branch)
+	%ClearDiffButton.pressed.connect(_on_clear_diff_button_pressed)
 
-	user_button.pressed.connect(_on_user_button_pressed)
 	branch_picker.item_selected.connect(_on_branch_picker_item_selected)
 
-	highlight_changes_checkbox.toggled.connect(_on_highlight_changes_checkbox_toggled)
-	highlight_changes_checkbox_mp.toggled.connect(_on_highlight_changes_checkbox_toggled)
 	cancel_merge_button.pressed.connect(cancel_merge_preview)
 	confirm_merge_button.pressed.connect(confirm_merge_preview)
 
@@ -138,6 +261,8 @@ func init() -> void:
 	diff_section_header.pressed.connect(func(): toggle_section(diff_section_header, diff_section_body))
 	history_list.item_clicked.connect(_on_history_list_item_selected)
 	history_list.empty_clicked.connect(_on_empty_clicked)
+	inspector.node_hovered.connect(_on_node_hovered)
+	inspector.node_unhovered.connect(_on_node_unhovered)
 
 func _on_sync_status_icon_pressed():
 	var sync_info = GodotProject.get_sync_server_connection_info()
@@ -165,42 +290,6 @@ func _on_sync_status_icon_pressed():
 			print("  last received: -")
 
 	print("=====================================", )
-
-
-
-func _on_user_button_pressed():
-	var dialog = ConfirmationDialog.new()
-	dialog.title = "Set User Name"
-
-	var line_edit = LineEdit.new()
-	line_edit.placeholder_text = "User name"
-	line_edit.text = PatchworkConfig.get_user_value("user_name", "")
-	dialog.add_child(line_edit)
-
-	# Position line edit in dialog
-	line_edit.position = Vector2(8, 8)
-	line_edit.size = Vector2(200, 30)
-
-	# Make dialog big enough for line edit
-	dialog.size = Vector2(220, 100)
-
-	dialog.get_ok_button().text = "Save"
-	dialog.canceled.connect(func(): dialog.queue_free())
-
-	dialog.confirmed.connect(func():
-		if line_edit.text.strip_edges() != "":
-			var new_user_name = line_edit.text.strip_edges()
-
-			print(new_user_name)
-			PatchworkConfig.set_user_value("user_name", new_user_name)
-			GodotProject.set_user_name(new_user_name)
-
-		update_ui(false)
-		dialog.queue_free()
-	)
-
-	add_child(dialog)
-	dialog.popup_centered()
 
 func _on_branch_picker_item_selected(_index: int) -> void:
 	var selected_branch = branch_picker.get_item_metadata(_index)
@@ -230,9 +319,6 @@ func _on_branch_picker_item_selected(_index: int) -> void:
 
 	checkout_branch(selected_branch.id)
 
-func _on_highlight_changes_checkbox_toggled(pressed: bool) -> void:
-	highlight_changes = pressed
-	update_ui(true)
 
 static var void_func = func(): return
 static func popup_box(parent_window: Node, dialog: AcceptDialog, message: String, box_title: String, confirm_func: Callable = void_func, cancel_func: Callable = void_func):
@@ -405,12 +491,15 @@ func confirm_merge_preview():
 	)
 
 func toggle_section(section_header: Button, section_body: Control):
+	var parent_vbox = section_header.get_parent()
 	if section_body.visible:
 		section_header.icon = load("res://addons/patchwork/icons/collapsable-closed.svg")
 		section_body.visible = false
+		parent_vbox.set_v_size_flags(Control.SIZE_FILL)
 	else:
 		section_header.icon = load("res://addons/patchwork/icons/collapsable-open.svg")
 		section_body.visible = true
+		parent_vbox.set_v_size_flags(Control.SIZE_EXPAND_FILL)
 
 func unfold_section(section_header: Button, section_body: Control):
 	section_header.icon = load("res://addons/patchwork/icons/collapsable-open.svg")
@@ -526,7 +615,6 @@ func update_ui(update_diff: bool = false) -> void:
 
 	# show no diff for main branch
 	if checked_out_branch.is_main:
-		update_highlight_changes({}, checked_out_branch)
 		inspector.visible = false
 
 	else:
@@ -549,7 +637,6 @@ func update_ui(update_diff: bool = false) -> void:
 		inspector.visible = true
 
 
-		update_highlight_changes(diff, checked_out_branch)
 
 func update_sync_status(peer_connection_info, checked_out_branch, changes) -> void:
 	if !checked_out_branch:
@@ -718,19 +805,17 @@ func human_readable_timestamp(timestamp: int) -> String:
 	else:
 		return str(int(diff / 31536000)) + " years ago"
 
-func update_highlight_changes(diff: Dictionary, checked_out_branch: Dictionary) -> void:
+func update_highlight_changes(diff: Dictionary) -> void:
 	if (PatchworkEditor.is_changing_scene()):
-		deterred_highlight_update = func(): update_highlight_changes(diff, checked_out_branch)
+		deterred_highlight_update = func(): update_highlight_changes(diff)
 		return
 
 	var edited_root = EditorInterface.get_edited_scene_root()
 
 	# reflect highlight changes checkbox state
-	highlight_changes_checkbox_mp.button_pressed = highlight_changes
-	highlight_changes_checkbox.button_pressed = highlight_changes
 
 	if edited_root:
-		if highlight_changes && !checked_out_branch.is_main:
+		if not (not diff || diff.is_empty()):
 				var path = edited_root.scene_file_path
 				var scene_changes = diff.get(path)
 				if scene_changes:
@@ -743,17 +828,51 @@ var prev_heads_before
 var prev_heads_after
 var last_diff: Dictionary = {}
 
+
+func _on_node_hovered(file_path: String, node_paths: Array) -> void:
+	# print("on_node_hovered: ", file_path, node_path)
+	var node: Node = EditorInterface.get_edited_scene_root()
+	if node.scene_file_path != file_path:
+		# don't highlight changes for other files
+		return
+	var lst_diff = last_diff
+	# create a diff that only contains the changes for the hovered node
+	for file in lst_diff.keys():
+		if file == file_path:
+			var diff: Dictionary = lst_diff[file].duplicate()
+			var scene_changes = diff["changed_nodes"].duplicate()
+			var new_scene_changes = []
+			for node_change in scene_changes:
+				var np: String = node_change["node_path"]
+				if node_paths.has(NodePath(np)):
+					new_scene_changes.append(node_change)
+			diff["changed_nodes"] = new_scene_changes
+			lst_diff = {}
+			lst_diff[file] = diff
+			break
+	# print("Updating highlight changes")
+	self.update_highlight_changes(lst_diff)
+
+func _on_node_unhovered(file_path: String, node_path: Array) -> void:
+	self.update_highlight_changes({})
+
 func _on_history_list_item_selected(index: int, _button, _modifiers) -> void:
+	var history_size = history_list.get_item_count()
+	var checked_out_branch = GodotProject.get_checked_out_branch()
+	if (index >= history_size or (checked_out_branch.is_main and index >= history_size - 3)):
+		# the first three commits on main are initial checkin, so we don't show them
+		return
+
 	var change_hash = history_list.get_item_metadata(index)
 	if change_hash:
 		var change_heads = PackedStringArray([change_hash])
 		# we're just updating the diff
-		var checked_out_branch = GodotProject.get_checked_out_branch()
 		# we show changes from most recent to oldest, so the previous change is the next index
 		var prev_idx = index + 1
 		var previous_heads: PackedStringArray = []
-		if prev_idx >= history_list.get_item_count():
-			# return
+		if prev_idx >= history_size:
+			if checked_out_branch.is_main:
+				return
 			# get the root hash from the checked_out_branch
 			previous_heads = checked_out_branch.get("forked_at", PackedStringArray([]))
 		else:
@@ -768,14 +887,19 @@ func _on_history_list_item_selected(index: int, _button, _modifiers) -> void:
 			var date = text.split("-")[1].strip_edges()
 			diff_section_header.text = "Showing changes from %s - %s" % [name, date]
 			var diff = update_properties_diff(checked_out_branch, ["foo", "bar"], previous_heads, change_heads)
+			%ClearDiffButton.visible = true
 			inspector.visible = true
-			update_highlight_changes(diff, checked_out_branch)
 		else:
 			printerr("no prev change hash")
 	else:
 		printerr("no change hash")
 
-func _on_empty_clicked(_vec2, idx):
+func _on_clear_diff_button_pressed():
+	_on_empty_clicked(Vector2.ZERO, 0)
+
+
+func _on_empty_clicked(_vec2, _idx):
+	%ClearDiffButton.visible = false
 	update_ui(true)
 
 func update_properties_diff(checked_out_branch, changes, heads_before, heads_after) -> Dictionary:
