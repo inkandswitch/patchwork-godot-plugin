@@ -52,6 +52,7 @@ const CREATE_BRANCH_IDX = 1
 const MERGE_BRANCH_IDX = 2
 
 signal reload_ui();
+signal user_name_initialized();
 
 
 func _update_ui_on_branches_changed(_branches: Array):
@@ -90,11 +91,46 @@ func wait_for_checked_out_branch():
 		init(false)
 
 
-func _on_init_button_pressed():
+
+func start_and_wait_for_checkout():
 	var godot_project = Engine.get_singleton("GodotProject")
 	godot_project.start()
 	make_init_button_invisible()
 	wait_for_checked_out_branch()
+
+func check_and_prompt_for_user_name(callback: Callable):
+	for connection in user_name_initialized.get_connections():
+		user_name_initialized.disconnect(connection.callable)
+	var user_name = PatchworkConfig.get_user_value("user_name", "")
+	if user_name.is_empty():
+		user_name_initialized.connect(callback)
+		_on_user_button_pressed(true)
+		return false
+	return true
+
+func _on_init_button_pressed():
+	if not check_and_prompt_for_user_name(self._on_init_button_pressed):
+		return
+	print("Initializing new project!")
+	start_and_wait_for_checkout()
+
+func _on_load_project_button_pressed():
+	if not check_and_prompt_for_user_name(self._on_load_project_button_pressed):
+		return
+	var doc_id = %ProjectIDBox.text.strip_edges()
+	if doc_id.is_empty():
+		popup_box(self, $ErrorDialog, "Project ID is empty", "Error")
+		return
+	print("Loading project ", doc_id)
+	PatchworkConfig.set_project_value("project_doc_id", doc_id)
+	start_and_wait_for_checkout()
+
+
+func _on_project_id_box_text_changed(new_text: String) -> void:
+	if new_text.is_empty():
+		%LoadExistingButton.disabled = true
+	else:
+		%LoadExistingButton.disabled = false
 
 func make_init_button_visible():
 	%InitPanelContainer.visible = true
@@ -108,11 +144,33 @@ func get_doc_id() -> String:
 	var patchwork_config = Engine.get_singleton("PatchworkConfig")
 	return patchwork_config.get_project_value("project_doc_id", "")
 
+func _on_user_name_confirmed():
+	if %UserNameEntry.text.strip_edges() != "":
+		var current_name = PatchworkConfig.get_user_value("user_name", "")
+		var new_user_name = %UserNameEntry.text.strip_edges()
+		print(new_user_name)
+		PatchworkConfig.set_user_value("user_name", new_user_name)
+		GodotProject.set_user_name(new_user_name)
+		if current_name.is_empty():
+			user_name_initialized.emit()
+	update_ui(false)
+
+func _on_user_button_pressed(disable_cancel: bool = false):
+	%UserNameEntry.text = PatchworkConfig.get_user_value("user_name", "")
+	%UserNameDialog.popup_centered()
+	if disable_cancel:
+		%UserNameDialog.get_cancel_button().visible = false
+	else:
+		%UserNameDialog.get_cancel_button().visible = true
+
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
 	print("Sidebar: ready!")
 	%ReloadUIButton.pressed.connect(self._on_reload_ui_button_pressed)
 	%InitializeButton.pressed.connect(self._on_init_button_pressed)
+	%LoadExistingButton.pressed.connect(self._on_load_project_button_pressed)
+	_on_project_id_box_text_changed(%ProjectIDBox.text)
+	user_button.pressed.connect(_on_user_button_pressed)
 	# need to add task_modal as a child to the plugin otherwise process won't be called
 	add_child(task_modal)
 	# The singleton class accessor is still pointing to the old GodotProject singleton
@@ -122,9 +180,11 @@ func _ready() -> void:
 	if godot_project:
 		var doc_id = get_doc_id()
 		if not godot_project.is_started() and doc_id.is_empty():
+			print("Not initialized, showing init button")
 			make_init_button_visible()
 			return
 		else:
+			print("Initialized, hiding init button")
 			make_init_button_invisible()
 			wait_for_checked_out_branch()
 	else:
@@ -163,7 +223,6 @@ func init(end_task: bool = true) -> void:
 	merge_button.pressed.connect(create_merge_preview_branch)
 	fork_button.pressed.connect(create_new_branch)
 
-	user_button.pressed.connect(_on_user_button_pressed)
 	branch_picker.item_selected.connect(_on_branch_picker_item_selected)
 
 	highlight_changes_checkbox.toggled.connect(_on_highlight_changes_checkbox_toggled)
@@ -206,42 +265,6 @@ func _on_sync_status_icon_pressed():
 			print("  last received: -")
 
 	print("=====================================", )
-
-
-
-func _on_user_button_pressed():
-	var dialog = ConfirmationDialog.new()
-	dialog.title = "Set User Name"
-
-	var line_edit = LineEdit.new()
-	line_edit.placeholder_text = "User name"
-	line_edit.text = PatchworkConfig.get_user_value("user_name", "")
-	dialog.add_child(line_edit)
-
-	# Position line edit in dialog
-	line_edit.position = Vector2(8, 8)
-	line_edit.size = Vector2(200, 30)
-
-	# Make dialog big enough for line edit
-	dialog.size = Vector2(220, 100)
-
-	dialog.get_ok_button().text = "Save"
-	dialog.canceled.connect(func(): dialog.queue_free())
-
-	dialog.confirmed.connect(func():
-		if line_edit.text.strip_edges() != "":
-			var new_user_name = line_edit.text.strip_edges()
-
-			print(new_user_name)
-			PatchworkConfig.set_user_value("user_name", new_user_name)
-			GodotProject.set_user_name(new_user_name)
-
-		update_ui(false)
-		dialog.queue_free()
-	)
-
-	add_child(dialog)
-	dialog.popup_centered()
 
 func _on_branch_picker_item_selected(_index: int) -> void:
 	var selected_branch = branch_picker.get_item_metadata(_index)

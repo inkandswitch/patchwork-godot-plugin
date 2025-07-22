@@ -46,9 +46,10 @@ bg_color = Color(0.323009, 0.365738, 0.435143, 1)
 shadow_size = 2
 
 [node name="Patchwork" type="MarginContainer"]
-anchors_preset = 15
-anchor_right = 1.0
+anchors_preset = -1
+anchor_right = 0.562
 anchor_bottom = 1.0
+offset_right = 0.959961
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_vertical = 3
@@ -113,9 +114,15 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
-item_count = 1
+item_count = 4
 popup/item_0/text = "main"
 popup/item_0/id = 0
+popup/item_1/text = "├─ Nikita's remix"
+popup/item_1/id = 1
+popup/item_2/text = "├─ Nikita's remix"
+popup/item_2/id = 2
+popup/item_3/text = "└─ Nikita's remix2222"
+popup/item_3/id = 3
 
 [node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/HBoxContainer2"]
 layout_mode = 2
@@ -152,16 +159,41 @@ theme_override_constants/margin_bottom = 8
 
 [node name="InitPanelContainer" type="PanelContainer" parent="VBoxContainer/PanelContainer/MarginContainer"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
 
-[node name="InitializeButton" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/InitPanelContainer"]
+[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer/PanelContainer/MarginContainer/InitPanelContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/InitPanelContainer/MarginContainer"]
+layout_mode = 2
+alignment = 1
+
+[node name="InitializeButton" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/InitPanelContainer/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Click here to create a new repository from current project..."
+text = "Create a new project..."
+
+[node name="VSeparator" type="HSeparator" parent="VBoxContainer/PanelContainer/MarginContainer/InitPanelContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 25
+
+[node name="ProjectIDBox" type="LineEdit" parent="VBoxContainer/PanelContainer/MarginContainer/InitPanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "Project ID"
+
+[node name="LoadExistingButton" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/InitPanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Load Existing Project"
 
 [node name="MainVSplit" type="VSplitContainer" parent="VBoxContainer/PanelContainer/MarginContainer"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 
 [node name="HistoryVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit"]
@@ -188,10 +220,14 @@ size_flags_vertical = 3
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-item_count = 3
-item_0/text = "Nikita made some changes - 29 minutes ago"
-item_1/text = "Nikita made some changes - 30 minutes ago"
-item_2/text = "Nikita made some changes - 30 minutes ago"
+item_count = 7
+item_0/text = "↪️ Nikita merged \"Nikita's remix2222\" branch - 1 minutes ago"
+item_1/text = "Nikita made some changes - 5 days ago"
+item_2/text = "Nikita made some changes - 5 days ago"
+item_3/text = "Nikita made some changes - 5 days ago"
+item_4/text = "Nikita made some changes - 5 days ago"
+item_5/text = "Nikita made some changes - 5 days ago"
+item_6/text = "Nikita made some changes - 5 days ago"
 
 [node name="DiffVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit"]
 unique_name_in_owner = true
@@ -426,3 +462,24 @@ size_flags_vertical = 3
 layout_mode = 2
 size_flags_horizontal = 8
 theme_override_constants/separation = 8
+
+[node name="UserNameDialog" type="ConfirmationDialog" parent="."]
+unique_name_in_owner = true
+title = "Set User Name"
+position = Vector2i(0, 36)
+size = Vector2i(150, 100)
+min_size = Vector2i(100, 70)
+
+[node name="VBoxContainer" type="VBoxContainer" parent="UserNameDialog"]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 142.0
+offset_bottom = 51.0
+
+[node name="UserNameEntry" type="LineEdit" parent="UserNameDialog/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "User Name..."
+
+[connection signal="text_changed" from="VBoxContainer/PanelContainer/MarginContainer/InitPanelContainer/MarginContainer/VBoxContainer/ProjectIDBox" to="." method="_on_project_id_box_text_changed"]
+[connection signal="confirmed" from="UserNameDialog" to="." method="_on_user_name_confirmed"]
