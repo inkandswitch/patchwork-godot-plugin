@@ -248,6 +248,7 @@ func init(end_task: bool = true) -> void:
 
 	merge_button.pressed.connect(create_merge_preview_branch)
 	fork_button.pressed.connect(create_new_branch)
+	%ClearDiffButton.pressed.connect(_on_clear_diff_button_pressed)
 
 	branch_picker.item_selected.connect(_on_branch_picker_item_selected)
 
@@ -880,13 +881,19 @@ func _on_history_list_item_selected(index: int, _button, _modifiers) -> void:
 			var date = text.split("-")[1].strip_edges()
 			diff_section_header.text = "Showing changes from %s - %s" % [name, date]
 			var diff = update_properties_diff(checked_out_branch, ["foo", "bar"], previous_heads, change_heads)
+			%ClearDiffButton.visible = true
 			inspector.visible = true
 		else:
 			printerr("no prev change hash")
 	else:
 		printerr("no change hash")
 
+func _on_clear_diff_button_pressed():
+	_on_empty_clicked(Vector2.ZERO, 0)
+
+
 func _on_empty_clicked(_vec2, _idx):
+	%ClearDiffButton.visible = false
 	update_ui(true)
 
 func update_properties_diff(checked_out_branch, changes, heads_before, heads_after) -> Dictionary:

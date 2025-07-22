@@ -226,6 +226,22 @@ text = "Changes"
 icon = ExtResource("4_of6ia")
 alignment = 0
 
+[node name="ClearDiffButton" type="Button" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/DiffVBox/DiffSectionHeader"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.992
+anchor_top = 0.5
+anchor_right = 0.992
+anchor_bottom = 0.5
+offset_left = -8.0
+offset_top = -4.0
+offset_bottom = 4.0
+grow_horizontal = 0
+grow_vertical = 2
+text = "Clear"
+
 [node name="DiffSectionBody" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/DiffVBox"]
 unique_name_in_owner = true
 layout_mode = 2
