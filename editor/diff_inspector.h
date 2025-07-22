@@ -55,6 +55,8 @@ class DiffInspectorSection : public Container {
 
 	HashSet<StringName> revertable_properties;
 
+	bool unfolded = true;
+
 	void _test_unfold();
 	int _get_header_height() const;
 	Ref<Texture2D> _get_arrow() const;

@@ -46,7 +46,7 @@ void DiffInspectorSection::_test_unfold() {
 Ref<Texture2D> DiffInspectorSection::_get_arrow() const {
 	Ref<Texture2D> arrow;
 	if (foldable) {
-		if (object && object->editor_is_section_unfolded(section)) {
+		if (unfolded) {
 			arrow = get_theme_icon(SNAME("arrow"), SNAME("Tree"));
 		} else {
 			if (is_layout_rtl()) {
@@ -198,7 +198,7 @@ void DiffInspectorSection::_notification(int p_what) {
 				String num_revertable_str;
 				int num_revertable_width = 0;
 
-				bool folded = foldable && !object->editor_is_section_unfolded(section);
+				bool folded = foldable && !unfolded;
 
 				Ref<Font> font = get_theme_font(SNAME("bold"), EditorStringName(EditorFonts));
 				int font_size = get_theme_font_size(SNAME("bold_size"), EditorStringName(EditorFonts));
@@ -351,7 +351,7 @@ void DiffInspectorSection::setup(const String &p_section, const String &p_label,
 
 	if (foldable) {
 		_test_unfold();
-		if (object->editor_is_section_unfolded(section)) {
+		if (unfolded) {
 			vbox->show();
 		} else {
 			vbox->hide();
@@ -376,7 +376,7 @@ void DiffInspectorSection::gui_input(const Ref<InputEvent> &p_event) {
 			int bounding_height = get_size().y;
 			Rect2 bounding_box = Rect2({ 0, 0 }, Vector2(bounding_width, bounding_height));
 			if (bounding_box.has_point(mb->get_position())) {
-				if (object->editor_is_section_unfolded(section)) {
+				if (unfolded) {
 					int header_height = _get_header_height();
 
 					if (mb->get_position().y >= header_height) {
@@ -386,7 +386,7 @@ void DiffInspectorSection::gui_input(const Ref<InputEvent> &p_event) {
 
 				accept_event();
 
-				bool should_unfold = !object->editor_is_section_unfolded(section);
+				bool should_unfold = !unfolded;
 				if (should_unfold) {
 					unfold();
 				} else {
@@ -430,7 +430,7 @@ void DiffInspectorSection::unfold() {
 
 	_test_unfold();
 
-	object->editor_set_section_unfold(section, true);
+	unfolded = true;
 	vbox->show();
 	queue_redraw();
 }
@@ -444,13 +444,13 @@ void DiffInspectorSection::fold() {
 		return;
 	}
 
-	object->editor_set_section_unfold(section, false);
+	unfolded = false;
 	vbox->hide();
 	queue_redraw();
 }
 
 bool DiffInspectorSection::is_folded() const {
-	return !object || !object->editor_is_section_unfolded(section);
+	return !unfolded;
 }
 
 void DiffInspectorSection::set_bg_color(const Color &p_bg_color) {
