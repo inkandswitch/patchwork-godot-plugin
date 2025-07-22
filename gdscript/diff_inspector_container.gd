@@ -6,6 +6,11 @@ extends DiffInspector
 @export var removed_icon: Texture2D
 @export var modified_icon: Texture2D
 
+# signal section_mouse_entered(section: String)
+
+signal node_hovered(file_path: String, node_path: NodePath)
+signal node_unhovered(file_path: String, node_path: NodePath)
+
 
 func get_change_theme_color_name(change_type: String) -> String:
 	if change_type == "added":
@@ -61,6 +66,7 @@ var deleted_nodes: Array = []
 var changed_resources: Array = []
 var changed_files: Array = []
 var waiting_callables: Array = []
+var last_inspected_resource: Object = null
 
 func _ready() -> void:
 	pass
@@ -182,7 +188,7 @@ func get_default_val_for_class(node_type: String, prop_name):
 	else:
 		return ClassDB.class_get_property_default_value(node_type, prop_name)
 
-		
+
 
 func add_PropertyDiffResult(inspector_section: DiffInspectorSection, property_diff: Dictionary, node_type: String) -> void:
 	var change_type = property_diff["change_type"]
@@ -195,7 +201,7 @@ func add_PropertyDiffResult(inspector_section: DiffInspectorSection, property_di
 			prop_old = get_default_val_for_class(node_type, prop_name)
 		if prop_new == null and change_type != "removed":
 			prop_new = get_default_val_for_class(node_type, prop_name)
-		
+
 	# print("!!! adding property diff result for ", prop_name, " with type ", change_type)
 	# print("!!! prop_old: ", prop_old)
 	# print("!!! prop_new: ", prop_new)
@@ -248,6 +254,9 @@ func get_prop_diffs_from_properties(properties: Dictionary, change_type: String)
 
 
 func _on_node_box_clicked(section: String) -> void:
+	do_node_box_click(section, false)
+
+func do_node_box_click(section: String, changed_scene: bool = false) -> void:
 	print("!!! box clicked: ", section)
 	if !section.begins_with("res://"):
 		var file_path = node_map.get(section, "")
@@ -259,20 +268,23 @@ func _on_node_box_clicked(section: String) -> void:
 
 		if PatchworkEditor.is_changing_scene():
 			waiting_callables.append(func():
-				self._on_node_box_clicked(section)
+				self.do_node_box_click(section, true)
 			)
 			return
 		var node: Node = EditorInterface.get_edited_scene_root()
 		if node.scene_file_path != file_path:
 			EditorInterface.open_scene_from_path(file_path)
 			waiting_callables.append(func():
-				self._on_node_box_clicked(section)
+				self.do_node_box_click(section, true)
 			)
 			return
 		var node_to_select: Node = node.get_node(node_path)
 		if is_instance_valid(node_to_select):
 			EditorInterface.edit_node(node_to_select)
 			EditorInterface.set_main_screen_editor("2D")
+		# if we changed the scene, emit the hovered signal so the sidebar can update the highlight changes
+		if changed_scene:
+			node_hovered.emit(file_path, NodePath(node_path))
 
 func _on_resource_box_clicked(section: String) -> void:
 	var file_path = section
@@ -306,6 +318,25 @@ func _on_text_box_clicked(section: String) -> void:
 	EditorInterface.get_file_system_dock().navigate_to_path(file_path)
 	PatchworkEditor.open_script_file(file_path)
 	EditorInterface.set_main_screen_editor("Script")
+
+
+func _on_node_box_mouse_entered(section: String) -> void:
+	var node_path = section
+	if section.begins_with("./"):
+		node_path = node_path.substr(2)
+	var file_path = node_map.get(section, "")
+	if file_path == "":
+		return
+	node_hovered.emit(file_path, NodePath(node_path))
+
+func _on_node_box_mouse_exited(section: String) -> void:
+	var node_path = section
+	if section.begins_with("./"):
+		node_path = node_path.substr(2)
+	var file_path = node_map.get(section, "")
+	if file_path == "":
+		return
+	node_unhovered.emit(file_path, NodePath(node_path))
 
 
 
@@ -357,6 +388,8 @@ func add_NodeDiffResult(file_section: DiffInspectorSection, node_diff: Dictionar
 		i += 1
 	inspector_section.unfold()
 	inspector_section.connect("box_clicked", self._on_node_box_clicked)
+	inspector_section.connect("section_mouse_entered", self._on_node_box_mouse_entered)
+	inspector_section.connect("section_mouse_exited", self._on_node_box_mouse_exited)
 	sections.append(inspector_section)
 	node_map[node_name] = parent_path
 	file_section.get_vbox().add_child(inspector_section)
@@ -398,15 +431,13 @@ func add_FileDiffResult(file_path: String, file_diff: Dictionary) -> void:
 	if (change_type == "added"):
 		color = added_color
 		label += " (Added)"
-		changed_files.append(file_path)
 	elif (change_type == "removed"):
 		color = removed_color
 		label += " (Removed)"
-		changed_files.append(file_path)
 	elif (change_type == "modified"):
 		color = modified_color
 		label += " (Modified)"
-		changed_files.append(file_path)
+	changed_files.append(file_path)
 	var fake_node: MissingResource = MissingResource.new()
 	changed_files.append(fake_node)
 	var inspector_section: DiffInspectorSection = DiffInspectorSection.new()
