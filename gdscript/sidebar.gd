@@ -857,16 +857,22 @@ func _on_node_unhovered(file_path: String, node_path: Array) -> void:
 	self.update_highlight_changes({})
 
 func _on_history_list_item_selected(index: int, _button, _modifiers) -> void:
+	var history_size = history_list.get_item_count()
+	var checked_out_branch = GodotProject.get_checked_out_branch()
+	if (index >= history_size or (checked_out_branch.is_main and index >= history_size - 3)):
+		# the first three commits on main are initial checkin, so we don't show them
+		return
+
 	var change_hash = history_list.get_item_metadata(index)
 	if change_hash:
 		var change_heads = PackedStringArray([change_hash])
 		# we're just updating the diff
-		var checked_out_branch = GodotProject.get_checked_out_branch()
 		# we show changes from most recent to oldest, so the previous change is the next index
 		var prev_idx = index + 1
 		var previous_heads: PackedStringArray = []
-		if prev_idx >= history_list.get_item_count():
-			# return
+		if prev_idx >= history_size:
+			if checked_out_branch.is_main:
+				return
 			# get the root hash from the checked_out_branch
 			previous_heads = checked_out_branch.get("forked_at", PackedStringArray([]))
 		else:
