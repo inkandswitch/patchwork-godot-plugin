@@ -31,6 +31,16 @@ func _ready():
 	shader_material.set_shader_parameter("fill_color", Color(0.25, 0.25, 0.25, 0.85))
 
 
+func _get_fallback_box(node: Node):
+	if node is Node2D:
+		var node_2d = node as Node2D
+		var position = node_2d.global_position
+		# A small default size for nodes that don't have a size
+		var box = Rect2(position.x - 25, position.y - 25, 50, 50)
+		return box
+	return null
+
+
 func update_overlay(scene_changes: Dictionary):
 	color_rect.size = overlay_size
 	color_rect.global_position = overlay_position
@@ -47,6 +57,9 @@ func update_overlay(scene_changes: Dictionary):
 			continue
 
 		var box = _get_node_bounding_box(node)
+
+		if box == null or box == Rect2():
+			box = _get_fallback_box(node)
 
 		if box != null:
 			# Convert to coordinates relative to our overlay
@@ -112,7 +125,6 @@ static func _get_node_bounding_box(node: Node):
 	if node is HighlightChangesLayer:
 		return null
 
-	# TODO: Add box that don't have sizes
 	# Special handling for collision shapes
 	if node is CollisionShape2D:
 		var shape = node.shape
