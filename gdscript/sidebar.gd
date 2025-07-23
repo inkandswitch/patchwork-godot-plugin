@@ -549,7 +549,9 @@ func update_ui(update_diff: bool = false) -> void:
 
 		if "merge_metadata" in change:
 			var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
-			var merged_branch_name = merged_branch.name
+			var merged_branch_name = str(change.merge_metadata.merged_branch_id)
+			if merged_branch:
+				merged_branch_name = merged_branch.name
 			history_list.add_item(prefix + "↪️ " + change_author + " merged \"" + merged_branch_name + "\" branch - " + change_timestamp)
 			history_list.set_item_metadata(history_list.get_item_count() - 1, change.hash)
 
