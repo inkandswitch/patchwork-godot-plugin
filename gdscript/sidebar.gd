@@ -239,6 +239,7 @@ func init(end_task: bool = true) -> void:
 		task_modal.end_task("Loading Patchwork")
 	branch_picker.disabled = false
 	fork_button.disabled = false
+	%CopyProjectIDButton.disabled = false
 	update_ui(true)
 
 	# @Paul: I think somewhere besides the plugin sidebar gets instantiated. Is this something godot does?
@@ -943,3 +944,9 @@ func show_diff(heads_before, heads_after):
 	inspector.add_diff(diff)
 	print("Length: ", diff.size())
 	return diff
+
+
+func _on_copy_project_id_button_pressed() -> void:
+	var project_id = PatchworkConfig.get_project_value("project_doc_id", "")
+	if not project_id.is_empty():
+		DisplayServer.clipboard_set(project_id)

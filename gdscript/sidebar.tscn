@@ -295,8 +295,20 @@ size_flags_vertical = 4
 text = "Reload UI"
 
 [node name="HSeparator" type="VSeparator" parent="VBoxContainer/HBoxContainer"]
-custom_minimum_size = Vector2(30, 0)
 layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="CopyProjectIDButton" type="Button" parent="VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 8
+size_flags_vertical = 4
+disabled = true
+text = "Copy Project ID"
+
+[node name="VSeparator" type="VSeparator" parent="VBoxContainer/HBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 20
 
 [node name="LoggedInLabel" type="Label" parent="VBoxContainer/HBoxContainer"]
 layout_mode = 2
@@ -471,4 +483,5 @@ layout_mode = 2
 placeholder_text = "User Name..."
 
 [connection signal="text_changed" from="VBoxContainer/PanelContainer/MarginContainer/InitPanelContainer/MarginContainer/VBoxContainer/ProjectIDBox" to="." method="_on_project_id_box_text_changed"]
+[connection signal="pressed" from="VBoxContainer/HBoxContainer/CopyProjectIDButton" to="." method="_on_copy_project_id_button_pressed"]
 [connection signal="confirmed" from="UserNameDialog" to="." method="_on_user_name_confirmed"]
