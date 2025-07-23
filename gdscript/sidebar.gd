@@ -109,12 +109,17 @@ func check_and_prompt_for_user_name(callback: Callable):
 	return true
 
 func _on_init_button_pressed():
+	if create_unsaved_files_dialog("Please save your unsaved files before initializing a new project."):
+		return
 	if not check_and_prompt_for_user_name(self._on_init_button_pressed):
 		return
 	print("Initializing new project!")
 	start_and_wait_for_checkout()
 
 func _on_load_project_button_pressed():
+	if create_unsaved_files_dialog("Please save your unsaved files before loading an existing project."):
+		return
+
 	if not check_and_prompt_for_user_name(self._on_load_project_button_pressed):
 		return
 	var doc_id = %ProjectIDBox.text.strip_edges()
@@ -346,8 +351,7 @@ static func popup_box(parent_window: Node, dialog: AcceptDialog, message: String
 
 var current_cvs_action = []
 
-func ensure_user_has_no_unsaved_files(message: String, callback: Callable):
-	# todo: add back auto save
+func create_unsaved_files_dialog(message: String):
 	if PatchworkEditor.unsaved_files_open():
 		var dialog = AcceptDialog.new()
 		dialog.title = "Unsaved Files"
@@ -360,6 +364,13 @@ func ensure_user_has_no_unsaved_files(message: String, callback: Callable):
 
 		add_child(dialog)
 		dialog.popup_centered()
+		return true
+	return false
+
+
+func ensure_user_has_no_unsaved_files(message: String, callback: Callable):
+	# todo: add back auto save
+	if create_unsaved_files_dialog(message):
 		return
 
 	else:

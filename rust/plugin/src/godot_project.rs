@@ -126,6 +126,7 @@ pub struct GodotProjectImpl {
     file_system_driver: Option<FileSystemDriver>,
 	project_dir: String,
 	is_started: bool,
+	initial_load: bool,
 }
 
 impl Default for GodotProjectImpl {
@@ -149,6 +150,7 @@ impl Default for GodotProjectImpl {
             file_system_driver: None,
 			project_dir: "".to_string(),
 			is_started: false,
+			initial_load: true,
 		}
 	}
 }
@@ -2064,11 +2066,11 @@ impl GodotProjectImpl {
         self.is_started = false;
     }
 
-	fn safe_to_update_godot() -> bool {
+	fn safe_to_update_godot(initial_load: bool) -> bool {
 		return !(EditorFilesystemAccessor::is_scanning() ||
 		PatchworkEditorAccessor::is_editor_importing() ||
 		PatchworkEditorAccessor::is_changing_scene() ||
-		PatchworkEditorAccessor::unsaved_files_open()
+		(!initial_load && PatchworkEditorAccessor::unsaved_files_open())
 	);
 	}
 
@@ -2409,7 +2411,7 @@ impl GodotProjectImpl {
 		if !has_pending_updates && !fs_driver_has_pending_updates {
 			return (Vec::new(), signals);
 		}
-		if !Self::safe_to_update_godot() {
+		if !Self::safe_to_update_godot(self.initial_load) {
 			if has_pending_updates {
 				tracing::info!("Pending changes, but not safe to update godot, skipping...");
 			}
@@ -2432,11 +2434,11 @@ impl GodotProjectImpl {
 			}
 			return (Vec::new(), signals);
 		}
-
 		let mut updates = Vec::new();
 		if self.just_checked_out_new_branch {
 			self.just_checked_out_new_branch = false;
 			self.should_update_godot = false;
+			self.initial_load = false;
 			let (branch_name, checked_out_branch_doc_id) = self.get_checked_out_branch_state().map(|branch_state|
 				(branch_state.name.clone(), branch_state.doc_handle.document_id().clone())
 			).unwrap();
@@ -2475,6 +2477,7 @@ impl GodotProjectImpl {
 			PatchworkConfigAccessor::set_project_value("checked_out_branch_doc_id", &checked_out_branch_doc_id.to_string());
 			signals.push(GodotProjectSignal::CheckedOutBranch);
 		} else if self.should_update_godot {
+			self.initial_load = false;
 			// * Sync from the current branch @ previously synced_heads to the current branch @ synced_heads
 			tracing::debug!("should update godot");
 			self.should_update_godot = false;
@@ -2874,7 +2877,7 @@ impl GodotProject {
 		if !self.pending_editor_update.any_changes() {
 			return;
 		}
-		if !GodotProjectImpl::safe_to_update_godot() {
+		if !GodotProjectImpl::safe_to_update_godot(false) {
 			return;
 		}
 		if !self.pending_editor_update.any_file_changes() {
