@@ -153,6 +153,12 @@ jobs:
           # TODO: change this to com.inkandswitch.patchworkgodoteditor after I&S dev cert is set up
           BUNDLE_IDENTIFIER_OVERRIDE: "com.inkandswitch.test.patchworkgodoteditor"
 
+      - name: Mac set permissions
+        if: matrix.platform == 'macos' && matrix.target == 'editor'
+        shell: bash
+        run: |
+          chmod +x ${{ github.workspace }}/bin/godot_macos_editor.app/Contents/MacOS/Godot
+
       - uses: actions/upload-artifact@v4
         if: matrix.id != 'linux-sanitizers'
         with:
