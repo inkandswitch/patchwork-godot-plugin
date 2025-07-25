@@ -81,7 +81,7 @@ A branch is a separate copy of the game that you can edit independently from oth
 
 To make a new branch, click "remix" and select a name.
 
-![CleanShot 2025-07-24 at 21.32.16@2x.png](./automerge/42ixorAVSbu7BqkqPD4hY7acmC3d)
+![](./assets/branch-picker.webp)
 
 Now you can make changes privately on this branch without disrupting others.
 
@@ -89,7 +89,7 @@ The history list now shows just a list of changes on this branch.
 
 The "changes" panel in the bottom of the Patchwork pane shows you the difference between this branch and the main branch. If you hover on different parts of the change list you can see highlights on the changed parts in the scene.
 
-![](./assets/branch-picker.webp)
+![](./assets/diff.webp)
 
 If you want, you can make a branch off a branch by clicking Remix. Each branch starts where its parent left off.
 
