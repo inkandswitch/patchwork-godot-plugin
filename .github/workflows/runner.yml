@@ -96,6 +96,7 @@ jobs:
           fetch-depth: 0
       - name: Copy addons to moddable-platformer
         run: |
+          mkdir -p moddable-platformer/addons
           cp -R ws/addons/patchwork moddable-platformer/addons
       - name: Zip moddable-platformer
         run: |
