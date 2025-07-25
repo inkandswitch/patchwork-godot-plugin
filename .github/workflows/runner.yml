@@ -90,7 +90,7 @@ jobs:
           name: patchwork-godot-plugin
       - uses: actions/checkout@v4
         with:
-          repository: inkandswitch/moddable-platformer
+          repository: endlessm/moddable-platformer
           ref: main
           path: moddable-platformer
           fetch-depth: 0
