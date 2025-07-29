@@ -149,6 +149,7 @@ pub struct BranchState {
     pub fork_info: Option<BranchStateForkInfo>,
     pub merge_info: Option<BranchStateMergeInfo>,
     pub is_main: bool,
+	pub created_by: Option<String>,
 }
 
 impl BranchState {
@@ -605,6 +606,7 @@ async fn init_project_doc_handles(
                     id: main_branch_doc_handle.document_id().to_string(),
                     fork_info: None,
                     merge_info: None,
+					created_by: user_name.clone(),
                 },
             )]);
             let branches_clone = branches.clone();
@@ -661,6 +663,7 @@ impl DriverState {
                     .collect(),
             }),
             merge_info: None,
+			created_by: self.user_name.clone(),
         };
 
         self.tx
@@ -735,6 +738,7 @@ impl DriverState {
                     .map(|h| h.to_string())
                     .collect(),
             }),
+			created_by: self.user_name.clone(),
         };
 
         self.branches_metadata_doc_handle.with_doc_mut(|d| {
@@ -1008,6 +1012,7 @@ impl DriverState {
                         },
                         is_main: branch_doc_handle.document_id()
                             == self.main_branch_doc_handle.document_id(),
+						created_by: branch.created_by.clone(),
                     },
                 );
                 self.branch_states

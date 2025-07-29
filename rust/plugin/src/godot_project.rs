@@ -81,6 +81,7 @@ pub struct Branch {
     pub id: String,
     pub fork_info: Option<ForkInfo>,
     pub merge_info: Option<MergeInfo>,
+	pub created_by: Option<String>,
 }
 
 #[derive(Debug, Clone)]

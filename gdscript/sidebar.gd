@@ -178,6 +178,9 @@ func clear_project():
 	PatchworkConfig.set_project_value("checked_out_branch_doc_id", "")
 	_on_reload_ui_button_pressed()
 
+func _create_branch_modal():
+	pass
+
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
 	print("Sidebar: ready!")
@@ -233,6 +236,18 @@ func _process(delta: float) -> void:
 			callable.call()
 		waiting_callables.clear()
 
+func _check_for_user_branch():
+	var all_branches = GodotProject.get_branches()
+	var user_name = PatchworkConfig.get_user_value("user_name", "")
+	var has_user_branch = false
+	for branch in all_branches:
+		if not branch.is_main and branch.created_by == PatchworkConfig.get_user_value("user_name", ""):
+			has_user_branch = true
+			break
+	if not has_user_branch:
+		create_new_branch(true)
+
+
 func init(end_task: bool = true) -> void:
 	print("Sidebar initialized!")
 	if end_task:
@@ -241,7 +256,6 @@ func init(end_task: bool = true) -> void:
 	fork_button.disabled = false
 	%CopyProjectIDButton.disabled = false
 	update_ui(true)
-
 	# @Paul: I think somewhere besides the plugin sidebar gets instantiated. Is this something godot does?
 	# to paper over this we check if plugin and godot_project are set
 
@@ -269,6 +283,11 @@ func init(end_task: bool = true) -> void:
 	history_list.empty_clicked.connect(_on_empty_clicked)
 	inspector.node_hovered.connect(_on_node_hovered)
 	inspector.node_unhovered.connect(_on_node_unhovered)
+
+	if not check_and_prompt_for_user_name(self._check_for_user_branch):
+		return
+	_check_for_user_branch()
+
 
 func _on_sync_status_icon_pressed():
 	var sync_info = GodotProject.get_sync_server_connection_info()
@@ -393,7 +412,7 @@ func checkout_branch(branch_id: String) -> void:
 		)
 	)
 
-func create_new_branch() -> void:
+func create_new_branch(disable_cancel: bool = false) -> void:
 	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before creating a new branch.", func():
 		var dialog = ConfirmationDialog.new()
 		dialog.title = "Create New Branch"
@@ -421,6 +440,7 @@ func create_new_branch() -> void:
 			else:
 				dialog.get_ok_button().disabled = false
 		)
+		dialog.get_cancel_button().visible = not disable_cancel
 
 		dialog.get_ok_button().text = "Create"
 

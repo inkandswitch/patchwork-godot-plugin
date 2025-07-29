@@ -249,6 +249,10 @@ fn branch_state_to_dict(branch_state: &BranchState) -> Dictionary {
         let _ = branch.insert("merge_at", heads_to_array(merge_info.merge_at.clone()));
     }
 
+	if let Some(created_by) = &branch_state.created_by {
+		let _ = branch.insert("created_by", created_by.to_string());
+	}
+
     branch
 }
 
