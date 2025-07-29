@@ -1718,27 +1718,80 @@ impl GodotProjectImpl {
             let mut get_changed_prop_dict =
                 |prop: String, old_value: Option<VariantStrValue>, new_value: Option<VariantStrValue>| {
 					if old_value.is_some() && new_value.is_some() {
-                    return dict! {
-                        "name": prop.clone(),
-                        "change_type": "modified",
-                        "old_value": fn_get_prop_value(old_value.unwrap(), &old_scene, true),
-                        "new_value": fn_get_prop_value(new_value.unwrap(), &new_scene, false)
-                    };
+						let mut changed = false;
+						match (old_value.as_ref().unwrap(), new_value.as_ref().unwrap()) {
+							(
+								VariantStrValue::SubResourceID(sub_resource_id),
+								VariantStrValue::SubResourceID(new_sub_resource_id),
+							) => {
+								if all_changed_sub_resource_ids.contains(sub_resource_id)
+									|| all_changed_sub_resource_ids.contains(new_sub_resource_id)
+								{
+									changed = true;
+								}
+							}
+							(
+								VariantStrValue::ExtResourceID(ext_resource_id),
+								VariantStrValue::ExtResourceID(new_ext_resource_id),
+							) => {
+								if ext_resource_id != new_ext_resource_id
+									|| all_changed_ext_resource_ids.contains(ext_resource_id)
+									|| all_changed_ext_resource_ids.contains(new_ext_resource_id)
+								{
+									changed = true;
+								}
+							}
+							(
+								VariantStrValue::ResourcePath(resource_path),
+								VariantStrValue::ResourcePath(new_resource_path),
+							) => {
+								if resource_path!= new_resource_path ||
+									all_changed_ext_resource_paths.contains(resource_path)
+									|| all_changed_ext_resource_paths.contains(new_resource_path)
+								{
+									changed = true;
+								} else if resource_path != new_resource_path {
+									changed = true;
+								}
+							}
+							(
+								VariantStrValue::Variant(old_variant),
+								VariantStrValue::Variant(new_variant),
+							) => {
+								if old_variant != new_variant {
+									changed = true;
+								}
+							}
+							_ => {
+								// changed type
+								changed = true;
+							}
+						}
+						if changed {
+							return Some(dict! {
+								"name": prop.clone(),
+								"change_type": "modified",
+								"old_value": fn_get_prop_value(old_value.unwrap(), &old_scene, true),
+								"new_value": fn_get_prop_value(new_value.unwrap(), &new_scene, false)
+							});
+						}
+
+                    return None;
 
 				} else if old_value.is_some() {
-					return dict! {
+					return Some(dict! {
 						"name": prop.clone(),
 						"change_type": "deleted",
 						"old_value": fn_get_prop_value(old_value.unwrap(), &old_scene, true)
-					};
+					});
 				} else if new_value.is_some() {
-					return dict! {
+					return Some(dict! {
 						"name": prop.clone(),
 						"change_type": "added",
 						"new_value": fn_get_prop_value(new_value.unwrap(), &new_scene, false)
-					};
+					});
 				}
-				return dict!{};
+				return None;
 			};
             // Handle changed sub resources
             // let mut changed_sub_resources_list: Array<Dictionary> = Array::new();
@@ -1774,10 +1827,10 @@ impl GodotProjectImpl {
 								let val = value.get_value();
 								if added {
 									let changed_prop = get_changed_prop_dict(key.to_string(), None, Some(self.get_varstr_value(val)));
-									_ = changed_props.insert(key.clone(), changed_prop);
+									_ = changed_props.insert(key.clone(), changed_prop.unwrap());
 								} else {
 									let changed_prop = get_changed_prop_dict(key.to_string(), Some(self.get_varstr_value(val)), None);
-									_ = changed_props.insert(key.clone(), changed_prop);
+									_ = changed_props.insert(key.clone(), changed_prop.unwrap());
 								}
 							}
 							let _ = node_info.insert("changed_props", changed_props);
@@ -1840,16 +1893,6 @@ impl GodotProjectImpl {
 							let mut changed_prop: Option<Dictionary> = None;
 							{
 								let prop = prop.clone();
-								let old_prop = if let Some(old_prop) = old_props.get(prop.as_str()) {
-									Some(old_prop.to_string())
-								} else {
-									None
-								};
-								let new_prop = if let Some(new_prop) = new_props.get(prop.as_str()) {
-									Some(new_prop.to_string())
-								} else {
-									None
-								};
 
 								let sn_2: StringName = StringName::from(&prop);
 								let default_value = if let TypeOrInstance::Type(class_name) = &new_type {
@@ -1859,57 +1902,20 @@ impl GodotProjectImpl {
 								} else {
 									"".to_string() // Instance properties are always set, regardless of the default value, so this is always empty
 								};
-								let old_prop = old_prop.unwrap_or(default_value.clone());
-								let new_prop = new_prop.unwrap_or(default_value.clone());
+
+								let old_prop = if let Some(old_prop) = old_props.get(prop.as_str()) {
+									old_prop.to_string()
+								} else {
+									default_value.clone()
+								};
+								let new_prop = if let Some(new_prop) = new_props.get(prop.as_str()) {
+									new_prop.to_string()
+								} else {
+									default_value.clone()
+								};
 								let old_value = self.get_varstr_value(old_prop.clone());
 								let new_value: VariantStrValue = self.get_varstr_value(new_prop.clone());
-								match (&old_value, &new_value) {
-									(
-										VariantStrValue::SubResourceID(sub_resource_id),
-										VariantStrValue::SubResourceID(new_sub_resource_id),
-									) => {
-										if all_changed_sub_resource_ids.contains(sub_resource_id)
-											|| all_changed_sub_resource_ids.contains(new_sub_resource_id)
-										{
-											changed_prop = Some(get_changed_prop_dict(prop, Some(old_value), Some(new_value)));
-										}
-									}
-									(
-										VariantStrValue::ExtResourceID(ext_resource_id),
-										VariantStrValue::ExtResourceID(new_ext_resource_id),
-									) => {
-										if ext_resource_id != new_ext_resource_id
-											|| all_changed_ext_resource_ids.contains(ext_resource_id)
-											|| all_changed_ext_resource_ids.contains(new_ext_resource_id)
-										{
-											changed_prop = Some(get_changed_prop_dict(prop, Some(old_value), Some(new_value)));
-										}
-									}
-									(
-										VariantStrValue::ResourcePath(resource_path),
-										VariantStrValue::ResourcePath(new_resource_path),
-									) => {
-										if all_changed_ext_resource_paths.contains(resource_path)
-											|| all_changed_ext_resource_paths.contains(new_resource_path)
-										{
-											changed_prop = Some(get_changed_prop_dict(prop, Some(old_value), Some(new_value)));
-										} else if resource_path != new_resource_path {
-											changed_prop = Some(get_changed_prop_dict(prop, Some(old_value), Some(new_value)));
-										}
-									}
-									(
-										VariantStrValue::Variant(old_variant),
-										VariantStrValue::Variant(new_variant),
-									) => {
-										if old_variant != new_variant {
-											changed_prop = Some(get_changed_prop_dict(prop, Some(old_value), Some(new_value)));
-										}
-									}
-									_ => {
-										// changed type
-										changed_prop = Some(get_changed_prop_dict(prop, Some(old_value), Some(new_value)));
-									}
-								}
+								changed_prop = get_changed_prop_dict(prop, Some(old_value), Some(new_value));
 							}
 
                             if let Some(changed_prop) = changed_prop
