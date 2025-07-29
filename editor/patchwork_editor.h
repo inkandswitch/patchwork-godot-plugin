@@ -53,6 +53,7 @@ public:
 	static void reload_scripts(PackedStringArray p_scripts);
 	static void force_refresh_editor_inspector();
 	static void open_script_file(const String &p_script);
+	static String get_resource_script_class(const String &p_path);
 
 	static void clear_editor_selection();
 };

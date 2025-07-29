@@ -377,6 +377,9 @@ void PatchworkEditor::progress_task_step_bg(const String &p_task, int p_step) {
 void PatchworkEditor::progress_end_task_bg(const String &p_task) {
 	EditorNode::get_singleton()->progress_end_task_bg(p_task);
 }
+String PatchworkEditor::get_resource_script_class(const String &p_path) {
+	return ResourceLoader::get_resource_script_class(p_path);
+}
 
 Ref<ResourceImporter> PatchworkEditor::get_importer_by_name(const String &p_name) {
 	return ResourceFormatImporter::get_singleton()->get_importer_by_name(p_name);
@@ -533,4 +536,5 @@ void PatchworkEditor::_bind_methods() {
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("force_refresh_editor_inspector"), &PatchworkEditor::force_refresh_editor_inspector);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("open_script_file", "script"), &PatchworkEditor::open_script_file);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("clear_editor_selection"), &PatchworkEditor::clear_editor_selection);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_resource_script_class", "path"), &PatchworkEditor::get_resource_script_class);
 }

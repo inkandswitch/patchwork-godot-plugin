@@ -182,7 +182,13 @@ func add_old_and_new(inspector_section: DiffInspectorSection, change_type: Strin
 
 func get_default_val_for_class(node_type: String, prop_name):
 	# We can't get the default value for a script instance
-	if node_type.begins_with("Resource(") || node_type.begins_with("ExtResource("):
+	if node_type.begins_with("Resource("):
+		var path = node_type.trim_prefix("Resource(").trim_suffix(")").trim_prefix('"').trim_suffix('"')
+		var script_class: String = PatchworkEditor.get_resource_script_class(path)
+		if script_class:
+			return ClassDB.class_get_property_default_value(script_class, prop_name)
+		return "<default_value>"
+	if node_type.begins_with("ExtResource("):
 		return "<default_value>"
 	else:
 		return ClassDB.class_get_property_default_value(node_type, prop_name)

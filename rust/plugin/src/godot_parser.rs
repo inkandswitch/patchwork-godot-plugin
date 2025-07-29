@@ -4,7 +4,7 @@ use automerge::{
 };
 use godot::prelude::*;
 use safer_ffi::layout::into_raw;
-use std::collections::{HashMap, HashSet};
+use std::{collections::{HashMap, HashSet}, fmt::Display};
 use tree_sitter::{Language, Parser, Query, QueryCursor, StreamingIterator};
 use uuid;
 use tree_sitter_godot_resource::LANGUAGE;
@@ -35,6 +35,15 @@ pub struct GodotScene {
 pub enum TypeOrInstance {
     Type(String),
     Instance(String),
+}
+
+impl Display for TypeOrInstance {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TypeOrInstance::Type(type_name) => write!(f, "{}", type_name),
+            TypeOrInstance::Instance(instance_id) => write!(f, "{}", instance_id),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

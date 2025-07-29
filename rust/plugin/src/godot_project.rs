@@ -1634,7 +1634,7 @@ impl GodotProjectImpl {
 							// strip the "ExtResource(" and ")" from the instance_id
 							let instance_id = instance_id.trim_start_matches("ExtResource(\"").trim_end_matches("\")");
                             if let Some(ext_resource) = scene.ext_resources.get(instance_id) {
-                                return format!("Resource({})", ext_resource.path);
+                                return format!("Resource(\"{}\")", ext_resource.path);
                             }
                         }
                         String::new()
