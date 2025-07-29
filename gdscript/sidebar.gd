@@ -119,7 +119,6 @@ func _on_init_button_pressed():
 func _on_load_project_button_pressed():
 	if create_unsaved_files_dialog("Please save your unsaved files before loading an existing project."):
 		return
-
 	if not check_and_prompt_for_user_name(self._on_load_project_button_pressed):
 		return
 	var doc_id = %ProjectIDBox.text.strip_edges()
@@ -130,12 +129,11 @@ func _on_load_project_button_pressed():
 	PatchworkConfig.set_project_value("project_doc_id", doc_id)
 	start_and_wait_for_checkout()
 
-
-func _on_project_id_box_text_changed(new_text: String) -> void:
-	if new_text.is_empty():
-		%LoadExistingButton.disabled = true
-	else:
-		%LoadExistingButton.disabled = false
+func add_listener_disable_button_if_text_is_empty(button: Button, line_edit: LineEdit):
+	var listener = func(new_text: String):
+		button.disabled = new_text.strip_edges().is_empty()
+	line_edit.text_changed.connect(listener)
+	listener.call(line_edit.text)
 
 func make_init_button_visible():
 	%InitPanelContainer.visible = true
@@ -149,6 +147,10 @@ func get_doc_id() -> String:
 	var patchwork_config = Engine.get_singleton("PatchworkConfig")
 	return patchwork_config.get_project_value("project_doc_id", "")
 
+func _clear_user_name_initialized_connections():
+	for connection in user_name_initialized.get_connections():
+		user_name_initialized.disconnect(connection.callable)
+
 func _on_user_name_confirmed():
 	if %UserNameEntry.text.strip_edges() != "":
 		var current_name = PatchworkConfig.get_user_value("user_name", "")
@@ -158,15 +160,13 @@ func _on_user_name_confirmed():
 		GodotProject.set_user_name(new_user_name)
 		if current_name.is_empty():
 			user_name_initialized.emit()
+			call_deferred("_clear_user_name_initialized_connections")
 	update_ui(false)
 
 func _on_user_button_pressed(disable_cancel: bool = false):
 	%UserNameEntry.text = PatchworkConfig.get_user_value("user_name", "")
 	%UserNameDialog.popup_centered()
-	if disable_cancel:
-		%UserNameDialog.get_cancel_button().visible = false
-	else:
-		%UserNameDialog.get_cancel_button().visible = true
+	%UserNameDialog.get_cancel_button().visible = not disable_cancel
 
 func _on_clear_project_button_pressed():
 	popup_box(self, $ConfirmationDialog, "Are you sure you want to clear the project?", "Clear Project", func(): clear_project())
@@ -177,9 +177,6 @@ func clear_project():
 	PatchworkConfig.set_project_value("project_doc_id", "")
 	PatchworkConfig.set_project_value("checked_out_branch_doc_id", "")
 	_on_reload_ui_button_pressed()
-
-func _create_branch_modal():
-	pass
 
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
@@ -192,7 +189,8 @@ func _ready() -> void:
 		%ClearProjectButton.visible = false
 	%InitializeButton.pressed.connect(self._on_init_button_pressed)
 	%LoadExistingButton.pressed.connect(self._on_load_project_button_pressed)
-	_on_project_id_box_text_changed(%ProjectIDBox.text)
+	add_listener_disable_button_if_text_is_empty(%UserNameDialog.get_ok_button(), %UserNameEntry)
+	add_listener_disable_button_if_text_is_empty(%LoadExistingButton, %ProjectIDBox)
 	user_button.pressed.connect(_on_user_button_pressed)
 	history_list.clear()
 	branch_picker.clear()
@@ -434,15 +432,10 @@ func create_new_branch(disable_cancel: bool = false) -> void:
 		# Make dialog big enough for line edit
 		dialog.size = Vector2(220, 100)
 
-		branch_name_input.text_changed.connect(func(new_text: String):
-			if new_text.strip_edges() == "":
-				dialog.get_ok_button().disabled = true
-			else:
-				dialog.get_ok_button().disabled = false
-		)
 		dialog.get_cancel_button().visible = not disable_cancel
 
 		dialog.get_ok_button().text = "Create"
+		add_listener_disable_button_if_text_is_empty(dialog.get_ok_button(), branch_name_input)
 
 		dialog.canceled.connect(func(): dialog.queue_free())
 

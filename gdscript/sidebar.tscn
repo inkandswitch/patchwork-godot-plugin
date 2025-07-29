@@ -482,6 +482,5 @@ unique_name_in_owner = true
 layout_mode = 2
 placeholder_text = "User Name..."
 
-[connection signal="text_changed" from="VBoxContainer/PanelContainer/MarginContainer/InitPanelContainer/MarginContainer/VBoxContainer/ProjectIDBox" to="." method="_on_project_id_box_text_changed"]
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/CopyProjectIDButton" to="." method="_on_copy_project_id_button_pressed"]
 [connection signal="confirmed" from="UserNameDialog" to="." method="_on_user_name_confirmed"]
