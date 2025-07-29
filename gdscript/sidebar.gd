@@ -57,7 +57,13 @@ signal user_name_initialized();
 
 func _update_ui_on_branches_changed(_branches: Array):
 	print("update_ui_on_branches_changed")
-	update_ui(false)
+	var current_branch = GodotProject.get_checked_out_branch()
+	var update_diff = false
+	for branch in _branches:
+		if branch.get("id", "") == current_branch.get("id", ""):
+			update_diff = true
+			break
+	update_ui(update_diff)
 
 func _update_ui_on_files_saved():
 	print("update_ui_on_files_saved")
