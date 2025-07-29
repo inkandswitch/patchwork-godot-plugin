@@ -193,8 +193,8 @@ func add_PropertyDiffResult(inspector_section: DiffInspectorSection, property_di
 	var change_type = property_diff["change_type"]
 	var prop_name = property_diff["name"]
 	var prop_label = snake_case_to_human_readable(property_diff["name"])
-	var prop_old = property_diff["old_value"]
-	var prop_new = property_diff["new_value"]
+	var prop_old = property_diff.get("old_value", null)
+	var prop_new = property_diff.get("new_value", null)
 	if node_type != "":
 		if prop_old == null and change_type != "added":
 			prop_old = get_default_val_for_class(node_type, prop_name)
@@ -236,20 +236,6 @@ func get_node_deleted_box(type: String) -> PanelContainer:
 func get_node_added_box(type: String) -> PanelContainer:
 	return get_node_box(added_icon, type + " Added")
 
-
-func get_prop_diffs_from_properties(properties: Dictionary, change_type: String) -> Dictionary:
-	var prop_diffs: Dictionary = {}
-	for prop in properties.keys():
-		if prop.begins_with("metadata/patchwork_id"):
-			continue
-		var prop_diff: Dictionary = {}
-		prop_diff["name"] = prop
-		prop_diff["change_type"] = change_type
-		# TODO: fix this
-		prop_diff["old_value"] = str_to_var(properties[prop])
-		prop_diff["new_value"] = str_to_var(properties[prop])
-		prop_diffs[prop] = prop_diff
-	return prop_diffs
 
 
 func _on_node_box_clicked(sec: DiffInspectorSection, file_path: String, section: String) -> void:
@@ -379,22 +365,21 @@ func create_node_diff_section(file_section: DiffInspectorSection, node_diff: Dic
 		color = added_color
 		node_label += " (Added)"
 		# TODO: make rust code do this
-		prop_diffs = get_prop_diffs_from_properties(node_diff["new_content"]["properties"], "added")
 		# print("adding node added box")
 		added_nodes.append(fake_node)
 	elif change_type == "removed":
 		color = removed_color
 		node_label += " (Deleted)"
 		# print("adding node deleted box")
-		prop_diffs = get_prop_diffs_from_properties(node_diff["old_content"]["properties"], "removed")
 		deleted_nodes.append(fake_node)
 	else:
 		color = modified_color
 		node_label += " (Modified)"
-		prop_diffs = node_diff.get("changed_props", {})
 		changed_nodes.append(fake_node)
+	prop_diffs = node_diff.get("changed_props", {})
 	if prop_diffs.size() == 0:
 		return null
+
 	inspector_section.setup(node_name, node_label, fake_node, color, true, 1, 2)
 	inspector_section.set_type(change_type)
 	# fake_node.original_class = node_type
