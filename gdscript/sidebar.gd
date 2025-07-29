@@ -620,11 +620,11 @@ func update_ui(update_diff: bool = false) -> void:
 
 	merge_preview_modal.visible = checked_out_branch.is_merge_preview
 
+	var source_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from) if checked_out_branch.forked_from else null
 	if checked_out_branch.is_merge_preview:
 		move_inspector_to_merge_preview()
-
-		var source_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from)
 		var target_branch = GodotProject.get_branch_by_id(checked_out_branch.merge_into)
+		diff_section_header.text = "Showing changes for \"" + source_branch.name + "\" -> \"" + target_branch.name + "\""
 
 		if source_branch && target_branch:
 			merge_preview_source_label.text = source_branch.name
@@ -640,6 +640,8 @@ func update_ui(update_diff: bool = false) -> void:
 
 	else:
 		move_inspector_to_main()
+		if source_branch:
+			diff_section_header.text = "Showing changes from \"" + source_branch.name + "\" -> \"" + checked_out_branch.name + "\""
 
 	# DIFF
 
