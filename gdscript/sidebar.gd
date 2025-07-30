@@ -620,7 +620,7 @@ func update_ui(update_diff: bool = false) -> void:
 
 	merge_preview_modal.visible = checked_out_branch.is_merge_preview
 
-	var source_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from) if checked_out_branch.forked_from else null
+	var source_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from) if checked_out_branch.has("forked_from") else null
 	if checked_out_branch.is_merge_preview:
 		move_inspector_to_merge_preview()
 		var target_branch = GodotProject.get_branch_by_id(checked_out_branch.merge_into)
