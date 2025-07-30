@@ -82,6 +82,8 @@ pub struct Branch {
     pub fork_info: Option<ForkInfo>,
     pub merge_info: Option<MergeInfo>,
 	pub created_by: Option<String>,
+	// TODO: this is a String because DocumentId doesn't implement Reconcile
+	pub merged_into: Option<String>,
 }
 
 #[derive(Debug, Clone)]

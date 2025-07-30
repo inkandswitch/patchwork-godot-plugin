@@ -771,9 +771,13 @@ func update_branch_picker(main_branch, checked_out_branch, all_branches) -> void
 	add_branch_with_forks(main_branch, all_branches, checked_out_branch.id)
 
 func add_branch_with_forks(branch: Dictionary, all_branches: Array, selected_branch_id: String, indentation: String = "", is_last: bool = false) -> void:
+	print("branch: ", branch)
 	var label
 	if branch.is_main:
 		label = branch.name
+	elif not branch.get("merged_into", "").is_empty():
+		print("branch.merged_into: ", branch.merged_into)
+		return
 	else:
 		var connection
 		if is_last:
@@ -809,6 +813,9 @@ func add_branch_with_forks(branch: Dictionary, all_branches: Array, selected_bra
 	var forked_off_branches = []
 	for other_branch in all_branches:
 		if !("forked_from" in other_branch):
+			continue
+		if not other_branch.get("merged_into", "").is_empty():
+			print("other_branch.merged_into: ", other_branch.merged_into)
 			continue
 
 		if other_branch.forked_from != branch.id:
