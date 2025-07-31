@@ -44,7 +44,7 @@ jobs:
             bin: ./bin/godot.linuxbsd.editor.x86_64
 
           - name: "🍎 macOS Editor"
-            os: "macos-latest"
+            os: "macos-14"
             id: macos-editor
             platform: macos
             target: editor
@@ -185,7 +185,7 @@ jobs:
   #           bin: ./bin/godot.linuxbsd.editor.x86_64
 
   #         - name: "🍎 macOS"
-  #           os: "macos-latest"
+  #           os: "macos-14"
   #           platform: macos
   #           bin: ./bin/godot.macos.editor.arm64
 
