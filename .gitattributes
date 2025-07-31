@@ -1,0 +1,7 @@
+# Godot auto adds crlf to these on windows, but we want lf
+*.txt text eol=lf
+*.cfg text eol=lf
+*.import text eol=lf
+*.tscn text eol=lf
+*.gd text eol=lf
+*.tres text eol=lf
