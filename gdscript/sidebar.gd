@@ -290,8 +290,14 @@ func init(end_task: bool = true) -> void:
 
 	if not check_and_prompt_for_user_name(self._check_for_user_branch):
 		return
-	_check_for_user_branch()
 
+	var timeout = 5.0
+	var timer = Timer.new()
+	timer.wait_time = timeout
+	timer.one_shot = true
+	timer.timeout.connect(self._check_for_user_branch)
+	add_child(timer)
+	timer.start()
 
 func _on_sync_status_icon_pressed():
 	var sync_info = GodotProject.get_sync_server_connection_info()
