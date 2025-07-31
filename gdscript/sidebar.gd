@@ -29,7 +29,7 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 @onready var diff_section_body: Control = %DiffSectionBody
 @onready var branch_picker_cover: Button = %BranchPickerCover
 
-const DEV_MODE = true
+const DEV_MODE = false
 
 const DIFF_SECTION_HEADER_TEXT_FORMAT = "Changes: Showing diff between %s and %s"
 
