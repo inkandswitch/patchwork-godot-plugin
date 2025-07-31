@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -7,6 +8,64 @@ use std::process::Command;
 // OUT_DIR=...
 // PROFILE=...
 // TARGET=...
+
+// [configuration]
+// entry_symbol = "gdext_rust_init"
+// compatibility_minimum = 4.3
+// reloadable = true
+
+// [libraries]
+// linux.debug.x86_64 =    "rust/plugin/linux/libpatchwork_rust_core.linux.x86_64-unknown-linux-gnu.so"
+// linux.release.x86_64 =  "rust/plugin/linux/libpatchwork_rust_core.linux.x86_64-unknown-linux-gnu.so"
+// linux.debug.arm64 =      "rust/plugin/linux/libpatchwork_rust_core.linux.aarch64-unknown-linux-gnu.so"
+// linux.release.arm64 =    "rust/plugin/linux/libpatchwork_rust_core.linux.aarch64-unknown-linux-gnu.so"
+// linux.debug.arm32 =      "rust/plugin/linux/libpatchwork_rust_core.linux.armv7-unknown-linux-gnueabihf.so"
+// linux.release.arm32 =    "rust/plugin/linux/libpatchwork_rust_core.linux.armv7-unknown-linux-gnueabihf.so"
+// windows.debug.x86_64 =   "rust/plugin/windows/patchwork_rust_core.windows.x86_64-pc-windows-msvc.dll"
+// windows.release.x86_64 = "rust/plugin/windows/patchwork_rust_core.windows.x86_64-pc-windows-msvc.dll"
+// windows.debug.arm64 =   "rust/plugin/windows/patchwork_rust_core.windows.aarch64-pc-windows-msvc.dll"
+// windows.release.arm64 = "rust/plugin/windows/patchwork_rust_core.windows.aarch64-pc-windows-msvc.dll"
+// macos.debug =           "rust/plugin/macos/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.dylib"
+// macos.release =         "rust/plugin/macos/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.dylib"
+
+// parse the above file and get the 
+
+
+fn parse_gdextension_file(cwd: String) -> HashMap<String, String> {
+    let gdext_path = Path::new(&cwd).join("Patchwork.gdextension");
+    let contents = fs::read_to_string(gdext_path).expect("Failed to read Patchwork.gdextension");
+    let mut map = HashMap::new();
+    let mut current_section = String::new();
+    let mut hit_libraries = false;
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.starts_with('[') && line.ends_with(']') {
+            if line == "[libraries]" {
+                hit_libraries = true;
+            } else {
+                hit_libraries = false;
+            }
+            if !hit_libraries {
+                continue; // skip sections other than [libraries]
+            }
+            current_section = line[1..line.len()-1].to_string();
+            continue;
+        }
+        if !hit_libraries {
+            continue; // skip sections other than [libraries]
+        }
+
+        if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+            continue;
+        }
+        if let Some((key, value)) = line.split_once('=') {
+            let key = key.trim();
+            let value = value.trim().trim_matches('"');
+            map.insert(key.to_string(), value.to_string());
+        }
+    }
+    map
+}
 
 fn after_build(){
     // source the .lastbuild file
@@ -32,7 +91,7 @@ fn after_build(){
     println!("cargo:warning=CWD={}", crate_dir);
 
     // arch is x86_64 or arm64 depending on the target
-    let arch_macos = if target.contains("x86_64") {
+    let arch = if target.contains("x86_64") {
         "x86_64"
     } else if target.contains("arm64") || target.contains("aarch64") {
         "arm64"
@@ -110,7 +169,25 @@ fn after_build(){
 
     //     target_dirs.push(new_dir);
     // }
-
+    // let map = parse_gdextension_file(crate_dir.clone());
+    // let files = map.iter().map(|(k, v)| {
+    //     if k.starts_with(&format!("{}.{}", platform_name.clone(), profile.to_ascii_lowercase())) {
+    //         // e.g. linux.debug.x86_64
+    //         if (platform_name == "macos"){
+    //             return Some(   v);
+    //         } else if (k.ends_with(arch)) {
+    //             return Some(v);
+    //         }
+    //         // let parts: Vec<&str> = k.split('.').collect();
+    //         // if parts.len() >= 3 {
+    //         //     let target_part = parts[2]; // e.g. x86_64
+    //         //     targets.push(target_part);
+    //         //     let new_dir = profile_dir.parent().unwrap().join(target_part).join(profile);
+    //         //     target_dirs.push(new_dir);
+    //         // }
+    //     }
+    //     return None;
+    // });
     // for all the target_dirs, copy the library to the platform-specific directory
     let size = target_dirs.len();
     for (i, profile_dir) in target_dirs.iter().enumerate() {
@@ -137,12 +214,12 @@ fn after_build(){
                 platform_dir.join(format!("{}.macos.framework", &lib_name)).join(format!("{}.macos.{}", lib_name, lib_dll_ext))
             // }
         } else {
-            platform_dir.join(format!("{}.{}.{}", lib_name, targets[i], lib_dll_ext))
+            platform_dir.join(format!("{}.{}.{}.{}", lib_name, platform_name, targets[i], lib_dll_ext))
         };
         let a_dest_path = if platform_name == "macos" {
-            platform_dir.join(format!("{}.macos.framework", &lib_name)).join(format!("{}.macos.{}.{}", lib_name, arch_macos, lib_a_ext))
+            platform_dir.join(format!("{}.macos.framework", &lib_name)).join(format!("{}.macos.{}.{}", lib_name, arch, lib_a_ext))
         } else {
-            platform_dir.join(format!("{}.{}.{}", lib_name, targets[i], lib_a_ext))
+            platform_dir.join(format!("{}.{}.{}.{}", lib_name, platform_name, targets[i], lib_a_ext))
         };
         // check that libpath exists
         if !dll_lib_path.exists() {
