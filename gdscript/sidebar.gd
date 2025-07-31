@@ -31,6 +31,9 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 
 const DEV_MODE = false
 
+# Turn this off if it keeps crashing on windows
+const TURN_ON_USER_BRANCH_PROMPT = true
+
 const DIFF_SECTION_HEADER_TEXT_FORMAT = "Changes: Showing diff between %s and %s"
 
 const TEMP_DIR = "user://tmp"
@@ -291,6 +294,8 @@ func init(end_task: bool = true) -> void:
 	if not check_and_prompt_for_user_name(self._check_for_user_branch):
 		return
 
+	if not TURN_ON_USER_BRANCH_PROMPT:
+		return
 	var timeout = 5.0
 	var timer = Timer.new()
 	timer.wait_time = timeout
