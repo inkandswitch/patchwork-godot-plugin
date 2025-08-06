@@ -386,7 +386,7 @@ impl GodotProjectImpl {
 	fn localize_path(&self, path: &String) -> String {
 		if path.starts_with(&self.project_dir) {
 			let thing = PathBuf::from("res://".to_string()).join(PathBuf::from(&path[self.project_dir.len()..].to_string()));
-			thing.to_string_lossy().to_string()
+			thing.to_string_lossy().to_string().replace("\\", "/")
 		} else {
 			path.to_string()
 		}
