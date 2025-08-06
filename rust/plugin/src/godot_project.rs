@@ -289,6 +289,11 @@ impl EditorFilesystemAccessor {
 	fn get_inspector_edited_object() -> Option<Gd<Object>> {
 		EditorInterface::singleton().get_inspector().unwrap().get_edited_object()
 	}
+
+	fn clear_inspector_item() {
+		let object = Gd::<Object>::null_arg();
+		EditorInterface::singleton().inspect_object_ex(object).for_property("").inspector_only(true).done();
+	}
 }
 
 struct PatchworkConfigAccessor{
@@ -2863,22 +2868,23 @@ impl GodotProject {
 		}
 	}
 
-	fn update_godot_after_sync(&mut self) {
+	fn update_godot_after_sync(&mut self) -> bool {
 		if !self.pending_editor_update.any_changes() {
-			return;
+			return false;
 		}
 		if !GodotProjectImpl::safe_to_update_godot(false) {
-			return;
+			return false;
 		}
 		if !self.pending_editor_update.any_file_changes() {
 			// refresh the editor inspector AFTER all the file changes have been applied
 			if self.pending_editor_update.has_inspector_refresh_queued() {
 				self.pending_editor_update.refresh_inspector_dock();
+				return false;
 			}
 			// if self.pending_editor_update.modal_shown {
 			// 	PatchworkEditorAccessor::progress_end_task(MODAL_TASK_NAME);
 			// }
-			return;
+			return true;
 		}
 
 
@@ -2957,7 +2963,7 @@ impl GodotProject {
 			PatchworkEditorAccessor::reload_scripts(&self.pending_editor_update.scripts_to_reload.iter().map(|path| path.clone()).collect::<Vec<String>>());
 			self.pending_editor_update.scripts_to_reload.clear();
 			self.base_mut().set_process(true);
-			return;
+			return true;
 		}
 
 		// scene instances require scripts to be reloaded first
@@ -3040,6 +3046,7 @@ impl GodotProject {
 			tracing::debug!("waiting to scan until after main scene is reloaded, scenes pending: {:?}", self.pending_editor_update.scenes_to_reload.len());
 		}
 		self.base_mut().set_process(true);
+		true
     }
 
 	#[func]
@@ -3110,12 +3117,18 @@ impl INode for GodotProject {
 		if updates.len() > 0 {
 			self.pending_editor_update.merge(self.process_godot_updates(updates));
 		}
+		let mut refreshed = false;
 		if self.pending_editor_update.any_changes() {
-			self.update_godot_after_sync();
+			refreshed = self.update_godot_after_sync();
 		}
 		for signal in signals {
 			match signal {
 				GodotProjectSignal::CheckedOutBranch => {
+					// TODO: This is a hack to clear the inspector item when the branch is changed to prevent crashes
+					// Ideally, we'd figure out a way to keep the object in the inspector when the branch is changed
+					if refreshed {
+						EditorFilesystemAccessor::clear_inspector_item();
+					}
 					let branch = self.project.get_checked_out_branch_state().unwrap().to_godot();
 					self.signals().checked_out_branch().emit(&branch);
 				}
