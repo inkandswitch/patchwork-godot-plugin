@@ -348,9 +348,11 @@ impl GodotProjectImpl {
 
 	// TODO: We need to test this on Windows
 	fn localize_path(&self, path: &String) -> String {
-		if path.starts_with(&self.project_dir) {
-			let thing = PathBuf::from("res://".to_string()).join(PathBuf::from(&path[self.project_dir.len()..].to_string()));
-			thing.to_string_lossy().to_string().replace("\\", "/")
+		let path = path.replace("\\", "/");
+		let project_dir = self.project_dir.replace("\\", "/");
+		if path.starts_with(&project_dir) {
+			let thing = PathBuf::from("res://".to_string()).join(PathBuf::from(&path[project_dir.len()..].to_string()));
+			thing.to_string_lossy().to_string()
 		} else {
 			path.to_string()
 		}

@@ -248,7 +248,7 @@ func _check_for_user_branch():
 	var user_name = PatchworkConfig.get_user_value("user_name", "")
 	var has_user_branch = false
 	for branch in all_branches:
-		if not branch.is_main and branch.created_by == PatchworkConfig.get_user_value("user_name", ""):
+		if not branch.is_main and branch.has("created_by") and branch.created_by == PatchworkConfig.get_user_value("user_name", ""):
 			has_user_branch = true
 			break
 	if not has_user_branch:
