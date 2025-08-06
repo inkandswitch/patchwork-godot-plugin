@@ -248,7 +248,7 @@ func _on_node_box_clicked(sec: DiffInspectorSection, file_path: String, section:
 	do_node_box_click(sec, file_path, section, false)
 
 func do_node_box_click(sec: DiffInspectorSection, file_path: String, section: String, changed_scene: bool = false) -> void:
-	print("!!! box clicked: ", section)
+	# print("!!! box clicked: ", section)
 	if !section.begins_with("res://"):
 		var node_path = section
 		if section.begins_with("./"):
@@ -346,12 +346,12 @@ func get_children_paths(node: DiffInspectorSection) -> Array:
 func _on_parent_node_box_hovered(node: DiffInspectorSection, file_path: String) -> void:
 	var child_paths = get_children_paths(node)
 	node_hovered.emit(file_path, child_paths)
-	print("!!! parent node box hovered: ", child_paths)
+	# print("!!! parent node box hovered: ", child_paths)
 
 func _on_parent_node_box_unhovered(node: DiffInspectorSection, file_path: String) -> void:
 	var child_paths = get_children_paths(node)
 	node_unhovered.emit(file_path, child_paths)
-	print("!!! parent node box unhovered: ", child_paths)
+	# print("!!! parent node box unhovered: ", child_paths)
 
 func create_node_diff_section(file_section: DiffInspectorSection, node_diff: Dictionary, parent_file_path: String, node_label: String):
 	var node_name: String = node_diff["node_path"] # remove the leading "./"
@@ -445,7 +445,7 @@ func count_children(sec: DiffInspectorSection) -> int:
 func pop_node_sections(name: String, map: Dictionary, parent_section: DiffInspectorSection, file_path: String, override_label = null):
 		var sec: DiffInspectorSection = null
 		override_label = override_label if override_label != null else name.get_file()
-		print("!!! pop_node_sections: ", name)
+		# print("!!! pop_node_sections: ", name)
 		# merge the child sections into the parent section
 		if map.size() == 1 and not map.has("_diff"):
 			var child_key = map.keys()[0]
@@ -508,7 +508,8 @@ func _pop_child_map(node_diffs: Array) -> Dictionary:
 
 		var parts = node_path.split("/")
 		if (parts.size() > 2):
-			print("!!! parts: ", parts)
+			pass
+			# print("!!! parts: ", parts)
 
 		for i in range(parts.size() - 1, -1, -1):
 			var parent = "/".join(parts.slice(0, i + 1))
@@ -544,11 +545,11 @@ func add_node_diff(file_section: DiffInspectorSection, file_path: String, node_d
 
 
 func add_FileDiffResult(file_path: String, file_diff: Dictionary) -> void:
-	var file_name = file_path
-	var label = file_name
+	file_path = file_path.simplify_path()
+	var label = file_path
 	var type = file_diff.get("diff_type", "added_or_removed")
 	var change_type = file_diff["change_type"]
-	print("!!! adding file diff result for ", file_name, " with change_type ", change_type, " and type ", type)
+	# print("!!! adding file diff result for ", file_path, " with change_type ", change_type, " and type ", type)
 	var color: Color
 	if (change_type == "added"):
 		color = added_color
