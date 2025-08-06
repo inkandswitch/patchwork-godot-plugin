@@ -11,15 +11,15 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
+use crate::branch::{BinaryDocState, BranchState, BranchStateForkInfo, BranchStateMergeInfo};
 use crate::file_utils::FileContent;
 use crate::godot_parser::GodotScene;
-use crate::godot_project::{ForkInfo, MergeInfo};
 use crate::utils::{
     commit_with_attribution_and_timestamp, print_branch_state, CommitMetadata, MergeMetadata, ToShortForm,
 };
 use crate::{
     godot_parser,
-    godot_project::{BranchesMetadataDoc, GodotProjectDoc},
+    branch::{BranchesMetadataDoc, GodotProjectDoc, ForkInfo, MergeInfo, Branch},
     utils::get_linked_docs_of_branch,
 };
 use automerge::{
@@ -35,7 +35,7 @@ use futures::{
 
 use tokio::{net::TcpStream, runtime::Runtime};
 
-use crate::{doc_utils::SimpleDocReader, godot_project::Branch};
+use crate::{doc_utils::SimpleDocReader};
 
 
 const SERVER_REPO_ID: &str = "sync-server";
@@ -122,35 +122,6 @@ enum SubscriptionMessage {
     },
 }
 
-#[derive(Debug, Clone)]
-pub struct BinaryDocState {
-    doc_handle: Option<DocHandle>, // is null if the binary doc is being requested but not loaded yet
-    path: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct BranchStateForkInfo {
-    pub forked_from: DocumentId,
-    pub forked_at: Vec<ChangeHash>,
-}
-
-#[derive(Debug, Clone)]
-pub struct BranchStateMergeInfo {
-    pub merge_into: DocumentId,
-    pub merge_at: Vec<ChangeHash>,
-}
-
-#[derive(Debug, Clone)]
-pub struct BranchState {
-    pub name: String,
-    pub doc_handle: DocHandle,
-    pub linked_doc_ids: HashSet<DocumentId>,
-    pub synced_heads: Vec<ChangeHash>,
-    pub fork_info: Option<BranchStateForkInfo>,
-    pub merge_info: Option<BranchStateMergeInfo>,
-    pub is_main: bool,
-	pub created_by: Option<String>,
-}
 
 impl BranchState {
     pub fn is_synced(&self) -> bool {

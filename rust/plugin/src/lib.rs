@@ -22,6 +22,7 @@ mod file_utils;
 mod godot_helpers;
 pub mod godot_parser;
 pub mod godot_project;
+pub mod branch;
 mod godot_project_driver;
 mod patches;
 pub mod utils;

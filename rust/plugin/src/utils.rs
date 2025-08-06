@@ -4,7 +4,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use crate::{doc_utils::SimpleDocReader, godot_helpers::{GodotConvertExt, ToGodotExt, ToVariantExt}, godot_project_driver::BranchState};
+use crate::{doc_utils::SimpleDocReader, godot_helpers::{GodotConvertExt, ToGodotExt, ToVariantExt}, branch::BranchState};
 use automerge::{
     transaction::{CommitOptions, Transaction}, Change, ChangeHash, ReadDoc, ROOT
 };

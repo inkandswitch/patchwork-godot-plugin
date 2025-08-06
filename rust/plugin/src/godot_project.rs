@@ -1,3 +1,4 @@
+use crate::branch::BranchState;
 use crate::file_utils::{FileContent};
 use godot::classes::editor_plugin::DockSlot;
 use ::safer_ffi::prelude::*;
@@ -28,7 +29,7 @@ use std::{collections::HashMap, str::FromStr};
 use crate::godot_helpers::{get_resource_or_scene_path_for_object, ToGodotExt, ToVariantExt};
 use crate::file_system_driver::{FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
 use crate::godot_parser::{self, GodotScene, TypeOrInstance};
-use crate::godot_project_driver::{BranchState, ConnectionThreadError, DocHandleType};
+use crate::godot_project_driver::{ConnectionThreadError, DocHandleType};
 use crate::patches::{get_changed_files_vec};
 use crate::patchwork_config::PatchworkConfig;
 use crate::utils::{are_valid_heads, array_to_heads, CommitInfo, ToShortForm};
@@ -38,51 +39,6 @@ use crate::{
 };
 use similar::{ChangeTag, DiffOp, TextDiff};
 
-#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
-struct BinaryFile {
-    content: Vec<u8>,
-}
-
-#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
-pub struct FileEntry {
-    pub content: Option<String>,
-    pub url: Option<String>,
-}
-
-#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
-pub struct GodotProjectDoc {
-    pub files: HashMap<String, FileEntry>,
-    pub state: HashMap<String, HashMap<String, String>>,
-}
-
-// type AutoMergeSignalCallback = extern "C" fn(*mut c_void, *const std::os::raw::c_char, *const *const std::os::raw::c_char, usize) -> ();
-
-#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
-pub struct BranchesMetadataDoc {
-    pub main_doc_id: String,
-    pub branches: HashMap<String, Branch>,
-}
-
-#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
-pub struct ForkInfo {
-    pub forked_from: String,
-    pub forked_at: Vec<String>,
-}
-
-#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
-pub struct MergeInfo {
-    pub merge_into: String,
-    pub merge_at: Vec<String>,
-}
-
-#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
-pub struct Branch {
-    pub name: String,
-    pub id: String,
-    pub fork_info: Option<ForkInfo>,
-    pub merge_info: Option<MergeInfo>,
-	pub created_by: Option<String>,
-}
 
 #[derive(Debug, Clone)]
 enum CheckedOutBranchState {
