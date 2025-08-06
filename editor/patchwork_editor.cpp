@@ -1,4 +1,5 @@
 #include "patchwork_editor.h"
+#include "editor/debugger/editor_debugger_node.h"
 #include "editor/plugins/shader_editor_plugin.h"
 
 #include <core/io/json.h>
@@ -463,7 +464,7 @@ void PatchworkEditor::reload_scripts(PackedStringArray p_scripts) {
 		}
 	}
 	// soft_reload = false means it will reload all the script instances too
-	GDScriptLanguage::get_singleton()->reload_scripts(scripts, false);
+	GDScriptLanguage::get_singleton()->reload_scripts(scripts, true);
 	// now get all the open scripts in the editor
 	auto script_editor = EditorInterface::get_singleton()->get_script_editor();
 	for (auto &script : script_editor->get_open_scripts()) {
@@ -474,6 +475,7 @@ void PatchworkEditor::reload_scripts(PackedStringArray p_scripts) {
 			break;
 		}
 	}
+	EditorDebuggerNode::get_singleton()->reload_scripts(p_scripts);
 	// EditorInterface::get_singleton()->get_script_editor()->reload_scripts(p_scripts);
 }
 

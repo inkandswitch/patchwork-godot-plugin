@@ -2959,15 +2959,14 @@ impl GodotProject {
 		// before we start reloading anything else because the ScriptEditor forces the reload to run deferred
 		// (i.e. AFTER the current process() call)
 		// TODO: remove this after PR lands
+		let had_scripts_to_reload = self.pending_editor_update.scripts_to_reload.len() > 0;
 		if self.pending_editor_update.scripts_to_reload.len() > 0 {
 			PatchworkEditorAccessor::reload_scripts(&self.pending_editor_update.scripts_to_reload.iter().map(|path| path.clone()).collect::<Vec<String>>());
 			self.pending_editor_update.scripts_to_reload.clear();
-			self.base_mut().set_process(true);
-			return true;
 		}
 
 		// scene instances require scripts to be reloaded first
-		if self.pending_editor_update.scenes_to_reload.len() > 0 {
+		if self.pending_editor_update.scenes_to_reload.len() > 0 || had_scripts_to_reload {
 			// TODO: NO longer needed, but keeping it around because not needing this depends on upstream patches.
 			// let scene_root = EditorInterface::singleton().get_edited_scene_root();
 			// let scene_root_path = if let Some(scene_root) = scene_root {
@@ -3015,10 +3014,11 @@ impl GodotProject {
 			// }
 			if !self.reload_modified_scenes() {
 				self.pending_editor_update.changing_scene_cooldown = 6;
+			} else {
+				self.pending_editor_update.scenes_to_reload.clear();
 			}
 
 
-			self.pending_editor_update.scenes_to_reload.clear();
 			// let mut reloaded_scenes = HashSet::new();
 			// let mut updating_current_scene = self.pending_editor_update.scenes_to_reload.contains_key(&scene_root_path);
 			// let open_scene_paths = EditorInterface::singleton().get_open_scenes().to_vec().iter().map(|scene_path| scene_path.to_string()).collect::<HashSet<String>>();
