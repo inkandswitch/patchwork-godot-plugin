@@ -332,7 +332,15 @@ impl GodotProjectImpl {
 		// trim the project_dir from the front of the path
 		if path.starts_with("res://") {
 			let thing = PathBuf::from(self.project_dir.clone()).join(PathBuf::from(&path["res://".len()..].to_string()));
-			thing.to_string_lossy().to_string()
+
+			#[cfg(not(target_os = "windows"))]
+			{
+				return thing.to_string_lossy().to_string().replace("\\", "/");
+			}
+			#[cfg(target_os = "windows")]
+			{
+				return thing.to_string_lossy().to_string();
+			}
 		} else {
 			path.to_string()
 		}
