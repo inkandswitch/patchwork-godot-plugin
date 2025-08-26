@@ -10,6 +10,7 @@
 #include <editor/editor_interface.h>
 #include <editor/editor_undo_redo_manager.h>
 #include <editor/plugins/script_editor_plugin.h>
+#include <main/main.h>
 #include <modules/gdscript/gdscript.h>
 #include <scene/resources/packed_scene.h>
 
@@ -499,6 +500,19 @@ bool PatchworkEditor::is_changing_scene() {
 void PatchworkEditor::clear_editor_selection() {
 	EditorNode::get_singleton()->get_editor_selection()->clear();
 }
+void PatchworkEditor::close_scene_file(const String &p_path) {
+	auto open_scenes = EditorInterface::get_singleton()->get_open_scenes();
+	if (!open_scenes.has(p_path)) {
+		return; // nothing to do
+	}
+	// We have to LOAD the scene first (if it's already open, it'll just switch to the tab) and then close it by doing EditorNode::get_singleton()->trigger_menu_option()
+
+	EditorNode::get_singleton()->load_scene(p_path);
+
+	// Main::iteration();
+
+	EditorNode::get_singleton()->trigger_menu_option(EditorNode::FILE_CLOSE, true);
+}
 
 PatchworkEditor *PatchworkEditor::singleton = nullptr;
 
@@ -539,4 +553,5 @@ void PatchworkEditor::_bind_methods() {
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("open_script_file", "script"), &PatchworkEditor::open_script_file);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("clear_editor_selection"), &PatchworkEditor::clear_editor_selection);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_resource_script_class", "path"), &PatchworkEditor::get_resource_script_class);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("close_scene_file", "path"), &PatchworkEditor::close_scene_file);
 }

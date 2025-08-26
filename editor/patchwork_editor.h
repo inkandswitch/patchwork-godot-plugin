@@ -54,6 +54,7 @@ public:
 	static void force_refresh_editor_inspector();
 	static void open_script_file(const String &p_script);
 	static String get_resource_script_class(const String &p_path);
+	static void close_scene_file(const String &p_path);
 
 	static void clear_editor_selection();
 };

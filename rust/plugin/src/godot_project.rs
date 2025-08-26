@@ -263,6 +263,14 @@ impl PatchworkEditorAccessor {
 			&[],
 		);
 	}
+
+	fn close_scene_file(path: &str) {
+		ClassDb::singleton().class_call_static(
+			"PatchworkEditor",
+			"close_scene_file",
+			&[path.to_variant()],
+		);
+	}
 }
 
 struct EditorFilesystemAccessor{
@@ -2963,6 +2971,11 @@ impl GodotProject {
 		if self.pending_editor_update.scripts_to_reload.len() > 0 {
 			PatchworkEditorAccessor::reload_scripts(&self.pending_editor_update.scripts_to_reload.iter().map(|path| path.clone()).collect::<Vec<String>>());
 			self.pending_editor_update.scripts_to_reload.clear();
+		}
+		for path in self.pending_editor_update.deleted_files.iter() {
+			if (path.contains(".tscn") || path.contains(".scn")) {
+				PatchworkEditorAccessor::close_scene_file(&path);
+			}
 		}
 
 		// scene instances require scripts to be reloaded first

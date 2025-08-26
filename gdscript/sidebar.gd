@@ -29,7 +29,7 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 @onready var diff_section_body: Control = %DiffSectionBody
 @onready var branch_picker_cover: Button = %BranchPickerCover
 
-const DEV_MODE = false
+const DEV_MODE = true
 
 # Turn this off if it keeps crashing on windows
 const TURN_ON_USER_BRANCH_PROMPT = true
@@ -38,7 +38,7 @@ const DIFF_SECTION_HEADER_TEXT_FORMAT = "Changes: Showing diff between %s and %s
 
 const TEMP_DIR = "user://tmp"
 
-var DEBUG_MODE = false
+var DEBUG_MODE = true
 
 var plugin: EditorPlugin
 
