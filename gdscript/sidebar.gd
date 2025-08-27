@@ -38,8 +38,6 @@ const DIFF_SECTION_HEADER_TEXT_FORMAT = "Changes: Showing diff between %s and %s
 
 const TEMP_DIR = "user://tmp"
 
-var DEBUG_MODE = true
-
 var plugin: EditorPlugin
 
 var task_modal: TaskModal = TaskModal.new()
@@ -586,7 +584,7 @@ func update_ui(update_diff: bool = false) -> void:
 
 		var prefix = ""
 
-		if DEBUG_MODE:
+		if DEV_MODE:
 			prefix = change.hash.substr(0, 8) + " - "
 
 		if "merge_metadata" in change:
