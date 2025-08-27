@@ -16,6 +16,7 @@ private:
 	EditorNode *editor = nullptr;
 	static PatchworkEditor *singleton;
 	static void _editor_init_callback_static();
+	static Callable steal_close_current_script_tab_file_callback();
 
 protected:
 	void _notification(int p_what);
@@ -55,6 +56,8 @@ public:
 	static void open_script_file(const String &p_script);
 	static String get_resource_script_class(const String &p_path);
 	static void close_scene_file(const String &p_path);
+	static void close_script_file(const String &p_path);
+	static void close_files_if_open(const Vector<String> &p_paths);
 
 	static void clear_editor_selection();
 };

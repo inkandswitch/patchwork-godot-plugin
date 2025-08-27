@@ -1,6 +1,9 @@
 #include "patchwork_editor.h"
+#include "core/variant/callable.h"
+#include "core/variant/callable_bind.h"
 #include "editor/debugger/editor_debugger_node.h"
 #include "editor/plugins/shader_editor_plugin.h"
+#include "scene/gui/box_container.h"
 
 #include <core/io/json.h>
 #include <core/io/missing_resource.h>
@@ -500,6 +503,74 @@ bool PatchworkEditor::is_changing_scene() {
 void PatchworkEditor::clear_editor_selection() {
 	EditorNode::get_singleton()->get_editor_selection()->clear();
 }
+
+Callable PatchworkEditor::steal_close_current_script_tab_file_callback() {
+	ScriptEditor *script_editor = EditorInterface::get_singleton()->get_script_editor();
+
+	ERR_FAIL_COND_V_MSG(script_editor == nullptr, Callable(), "No script editor found");
+	Callable new_callable;
+	for (auto &child : script_editor->get_children()) {
+		if (Object::cast_to<ConfirmationDialog>(child)) {
+			auto confirmation_dialog = Object::cast_to<ConfirmationDialog>(child);
+			bool found = false;
+			for (auto &child : confirmation_dialog->get_children()) {
+				if (Object::cast_to<HBoxContainer>(child)) {
+					for (auto &subchild : Object::cast_to<HBoxContainer>(child)->get_children()) {
+						if (Object::cast_to<Button>(subchild)) {
+							auto button = Object::cast_to<Button>(subchild);
+							if (button->get_text() == TTR("Discard")) {
+								found = true;
+								break;
+							}
+						}
+					}
+				}
+				if (found) {
+					break;
+				}
+			}
+			ERR_FAIL_COND_V_MSG(!found, Callable(), "No discard button found");
+
+			// we have to steal the signal handler for the "confirmed" signal
+			List<Connection> connections;
+			confirmation_dialog->get_signal_connection_list(SceneStringName(confirmed), &connections);
+			ERR_FAIL_COND_V_MSG(connections.is_empty(), Callable(), "No connection found for the confirmed button");
+			Callable confirm_callback = connections.front()->get().callable;
+			// The signal handler is bound with arguments that we don't want, so we need to unbind it
+			// we need "false, false" so that closing it does not save it and doesn't mess with the history
+			auto custom = confirm_callback.get_custom();
+			ERR_FAIL_COND_V_MSG(custom == nullptr, Callable(), "No callable found for the confirmed button");
+			CallableCustomBind *custom_bind = dynamic_cast<CallableCustomBind *>(custom);
+			ERR_FAIL_COND_V_MSG(custom_bind == nullptr, Callable(), "No callable found for the confirmed button");
+			new_callable = custom_bind->get_callable().bind(false, false);
+			ERR_FAIL_COND_V_MSG(new_callable.is_null(), Callable(), "Could not rebind the confirmed button");
+			break;
+		}
+	}
+	return new_callable;
+}
+
+void PatchworkEditor::close_script_file(const String &p_path) {
+	auto scripts = EditorInterface::get_singleton()->get_script_editor()->get_open_scripts();
+	Ref<Script> found;
+	for (auto &script : scripts) {
+		if (script->get_path() == p_path) {
+			found = script;
+			break;
+		}
+	}
+	if (!found.is_valid()) {
+		return;
+	}
+	Callable close_current_script_tab_callback = steal_close_current_script_tab_file_callback();
+	ERR_FAIL_COND_MSG(close_current_script_tab_callback.is_null(), "No close callback found");
+	// first, we have to load it
+	EditorInterface::get_singleton()->get_script_editor()->edit(found, 0, 0, false);
+	close_current_script_tab_callback.call();
+
+	// we have to steal _close_tab from the signal handler on the erase_tab_confirm in the script editor
+}
+
 void PatchworkEditor::close_scene_file(const String &p_path) {
 	auto open_scenes = EditorInterface::get_singleton()->get_open_scenes();
 	if (!open_scenes.has(p_path)) {
@@ -511,7 +582,19 @@ void PatchworkEditor::close_scene_file(const String &p_path) {
 
 	// Main::iteration();
 
+	// this needs to be bound to GDScript
 	EditorNode::get_singleton()->trigger_menu_option(EditorNode::FILE_CLOSE, true);
+}
+
+void PatchworkEditor::close_files_if_open(const Vector<String> &p_paths) {
+	for (auto &path : p_paths) {
+		auto ext = path.get_extension().to_lower();
+		if (ext == "tscn" || ext == "scn") {
+			close_scene_file(path);
+		} else if (ext == "gd") {
+			close_script_file(path);
+		}
+	}
 }
 
 PatchworkEditor *PatchworkEditor::singleton = nullptr;
@@ -554,4 +637,6 @@ void PatchworkEditor::_bind_methods() {
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("clear_editor_selection"), &PatchworkEditor::clear_editor_selection);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_resource_script_class", "path"), &PatchworkEditor::get_resource_script_class);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("close_scene_file", "path"), &PatchworkEditor::close_scene_file);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("close_script_file", "path"), &PatchworkEditor::close_script_file);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("close_files_if_open", "paths"), &PatchworkEditor::close_files_if_open);
 }
