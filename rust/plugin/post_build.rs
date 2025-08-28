@@ -230,6 +230,11 @@ fn after_build(){
         }
         fs::copy(&dll_lib_path, &dll_dest_path).unwrap();
         fs::copy(&a_lib_path, &a_dest_path).unwrap();
+        if platform_name == "windows" {
+            let pdb_lib_path = profile_dir.join(format!("{}.{}", lib_name, "pdb"));
+            let pdb_dest_path = platform_dir.join(format!("{}.{}", lib_name, "pdb"));
+            fs::copy(&pdb_lib_path, &pdb_dest_path).unwrap();
+        }
 
         println!("cargo:rerun-if-changed=build.rs");
         println!("cargo:warning=Copied library to {:?}", dll_dest_path);
