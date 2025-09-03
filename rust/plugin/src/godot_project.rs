@@ -279,6 +279,14 @@ impl PatchworkEditorAccessor {
 			&[paths.to_variant()],
 		);
 	}
+
+	fn refresh_after_source_change() {
+		ClassDb::singleton().class_call_static(
+			"PatchworkEditor",
+			"refresh_after_source_change",
+			&[],
+		);
+	}
 }
 
 struct EditorFilesystemAccessor{
@@ -2553,7 +2561,6 @@ pub struct PendingEditorUpdate {
 	reimport_files: HashSet<String>,
 	uids_to_add: HashMap<String, String>,
 	reload_project_settings: bool,
-	reload_all_scenes: bool,
 	inspector_refresh_queue_time: u128,
 	changing_scene_cooldown: i64,
 	modal_shown: bool,
@@ -2581,7 +2588,7 @@ impl PendingEditorUpdate {
 	}
 
 	fn any_file_changes(&self) -> bool {
-		self.reload_all_scenes || self.scripts_to_reload.len() > 0 || self.scenes_to_reload.len() > 0 || self.reimport_files.len() > 0 || self.uids_to_add.len() > 0 || self.added_or_deleted_files()
+		self.scripts_to_reload.len() > 0 || self.scenes_to_reload.len() > 0 || self.reimport_files.len() > 0 || self.uids_to_add.len() > 0 || self.added_or_deleted_files()
 	}
 
 	fn has_inspector_refresh_queued(&self) -> bool {
@@ -2610,9 +2617,7 @@ impl PendingEditorUpdate {
 		self.scenes_to_reload.clear();
 		self.reimport_files.clear();
 		self.uids_to_add.clear();
-		// don't clear more_scenes_to_reload
 		self.reload_project_settings = false;
-		self.reload_all_scenes = false;
 		self.inspector_refresh_queue_time = 0;
 		self.changing_scene_cooldown = 0;
 		self.modal_shown = false;
@@ -2944,15 +2949,31 @@ impl GodotProject {
 			PatchworkEditorAccessor::reload_scripts(&self.pending_editor_update.scripts_to_reload.iter().map(|path| path.clone()).collect::<Vec<String>>());
 			self.pending_editor_update.scripts_to_reload.clear();
 		}
-		
+
 		// we have to reload the modified scenes, then on the next process() call, we'll reload the rest of the scenes
 		if self.pending_editor_update.scenes_to_reload.len() > 0 && self.reload_modified_scenes() && self.reload_all_scenes(){
 			self.pending_editor_update.clear();
 		}
-		
+
 		self.base_mut().set_process(true);
 		return true;
 	}
+
+	fn update_godot_after_source_change(&mut self) -> bool {
+		if !self.pending_editor_update.any_changes() {
+			return false;
+		}
+		if !GodotProjectImpl::safe_to_update_godot(false) {
+			return false;
+		}
+		self.base_mut().set_process(false);
+		PatchworkEditorAccessor::close_files_if_open(&self.pending_editor_update.deleted_files.iter().map(|path| path.clone()).collect::<Vec<String>>());
+		PatchworkEditorAccessor::refresh_after_source_change();
+		self.pending_editor_update.clear();
+		self.base_mut().set_process(true);
+		return true;
+	}
+
 
 	fn update_godot_after_sync(&mut self) -> bool {
 		if !self.pending_editor_update.any_changes() {

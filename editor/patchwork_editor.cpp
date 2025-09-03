@@ -504,6 +504,34 @@ void PatchworkEditor::clear_editor_selection() {
 	EditorNode::get_singleton()->get_editor_selection()->clear();
 }
 
+struct SignalCallback : public Object {
+	GDCLASS(SignalCallback, Object);
+
+public:
+	bool fired = false;
+	void signal_callback(bool p_exist) {
+		fired = true;
+	}
+};
+
+void PatchworkEditor::refresh_after_source_change() {
+	EditorFileSystem::get_singleton()->scan_changes();
+	// TODO: make this take in scripts to reload
+	ScriptEditor::get_singleton()->reload_scripts();
+
+	Main::iteration();
+
+	while (EditorFileSystem::get_singleton()->is_scanning()) {
+		OS::get_singleton()->delay_usec(10000);
+		Main::iteration();
+	}
+
+	auto open_scenes = EditorInterface::get_singleton()->get_open_scenes();
+	for (auto &scene : open_scenes) {
+		EditorInterface::get_singleton()->reload_scene_from_path(scene);
+	}
+}
+
 Callable PatchworkEditor::steal_close_current_script_tab_file_callback() {
 	ScriptEditor *script_editor = EditorInterface::get_singleton()->get_script_editor();
 
@@ -639,4 +667,5 @@ void PatchworkEditor::_bind_methods() {
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("close_scene_file", "path"), &PatchworkEditor::close_scene_file);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("close_script_file", "path"), &PatchworkEditor::close_script_file);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("close_files_if_open", "paths"), &PatchworkEditor::close_files_if_open);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("refresh_after_source_change"), &PatchworkEditor::refresh_after_source_change);
 }
