@@ -302,6 +302,10 @@ impl EditorFilesystemAccessor {
 		EditorInterface::singleton().get_resource_filesystem().unwrap().scan();
 	}
 
+	fn scan_changes(){
+		EditorInterface::singleton().get_resource_filesystem().unwrap().scan_sources();
+	}
+
 	fn get_inspector_edited_object() -> Option<Gd<Object>> {
 		EditorInterface::singleton().get_inspector().unwrap().get_edited_object()
 	}
@@ -2549,6 +2553,7 @@ pub struct PendingEditorUpdate {
 	reimport_files: HashSet<String>,
 	uids_to_add: HashMap<String, String>,
 	reload_project_settings: bool,
+	reload_all_scenes: bool,
 	inspector_refresh_queue_time: u128,
 	changing_scene_cooldown: i64,
 	modal_shown: bool,
@@ -2576,7 +2581,7 @@ impl PendingEditorUpdate {
 	}
 
 	fn any_file_changes(&self) -> bool {
-		self.scripts_to_reload.len() > 0 || self.scenes_to_reload.len() > 0 || self.reimport_files.len() > 0 || self.uids_to_add.len() > 0 || self.added_or_deleted_files()
+		self.reload_all_scenes || self.scripts_to_reload.len() > 0 || self.scenes_to_reload.len() > 0 || self.reimport_files.len() > 0 || self.uids_to_add.len() > 0 || self.added_or_deleted_files()
 	}
 
 	fn has_inspector_refresh_queued(&self) -> bool {
@@ -2596,6 +2601,21 @@ impl PendingEditorUpdate {
 		}
 		PatchworkEditorAccessor::force_refresh_editor_inspector();
 		self.inspector_refresh_queue_time = 0;
+	}
+
+	fn clear(&mut self) {
+		self.added_files.clear();
+		self.deleted_files.clear();
+		self.scripts_to_reload.clear();
+		self.scenes_to_reload.clear();
+		self.reimport_files.clear();
+		self.uids_to_add.clear();
+		// don't clear more_scenes_to_reload
+		self.reload_project_settings = false;
+		self.reload_all_scenes = false;
+		self.inspector_refresh_queue_time = 0;
+		self.changing_scene_cooldown = 0;
+		self.modal_shown = false;
 	}
 }
 
@@ -2884,6 +2904,56 @@ impl GodotProject {
 		}
 	}
 
+	fn reload_all_scenes(&self) -> bool {
+		if PatchworkEditorAccessor::is_changing_scene() {
+			return false;
+		}
+		let opened_scenes = EditorInterface::singleton().get_open_scenes();
+		let mut scenes_to_reload = Vec::new();
+		let currently_opened_scene_path = if let Some(edited_scene_root) = EditorInterface::singleton().get_edited_scene_root() {
+			Some(edited_scene_root.get_scene_file_path().to_string())
+		} else {
+			None
+		};
+		for scene_path in opened_scenes.to_vec().iter().map(|s| s.to_string()).collect::<Vec<String>>() {
+			if currently_opened_scene_path.is_none() || &scene_path != currently_opened_scene_path.as_ref().unwrap() {
+				scenes_to_reload.push(scene_path);
+			}
+		}
+		for scene_path in scenes_to_reload.iter() {
+			EditorInterface::singleton().reload_scene_from_path(scene_path.as_str());
+		}
+		// do the currently opened scene last to make sure the editor doesn't switch tabs
+		if let Some(currently_opened_scene_path) = currently_opened_scene_path {
+			EditorInterface::singleton().reload_scene_from_path(currently_opened_scene_path.as_str());
+		}
+		return true;
+	}
+
+	fn update_godot_after_sync_2(&mut self) -> bool {
+		if !self.pending_editor_update.any_changes() {
+			return false;
+		}
+		if !GodotProjectImpl::safe_to_update_godot(false) {
+			return false;
+		}
+		self.base_mut().set_process(false);
+		PatchworkEditorAccessor::close_files_if_open(&self.pending_editor_update.deleted_files.iter().map(|path| path.clone()).collect::<Vec<String>>());
+		EditorFilesystemAccessor::scan();
+		if self.pending_editor_update.scripts_to_reload.len() > 0 {
+			PatchworkEditorAccessor::reload_scripts(&self.pending_editor_update.scripts_to_reload.iter().map(|path| path.clone()).collect::<Vec<String>>());
+			self.pending_editor_update.scripts_to_reload.clear();
+		}
+		
+		// we have to reload the modified scenes, then on the next process() call, we'll reload the rest of the scenes
+		if self.pending_editor_update.scenes_to_reload.len() > 0 && self.reload_modified_scenes() && self.reload_all_scenes(){
+			self.pending_editor_update.clear();
+		}
+		
+		self.base_mut().set_process(true);
+		return true;
+	}
+
 	fn update_godot_after_sync(&mut self) -> bool {
 		if !self.pending_editor_update.any_changes() {
 			return false;
@@ -3136,7 +3206,7 @@ impl INode for GodotProject {
 		}
 		let mut refreshed = false;
 		if self.pending_editor_update.any_changes() {
-			refreshed = self.update_godot_after_sync();
+			refreshed = self.update_godot_after_sync_2();
 		}
 		for signal in signals {
 			match signal {
