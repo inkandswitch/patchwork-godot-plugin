@@ -2967,6 +2967,9 @@ impl GodotProject {
 			return false;
 		}
 		self.base_mut().set_process(false);
+		if self.pending_editor_update.reload_project_settings {
+			self.reload_project_settings();
+		}
 		PatchworkEditorAccessor::close_files_if_open(&self.pending_editor_update.deleted_files.iter().map(|path| path.clone()).collect::<Vec<String>>());
 		PatchworkEditorAccessor::refresh_after_source_change();
 		self.pending_editor_update.clear();
