@@ -504,16 +504,6 @@ void PatchworkEditor::clear_editor_selection() {
 	EditorNode::get_singleton()->get_editor_selection()->clear();
 }
 
-struct SignalCallback : public Object {
-	GDCLASS(SignalCallback, Object);
-
-public:
-	bool fired = false;
-	void signal_callback(bool p_exist) {
-		fired = true;
-	}
-};
-
 void PatchworkEditor::refresh_after_source_change() {
 	EditorFileSystem::get_singleton()->scan_changes();
 	// TODO: make this take in scripts to reload
