@@ -457,18 +457,17 @@ impl GodotScene {
                 match tx.get_int(&children_obj, child_node_id) {
                     // child exists, check if we need to change the number to reflect the new order
                     Some(number) => {
-                        if number <= current_child_number {
-                            current_child_number += 1;
+                        if number != current_child_number {
                             let _ = tx.put(&children_obj, child_node_id, current_child_number);
                         }
                     }
                     // child does not exist, add it to the map with the next child number
                     None => {
-                        current_child_number += 1;
                         tx.put(&children_obj, child_node_id, current_child_number)
                             .unwrap();
                     }
                 };
+				current_child_number += 1;
             }
 
             // remove child node ids that are not in the new node
