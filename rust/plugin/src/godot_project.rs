@@ -279,6 +279,14 @@ impl PatchworkEditorAccessor {
 			&[paths.to_variant()],
 		);
 	}
+
+	fn refresh_after_source_change() {
+		ClassDb::singleton().class_call_static(
+			"PatchworkEditor",
+			"refresh_after_source_change",
+			&[],
+		);
+	}
 }
 
 struct EditorFilesystemAccessor{
@@ -300,6 +308,10 @@ impl EditorFilesystemAccessor {
 
 	fn scan() {
 		EditorInterface::singleton().get_resource_filesystem().unwrap().scan();
+	}
+
+	fn scan_changes(){
+		EditorInterface::singleton().get_resource_filesystem().unwrap().scan_sources();
 	}
 
 	fn get_inspector_edited_object() -> Option<Gd<Object>> {
@@ -2597,6 +2609,19 @@ impl PendingEditorUpdate {
 		PatchworkEditorAccessor::force_refresh_editor_inspector();
 		self.inspector_refresh_queue_time = 0;
 	}
+
+	fn clear(&mut self) {
+		self.added_files.clear();
+		self.deleted_files.clear();
+		self.scripts_to_reload.clear();
+		self.scenes_to_reload.clear();
+		self.reimport_files.clear();
+		self.uids_to_add.clear();
+		self.reload_project_settings = false;
+		self.inspector_refresh_queue_time = 0;
+		self.changing_scene_cooldown = 0;
+		self.modal_shown = false;
+	}
 }
 
 #[derive(GodotClass, Debug)]
@@ -2884,187 +2909,49 @@ impl GodotProject {
 		}
 	}
 
-	fn update_godot_after_sync(&mut self) -> bool {
+	fn reload_all_scenes(&self) -> bool {
+		if PatchworkEditorAccessor::is_changing_scene() {
+			return false;
+		}
+		let opened_scenes = EditorInterface::singleton().get_open_scenes();
+		let mut scenes_to_reload = Vec::new();
+		let currently_opened_scene_path = if let Some(edited_scene_root) = EditorInterface::singleton().get_edited_scene_root() {
+			Some(edited_scene_root.get_scene_file_path().to_string())
+		} else {
+			None
+		};
+		for scene_path in opened_scenes.to_vec().iter().map(|s| s.to_string()).collect::<Vec<String>>() {
+			if currently_opened_scene_path.is_none() || &scene_path != currently_opened_scene_path.as_ref().unwrap() {
+				scenes_to_reload.push(scene_path);
+			}
+		}
+		for scene_path in scenes_to_reload.iter() {
+			EditorInterface::singleton().reload_scene_from_path(scene_path.as_str());
+		}
+		// do the currently opened scene last to make sure the editor doesn't switch tabs
+		if let Some(currently_opened_scene_path) = currently_opened_scene_path {
+			EditorInterface::singleton().reload_scene_from_path(currently_opened_scene_path.as_str());
+		}
+		return true;
+	}
+
+	fn update_godot_after_source_change(&mut self) -> bool {
 		if !self.pending_editor_update.any_changes() {
 			return false;
 		}
 		if !GodotProjectImpl::safe_to_update_godot(false) {
 			return false;
 		}
-		if !self.pending_editor_update.any_file_changes() {
-			// refresh the editor inspector AFTER all the file changes have been applied
-			if self.pending_editor_update.has_inspector_refresh_queued() {
-				self.pending_editor_update.refresh_inspector_dock();
-				return false;
-			}
-			// if self.pending_editor_update.modal_shown {
-			// 	PatchworkEditorAccessor::progress_end_task(MODAL_TASK_NAME);
-			// }
-			return true;
-		}
-
-
-		let obj = EditorFilesystemAccessor::get_inspector_edited_object();
-		let inspector_dock_needs_refresh = if let Some(obj) = obj {
-			let obj_path = get_resource_or_scene_path_for_object(&obj);
-			if obj_path == "" {
-				false
-			} else if self.pending_editor_update.scenes_to_reload.contains_key(&obj_path) {
-				true
-			} else if self.pending_editor_update.scripts_to_reload.contains(&obj_path) {
-				true
-			} else if self.pending_editor_update.reimport_files.contains(&obj_path) {
-				true
-			} else {
-				// get the script from the object
-				let var = obj.get_script();
-				let res_obj: Result<Gd<Object>, _> = var.try_to::<Gd<Object>>();
-				if let Ok(o) = res_obj {
-					if let Ok(script) = o.try_cast::<Script>() {
-						self.pending_editor_update.scripts_to_reload.contains(&script.get_path().to_string())
-					} else {
-						false
-					}
-				} else {
-					false
-				}
-			}
-		} else {
-			false
-		};
-		if inspector_dock_needs_refresh {
-			self.pending_editor_update.queue_inspector_dock_refresh();
-		}
-		// We have to turn off process here because:
-		// * This was probably called from `process()`
-		// * Any of these functions we're about to call could result in popping up and stepping the ProgressDialog modal
-		// * ProgressDialog::step() will call `Main::iteration()`, which calls `process()` on all the scene tree nodes
-		// * calling `process()` on us again will cause gd_ext to attempt to re-bind_mut() the GodotProject singleton
-		// * This will cause a panic because we're already in the middle of `process()` with a bound mut ref to base
 		self.base_mut().set_process(false);
-
-		// To prevent crashes when switching branches after selecting a node or resource
-		// TODO: This can lead to a bad user experience because we lose the selection history and the user can't go back to any previous selection(s)
-		// we may not need to do this if we can properly handle the state for the TileMap editor and other editors
-		PatchworkEditorAccessor::clear_editor_selection();
-
-		// let reload_scene_func = |scene_path: &str| {
-		// 	if PatchworkEditorAccessor::is_changing_scene() {
-		// 		tracing::debug!("Editor is changing scene BEFORE RELOADING SCENE, skipping reload of {}", scene_path);
-		// 		return false;
-		// 	}
-		// 	// we don't need to do this and it may cause issues with the scripts
-		// 	// let scene = force_reload_resource(scene_path);
-		// 	if PatchworkEditorAccessor::is_changing_scene() {
-		// 		tracing::debug!("Editor is changing scene AFTER RELOADING SCENE, skipping reload of {}", scene_path);
-		// 		return false;
-		// 	} else {
-		// 		EditorFilesystemAccessor::reload_scene_from_path(&scene_path);
-		// 	}
-		// 	true
-		// };
-
-		if self.pending_editor_update.uids_to_add.len() > 0 {
-			tracing::debug!("adding uids");
-			for (path, uid) in self.pending_editor_update.uids_to_add.iter() {
-				Self::add_new_uid(path, uid);
-			}
-			self.pending_editor_update.uids_to_add.clear();
-		}
-		// if there are scripts to reload, we need to reload them first and let it run `process()` at least once
-		// before we start reloading anything else because the ScriptEditor forces the reload to run deferred
-		// (i.e. AFTER the current process() call)
-		// TODO: remove this after PR lands
-		let had_scripts_to_reload = self.pending_editor_update.scripts_to_reload.len() > 0;
-		if self.pending_editor_update.scripts_to_reload.len() > 0 {
-			PatchworkEditorAccessor::reload_scripts(&self.pending_editor_update.scripts_to_reload.iter().map(|path| path.clone()).collect::<Vec<String>>());
-			self.pending_editor_update.scripts_to_reload.clear();
-		}
 		PatchworkEditorAccessor::close_files_if_open(&self.pending_editor_update.deleted_files.iter().map(|path| path.clone()).collect::<Vec<String>>());
-
-		// scene instances require scripts to be reloaded first
-		if self.pending_editor_update.scenes_to_reload.len() > 0 || had_scripts_to_reload {
-			// TODO: NO longer needed, but keeping it around because not needing this depends on upstream patches.
-			// let scene_root = EditorInterface::singleton().get_edited_scene_root();
-			// let scene_root_path = if let Some(scene_root) = scene_root {
-			// 	 scene_root.get_scene_file_path().to_string()
-			// } else {
-			// 	"".to_string()
-			// };
-			// let mut updating_current_scene = self.pending_editor_update.scenes_to_reload.contains_key(&scene_root_path);
-			// let open_scene_paths = EditorInterface::singleton().get_open_scenes().to_vec().iter().map(|scene_path| scene_path.to_string()).collect::<HashSet<String>>();
-
-			// // if the current edited scene is in the list of scenes to reload, reload ONLY that scene,
-			// // then scan and wait until it's done to reload the rest of the scenes.
-			// // Otherwise, the editor will completely fuck up and screw up the user's viewport.
-			// let updating_scenes_not_in_open_scenes = self.pending_editor_update.scenes_to_reload.iter().find(|(path, _)| !open_scene_paths.contains(*path)).is_some();
-			// // this is just to keep a reference to the main scene resource so it stays cached if needed
-			// let mut _main_scene_resource = None;
-			// if updating_scenes_not_in_open_scenes && !updating_current_scene {
-			// 	let current_scene_content = if scene_root_path == "" {
-			// 		None
-			// 	} else if let Some(content) = self.pending_editor_update.scenes_to_reload.remove(&scene_root_path) {
-			// 		Some(content)
-			// 	} else if !updating_current_scene { // the scene we're updating may be a dependency of another scene, so we need to get the content
-			// 		self.project._get_file_at(scene_root_path.clone(), None)
-			// 	} else {
-			// 		None
-			// 	};
-			// 	if let Some(FileContent::Scene(scene)) = &current_scene_content {
-			// 			// check if any of the external dependencies are in the list of scenes to reload
-			// 		for (path, _) in scene.ext_resources.iter() {
-			// 			if self.pending_editor_update.scenes_to_reload.contains_key(path) {
-			// 				// force update the main scene
-			// 				updating_current_scene = true;
-			// 				_main_scene_resource = force_reload_resource(&scene_root_path);
-			// 				break;
-			// 				// tracing::debug!("scene {} depends on scene {}, popping up modal", scene_root_path, path);
-			// 				// self.pending_editor_update.modal_shown = true;
-			// 				// PatchworkEditorAccessor::progress_add_task(MODAL_TASK_NAME, "Reloading scenes", 2, false);
-			// 			}
-			// 		}
-			// 	}
-			// }
-			// if self.pending_editor_update.scenes_to_reload.contains_key(&scene_root_path) {
-			// 	// reload the current scene manually so it retains the state
-			// 	reload_scene_func(&scene_root_path);
-			// }
-			if !self.reload_modified_scenes() {
-				self.pending_editor_update.changing_scene_cooldown = 6;
-			} else {
-				self.pending_editor_update.scenes_to_reload.clear();
-			}
-
-
-			// let mut reloaded_scenes = HashSet::new();
-			// let mut updating_current_scene = self.pending_editor_update.scenes_to_reload.contains_key(&scene_root_path);
-			// let open_scene_paths = EditorInterface::singleton().get_open_scenes().to_vec().iter().map(|scene_path| scene_path.to_string()).collect::<HashSet<String>>();
-
-        }
-		if self.pending_editor_update.reimport_files.len() > 0 {
-			EditorFilesystemAccessor::reimport_files(&self.pending_editor_update.reimport_files.iter().map(|path| path.clone()).collect::<Vec<String>>());
-			self.pending_editor_update.reimport_files.clear();
-        }
-
 		if self.pending_editor_update.reload_project_settings {
 			self.reload_project_settings();
-			self.pending_editor_update.reload_project_settings = false;
 		}
-
-		if self.pending_editor_update.changing_scene_cooldown > 0 {
-			self.pending_editor_update.changing_scene_cooldown -= 1;
-		}
-		if self.pending_editor_update.changing_scene_cooldown == 0 {
-			self.pending_editor_update.changing_scene_cooldown = 0;
-			EditorFilesystemAccessor::scan();
-			self.pending_editor_update.added_files.clear();
-			self.pending_editor_update.deleted_files.clear();
-		} else {
-			tracing::debug!("waiting to scan until after main scene is reloaded, scenes pending: {:?}", self.pending_editor_update.scenes_to_reload.len());
-		}
+		PatchworkEditorAccessor::refresh_after_source_change();
+		self.pending_editor_update.clear();
 		self.base_mut().set_process(true);
-		true
-    }
+		return true;
+	}
 
 	#[func]
 	fn start(&mut self) {
@@ -3136,7 +3023,7 @@ impl INode for GodotProject {
 		}
 		let mut refreshed = false;
 		if self.pending_editor_update.any_changes() {
-			refreshed = self.update_godot_after_sync();
+			refreshed = self.update_godot_after_source_change();
 		}
 		for signal in signals {
 			match signal {

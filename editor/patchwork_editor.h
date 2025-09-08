@@ -60,6 +60,8 @@ public:
 	static void close_files_if_open(const Vector<String> &p_paths);
 
 	static void clear_editor_selection();
+
+	static void refresh_after_source_change();
 };
 
 #endif // PATCHWORK_EDITOR_H
