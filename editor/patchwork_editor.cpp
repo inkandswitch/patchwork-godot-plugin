@@ -518,6 +518,10 @@ void PatchworkEditor::refresh_after_source_change() {
 
 	auto open_scenes = EditorInterface::get_singleton()->get_open_scenes();
 	for (auto &scene : open_scenes) {
+		while (is_changing_scene()) {
+			OS::get_singleton()->delay_usec(10000);
+			Main::iteration();
+		}
 		EditorInterface::get_singleton()->reload_scene_from_path(scene);
 	}
 }
