@@ -55,6 +55,10 @@ jobs:
           path: ws/addons/patchwork
           persist-credentials: false
 
+      - name: Update version
+        run: |
+          cd ws/addons/patchwork
+          python3 update_version.py
       # just download the artifacts from the macos, windows and linux plugin builds
       - name: Download Linux artifacts
         uses: actions/download-artifact@v4
