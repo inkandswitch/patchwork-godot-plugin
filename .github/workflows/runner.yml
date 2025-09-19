@@ -53,6 +53,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: ws/addons/patchwork
+          persist-credentials: false
 
       # just download the artifacts from the macos, windows and linux plugin builds
       - name: Download Linux artifacts
@@ -94,6 +95,7 @@ jobs:
           ref: main
           path: moddable-platformer
           fetch-depth: 0
+          persist-credentials: false
       - name: Copy addons to moddable-platformer
         run: |
           mkdir -p moddable-platformer/addons
@@ -113,6 +115,7 @@ jobs:
           path: threadbare
           fetch-depth: 0
           lfs: true
+          persist-credentials: false
       - name: Copy addons to threadbare
         run: |
           cp -R ws/addons/patchwork threadbare/addons
