@@ -55,6 +55,11 @@ jobs:
           path: ws/addons/patchwork
           persist-credentials: false
 
+      - name: Install python3 and git
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 git
+
       - name: Update version
         run: |
           cd ws/addons/patchwork
