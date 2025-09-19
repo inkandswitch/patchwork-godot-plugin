@@ -112,6 +112,7 @@ jobs:
           ref: main
           path: threadbare
           fetch-depth: 0
+          lfs: true
       - name: Copy addons to threadbare
         run: |
           cp -R ws/addons/patchwork threadbare/addons
