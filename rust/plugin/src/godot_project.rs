@@ -2,8 +2,7 @@ use crate::branch::BranchState;
 use crate::file_utils::{FileContent};
 use godot::classes::editor_plugin::DockSlot;
 use ::safer_ffi::prelude::*;
-use automerge::{
-    patches::TextRepresentation, ChangeHash, ObjType, ReadDoc,
+use automerge::{ ChangeHash, ObjType, ReadDoc,
     TextEncoding, ROOT,
 };
 use automerge::{Automerge, ObjId, Patch, PatchAction, Prop};
@@ -760,8 +759,7 @@ impl GodotProjectImpl {
 			};
 			let patches = d.diff(
 				&previous_heads,
-				&curr_heads,
-				TextRepresentation::String(TextEncoding::Utf8CodeUnit),
+				&curr_heads
 			);
 			(patches, old_file_set, curr_file_set)
 		});
@@ -1376,8 +1374,8 @@ impl GodotProjectImpl {
         let patches: Vec<Patch> = checked_out_branch_state.doc_handle.with_doc(|d| {
             d.diff(
                 &old_heads,
-                &curr_heads,
-                TextRepresentation::String(TextEncoding::Utf8CodeUnit),
+                &curr_heads
+
             )
         });
         let mut changed_files_map = HashMap::new();
