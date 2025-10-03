@@ -54,6 +54,7 @@ jobs:
         with:
           path: ws/addons/patchwork
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Install python3 and git
         run: |
