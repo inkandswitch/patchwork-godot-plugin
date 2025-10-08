@@ -369,14 +369,6 @@ impl FileSystemTask {
 			}
 			let result = self.handle_file_event(event.path.clone()).await;
 			if let Ok(Some(ret)) = result {
-				if event.path.file_name() == Some(OsStr::new("main.tscn")) {
-					tracing::debug!("main.tscn updated {:?}", event.path);
-					if let FileSystemEvent::FileModified(_path, content) = &ret {
-						if let FileContent::Scene(scene) = &content {
-							tracing::debug!("main.tscn node count: {:?}, hash: {}", scene.nodes.len(), content.to_hash());
-						}
-					}
-				}
 				output_tx.unbounded_send(ret).ok();
 			}
 		}
