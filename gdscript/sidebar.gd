@@ -199,6 +199,7 @@ func _ready() -> void:
 	add_listener_disable_button_if_text_is_empty(%UserNameDialog.get_ok_button(), %UserNameEntry)
 	add_listener_disable_button_if_text_is_empty(%LoadExistingButton, %ProjectIDBox)
 	user_button.pressed.connect(_on_user_button_pressed)
+	_setup_history_list_popup()
 	history_list.clear()
 	branch_picker.clear()
 
@@ -900,7 +901,40 @@ func _on_node_hovered(file_path: String, node_paths: Array) -> void:
 func _on_node_unhovered(file_path: String, node_path: Array) -> void:
 	self.update_highlight_changes({})
 
-func _on_history_list_item_selected(index: int, _button, _modifiers) -> void:
+
+@onready var history_list_popup: PopupMenu = %HistoryListPopup
+
+var right_clicked_index: int = -1
+
+enum HistoryListPopupItem {
+	RESET_TO_COMMIT,
+	CREATE_BRANCH_AT_COMMIT
+}
+
+func _on_history_list_popup_id_pressed(index: int) -> void:
+	history_list_popup.hide()
+	var item = history_list_popup.get_item_id(index)
+	if item == HistoryListPopupItem.RESET_TO_COMMIT:
+		print("Reset to change not implemented yet!")
+	elif item == HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT:
+		print("Create remix at change not implemented yet!")
+
+func _setup_history_list_popup() -> void:
+	history_list_popup.id_pressed.connect(_on_history_list_popup_id_pressed)
+	history_list_popup.add_item("Reset to here", HistoryListPopupItem.RESET_TO_COMMIT)
+	history_list_popup.add_item("Create remix from here", HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT)
+
+func _on_item_right_clicked(index: int, _at_position: Vector2, _button_idx: int) -> void:
+	print("Right clicked index: ", index)
+	right_clicked_index = index
+	history_list_popup.position = DisplayServer.mouse_get_position()
+	history_list_popup.visible = true
+
+
+func _on_history_list_item_selected(index: int, _at_position: Vector2, button_idx: int) -> void:
+	if button_idx == MOUSE_BUTTON_RIGHT:
+		return _on_item_right_clicked(index, _at_position, button_idx)
+
 	var history_size = history_list.get_item_count()
 	var checked_out_branch = GodotProject.get_checked_out_branch()
 	if (index >= history_size or (checked_out_branch.is_main and index >= history_size - 3)):
