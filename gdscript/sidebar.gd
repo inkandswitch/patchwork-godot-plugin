@@ -914,10 +914,14 @@ enum HistoryListPopupItem {
 func _on_history_list_popup_id_pressed(index: int) -> void:
 	history_list_popup.hide()
 	var item = history_list_popup.get_item_id(index)
+	if right_clicked_index == -1:
+		printerr("no right clicked index")
+		return
 	if item == HistoryListPopupItem.RESET_TO_COMMIT:
-		print("Reset to change not implemented yet!")
+		GodotProject.revert_to_heads(PackedStringArray([history_list.get_item_metadata(right_clicked_index)]))
 	elif item == HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT:
 		print("Create remix at change not implemented yet!")
+	right_clicked_index = -1
 
 func _setup_history_list_popup() -> void:
 	history_list_popup.id_pressed.connect(_on_history_list_popup_id_pressed)
