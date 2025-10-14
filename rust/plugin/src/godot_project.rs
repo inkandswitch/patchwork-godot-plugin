@@ -982,7 +982,8 @@ impl GodotProjectImpl {
 				if scene.requires_resave {
 					requires_resave = true;
 				}
-			} else if let Some(stored_content) = stored_content {
+			}
+			if let Some(stored_content) = stored_content {
 				if stored_content == &content {
                     return None;
                 }
