@@ -42,6 +42,8 @@ var plugin: EditorPlugin
 
 var task_modal: TaskModal = TaskModal.new()
 
+var item_context_menu_icon: Texture2D = preload("../icons/GuiTabMenuHl_rotated.svg")
+
 var highlight_changes = false
 
 var waiting_callables: Array = []
@@ -199,6 +201,7 @@ func _ready() -> void:
 	add_listener_disable_button_if_text_is_empty(%UserNameDialog.get_ok_button(), %UserNameEntry)
 	add_listener_disable_button_if_text_is_empty(%LoadExistingButton, %ProjectIDBox)
 	user_button.pressed.connect(_on_user_button_pressed)
+	_setup_history_list_popup()
 	history_list.clear()
 	branch_picker.clear()
 
@@ -587,20 +590,29 @@ func update_ui(update_diff: bool = false) -> void:
 		if DEV_MODE:
 			prefix = change.hash.substr(0, 8) + " - "
 
+		var idx = -1
 		if "merge_metadata" in change:
 			var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
 			var merged_branch_name = str(change.merge_metadata.merged_branch_id)
 			if merged_branch:
 				merged_branch_name = merged_branch.name
-			history_list.add_item(prefix + "↪️ " + change_author + " merged \"" + merged_branch_name + "\" branch - " + change_timestamp)
-			history_list.set_item_metadata(history_list.get_item_count() - 1, change.hash)
+			idx = history_list.add_item(prefix + "↪️ " + change_author + " merged \"" + merged_branch_name + "\" branch - " + change_timestamp, item_context_menu_icon)
+			history_list.set_item_metadata(idx, change.hash)
 
 		else:
-			history_list.add_item(prefix + change_author + " made some changes - " + change_timestamp + "")
-			history_list.set_item_metadata(history_list.get_item_count() - 1, change.hash)
+			idx = history_list.add_item(prefix + change_author + " made some changes - " + change_timestamp + "", item_context_menu_icon)
+			history_list.set_item_metadata(idx, change.hash)
 
 		if unsynced_changes.has(change.hash):
-			history_list.set_item_custom_fg_color(history_list.get_item_count() - 1, Color(0.5, 0.5, 0.5))
+			history_list.set_item_custom_fg_color(idx, Color(0.5, 0.5, 0.5))
+
+		var rect = history_list.get_item_icon_region(idx)
+		rect.position.x = 0 #rect.size.x - item_context_menu_icon.get_width()
+		rect.position.y = 0
+		rect.size.x = item_context_menu_icon.get_width()
+		rect.size.y = item_context_menu_icon.get_height()
+		history_list.set_item_icon_region(idx, rect)
+
 
 
 	# update sync status
@@ -900,7 +912,49 @@ func _on_node_hovered(file_path: String, node_paths: Array) -> void:
 func _on_node_unhovered(file_path: String, node_path: Array) -> void:
 	self.update_highlight_changes({})
 
-func _on_history_list_item_selected(index: int, _button, _modifiers) -> void:
+
+@onready var history_list_popup: PopupMenu = %HistoryListPopup
+
+var right_clicked_index: int = -1
+
+enum HistoryListPopupItem {
+	RESET_TO_COMMIT,
+	CREATE_BRANCH_AT_COMMIT
+}
+
+func _on_history_list_popup_id_pressed(index: int) -> void:
+	history_list_popup.hide()
+	var item = history_list_popup.get_item_id(index)
+	if right_clicked_index == -1:
+		printerr("no right clicked index")
+		return
+	if item == HistoryListPopupItem.RESET_TO_COMMIT:
+		GodotProject.revert_to_heads(PackedStringArray([history_list.get_item_metadata(right_clicked_index)]))
+	elif item == HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT:
+		print("Create remix at change not implemented yet!")
+	right_clicked_index = -1
+
+func _setup_history_list_popup() -> void:
+	history_list_popup.id_pressed.connect(_on_history_list_popup_id_pressed)
+	history_list_popup.add_item("Reset to here", HistoryListPopupItem.RESET_TO_COMMIT)
+	history_list_popup.add_item("Create remix from here", HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT)
+
+func _on_item_right_clicked(index: int, _at_position: Vector2, _button_idx: int) -> void:
+	print("Right clicked index: ", index)
+	right_clicked_index = index
+	history_list_popup.position = DisplayServer.mouse_get_position()
+	history_list_popup.visible = true
+
+
+func _on_history_list_item_selected(index: int, _at_position: Vector2, button_idx: int) -> void:
+	if button_idx == MOUSE_BUTTON_RIGHT:
+		return _on_item_right_clicked(index, _at_position, button_idx)
+
+
+	# check if the mouse position is inside the icon rect
+	if _at_position.x <= 64:
+		return _on_item_right_clicked(index, _at_position, button_idx)
+
 	var history_size = history_list.get_item_count()
 	var checked_out_branch = GodotProject.get_checked_out_branch()
 	if (index >= history_size or (checked_out_branch.is_main and index >= history_size - 3)):
