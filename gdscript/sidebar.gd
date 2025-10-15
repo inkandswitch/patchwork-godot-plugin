@@ -42,6 +42,8 @@ var plugin: EditorPlugin
 
 var task_modal: TaskModal = TaskModal.new()
 
+var item_context_menu_icon: Texture2D = preload("../icons/GuiTabMenuHl_rotated.svg")
+
 var highlight_changes = false
 
 var waiting_callables: Array = []
@@ -588,20 +590,29 @@ func update_ui(update_diff: bool = false) -> void:
 		if DEV_MODE:
 			prefix = change.hash.substr(0, 8) + " - "
 
+		var idx = -1
 		if "merge_metadata" in change:
 			var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
 			var merged_branch_name = str(change.merge_metadata.merged_branch_id)
 			if merged_branch:
 				merged_branch_name = merged_branch.name
-			history_list.add_item(prefix + "↪️ " + change_author + " merged \"" + merged_branch_name + "\" branch - " + change_timestamp)
-			history_list.set_item_metadata(history_list.get_item_count() - 1, change.hash)
+			idx = history_list.add_item(prefix + "↪️ " + change_author + " merged \"" + merged_branch_name + "\" branch - " + change_timestamp, item_context_menu_icon)
+			history_list.set_item_metadata(idx, change.hash)
 
 		else:
-			history_list.add_item(prefix + change_author + " made some changes - " + change_timestamp + "")
-			history_list.set_item_metadata(history_list.get_item_count() - 1, change.hash)
+			idx = history_list.add_item(prefix + change_author + " made some changes - " + change_timestamp + "", item_context_menu_icon)
+			history_list.set_item_metadata(idx, change.hash)
 
 		if unsynced_changes.has(change.hash):
-			history_list.set_item_custom_fg_color(history_list.get_item_count() - 1, Color(0.5, 0.5, 0.5))
+			history_list.set_item_custom_fg_color(idx, Color(0.5, 0.5, 0.5))
+
+		var rect = history_list.get_item_icon_region(idx)
+		rect.position.x = 0 #rect.size.x - item_context_menu_icon.get_width()
+		rect.position.y = 0
+		rect.size.x = item_context_menu_icon.get_width()
+		rect.size.y = item_context_menu_icon.get_height()
+		history_list.set_item_icon_region(idx, rect)
+
 
 
 	# update sync status
@@ -937,6 +948,11 @@ func _on_item_right_clicked(index: int, _at_position: Vector2, _button_idx: int)
 
 func _on_history_list_item_selected(index: int, _at_position: Vector2, button_idx: int) -> void:
 	if button_idx == MOUSE_BUTTON_RIGHT:
+		return _on_item_right_clicked(index, _at_position, button_idx)
+
+
+	# check if the mouse position is inside the icon rect
+	if _at_position.x <= 64:
 		return _on_item_right_clicked(index, _at_position, button_idx)
 
 	var history_size = history_list.get_item_count()
