@@ -253,6 +253,10 @@ fn branch_state_to_dict(branch_state: &BranchState) -> Dictionary {
 		let _ = branch.insert("created_by", created_by.to_string());
 	}
 
+	if let Some(merged_into) = &branch_state.merged_into {
+		let _ = branch.insert("merged_into", merged_into.to_string());
+	}
+
     branch
 }
 

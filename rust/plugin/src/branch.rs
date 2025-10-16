@@ -48,6 +48,7 @@ pub struct Branch {
     pub fork_info: Option<ForkInfo>,
     pub merge_info: Option<MergeInfo>,
 	pub created_by: Option<String>,
+	pub merged_into: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -78,4 +79,5 @@ pub struct BranchState {
     pub merge_info: Option<BranchStateMergeInfo>,
     pub is_main: bool,
 	pub created_by: Option<String>,
+	pub merged_into: Option<DocumentId>,
 }

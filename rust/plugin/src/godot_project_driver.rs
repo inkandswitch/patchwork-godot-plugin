@@ -578,6 +578,7 @@ async fn init_project_doc_handles(
                     fork_info: None,
                     merge_info: None,
 					created_by: user_name.clone(),
+					merged_into: None,
                 },
             )]);
             let branches_clone = branches.clone();
@@ -635,6 +636,7 @@ impl DriverState {
             }),
             merge_info: None,
 			created_by: self.user_name.clone(),
+			merged_into: None,
         };
 
         self.tx
@@ -710,6 +712,7 @@ impl DriverState {
                     .collect(),
             }),
 			created_by: self.user_name.clone(),
+			merged_into: None,
         };
 
         self.branches_metadata_doc_handle.with_doc_mut(|d| {
@@ -899,12 +902,15 @@ impl DriverState {
                     });
             });
 
+		let mut original_branch_id = None;
         // if the branch has some merge_info we know that it's a merge preview branch
         let merge_metadata = if source_branch_state.merge_info.is_some() {
             let original_branch_state = self
                 .branch_states
                 .get(&source_branch_state.fork_info.as_ref().unwrap().forked_from)
                 .unwrap();
+
+			original_branch_id = Some(original_branch_state.doc_handle.document_id().to_string());
 
             Some(MergeMetadata {
                 merged_branch_id: original_branch_state.doc_handle.document_id().to_string(),
@@ -938,6 +944,25 @@ impl DriverState {
                     },
                 );
             });
+			let mut branch = self.get_branches_metadata()
+			.branches
+			.get(&source_branch_state.doc_handle.document_id().to_string()).unwrap().clone();
+			branch.merged_into = original_branch_id;
+			self.branches_metadata_doc_handle.with_doc_mut(|d| {
+				let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
+				let mut tx = d.transaction();
+				branches_metadata.branches.insert(branch.id.clone(), branch);
+				let _ = reconcile(&mut tx, branches_metadata);
+				commit_with_attribution_and_timestamp(
+					tx,
+					&CommitMetadata {
+						username: self.user_name.clone(),
+						branch_id: Some(source_branch_doc_id.to_string()),
+						merge_metadata: None,
+					},
+				);
+			});
+			// self.branch_states.get_mut(&source_branch_doc_id).unwrap().merged_into = Some(target_branch_doc_id);
         }
     }
 
@@ -984,6 +1009,13 @@ impl DriverState {
                         is_main: branch_doc_handle.document_id()
                             == self.main_branch_doc_handle.document_id(),
 						created_by: branch.created_by.clone(),
+						merged_into: match branch.merged_into {
+							Some(merged_into) => match DocumentId::from_str(&merged_into) {
+								Ok(merged_into) => Some(merged_into),
+								Err(_) => None,
+							},
+							None => None,
+						},
                     },
                 );
                 self.branch_states
