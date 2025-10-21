@@ -15,7 +15,7 @@ use crate::branch::{BinaryDocState, BranchState, BranchStateForkInfo, BranchStat
 use crate::file_utils::FileContent;
 use crate::godot_parser::GodotScene;
 use crate::utils::{
-    commit_with_attribution_and_timestamp, print_branch_state, CommitMetadata, MergeMetadata, ToShortForm,
+    commit_with_attribution_and_timestamp, heads_to_vec_string, print_branch_state, vec_string_to_heads, CommitMetadata, MergeMetadata, ToShortForm
 };
 use crate::{
     godot_parser,
@@ -71,6 +71,13 @@ pub enum InputEvent {
 		branch_doc_handle: DocHandle,
 		heads: Option<Vec<ChangeHash>>,
         files: Vec<(String, FileContent)>,
+	},
+
+	RevertTo {
+		branch_doc_handle: DocHandle,
+		heads: Option<Vec<ChangeHash>>,
+        files: Vec<(String, FileContent)>,
+		revert_to: Vec<ChangeHash>,
 	},
 
     SetUserName {
@@ -473,11 +480,15 @@ impl GodotProjectDriver {
                             },
 
                             InputEvent::SaveFiles { branch_doc_handle, files, heads } => {
-                                state.save_files(branch_doc_handle, files, heads, false);
+                                state.save_files(branch_doc_handle, files, heads, false, None);
                             },
 
 							InputEvent::InitialCheckin { branch_doc_handle, files, heads } => {
-                                state.save_files(branch_doc_handle, files, heads, true);
+                                state.save_files(branch_doc_handle, files, heads, true, None);
+                            },
+
+							InputEvent::RevertTo { branch_doc_handle, files, heads, revert_to } => {
+                                state.save_files(branch_doc_handle, files, heads, true, Some(revert_to));
                             },
 
                             InputEvent::StartShutdown => {
@@ -564,6 +575,7 @@ async fn init_project_doc_handles(
                         username: user_name.clone(),
                         branch_id: Some(main_branch_doc_handle.document_id().to_string()),
                         merge_metadata: None,
+						reverted_to: None,
                     },
                 );
             });
@@ -600,6 +612,7 @@ async fn init_project_doc_handles(
                         username: user_name.clone(),
                         branch_id: None,
                         merge_metadata: None,
+						reverted_to: None,
                     },
                 );
             });
@@ -656,6 +669,7 @@ impl DriverState {
                     username: self.user_name.clone(),
                     branch_id: None,
                     merge_metadata: None,
+					reverted_to: None,
                 },
             );
         });
@@ -726,6 +740,7 @@ impl DriverState {
                     username: self.user_name.clone(),
                     branch_id: Some(source_branch_doc_id.to_string()),
                     merge_metadata: None,
+					reverted_to: None,
                 },
             );
         });
@@ -755,6 +770,7 @@ impl DriverState {
                     username: self.user_name.clone(),
                     branch_id: None,
                     merge_metadata: None,
+					reverted_to: None,
                 },
             );
         });
@@ -765,7 +781,8 @@ impl DriverState {
         branch_doc_handle: DocHandle,
         file_entries: Vec<(String, FileContent)>,
         heads: Option<Vec<ChangeHash>>,
-		new_project: bool
+		new_project: bool,
+		revert: Option<Vec<ChangeHash>>
     ) {
         let branch_doc_state = self
             .branch_states
@@ -791,6 +808,7 @@ impl DriverState {
                                 username: self.user_name.clone(),
                                 branch_id: None,
                                 merge_metadata: None,
+								reverted_to: None,
                             },
                         );
                     });
@@ -873,6 +891,10 @@ impl DriverState {
                     username: self.user_name.clone(),
                     branch_id: Some(branch_doc_state.doc_handle.document_id().to_string()),
                     merge_metadata: None,
+					reverted_to: match revert {
+						Some(revert) => Some(heads_to_vec_string(revert)),
+						None => None,
+					},
                 },
             );
         });
@@ -941,6 +963,7 @@ impl DriverState {
                         username: self.user_name.clone(),
                         branch_id: Some(target_branch_doc_id.to_string()),
                         merge_metadata: Some(merge_metadata),
+						reverted_to: None,
                     },
                 );
             });
@@ -959,6 +982,7 @@ impl DriverState {
 						username: self.user_name.clone(),
 						branch_id: Some(source_branch_doc_id.to_string()),
 						merge_metadata: None,
+						reverted_to: None,
 					},
 				);
 			});

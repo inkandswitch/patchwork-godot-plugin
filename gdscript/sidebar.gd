@@ -591,6 +591,7 @@ func update_ui(update_diff: bool = false) -> void:
 			prefix = change.hash.substr(0, 8) + " - "
 
 		var idx = -1
+		print(change)
 		if "merge_metadata" in change:
 			var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
 			var merged_branch_name = str(change.merge_metadata.merged_branch_id)
@@ -599,6 +600,13 @@ func update_ui(update_diff: bool = false) -> void:
 			idx = history_list.add_item(prefix + "↪️ " + change_author + " merged \"" + merged_branch_name + "\" branch - " + change_timestamp, item_context_menu_icon)
 			history_list.set_item_metadata(idx, change.hash)
 
+		elif "reverted_to" in change:
+			var reverted_to: PackedStringArray = change.reverted_to
+			for j in range(reverted_to.size()):
+				# just truncate the hash to 7 characters
+				reverted_to[j] = reverted_to[j].substr(0, 7)
+			idx = history_list.add_item(prefix + "↩️ " + change_author + " reverted to " + ", ".join(reverted_to) + " - " + change_timestamp, item_context_menu_icon)
+			history_list.set_item_metadata(idx, change.hash)
 		else:
 			idx = history_list.add_item(prefix + change_author + " made some changes - " + change_timestamp + "", item_context_menu_icon)
 			history_list.set_item_metadata(idx, change.hash)
@@ -792,7 +800,7 @@ func update_branch_picker(main_branch, checked_out_branch, all_branches) -> void
 	add_branch_with_forks(main_branch, all_branches, checked_out_branch.id)
 
 func add_branch_with_forks(branch: Dictionary, all_branches: Array, selected_branch_id: String, indentation: String = "", is_last: bool = false) -> void:
-	print("branch: ", branch)
+	# print("branch: ", branch)
 	var label
 	if branch.is_main:
 		label = branch.name

@@ -956,7 +956,7 @@ impl GodotProjectImpl {
                       branch_doc_handle: DocHandle,
                       files: Vec<(PathBuf, FileContent)>, /*  Record<String, Variant> */
                       heads: Option<Vec<ChangeHash>>,
-					  force_resave: bool)
+					  revert: Option<Vec<ChangeHash>>)
     {
 		let filter = files.iter().map(|(path, _)| path.to_string_lossy().to_string()).collect::<HashSet<String>>();
 		println!("");
@@ -996,7 +996,15 @@ impl GodotProjectImpl {
 		tracing::trace!("syncing actually changed files: [{}]", changed_files.iter().map(|(path, content)|
 			format!("{}: {}", path, content.to_short_form())
 		).collect::<Vec<String>>().join(", "));
-		if requires_resave || force_resave {
+		if let Some(revert_heads) = revert {
+			let _ = self.driver_input_tx
+				.unbounded_send(InputEvent::RevertTo {
+					branch_doc_handle,
+					heads,
+					files: changed_files,
+					revert_to: revert_heads,
+				});
+		} else if requires_resave {
 			tracing::debug!("updates require resave");
 			// TODO: rethink this system; how do we handle resaves? SHOULD we even have nodes with IDs?
 			let _ = self.driver_input_tx
@@ -2231,7 +2239,7 @@ impl GodotProjectImpl {
 						branch_state.doc_handle.clone(),
 						files.into_iter().map(|(path, content)| (PathBuf::from(path), content)).collect::<Vec<(PathBuf, FileContent)>>(),
 						Some(branch_state.synced_heads.clone()),
-					false);
+					None);
                 }
             }
             None => panic!("couldn't save files, no checked out branch"),
@@ -2542,7 +2550,7 @@ impl GodotProjectImpl {
 				).collect::<Vec<(PathBuf, FileContent)>>();
 
 				// TODO: Ask Paul about this tomorrow
-				self._sync_files_at(self.get_checked_out_branch_state().unwrap().doc_handle.clone(), files, None, false);
+				self._sync_files_at(self.get_checked_out_branch_state().unwrap().doc_handle.clone(), files, None, None);
 			}
         }
 
@@ -2558,7 +2566,7 @@ impl GodotProjectImpl {
 		let heads = branch_state.doc_handle.with_doc(|d| {
 			d.get_heads()
 		});
-		let content = self._get_changed_file_content_between(Some(branch_state.doc_handle.document_id().clone()), branch_state.doc_handle.document_id().clone(), heads.clone(), to_revert_to, true);
+		let content = self._get_changed_file_content_between(Some(branch_state.doc_handle.document_id().clone()), branch_state.doc_handle.document_id().clone(), heads.clone(), to_revert_to.clone(), true);
 		let files = content.into_iter().map(|event| {
 			match event {
 				FileSystemEvent::FileCreated(path, content) => (path, content),
@@ -2566,7 +2574,7 @@ impl GodotProjectImpl {
 				FileSystemEvent::FileDeleted(path) => (path, FileContent::Deleted),
 			}
 		}).collect::<Vec<(PathBuf, FileContent)>>();
-		self._sync_files_at(branch_state.doc_handle.clone(), files, Some(heads), true);
+		self._sync_files_at(branch_state.doc_handle.clone(), files, Some(heads), Some(to_revert_to));
 	}
 }
 
