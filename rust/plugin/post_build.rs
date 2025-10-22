@@ -30,12 +30,11 @@ use std::process::Command;
 
 // parse the above file and get the 
 
-
+#[allow(unused)]
 fn parse_gdextension_file(cwd: String) -> HashMap<String, String> {
     let gdext_path = Path::new(&cwd).join("Patchwork.gdextension");
     let contents = fs::read_to_string(gdext_path).expect("Failed to read Patchwork.gdextension");
     let mut map = HashMap::new();
-    let mut current_section = String::new();
     let mut hit_libraries = false;
     for line in contents.lines() {
         let line = line.trim();
@@ -48,7 +47,6 @@ fn parse_gdextension_file(cwd: String) -> HashMap<String, String> {
             if !hit_libraries {
                 continue; // skip sections other than [libraries]
             }
-            current_section = line[1..line.len()-1].to_string();
             continue;
         }
         if !hit_libraries {
@@ -68,27 +66,28 @@ fn parse_gdextension_file(cwd: String) -> HashMap<String, String> {
 }
 
 fn after_build(){
+    println!("* Running post build script");
     // source the .lastbuild file
     let target_dir = env::var("CRATE_TARGET_DIR").unwrap();
     let crate_dir = env::var("CRATE_MANIFEST_DIR").unwrap();
-    println!("cargo:warning=TARGET_DIR={}", target_dir);
-    println!("cargo:warning=CWD={}", crate_dir);
+    println!("TARGET_DIR={}", target_dir);
+    println!("CWD={}", crate_dir);
     let crate_dir_path = Path::new(&crate_dir);
     let lastbuild = fs::read_to_string(Path::new(&target_dir).join(".lastbuild")).unwrap();
 
     // is_ok and is 1
-    let isCI = env::var("CI").is_ok() && env::var("CI").unwrap() == "1";
-    println!("cargo:warning=CI={}", isCI);
+    let is_ci = env::var("CI").is_ok() && env::var("CI").unwrap() == "1";
+    println!("CI={}", is_ci);
 
     // Parse the file contents
     let out_dir = lastbuild.split("OUT_DIR=").nth(1).unwrap().split("\n").next().unwrap();
     let profile = lastbuild.split("PROFILE=").nth(1).unwrap().split("\n").next().unwrap();
     let target = lastbuild.split("TARGET=").nth(1).unwrap().split("\n").next().unwrap();
     // cargo_manifest_dir is the directory of the Cargo.toml file
-    println!("cargo:warning=OUT_DIR={}", out_dir);
-    println!("cargo:warning=PROFILE={}", profile);
-    println!("cargo:warning=TARGET={}", target);
-    println!("cargo:warning=CWD={}", crate_dir);
+    println!("OUT_DIR={}", out_dir);
+    println!("PROFILE={}", profile);
+    println!("TARGET={}", target);
+    println!("CWD={}", crate_dir);
 
     // arch is x86_64 or arm64 depending on the target
     let arch = if target.contains("x86_64") {
@@ -110,8 +109,8 @@ fn after_build(){
         panic!("Unsupported target platform: {}", target);
     };
     let profile_dir = Path::new(&out_dir).parent().unwrap().parent().unwrap().parent().unwrap();
-    let mut target_dirs = vec![profile_dir.to_path_buf()];
-    let mut targets = vec![target];
+    let target_dirs = vec![profile_dir.to_path_buf()];
+    let targets = vec![target];
     // Get the library name and extension based on platform
     let (lib_name, lib_dll_ext, lib_a_ext) = if target.contains("windows") {
         ("patchwork_rust_core", "dll", "lib")
@@ -146,7 +145,7 @@ fn after_build(){
     //     // it's expecting an &[u8], but we have a `Vec<u8>`, so we need to convert it
     //     let cargo_location = String::from_utf8_lossy(&stdout);
     //     let cargo_location = cargo_location.trim();
-    //     println!("cargo:warning=Cargo location: {:?}", &cargo_location);
+    //     println!("Cargo location: {:?}", &cargo_location);
     //     println!("building to {:?}", &new_dir);
     //     // then just run cargo with those args
     //     let output = Command::new(&cargo_location)
@@ -154,14 +153,14 @@ fn after_build(){
     //         .current_dir(crate_dir)
     //         .output()
     //         .unwrap();
-    //     println!("cargo:warning=Ran cargo post build with args: {:?}", args);
-    //     println!("cargo:warning=Output:", );
+    //     println!("Ran cargo post build with args: {:?}", args);
+    //     println!("Output:", );
     //     print!("{}", String::from_utf8_lossy(&output.stdout));
-    //     println!("cargo:warning=Error:  ");
+    //     println!("Error:  ");
     //     print!("{}", String::from_utf8_lossy(&output.stderr));
     //     // check the exit code
     //     if output.status.success() {
-    //         println!("cargo:warning=cargo post build succeeded");
+    //         println!("cargo post build succeeded");
     //     } else {
     //         panic!("cargo post build failed");
     //     }
@@ -189,7 +188,6 @@ fn after_build(){
     //     return None;
     // });
     // for all the target_dirs, copy the library to the platform-specific directory
-    let size = target_dirs.len();
     for (i, profile_dir) in target_dirs.iter().enumerate() {
         // Construct paths
         let dll_lib_path = profile_dir.join(format!("{}.{}", lib_name, lib_dll_ext));
@@ -199,10 +197,10 @@ fn after_build(){
 
         // Create platform directory if it doesn't exist
         fs::create_dir_all(&platform_dir).unwrap();
-        println!("cargo:warning=profile_dir directory {:?}", profile_dir);
+        println!("profile_dir directory {:?}", profile_dir);
         // Copy the library to the platform-specific directory
-        println!("cargo:warning=Copying library from {:?} to {:?}", dll_lib_path, platform_dir);
-        println!("cargo:warning=Copying library from {:?} to {:?}", a_lib_path, platform_dir);
+        println!("Copying library from {:?} to {:?}", dll_lib_path, platform_dir);
+        println!("Copying library from {:?} to {:?}", a_lib_path, platform_dir);
 
 
         let dll_dest_path = if platform_name == "macos" {
@@ -236,9 +234,8 @@ fn after_build(){
             fs::copy(&pdb_lib_path, &pdb_dest_path).unwrap();
         }
 
-        println!("cargo:rerun-if-changed=build.rs");
-        println!("cargo:warning=Copied library to {:?}", dll_dest_path);
-        println!("cargo:warning=Copied library to {:?}", a_dest_path);
+        println!("Copied library to {:?}", dll_dest_path);
+        println!("Copied library to {:?}", a_dest_path);
 		// if on macos, run rcodesign
 		if platform_name == "macos" {
 			// framework path
@@ -251,7 +248,7 @@ fn after_build(){
 				// try ../../
 				dev_identity_path = Path::new(&crate_dir_path).parent().unwrap().parent().unwrap().join(".cargo/.devidentity");
 				if !dev_identity_path.exists() {
-					println!("cargo:warning=Developer identity file does not exist: {:?}", dev_identity_path);
+					println!("Developer identity file does not exist: {:?}", dev_identity_path);
 					println!("Put the identity (e.g. Apple Development: Nikita Zatkovich (RFTZV7M2RV)) in the .cargo/.devidentity file to enable codesigning");
 					return;
 				}
@@ -260,19 +257,20 @@ fn after_build(){
 			let identity = fs::read_to_string(dev_identity_path).unwrap().trim().to_string();
 			// let mut args = vec!["sign", framework_path.to_str().unwrap(), "--exclude", "**/*.a"];
 			// let output = Command::new("rcodesign").args(&args).current_dir(cwd).output().unwrap();
-			let mut args = vec![ "--force", "--deep", "--verbose", "-s", &identity, framework_path.to_str().unwrap()];
-			println!("cargo:warning=codesigning with identity: {}", &identity);
+			let args = vec![ "--force", "--deep", "--verbose", "-s", &identity, framework_path.to_str().unwrap()];
+			println!("codesigning with identity: {}", &identity);
 			let output = Command::new("codesign").args(&args).current_dir(cwd).output().unwrap();
 
-			println!("cargo:warning=rcodesign output: {}", String::from_utf8_lossy(&output.stdout));
-			println!("cargo:warning=rcodesign error: {}", String::from_utf8_lossy(&output.stderr));
+			println!("rcodesign output: {}", String::from_utf8_lossy(&output.stdout));
+			println!("rcodesign error: {}", String::from_utf8_lossy(&output.stderr));
 		}
     }
+    println!("* Post build script completed");
 }
 
 fn main() {
     // ensure this runs AFTER the build
-    // println!("cargo:warning=Running after_build");
+    // println!("Running after_build");
     // run the after_build function
     after_build();
 }
