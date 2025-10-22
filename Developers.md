@@ -74,58 +74,16 @@ git clone https://github.com/nikitalita/patchwork_editor patchwork_editor --recu
 **1. Build the Rust Plugin**
 
 ```bash
+# Install cargo-post to run post build process successfully
+cargo install cargo-post
+
 # Navigate to patchwork_editor root directory
 cd godot/modules/patchwork_editor
 
-# Build in release mode (cargo workspace is in rust/plugin)
-cargo build --release
+# Build
+cargo post build
 
-# The DLL/library will be in: target/release/
-# Copy it to the appropriate location for your platform:
-```
-
-**Platform-specific DLL locations:**
-
-After building, copy the compiled library to the plugin directory:
-
-**Windows (PowerShell):**
-
-```powershell
-# Create windows directory if it doesn't exist (run from patchwork_editor root)
-New-Item -ItemType Directory -Force -Path rust\plugin\windows
-
-# Copy DLL to plugin directory
-Copy-Item target\release\patchwork_rust_core.dll `
-  rust\plugin\windows\patchwork_rust_core.windows.x86_64-pc-windows-msvc.dll
-```
-
-**Linux:**
-
-```bash
-# Create linux directory if it doesn't exist (run from patchwork_editor root)
-mkdir -p rust/plugin/linux
-
-# Copy .so to plugin directory
-cp target/release/libpatchwork_rust_core.so \
-   rust/plugin/linux/patchwork_rust_core.linux.x86_64-unknown-linux-gnu.so
-```
-
-**macOS (Intel):**
-
-```bash
-# macOS directory should already exist (run from patchwork_editor root)
-# Copy .dylib to plugin directory
-cp target/release/libpatchwork_rust_core.dylib \
-   rust/plugin/macos/patchwork_rust_core.macos.x86_64-apple-darwin.dylib
-```
-
-**macOS (Apple Silicon):**
-
-```bash
-# macOS directory should already exist (run from patchwork_editor root)
-# Copy .dylib to plugin directory
-cp target/release/libpatchwork_rust_core.dylib \
-   rust/plugin/macos/patchwork_rust_core.macos.arm64-apple-darwin.dylib
+# The DLL/library will be copied to the appropriate location for your platform
 ```
 
 **2. Build Godot with Patchwork Module**
