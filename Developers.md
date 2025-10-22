@@ -149,70 +149,23 @@ ls bin/godot.linuxbsd.editor.x86_64
 ls bin/godot.macos.editor.arm64
 ```
 
-**4. Manually Copy Plugin to Your Project**
+**4. Link Plugin to Your Project**
 
-Create the plugin directory structure in your project:
+Link the plugin directory in your project:
 
-```bash
-# In your Godot project directory
-mkdir -p addons/patchwork
+#### Windows
+In your Godot project directory, run the following commands:
+(cmd.exe only, this does not work on powershell)
+```
+mkdir .\addons
+mklink /D .\addons\patchwork C:\path\to\godot\modules\patchwork_editor
 ```
 
-Copy the necessary files from `godot/modules/patchwork_editor/` to `your-project/addons/patchwork/`:
-
+#### Linux and macOS
 ```bash
-# From godot/modules/patchwork_editor/ copy:
-
-# GDScript files
-cp -r gdscript/ YOUR_PROJECT/addons/patchwork/
-
-# Icons
-cp -r icons/ YOUR_PROJECT/addons/patchwork/
-
-# Rust plugin DLLs (copy your platform's folder)
-cp -r rust/plugin/windows/ YOUR_PROJECT/addons/patchwork/rust/plugin/windows/
-# OR
-cp -r rust/plugin/linux/ YOUR_PROJECT/addons/patchwork/rust/plugin/linux/
-# OR
-cp -r rust/plugin/macos/ YOUR_PROJECT/addons/patchwork/rust/plugin/macos/
-
-# Configuration files
-cp Patchwork.gdextension YOUR_PROJECT/addons/patchwork/
-cp plugin.cfg YOUR_PROJECT/addons/patchwork/
-```
-
-**Example manual copy script (Windows PowerShell):**
-
-```powershell
-$SOURCE = "godot\modules\patchwork_editor"
-$DEST = "C:\path\to\your\project\addons\patchwork"
-
-# Create directory
-New-Item -ItemType Directory -Force -Path $DEST
-
-# Copy files
-Copy-Item -Recurse -Force "$SOURCE\gdscript" "$DEST\gdscript"
-Copy-Item -Recurse -Force "$SOURCE\icons" "$DEST\icons"
-Copy-Item -Recurse -Force "$SOURCE\rust\plugin\windows" "$DEST\rust\plugin\windows"
-Copy-Item -Force "$SOURCE\Patchwork.gdextension" "$DEST\"
-Copy-Item -Force "$SOURCE\plugin.cfg" "$DEST\"
-```
-
-**Example manual copy script (Linux/Mac):**
-
-```bash
-SOURCE="godot/modules/patchwork_editor"
-DEST="/path/to/your/project/addons/patchwork"
-
-# Create directory
-mkdir -p "$DEST"
-
-# Copy files
-cp -r "$SOURCE/gdscript" "$DEST/"
-cp -r "$SOURCE/icons" "$DEST/"
-cp -r "$SOURCE/rust/plugin/linux/" "$DEST/rust/plugin/linux/"  # or macos
-cp "$SOURCE/Patchwork.gdextension" "$DEST/"
-cp "$SOURCE/plugin.cfg" "$DEST/"
+# In your Godot project directory, run the following commands:
+mkdir -p addons
+ln -s /path/to/godot/modules/patchwork_editor addons/patchwork
 ```
 
 **5. Open Project with Custom Editor**
@@ -230,12 +183,13 @@ godot/bin/godot.macos.editor.arm64 -e --path "/path/to/your/project"
 
 **6. Understanding Patchwork's Architecture**
 
-Patchwork is a **hybrid C++ module + GDExtension**, not a traditional plugin:
+Patchwork is a **hybrid Godot Engine C++ module + GDExtension**, not a traditional plugin:
 
-- **C++ Module** (`modules/patchwork_editor/`) - Built INTO your custom Godot editor
+- **Godot Engine C++ Module** (`modules/patchwork_editor/`) - Built INTO your custom Godot editor
   - Automatically active when you launch the custom editor
-  - Adds the Patchwork tab to the editor UI
   - Registers core classes (`PatchworkEditor`, `DiffInspector`, etc.)
+  - Primarily here to provide editor functionality that is not currently exposed to GDExtensions
+    - Will eventually be removed once this functionality is upstreamed to Godot
 
 - **GDExtension Component** (`addons/patchwork/`) - Provides Rust functionality
   - Contains the Rust plugin DLL/library
@@ -252,59 +206,21 @@ When developing manually, after making changes:
 
 **For GDScript changes:**
 
-```bash
-# Linux/Mac - Copy only the changed file
-cp godot/modules/patchwork_editor/gdscript/sidebar.gd \
-   YOUR_PROJECT/addons/patchwork/gdscript/
-```
-
-```powershell
-# Windows - Copy only the changed file
-Copy-Item godot\modules\patchwork_editor\gdscript\sidebar.gd `
-  YOUR_PROJECT\addons\patchwork\gdscript\
-
-# Reload the scene in Godot (Scene → Reload Saved Scene)
-```
+Click the "Reload UI" button in the Patchwork tab to reload the UI.
 
 **For Rust changes:**
 
 ```bash
-# Linux/Mac - Rebuild Rust
+
 cd godot/modules/patchwork_editor
-cargo build --release
-
-# Create directory if needed and copy .so/.dylib to plugin directory
-mkdir -p rust/plugin/linux
-cp target/release/libpatchwork_rust_core.so \
-   rust/plugin/linux/patchwork_rust_core.linux.x86_64-unknown-linux-gnu.so
-# OR for macOS (directory should already exist):
-# cp target/release/libpatchwork_rust_core.dylib \
-#    rust/plugin/macos/patchwork_rust_core.macos.arm64-apple-darwin.dylib
-
-# Copy to project
-cp rust/plugin/linux/*.so YOUR_PROJECT/addons/patchwork/rust/plugin/linux/
-# OR for macOS:
-# cp rust/plugin/macos/*.dylib YOUR_PROJECT/addons/patchwork/rust/plugin/macos/
-
+cargo post build --release
 # Restart Godot to reload library
 ```
 
 ```powershell
 # Windows - Rebuild Rust
 cd godot\modules\patchwork_editor
-cargo build --release
-
-# Create directory if needed
-New-Item -ItemType Directory -Force -Path rust\plugin\windows
-
-# Copy DLL to plugin directory
-Copy-Item target\release\patchwork_rust_core.dll `
-  rust\plugin\windows\patchwork_rust_core.windows.x86_64-pc-windows-msvc.dll
-
-# Copy to project
-Copy-Item rust\plugin\windows\*.dll `
-  YOUR_PROJECT\addons\patchwork\rust\plugin\windows\
-
+cargo post build --release
 # Restart Godot to reload DLL
 ```
 
@@ -344,14 +260,11 @@ cargo install watchexec-cli
 cd godot/modules/patchwork_editor
 
 # Auto-rebuild on any .rs or .toml file change
-watchexec -e rs,toml cargo b
+watchexec -e rs,toml cargo post build
 ```
 
-This will:
-
-- Watch for changes to `.rs` and `.toml` files
-- Automatically run `cargo build` when changes are detected
-- Show build output in the terminal
+This will watch for changes to `.rs` and `.toml` files and automatically run `cargo post build` when changes are detected.
+Godot will automatically reload the plugin after the build is complete.
 
 **3. macOS Code Signing (if needed):**
 
