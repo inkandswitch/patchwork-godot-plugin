@@ -214,6 +214,9 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
+[node name="HistoryListPopup" type="PopupMenu" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/HistoryVBox/HistorySectionBody/HistoryList"]
+unique_name_in_owner = true
+
 [node name="DiffVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit"]
 unique_name_in_owner = true
 layout_mode = 2

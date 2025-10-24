@@ -15,7 +15,7 @@ use crate::branch::{BinaryDocState, BranchState, BranchStateForkInfo, BranchStat
 use crate::file_utils::FileContent;
 use crate::godot_parser::GodotScene;
 use crate::utils::{
-    commit_with_attribution_and_timestamp, print_branch_state, CommitMetadata, MergeMetadata, ToShortForm,
+    commit_with_attribution_and_timestamp, heads_to_vec_string, print_branch_state, vec_string_to_heads, CommitMetadata, MergeMetadata, ToShortForm
 };
 use crate::{
     godot_parser,
@@ -52,6 +52,12 @@ pub enum InputEvent {
         target_branch_doc_id: DocumentId,
     },
 
+	CreateRevertPreviewBranch {
+		branch_doc_id: DocumentId,
+		files: Vec<(String, FileContent)>,
+		revert_to: Vec<ChangeHash>,
+	},
+
     MergeBranch {
         source_branch_doc_id: DocumentId,
         target_branch_doc_id: DocumentId,
@@ -71,6 +77,13 @@ pub enum InputEvent {
 		branch_doc_handle: DocHandle,
 		heads: Option<Vec<ChangeHash>>,
         files: Vec<(String, FileContent)>,
+	},
+
+	RevertTo {
+		branch_doc_handle: DocHandle,
+		heads: Option<Vec<ChangeHash>>,
+        files: Vec<(String, FileContent)>,
+		revert_to: Vec<ChangeHash>,
 	},
 
     SetUserName {
@@ -460,6 +473,10 @@ impl GodotProjectDriver {
                                 state.create_branch(name.clone(), source_branch_doc_id.clone());
                             },
 
+							InputEvent::CreateRevertPreviewBranch { branch_doc_id, files, revert_to } => {
+								state.create_revert_preview_branch(branch_doc_id, files, revert_to);
+							},
+
                             InputEvent::CreateMergePreviewBranch { source_branch_doc_id, target_branch_doc_id } => {
                                 state.create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id);
                             },
@@ -473,11 +490,15 @@ impl GodotProjectDriver {
                             },
 
                             InputEvent::SaveFiles { branch_doc_handle, files, heads } => {
-                                state.save_files(branch_doc_handle, files, heads, false);
+                                state.save_files(branch_doc_handle, files, heads, false, None);
                             },
 
 							InputEvent::InitialCheckin { branch_doc_handle, files, heads } => {
-                                state.save_files(branch_doc_handle, files, heads, true);
+                                state.save_files(branch_doc_handle, files, heads, true, None);
+                            },
+
+							InputEvent::RevertTo { branch_doc_handle, files, heads, revert_to } => {
+                                state.save_files(branch_doc_handle, files, heads, true, Some(revert_to));
                             },
 
                             InputEvent::StartShutdown => {
@@ -564,6 +585,7 @@ async fn init_project_doc_handles(
                         username: user_name.clone(),
                         branch_id: Some(main_branch_doc_handle.document_id().to_string()),
                         merge_metadata: None,
+						reverted_to: None,
                     },
                 );
             });
@@ -578,6 +600,8 @@ async fn init_project_doc_handles(
                     fork_info: None,
                     merge_info: None,
 					created_by: user_name.clone(),
+					merged_into: None,
+					reverted_to: None,
                 },
             )]);
             let branches_clone = branches.clone();
@@ -599,6 +623,7 @@ async fn init_project_doc_handles(
                         username: user_name.clone(),
                         branch_id: None,
                         merge_metadata: None,
+						reverted_to: None,
                     },
                 );
             });
@@ -635,6 +660,8 @@ impl DriverState {
             }),
             merge_info: None,
 			created_by: self.user_name.clone(),
+			merged_into: None,
+			reverted_to: None,
         };
 
         self.tx
@@ -654,10 +681,61 @@ impl DriverState {
                     username: self.user_name.clone(),
                     branch_id: None,
                     merge_metadata: None,
+					reverted_to: None,
                 },
             );
         });
     }
+
+	fn create_revert_preview_branch(
+		&mut self,
+		branch_doc_id: DocumentId,
+		files: Vec<(String, FileContent)>,
+		revert_to: Vec<ChangeHash>,
+	) {
+		tracing::debug!("driver: create revert preview branch");
+		let branch_state = self.branch_states.get(&branch_doc_id).unwrap();
+		let revert_preview_branch_doc_handle = self.repo_handle.new_document();
+		let revert_preview_doc_id = revert_preview_branch_doc_handle.document_id();
+		// create a new branch doc, merge the original branch doc into it, and then commit the changes
+
+        let branch = Branch {
+            name: format!(
+                "{} <- {}",
+                branch_state.name, revert_to.to_short_form()
+            ),
+            id: revert_preview_doc_id.to_string(),
+            fork_info: None,
+            merge_info: None,
+			created_by: self.user_name.clone(),
+			merged_into: None,
+			reverted_to: Some(revert_to.iter().map(|h| h.to_string()).collect()),
+        };
+        self.branches_metadata_doc_handle.with_doc_mut(|d| {
+            let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
+            let mut tx = d.transaction();
+            branches_metadata.branches.insert(branch.id.clone(), branch);
+            let _ = reconcile(&mut tx, branches_metadata);
+            commit_with_attribution_and_timestamp(
+                tx,
+                &CommitMetadata {
+                    username: self.user_name.clone(),
+                    branch_id: None,
+                    merge_metadata: None,
+					reverted_to: None,
+                },
+            );
+        });
+
+		self.save_files(revert_preview_branch_doc_handle, files, Some(revert_to), false, None);
+
+		self.tx
+			.unbounded_send(OutputEvent::CompletedCreateBranch {
+				branch_doc_id: revert_preview_doc_id,
+			})
+			.unwrap();
+
+	}
 
     fn create_merge_preview_branch(
         &mut self,
@@ -710,6 +788,8 @@ impl DriverState {
                     .collect(),
             }),
 			created_by: self.user_name.clone(),
+			merged_into: None,
+			reverted_to: None,
         };
 
         self.branches_metadata_doc_handle.with_doc_mut(|d| {
@@ -723,6 +803,7 @@ impl DriverState {
                     username: self.user_name.clone(),
                     branch_id: Some(source_branch_doc_id.to_string()),
                     merge_metadata: None,
+					reverted_to: None,
                 },
             );
         });
@@ -752,6 +833,7 @@ impl DriverState {
                     username: self.user_name.clone(),
                     branch_id: None,
                     merge_metadata: None,
+					reverted_to: None,
                 },
             );
         });
@@ -762,7 +844,8 @@ impl DriverState {
         branch_doc_handle: DocHandle,
         file_entries: Vec<(String, FileContent)>,
         heads: Option<Vec<ChangeHash>>,
-		new_project: bool
+		new_project: bool,
+		revert: Option<Vec<ChangeHash>>
     ) {
         let branch_doc_state = self
             .branch_states
@@ -788,6 +871,7 @@ impl DriverState {
                                 username: self.user_name.clone(),
                                 branch_id: None,
                                 merge_metadata: None,
+								reverted_to: None,
                             },
                         );
                     });
@@ -870,6 +954,10 @@ impl DriverState {
                     username: self.user_name.clone(),
                     branch_id: Some(branch_doc_state.doc_handle.document_id().to_string()),
                     merge_metadata: None,
+					reverted_to: match revert {
+						Some(revert) => Some(heads_to_vec_string(revert)),
+						None => None,
+					},
                 },
             );
         });
@@ -899,12 +987,15 @@ impl DriverState {
                     });
             });
 
+		let mut original_branch_id = None;
         // if the branch has some merge_info we know that it's a merge preview branch
         let merge_metadata = if source_branch_state.merge_info.is_some() {
             let original_branch_state = self
                 .branch_states
                 .get(&source_branch_state.fork_info.as_ref().unwrap().forked_from)
                 .unwrap();
+
+			original_branch_id = Some(original_branch_state.doc_handle.document_id().to_string());
 
             Some(MergeMetadata {
                 merged_branch_id: original_branch_state.doc_handle.document_id().to_string(),
@@ -935,9 +1026,30 @@ impl DriverState {
                         username: self.user_name.clone(),
                         branch_id: Some(target_branch_doc_id.to_string()),
                         merge_metadata: Some(merge_metadata),
+						reverted_to: None,
                     },
                 );
             });
+			let mut branch = self.get_branches_metadata()
+			.branches
+			.get(&source_branch_state.doc_handle.document_id().to_string()).unwrap().clone();
+			branch.merged_into = original_branch_id;
+			self.branches_metadata_doc_handle.with_doc_mut(|d| {
+				let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
+				let mut tx = d.transaction();
+				branches_metadata.branches.insert(branch.id.clone(), branch);
+				let _ = reconcile(&mut tx, branches_metadata);
+				commit_with_attribution_and_timestamp(
+					tx,
+					&CommitMetadata {
+						username: self.user_name.clone(),
+						branch_id: Some(source_branch_doc_id.to_string()),
+						merge_metadata: None,
+						reverted_to: None,
+					},
+				);
+			});
+			// self.branch_states.get_mut(&source_branch_doc_id).unwrap().merged_into = Some(target_branch_doc_id);
         }
     }
 
@@ -984,6 +1096,13 @@ impl DriverState {
                         is_main: branch_doc_handle.document_id()
                             == self.main_branch_doc_handle.document_id(),
 						created_by: branch.created_by.clone(),
+						merged_into: match branch.merged_into {
+							Some(merged_into) => match DocumentId::from_str(&merged_into) {
+								Ok(merged_into) => Some(merged_into),
+								Err(_) => None,
+							},
+							None => None,
+						},
                     },
                 );
                 self.branch_states
