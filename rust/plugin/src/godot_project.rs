@@ -360,6 +360,16 @@ enum GodotProjectSignal {
 	ConnectionThreadFailed,
 }
 
+enum EventIncoming {
+	NewDocHandle(DocHandle, DocHandleType),
+	JustCheckedOutNewBranch,
+	StateShouldBeUpdated,
+	TriggerSavedChanges,
+	BranchesChanged,
+	CompletedShutdown,
+	PeerConnectionInfoChanged(PeerConnectionInfo),
+}
+
 impl GodotProjectImpl {
 	fn globalize_path(&self, path: &String) -> String {
 		// trim the project_dir from the front of the path
@@ -2259,6 +2269,197 @@ impl GodotProjectImpl {
 			project_dir,
 			..Default::default()
 		}
+	}
+
+
+	fn get_next_input_event(&mut self) -> Option<EventIncoming> {
+		if let Ok(Some(event)) = self.driver_output_rx.try_next() {
+            match event {
+				// inserts new doc handles into the doc handles map
+				OutputEvent::NewDocHandle {
+					doc_handle,
+					doc_handle_type,
+				} => {
+
+					if doc_handle_type == DocHandleType::Binary {
+						tracing::trace!(
+							"NewBinaryDocHandle !!!! {} {} changes",
+							doc_handle.document_id(),
+							doc_handle.with_doc(|d| d.get_heads().len())
+						);
+					}
+
+					self.doc_handles
+						.insert(doc_handle.document_id(),  doc_handle.clone());
+				}
+
+				// this does the following:
+				// 1. inserts the new branch state into the branch states map
+				// 2. modifies the checked out branch state by:
+				// 2.1 if NothingCheckedOut, and the new branch_state.is_main, it set it to CheckingOut(new_branch_state, prev_branch_id)
+				// 2.2 if the active branch state matches the new branch state, it sets checking_out_new_branch to true
+				// 2.3 if the active branch state does not match the new branch state, it checks out the new branch
+				// if let Some(active_branch_state) = active_branch_state {
+				// 	if active_branch_state.is_synced() {
+				// 		if checking_out_new_branch {
+
+				// CheckedOutBranchState::NothingCheckedOut is being used for two situations:
+				// 1. when we haven't checked out anything yet (i.e. the project is just starting up)
+				// 2. when we've created a new branch and we're waiting for it to be created on the backend so we can check it out
+				// this should be split into two states: NothingCheckedOut and WaitingForNewBranch
+
+
+				// BranchStateChanged means multiple things:
+				// 1. we were waiting for binary docs to be loaded, and they are now loaded
+				// 2. the project was changed on the remote
+				OutputEvent::BranchStateChanged {
+					branch_state: new_branch_state,
+					trigger_reload,
+				} => {
+					let new_branch_state_doc_handle = new_branch_state.doc_handle.clone();
+					let new_branch_state_doc_id = new_branch_state_doc_handle.document_id();
+					self.branch_states
+						.insert(new_branch_state_doc_id.clone(), new_branch_state);
+
+					// branches_changed = true;
+					let mut checking_out_new_branch = false;
+
+					// This triggers a state machine change in the checked out branch state
+					let (active_branch_state, prev_branch_info) = match &self.checked_out_branch_state {
+						CheckedOutBranchState::NothingCheckedOut(prev_branch_id) => {
+							// check out main branch if we haven't checked out anything yet
+							let cloned_prev_branch_id = prev_branch_id.clone();
+							let branch_state = self.branch_states.get(&new_branch_state_doc_handle.document_id()).unwrap();
+							if branch_state.is_main {
+								checking_out_new_branch = true;
+
+								self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(
+									branch_state.doc_handle.document_id(),
+									prev_branch_id.clone(),
+								);
+								(Some(branch_state), cloned_prev_branch_id)
+							} else {
+								// we're still waiting for the project to be fully synced
+								(None, None)
+							}
+						}
+						CheckedOutBranchState::CheckingOut(branch_doc_id, prev_branch_info) => {
+							checking_out_new_branch = true;
+							(self.branch_states.get(branch_doc_id), prev_branch_info.clone())
+						}
+						CheckedOutBranchState::CheckedOut(branch_doc_id, prev_branch_info) => {
+							(self.branch_states.get(branch_doc_id), prev_branch_info.clone())
+						}
+					};
+
+					// only trigger update if checked out branch is fully synced
+					if let Some(active_branch_state) = active_branch_state {
+						if active_branch_state.is_synced() {
+							if checking_out_new_branch {
+								tracing::info!(
+									"TRIGGER checked out new branch: {}",
+									active_branch_state.name
+								);
+
+								self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(
+									active_branch_state.doc_handle.document_id(),
+									prev_branch_info,
+								);
+
+								// self.just_checked_out_new_branch = true;
+
+								return Some(EventIncoming::JustCheckedOutNewBranch);
+
+							} else {
+								// self.should_update_godot = self.should_update_godot || (new_branch_state_doc_id == active_branch_state.doc_handle.document_id() && trigger_reload);
+								if (new_branch_state_doc_id == active_branch_state.doc_handle.document_id() && trigger_reload) {
+									return Some(EventIncoming::StateShouldBeUpdated);
+								}
+								if !trigger_reload {
+									return Some(EventIncoming::TriggerSavedChanges);
+									// tracing::debug!("TRIGGER saved changes: {}", active_branch_state.name);
+									// signals.push(GodotProjectSignal::SavedChanges);
+								}
+							}
+						}
+					}
+					return Some(EventIncoming::BranchesChanged);
+				}
+				// Event means driver was started with project_doc_id = None; now project was initialized and we've got a doc id
+				OutputEvent::Initialized { project_doc_id } => {
+					self.project_doc_id = Some(project_doc_id);
+				}
+
+				// Event means we've created a new branch and we're waiting for it to be created on the backend so we can check it out
+				OutputEvent::CompletedCreateBranch { branch_doc_id } => {
+					// PLEASE NOTE: If we change the logic such that we don't check out a new branch when we create one,
+					// we need to change _create_branch to not populate the previous branch id
+					self.checked_out_branch_state =
+						CheckedOutBranchState::CheckingOut(branch_doc_id, self._get_previous_branch_id());
+				}
+
+				OutputEvent::CompletedShutdown => {
+					tracing::debug!("CompletedShutdown event");
+					return Some(EventIncoming::CompletedShutdown);
+				}
+
+				OutputEvent::PeerConnectionInfoChanged {
+					peer_connection_info,
+				} => {
+					let new_sync_server_connection_info = match self
+						.sync_server_connection_info
+						.as_mut()
+					{
+						None => {
+							self.sync_server_connection_info = Some(peer_connection_info.clone());
+							peer_connection_info
+						}
+
+						Some(sync_server_connection_info) => {
+							sync_server_connection_info.last_received =
+								peer_connection_info.last_received;
+							sync_server_connection_info.last_sent = peer_connection_info.last_sent;
+
+							peer_connection_info
+								.docs
+								.iter()
+								.for_each(|(doc_id, doc_state)| {
+									let had_previously_heads = sync_server_connection_info
+										.docs
+										.get(doc_id)
+										.is_some_and(|doc_state| {
+											doc_state
+												.clone()
+												.last_acked_heads
+												.is_some_and(|heads| heads.len() > 0)
+										});
+
+									// don't overwrite the doc state if it had previously had heads
+									// but now doesn't have any heads
+									if had_previously_heads
+										&& doc_state
+											.clone()
+											.last_acked_heads
+											.is_some_and(|heads| heads.len() == 0)
+									{
+										return;
+									}
+
+									sync_server_connection_info
+										.docs
+										.insert(doc_id.clone(), doc_state.clone());
+								});
+
+							peer_connection_info
+						}
+					};
+					return Some(EventIncoming::PeerConnectionInfoChanged(new_sync_server_connection_info));
+
+					// signals.push(GodotProjectSignal::SyncServerConnectionInfoChanged(new_sync_server_connection_info));
+				}
+			};
+		}
+		None
 	}
 
 	#[instrument(target = "patchwork_rust_core::godot_project::inner_process", level = tracing::Level::DEBUG, skip_all)]
