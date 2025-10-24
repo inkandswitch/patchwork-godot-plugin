@@ -522,6 +522,37 @@ impl GodotProjectImpl {
             .unwrap();
     }
 
+	fn _create_revert_preview_branch(&mut self, branch_doc_id: DocumentId, revert_to: Vec<ChangeHash>) {
+		println!("");
+		tracing::info!("******** CREATE REVERT PREVIEW BRANCH: {:?} to {:?}",
+			self._get_branch_name(&branch_doc_id),
+			revert_to.to_short_form()
+		);
+		println!("");
+		let branch_state = self.get_checked_out_branch_state().unwrap();
+		let heads = branch_state.doc_handle.with_doc(|d| {
+			d.get_heads()
+		});
+		let content = self._get_changed_file_content_between(Some(branch_state.doc_handle.document_id().clone()), branch_state.doc_handle.document_id().clone(), heads.clone(), revert_to.clone(), true);
+		let files = content.into_iter().map(|event| {
+			match event {
+				FileSystemEvent::FileCreated(path, content) => (path.to_string_lossy().to_string(), content),
+				FileSystemEvent::FileModified(path, content) => (path.to_string_lossy().to_string(), content),
+				FileSystemEvent::FileDeleted(path) => (path.to_string_lossy().to_string(), FileContent::Deleted),
+			}
+		}).collect::<Vec<(String, FileContent)>>();
+
+
+		self.driver_input_tx
+			.unbounded_send(InputEvent::CreateRevertPreviewBranch {
+				branch_doc_id,
+				files,
+				revert_to,
+			})
+			.unwrap();
+
+	}
+
 
 	fn _delete_branch(&mut self, branch_doc_id: DocumentId) {
         self.driver_input_tx
@@ -2800,6 +2831,16 @@ impl GodotProject {
 		let source_branch_doc_id = DocumentId::from_str(&source_branch_doc_id).unwrap();
         let target_branch_doc_id = DocumentId::from_str(&target_branch_doc_id).unwrap();
 		self.project._create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id);
+	}
+
+	#[func]
+    fn create_revert_preview_branch(
+        &mut self,
+        branch_doc_id: String,
+        revert_to: PackedStringArray,
+    ) {
+		check_project_started!(self);
+		self.project._create_revert_preview_branch(DocumentId::from_str(&branch_doc_id).unwrap(), array_to_heads(revert_to));
 	}
     #[func]
     fn delete_branch(&mut self, branch_doc_id: String) {

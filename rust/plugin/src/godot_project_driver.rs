@@ -52,6 +52,12 @@ pub enum InputEvent {
         target_branch_doc_id: DocumentId,
     },
 
+	CreateRevertPreviewBranch {
+		branch_doc_id: DocumentId,
+		files: Vec<(String, FileContent)>,
+		revert_to: Vec<ChangeHash>,
+	},
+
     MergeBranch {
         source_branch_doc_id: DocumentId,
         target_branch_doc_id: DocumentId,
@@ -467,6 +473,10 @@ impl GodotProjectDriver {
                                 state.create_branch(name.clone(), source_branch_doc_id.clone());
                             },
 
+							InputEvent::CreateRevertPreviewBranch { branch_doc_id, files, revert_to } => {
+								state.create_revert_preview_branch(branch_doc_id, files, revert_to);
+							},
+
                             InputEvent::CreateMergePreviewBranch { source_branch_doc_id, target_branch_doc_id } => {
                                 state.create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id);
                             },
@@ -591,6 +601,7 @@ async fn init_project_doc_handles(
                     merge_info: None,
 					created_by: user_name.clone(),
 					merged_into: None,
+					reverted_to: None,
                 },
             )]);
             let branches_clone = branches.clone();
@@ -650,6 +661,7 @@ impl DriverState {
             merge_info: None,
 			created_by: self.user_name.clone(),
 			merged_into: None,
+			reverted_to: None,
         };
 
         self.tx
@@ -674,6 +686,56 @@ impl DriverState {
             );
         });
     }
+
+	fn create_revert_preview_branch(
+		&mut self,
+		branch_doc_id: DocumentId,
+		files: Vec<(String, FileContent)>,
+		revert_to: Vec<ChangeHash>,
+	) {
+		tracing::debug!("driver: create revert preview branch");
+		let branch_state = self.branch_states.get(&branch_doc_id).unwrap();
+		let revert_preview_branch_doc_handle = self.repo_handle.new_document();
+		let revert_preview_doc_id = revert_preview_branch_doc_handle.document_id();
+		// create a new branch doc, merge the original branch doc into it, and then commit the changes
+
+        let branch = Branch {
+            name: format!(
+                "{} <- {}",
+                branch_state.name, revert_to.to_short_form()
+            ),
+            id: revert_preview_doc_id.to_string(),
+            fork_info: None,
+            merge_info: None,
+			created_by: self.user_name.clone(),
+			merged_into: None,
+			reverted_to: Some(revert_to.iter().map(|h| h.to_string()).collect()),
+        };
+        self.branches_metadata_doc_handle.with_doc_mut(|d| {
+            let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
+            let mut tx = d.transaction();
+            branches_metadata.branches.insert(branch.id.clone(), branch);
+            let _ = reconcile(&mut tx, branches_metadata);
+            commit_with_attribution_and_timestamp(
+                tx,
+                &CommitMetadata {
+                    username: self.user_name.clone(),
+                    branch_id: None,
+                    merge_metadata: None,
+					reverted_to: None,
+                },
+            );
+        });
+
+		self.save_files(revert_preview_branch_doc_handle, files, Some(revert_to), false, None);
+
+		self.tx
+			.unbounded_send(OutputEvent::CompletedCreateBranch {
+				branch_doc_id: revert_preview_doc_id,
+			})
+			.unwrap();
+
+	}
 
     fn create_merge_preview_branch(
         &mut self,
@@ -727,6 +789,7 @@ impl DriverState {
             }),
 			created_by: self.user_name.clone(),
 			merged_into: None,
+			reverted_to: None,
         };
 
         self.branches_metadata_doc_handle.with_doc_mut(|d| {

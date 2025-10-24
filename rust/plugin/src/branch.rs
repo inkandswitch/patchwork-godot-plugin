@@ -49,6 +49,7 @@ pub struct Branch {
     pub merge_info: Option<MergeInfo>,
 	pub created_by: Option<String>,
 	pub merged_into: Option<String>,
+	pub reverted_to: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone)]
