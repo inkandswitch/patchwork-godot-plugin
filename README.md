@@ -13,7 +13,6 @@ Download the latest version of the plugin from [Github](https://github.com/inkan
 
 ![](./assets/release-page.webp)
 
-
 Extract the zip files. You should see the Godot editor as well as the plugin (or the starter project containing the plugin)
 
 ![](./assets/unzipped-files.webp)
@@ -36,9 +35,9 @@ To collaborate with others, you need to be in the same Patchwork Project.
 
 💡 A Patchwork Project is a shared online session where everyone can see the same thing. Think of it sort of like a Google Doc. If you're familiar with Git, it's also similar to a Git repo with live synchronization.
 
-You can either create a new project or load an existing one. 
+You can either create a new project or load an existing one.
 
-⚠️ **IMPORTANT** Loading existing projects is a new feature that's only available in the latest version of the plugin. In older versions of the plugin a new project is automatically generated when you start the plugin for the first time. 
+⚠️ **IMPORTANT** Loading existing projects is a new feature that's only available in the latest version of the plugin. In older versions of the plugin a new project is automatically generated when you start the plugin for the first time.
 If you want to share a project with another person you either need to zip up the whole project. Alternatively you can manually share the project id stored in the `patchwork.cfg` file in the root of the project folder.
 
 ### Making a new project
@@ -52,8 +51,8 @@ To share a project with someone:
 
 ### Joining an existing project
 
- - manually paste the ID into the Project ID box if someone has shared that
- - You may already be in a Patchwork project, if someone shared a file with you that contains a project ID.
+- manually paste the ID into the Project ID box if someone has shared that
+- You may already be in a Patchwork project, if someone shared a file with you that contains a project ID.
 
 ## Using Patchwork
 
@@ -123,23 +122,6 @@ If syncing is not working, you can try falling back to other methods of syncing 
 
 If the editor crashes or seems unresponsive, try restarting the editor.
 
-
 # Developer Guide
 
-This information is only relevant if you want to contribute code to the plugin or build the plugin from scratch
-
-## Developing the plugin
-
-To build this, clone [nikitalita/godot @ patchwork-4.4](https://github.com/nikitalita/godot/tree/patchwork-4.4), then clone this repository into the `modules/patchwork_editor` directory.
-
-```
-git clone -b patchwork-4.4 https://github.com/nikitalita/godot
-cd godot/modules
-git clone https://github.com/nikitalita/patchwork_editor patchwork_editor --recurse-submodules
-
-```
-
-For rust plugin development:
-install `watchexec` (e.g. `brew install watchexec`)
-run `watchexec -e rs,toml cargo b` in the rust/plugin directory
-Put the identity (e.g. Apple Development: Nikita Zatkovich (RFTZV7M2RV)) in the .cargo/.devidentity file to enable codesigning
+If you want to contribute code to the plugin or build the plugin from scratch, [please check our detailed guide here](Developers.md).
