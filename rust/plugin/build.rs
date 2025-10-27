@@ -83,4 +83,5 @@ fn write_build_info(){
 fn main() {
     println!("cargo:warning=Running write_build_info");
     write_build_info();
+	static_vcruntime::metabuild();
 }
