@@ -2592,7 +2592,7 @@ impl GodotProjectImpl {
 		self.is_started
 	}
 
-	fn _revert_to_heads(&self, to_revert_to: Vec<ChangeHash>) {
+	fn _revert_to_heads(&mut self, to_revert_to: Vec<ChangeHash>) {
 		let branch_state = self.get_checked_out_branch_state().unwrap();
 		let heads = branch_state.doc_handle.with_doc(|d| {
 			d.get_heads()
@@ -2606,6 +2606,7 @@ impl GodotProjectImpl {
 			}
 		}).collect::<Vec<(PathBuf, FileContent)>>();
 		self._sync_files_at(branch_state.doc_handle.clone(), files, Some(heads), Some(to_revert_to));
+		self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(branch_state.doc_handle.document_id().clone(), None);
 	}
 }
 
@@ -2744,7 +2745,7 @@ impl GodotProject {
 
 	// PUBLIC API
 	#[func]
-	fn revert_to_heads(&self, heads: PackedStringArray) {
+	fn revert_to_heads(&mut self, heads: PackedStringArray) {
 		check_project_started!(self);
 		self.project._revert_to_heads(array_to_heads(heads));
 	}

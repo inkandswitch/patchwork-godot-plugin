@@ -71,6 +71,11 @@ pub struct BranchStateMergeInfo {
 }
 
 #[derive(Debug, Clone)]
+pub struct BranchStateRevertInfo {
+    pub reverted_to: Vec<ChangeHash>,
+}
+
+#[derive(Debug, Clone)]
 pub struct BranchState {
     pub name: String,
     pub doc_handle: DocHandle,
@@ -78,6 +83,7 @@ pub struct BranchState {
     pub synced_heads: Vec<ChangeHash>,
     pub fork_info: Option<BranchStateForkInfo>,
     pub merge_info: Option<BranchStateMergeInfo>,
+	pub revert_info: Option<BranchStateRevertInfo>,
     pub is_main: bool,
 	pub created_by: Option<String>,
 	pub merged_into: Option<DocumentId>,

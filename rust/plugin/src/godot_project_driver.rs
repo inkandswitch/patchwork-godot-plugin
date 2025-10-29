@@ -11,7 +11,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
-use crate::branch::{BinaryDocState, BranchState, BranchStateForkInfo, BranchStateMergeInfo};
+use crate::branch::{BinaryDocState, BranchState, BranchStateForkInfo, BranchStateMergeInfo, BranchStateRevertInfo};
 use crate::file_utils::FileContent;
 use crate::godot_parser::GodotScene;
 use crate::utils::{
@@ -695,17 +695,22 @@ impl DriverState {
 	) {
 		tracing::debug!("driver: create revert preview branch");
 		let branch_state = self.branch_states.get(&branch_doc_id).unwrap();
-		let revert_preview_branch_doc_handle = self.repo_handle.new_document();
-		let revert_preview_doc_id = revert_preview_branch_doc_handle.document_id();
+		let current_doc_id = branch_state.doc_handle.document_id();
+		let current_heads = branch_state.doc_handle.with_doc(|d| d.get_heads());
 		// create a new branch doc, merge the original branch doc into it, and then commit the changes
+        let revert_preview_branch_doc_handle = clone_doc(&self.repo_handle, &branch_state.doc_handle);
+		let revert_preview_doc_id = revert_preview_branch_doc_handle.document_id();
 
         let branch = Branch {
             name: format!(
                 "{} <- {}",
-                branch_state.name, revert_to.to_short_form()
+                revert_to.to_short_form(), current_heads.to_short_form()
             ),
             id: revert_preview_doc_id.to_string(),
-            fork_info: None,
+            fork_info: Some(ForkInfo {
+                forked_from: current_doc_id.to_string(),
+                forked_at: heads_to_vec_string(current_heads.clone()),
+            }),
             merge_info: None,
 			created_by: self.user_name.clone(),
 			merged_into: None,
@@ -727,7 +732,7 @@ impl DriverState {
             );
         });
 
-		self.save_files(revert_preview_branch_doc_handle, files, Some(revert_to), false, None);
+		self.save_files(revert_preview_branch_doc_handle, files, Some(current_heads), false, Some(revert_to));
 
 		self.tx
 			.unbounded_send(OutputEvent::CompletedCreateBranch {
@@ -847,16 +852,11 @@ impl DriverState {
 		new_project: bool,
 		revert: Option<Vec<ChangeHash>>
     ) {
-        let branch_doc_state = self
-            .branch_states
-            .get(&branch_doc_handle.document_id())
-            .unwrap()
-            .clone();
-
         let mut binary_entries: Vec<(String, DocHandle)> = Vec::new();
         let mut text_entries: Vec<(String, &String)> = Vec::new();
         let mut scene_entries: Vec<(String, &GodotScene)> = Vec::new();
 		let mut deleted_entries: Vec<String> = Vec::new();
+		let is_revert = revert.is_some();
 
         for (path, content) in file_entries.iter() {
             match content {
@@ -952,7 +952,7 @@ impl DriverState {
                 tx,
                 &CommitMetadata {
                     username: self.user_name.clone(),
-                    branch_id: Some(branch_doc_state.doc_handle.document_id().to_string()),
+                    branch_id: Some(branch_doc_handle.document_id().to_string()),
                     merge_metadata: None,
 					reverted_to: match revert {
 						Some(revert) => Some(heads_to_vec_string(revert)),
@@ -963,14 +963,14 @@ impl DriverState {
         });
 
         // update heads in frontend
-		if !new_project {
+		if !new_project && !is_revert {
 			self.heads_in_frontend.insert(
 				branch_doc_handle.document_id(),
 				branch_doc_handle.with_doc(|d| d.get_heads()),
 			);
 		}
 
-        tracing::debug!("save on branch {:?} {:?}", branch_doc_state.name, self.heads_in_frontend);
+        tracing::debug!("save on branch {:?} {:?}", branch_doc_handle.document_id(), self.heads_in_frontend);
     }
 
     fn merge_branch(&mut self, source_branch_doc_id: DocumentId, target_branch_doc_id: DocumentId) {
@@ -1101,6 +1101,12 @@ impl DriverState {
 								Ok(merged_into) => Some(merged_into),
 								Err(_) => None,
 							},
+							None => None,
+						},
+						revert_info: match branch.reverted_to {
+							Some(reverted_to) => Some(BranchStateRevertInfo {
+								reverted_to: reverted_to.iter().map(|h| ChangeHash::from_str(h).unwrap()).collect(),
+							}),
 							None => None,
 						},
                     },

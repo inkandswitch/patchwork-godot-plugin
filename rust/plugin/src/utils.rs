@@ -261,6 +261,7 @@ fn branch_state_to_dict(branch_state: &BranchState) -> Dictionary {
         "is_not_loaded": branch_state.doc_handle.with_doc(|d| d.get_heads().len() == 0),
         "heads": heads_to_array(branch_state.synced_heads.clone()),
         "is_merge_preview": branch_state.merge_info.is_some(),
+		"is_revert_preview": branch_state.revert_info.is_some(),
     };
 
     if let Some(fork_info) = &branch_state.fork_info {
@@ -279,6 +280,10 @@ fn branch_state_to_dict(branch_state: &BranchState) -> Dictionary {
 
 	if let Some(merged_into) = &branch_state.merged_into {
 		let _ = branch.insert("merged_into", merged_into.to_string());
+	}
+
+	if let Some(reverted_to) = &branch_state.revert_info {
+		let _ = branch.insert("reverted_to", heads_to_array(reverted_to.reverted_to.clone()));
 	}
 
     branch
