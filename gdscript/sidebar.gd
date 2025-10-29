@@ -1045,7 +1045,7 @@ func _setup_history_list_popup() -> void:
 	history_list_popup.clear()
 	history_list_popup.id_pressed.connect(_on_history_list_popup_id_pressed)
 	history_list_popup.add_item("Reset to here", HistoryListPopupItem.RESET_TO_COMMIT)
-	history_list_popup.add_item("Create remix from here", HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT)
+	# history_list_popup.add_item("Create remix from here", HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT)
 
 func _on_item_right_clicked(index: int, _at_position: Vector2, _button_idx: int) -> void:
 	print("Right clicked index: ", index)
