@@ -546,7 +546,6 @@ func cancel_revert_preview():
 	if not checked_out_branch:
 		printerr("no checked out branch")
 		return
-	print("cancel_revert_preview: checked_out_branch: ", checked_out_branch)
 	var source_branch_doc_id = checked_out_branch.forked_from
 
 	task_modal.do_task("Cancel revert preview", func():
@@ -561,7 +560,6 @@ func confirm_revert_preview():
 	if not checked_out_branch:
 		printerr("no checked out branch")
 		return
-	print("confirm_revert_preview: checked_out_branch: ", checked_out_branch)
 
 	var source_branch_doc_id = checked_out_branch.forked_from
 	var reverted_to_heads = checked_out_branch.reverted_to
@@ -670,7 +668,7 @@ func update_ui(update_diff: bool = false) -> void:
 			prefix = change.hash.substr(0, 8) + " - "
 
 		var idx = -1
-		print(change)
+		# print(change)
 		if "merge_metadata" in change:
 			var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
 			var merged_branch_name = str(change.merge_metadata.merged_branch_id)
@@ -1134,7 +1132,7 @@ func show_diff(heads_before, heads_after):
 	var diff = GodotProject.get_all_changes_between(PackedStringArray(heads_before), PackedStringArray(heads_after))
 	inspector.reset()
 	inspector.add_diff(diff)
-	print("Length: ", diff.size())
+	# print("Length: ", diff.size())
 	return diff
 
 
