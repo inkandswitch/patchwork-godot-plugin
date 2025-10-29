@@ -4,71 +4,42 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-        // This is to test decompiling Game PCKs, this uses the debug editor binary
-        {
-            "name": "(Windows) Launch CLI recovery (editor dev)",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/bin/godot.windows.editor.dev.x86_64.exe",
-            "args": [
-                "--headless",
-                "--path",
-                "${workspaceFolder}/modules/gdsdecomp/standalone",
-                // Put the pck you want to test here
-                "--recover=${workspaceFolder}/../wherever_the_pck_you_want_to_test_is",
-                "--output-dir=${workspaceFolder}/../wherever_you_want_the_output_to_be"
-            ],
-            "visualizerFile": "${workspaceFolder}/platform/windows/godot.natvis",
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "console": "integratedTerminal",
-            "preLaunchTask": "Build: editor dev_build"
-        },
-        // Use this to launch the GDRE standalone GUI, this uses the debug editor binary
-        {
-            "name": "(Windows) Launch GDRE Standalone (editor dev)",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/bin/godot.windows.editor.dev.x86_64.exe",
-            "args": [
-                "--path",
-                "${workspaceFolder}/modules/gdsdecomp/standalone"
-            ],
-            "visualizerFile": "${workspaceFolder}/platform/windows/godot.natvis",
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "console": "integratedTerminal",
-            "preLaunchTask": "Build: editor dev_build"
-        },
-        // Use this to launch the standalone editor with the template_release binary
-        {
-            "name": "(Windows) Launch GDRE Standalone (template_release)",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/bin/godot.windows.template_release.x86_64.exe",
-            "args": [
-                "--path",
-                "${workspaceFolder}/modules/gdsdecomp/standalone"
-            ],
-            "visualizerFile": "${workspaceFolder}/platform/windows/godot.natvis",
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "console": "integratedTerminal",
-            "preLaunchTask": "Build: editor template_release"
-        },
         // This launches the editor to edit the standalone Godot project
+		{
+            "name": "(lldb-dap) Launch Editor (moddable_platformer) (editor dev)",
+            "type": "lldb-dap",
+            "request": "launch",
+			"program": "${workspaceFolder}/bin/godot.macos.editor.dev.arm64",
+            "osx": {
+                "program": "${workspaceFolder}/bin/godot.macos.editor.dev.arm64",
+            },
+            "windows": {
+                "program": "${workspaceFolder}/bin/godot.windows.editor.dev.x86_64.exe",
+            },
+            "linux": {
+                "program": "${workspaceFolder}/bin/godot.linux.editor.dev.x86_64",
+            },
+            "args": [
+                "--e",
+                "--path",
+                "${workspaceFolder}/../moddable_platformer",
+            ],
+			"runInTerminal": true,
+            "cwd": "${workspaceFolder}",
+			"initCommands": [
+				"command script import ${workspaceFolder}/../lldb-godot-formatters/godot_formatters",
+			],
+            "preLaunchTask": "Build: editor dev_build"
+        },
         {
-            "name": "(Windows) Launch Editor (gdre standalone) (editor Debug)",
+            "name": "(Windows) Launch Editor (moddable_platformer) (editor Debug)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/bin/godot.windows.editor.dev.x86_64.exe",
             "args": [
-                "-e",
+                "--e",
                 "--path",
-                "${workspaceFolder}/modules/gdsdecomp/standalone"
+                "${workspaceFolder}/../moddable_platformer",
             ],
             "visualizerFile": "${workspaceFolder}/platform/windows/godot.natvis",
             "stopAtEntry": false,
@@ -78,15 +49,14 @@
             "preLaunchTask": "Build: editor dev_build"
         },
         {
-            "name": "(Windows) Launch Editor (test project) (editor Optimized)",
+            "name": "(Windows) Launch Editor (moddable_platformer) (editor Optimized)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/bin/godot.windows.editor.x86_64.exe",
             "args": [
-                "-e",
+                "--e",
                 "--path",
-                //"${workspaceFolder}/modules/gdsdecomp/standalone"
-                "${workspaceFolder}/../godot-projects/godot-4.x-test-project"
+                "${workspaceFolder}/../moddable_platformer",
             ],
             "visualizerFile": "${workspaceFolder}/platform/windows/godot.natvis",
             "stopAtEntry": false,
@@ -96,17 +66,14 @@
             "preLaunchTask": "Build: editor optimized"
         },
         {
-            "name": "(macOS) Launch CLI recovery (editor dev)",
+            "name": "(macOS) Launch Editor (moddable_platformer) (editor dev)",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/bin/godot.macos.editor.dev.arm64",
             "args": [
-                "--headless",
+                "--e",
                 "--path",
-                "${workspaceFolder}/modules/gdsdecomp/standalone",
-                // Put the pck you want to test here
-                "--recover=${workspaceFolder}/../wherever_the_pck_you_want_to_test_is",
-                "--output-dir=${workspaceFolder}/../wherever_you_want_the_output_to_be"
+                "${workspaceFolder}/../moddable_platformer",
             ],
             "cwd": "${workspaceFolder}",
             "visualizerFile": "${workspaceFolder}/platform/windows/godot.natvis",
@@ -114,22 +81,20 @@
             "preLaunchTask": "Build: editor dev_build"
         },
         {
-            "name": "(Linux) Launch CLI recovery (editor dev)",
+            "name": "(Linux) Launch Editor (moddable_platformer)",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/bin/godot.linux.editor.dev.x86_64",
             "args": [
-                "--headless",
+                "--e",
                 "--path",
-                "${workspaceFolder}/modules/gdsdecomp/standalone",
-                // Put the pck you want to test here
-                "--recover=${workspaceFolder}/../wherever_the_pck_you_want_to_test_is",
-                "--output-dir=${workspaceFolder}/../wherever_you_want_the_output_to_be"
+                "${workspaceFolder}/../moddable_platformer",
             ],
             "cwd": "${workspaceFolder}",
             "visualizerFile": "${workspaceFolder}/platform/windows/godot.natvis",
             "MIMode": "gdb",
             "preLaunchTask": "Build: editor dev_build"
         },
+
     ]
 }
