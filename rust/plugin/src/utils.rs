@@ -93,6 +93,7 @@ pub struct CommitMetadata {
     pub username: Option<String>,
     pub branch_id: Option<String>,
     pub merge_metadata: Option<MergeMetadata>,
+	pub reverted_to: Option<Vec<String>>,
 }
 
 pub(crate) fn commit_with_attribution_and_timestamp(tx: Transaction, metadata: &CommitMetadata) {
@@ -145,6 +146,26 @@ pub(crate) fn heads_to_array(heads: Vec<ChangeHash>) -> PackedStringArray {
         .map(|h| GString::from(h.to_string()))
         .collect::<PackedStringArray>()
 }
+
+pub(crate) fn heads_to_vec_string(heads: Vec<ChangeHash>) -> Vec<String> {
+    heads
+        .iter()
+        .map(|h| h.to_string())
+        .collect()
+}
+
+pub(crate) fn vec_string_to_heads(heads: Vec<String>) -> Result<Vec<ChangeHash>, String> {
+	let mut result = Vec::new();
+	for head in heads {
+		let change_hash = ChangeHash::from_str(head.as_str());
+		if change_hash.is_err() {
+			return Err(change_hash.unwrap_err().to_string());
+		}
+		result.push(change_hash.unwrap());
+	}
+    Ok(result)
+}
+
 
 
 pub(crate) fn strategic_waiting(loc: &str) {
@@ -207,6 +228,9 @@ impl ToGodot for CommitInfo {
 			if let Some(merge_metadata) = &metadata.merge_metadata {
 				let _ = md.insert("merge_metadata", merge_metadata.to_godot());
 			}
+			if let Some(reverted_to) = &metadata.reverted_to {
+				let _ = md.insert("reverted_to", reverted_to.to_godot());
+			}
 		}
 		md
 	}
@@ -237,6 +261,7 @@ fn branch_state_to_dict(branch_state: &BranchState) -> Dictionary {
         "is_not_loaded": branch_state.doc_handle.with_doc(|d| d.get_heads().len() == 0),
         "heads": heads_to_array(branch_state.synced_heads.clone()),
         "is_merge_preview": branch_state.merge_info.is_some(),
+		"is_revert_preview": branch_state.revert_info.is_some(),
     };
 
     if let Some(fork_info) = &branch_state.fork_info {
@@ -251,6 +276,14 @@ fn branch_state_to_dict(branch_state: &BranchState) -> Dictionary {
 
 	if let Some(created_by) = &branch_state.created_by {
 		let _ = branch.insert("created_by", created_by.to_string());
+	}
+
+	if let Some(merged_into) = &branch_state.merged_into {
+		let _ = branch.insert("merged_into", merged_into.to_string());
+	}
+
+	if let Some(reverted_to) = &branch_state.revert_info {
+		let _ = branch.insert("reverted_to", heads_to_array(reverted_to.reverted_to.clone()));
 	}
 
     branch

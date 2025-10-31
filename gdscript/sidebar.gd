@@ -13,9 +13,17 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 @onready var cancel_merge_button: Button = %CancelMergeButton
 @onready var confirm_merge_button: Button = %ConfirmMergeButton
 @onready var merge_preview_title: Label = %MergePreviewTitle
+
 @onready var merge_preview_source_label: Label = %MergePreviewSourceLabel
 @onready var merge_preview_target_label: Label = %MergePreviewTargetLabel
 @onready var merge_preview_diff_container: MarginContainer = %MergePreviewDiffContainer
+@onready var revert_preview_modal: Control = %RevertPreviewModal
+@onready var cancel_revert_button: Button = %CancelRevertButton
+@onready var confirm_revert_button: Button = %ConfirmRevertButton
+@onready var revert_preview_title: Label = %RevertPreviewTitle
+@onready var revert_preview_message_label: Label = %RevertPreviewMessageLabel
+@onready var revert_preview_message_icon: TextureRect = %RevertPreviewMessageIcon
+@onready var revert_preview_diff_container: MarginContainer = %RevertPreviewDiffContainer
 @onready var main_diff_container: MarginContainer = %MainDiffContainer
 @onready var merge_preview_message_label: Label = %MergePreviewMessageLabel
 @onready var merge_preview_message_icon: TextureRect = %MergePreviewMessageIcon
@@ -41,6 +49,8 @@ const TEMP_DIR = "user://tmp"
 var plugin: EditorPlugin
 
 var task_modal: TaskModal = TaskModal.new()
+
+var item_context_menu_icon: Texture2D = preload("../icons/GuiTabMenuHl_rotated.svg")
 
 var highlight_changes = false
 
@@ -199,6 +209,7 @@ func _ready() -> void:
 	add_listener_disable_button_if_text_is_empty(%UserNameDialog.get_ok_button(), %UserNameEntry)
 	add_listener_disable_button_if_text_is_empty(%LoadExistingButton, %ProjectIDBox)
 	user_button.pressed.connect(_on_user_button_pressed)
+	_setup_history_list_popup()
 	history_list.clear()
 	branch_picker.clear()
 
@@ -279,6 +290,9 @@ func init(end_task: bool = true) -> void:
 
 	cancel_merge_button.pressed.connect(cancel_merge_preview)
 	confirm_merge_button.pressed.connect(confirm_merge_preview)
+
+	cancel_revert_button.pressed.connect(cancel_revert_preview)
+	confirm_revert_button.pressed.connect(confirm_revert_preview)
 
 	sync_status_icon.pressed.connect(_on_sync_status_icon_pressed)
 
@@ -478,6 +492,11 @@ func move_inspector_to_merge_preview() -> void:
 		inspector.reparent(merge_preview_diff_container)
 		inspector.visible = true
 
+func move_inspector_to_revert_preview() -> void:
+	if inspector and main_diff_container and revert_preview_diff_container and inspector.get_parent() != revert_preview_diff_container:
+		inspector.reparent(revert_preview_diff_container)
+		inspector.visible = true
+
 func move_inspector_to_main() -> void:
 	if inspector and main_diff_container and merge_preview_diff_container and inspector.get_parent() != main_diff_container:
 		inspector.reparent(main_diff_container)
@@ -504,12 +523,66 @@ func create_merge_preview_branch():
 		await GodotProject.checked_out_branch
 	)
 
+func create_revert_preview_branch(heads: PackedStringArray):
+	if not heads or heads.size() == 0:
+		printerr("no heads")
+		return
+
+	var checked_out_branch = GodotProject.get_checked_out_branch()
+	if not checked_out_branch:
+		printerr("no checked out branch")
+		return
+
+	var source_branch_doc_id = checked_out_branch.id
+
+	task_modal.do_task("Creating revert preview", func():
+		GodotProject.create_revert_preview_branch(source_branch_doc_id, heads)
+
+		await GodotProject.checked_out_branch
+	)
+
+func cancel_revert_preview():
+	var checked_out_branch = GodotProject.get_checked_out_branch()
+	if not checked_out_branch:
+		printerr("no checked out branch")
+		return
+	var source_branch_doc_id = checked_out_branch.forked_from
+
+	task_modal.do_task("Cancel revert preview", func():
+
+		GodotProject.delete_branch(checked_out_branch.id)
+		GodotProject.checkout_branch(source_branch_doc_id)
+		await GodotProject.checked_out_branch
+	)
+
+func confirm_revert_preview():
+	var checked_out_branch = GodotProject.get_checked_out_branch()
+	if not checked_out_branch:
+		printerr("no checked out branch")
+		return
+
+	var source_branch_doc_id = checked_out_branch.forked_from
+	var reverted_to_heads = checked_out_branch.reverted_to
+
+	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before reverting.", func():
+		popup_box(self, $ConfirmationDialog, "Are you sure you want to revert to \"%s\" ?" % [String(", ").join(reverted_to_heads)], "Revert Branch", func():
+			task_modal.do_task("Reverting to \"%s\"" % [String(", ").join(reverted_to_heads)], func():
+				GodotProject.delete_branch(checked_out_branch.id)
+				GodotProject.checkout_branch(source_branch_doc_id)
+				await GodotProject.checked_out_branch
+				GodotProject.revert_to_heads(reverted_to_heads)
+				await GodotProject.checked_out_branch
+			)
+		)
+	)
+
 func cancel_merge_preview():
 	task_modal.do_task("Cancel merge preview", func():
 		var checked_out_branch = GodotProject.get_checked_out_branch()
 
 		GodotProject.delete_branch(checked_out_branch.id)
 		GodotProject.checkout_branch(checked_out_branch.forked_from)
+		await GodotProject.checked_out_branch
 	)
 
 
@@ -549,6 +622,13 @@ func fold_section(section_header: Button, section_body: Control):
 	section_header.icon = load("res://addons/patchwork/icons/collapsable-closed.svg")
 	section_body.visible = false
 
+
+func heads_to_short_form(heads: PackedStringArray) -> String:
+	var short_form = ""
+	for head in heads:
+		short_form += head.substr(0, 7) + ", "
+	return short_form.substr(0, short_form.length() - 2)
+
 func update_ui(update_diff: bool = false) -> void:
 	var checked_out_branch = GodotProject.get_checked_out_branch()
 	var main_branch = GodotProject.get_main_branch()
@@ -587,20 +667,41 @@ func update_ui(update_diff: bool = false) -> void:
 		if DEV_MODE:
 			prefix = change.hash.substr(0, 8) + " - "
 
+		var idx = -1
+		# Disable the last two items from being selected
+		var is_disabled = checked_out_branch and checked_out_branch.is_main and i < 2
+		# print(change)
 		if "merge_metadata" in change:
 			var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
 			var merged_branch_name = str(change.merge_metadata.merged_branch_id)
 			if merged_branch:
 				merged_branch_name = merged_branch.name
-			history_list.add_item(prefix + "↪️ " + change_author + " merged \"" + merged_branch_name + "\" branch - " + change_timestamp)
-			history_list.set_item_metadata(history_list.get_item_count() - 1, change.hash)
+			idx = history_list.add_item(prefix + "↪️ " + change_author + " merged \"" + merged_branch_name + "\" branch - " + change_timestamp, item_context_menu_icon)
+			history_list.set_item_metadata(idx, change.hash)
 
+		elif "reverted_to" in change:
+			var reverted_to: PackedStringArray = change.reverted_to
+			for j in range(reverted_to.size()):
+				# just truncate the hash to 7 characters
+				reverted_to[j] = reverted_to[j].substr(0, 7)
+			idx = history_list.add_item(prefix + "↩️ " + change_author + " reverted to " + ", ".join(reverted_to) + " - " + change_timestamp, item_context_menu_icon)
+			history_list.set_item_metadata(idx, change.hash)
 		else:
-			history_list.add_item(prefix + change_author + " made some changes - " + change_timestamp + "")
-			history_list.set_item_metadata(history_list.get_item_count() - 1, change.hash)
+			idx = history_list.add_item(prefix + change_author + " made some changes - " + change_timestamp + "", item_context_menu_icon)
+			history_list.set_item_metadata(idx, change.hash)
+
+		history_list.set_item_disabled(idx, is_disabled)
 
 		if unsynced_changes.has(change.hash):
-			history_list.set_item_custom_fg_color(history_list.get_item_count() - 1, Color(0.5, 0.5, 0.5))
+			history_list.set_item_custom_fg_color(idx, Color(0.5, 0.5, 0.5))
+
+		var rect = history_list.get_item_icon_region(idx)
+		rect.position.x = 0 #rect.size.x - item_context_menu_icon.get_width()
+		rect.position.y = 0
+		rect.size.x = item_context_menu_icon.get_width()
+		rect.size.y = item_context_menu_icon.get_height()
+		history_list.set_item_icon_region(idx, rect)
+
 
 
 	# update sync status
@@ -628,9 +729,19 @@ func update_ui(update_diff: bool = false) -> void:
 		return
 
 	merge_preview_modal.visible = checked_out_branch.is_merge_preview
+	revert_preview_modal.visible = checked_out_branch.is_revert_preview
 
 	var source_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from) if checked_out_branch.has("forked_from") else null
-	if checked_out_branch.is_merge_preview:
+
+	if checked_out_branch.is_revert_preview:
+		var heads_short_form = heads_to_short_form(checked_out_branch.reverted_to)
+		move_inspector_to_revert_preview()
+		diff_section_header.text = "Showing changes from \"" + source_branch.name + "\" reverted to \"" + heads_short_form + "\""
+
+		if source_branch && heads_short_form:
+			revert_preview_title.text = "Preview of reverting to \"" + heads_short_form + "\""
+
+	elif checked_out_branch.is_merge_preview:
 		move_inspector_to_merge_preview()
 		var target_branch = GodotProject.get_branch_by_id(checked_out_branch.merge_into)
 		diff_section_header.text = "Showing changes for \"" + source_branch.name + "\" -> \"" + target_branch.name + "\""
@@ -780,9 +891,13 @@ func update_branch_picker(main_branch, checked_out_branch, all_branches) -> void
 	add_branch_with_forks(main_branch, all_branches, checked_out_branch.id)
 
 func add_branch_with_forks(branch: Dictionary, all_branches: Array, selected_branch_id: String, indentation: String = "", is_last: bool = false) -> void:
+	# print("branch: ", branch)
 	var label
 	if branch.is_main:
 		label = branch.name
+	elif not branch.get("merged_into", "").is_empty():
+		print("branch.merged_into: ", branch.merged_into)
+		return
 	else:
 		var connection
 		if is_last:
@@ -818,6 +933,10 @@ func add_branch_with_forks(branch: Dictionary, all_branches: Array, selected_bra
 	var forked_off_branches = []
 	for other_branch in all_branches:
 		if !("forked_from" in other_branch):
+			continue
+		if not other_branch.get("merged_into", "").is_empty():
+			continue
+		if not other_branch.get("reverted_to", "").is_empty():
 			continue
 
 		if other_branch.forked_from != branch.id:
@@ -900,7 +1019,55 @@ func _on_node_hovered(file_path: String, node_paths: Array) -> void:
 func _on_node_unhovered(file_path: String, node_path: Array) -> void:
 	self.update_highlight_changes({})
 
-func _on_history_list_item_selected(index: int, _button, _modifiers) -> void:
+
+@onready var history_list_popup: PopupMenu = %HistoryListPopup
+
+var right_clicked_index: int = -1
+
+enum HistoryListPopupItem {
+	RESET_TO_COMMIT,
+	CREATE_BRANCH_AT_COMMIT
+}
+
+func _on_history_list_popup_id_pressed(index: int) -> void:
+	history_list_popup.hide()
+	var item = history_list_popup.get_item_id(index)
+	if right_clicked_index == -1:
+		printerr("no right clicked index")
+		return
+	if item == HistoryListPopupItem.RESET_TO_COMMIT:
+		create_revert_preview_branch(PackedStringArray([history_list.get_item_metadata(right_clicked_index)]))
+	elif item == HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT:
+		print("Create remix at change not implemented yet!")
+	right_clicked_index = -1
+
+func _setup_history_list_popup() -> void:
+	history_list_popup.clear()
+	history_list_popup.id_pressed.connect(_on_history_list_popup_id_pressed)
+	history_list_popup.add_item("Reset to here", HistoryListPopupItem.RESET_TO_COMMIT)
+	# history_list_popup.add_item("Create remix from here", HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT)
+
+func _on_item_right_clicked(index: int, _at_position: Vector2, _button_idx: int) -> void:
+	print("Right clicked index: ", index)
+	right_clicked_index = index
+	if history_list.is_item_disabled(index):
+		print("Right clicked index is disabled: ", index)
+		return
+	else:
+		print("Right clicked index is not disabled: ", index)
+	history_list_popup.position = DisplayServer.mouse_get_position()
+	history_list_popup.visible = true
+
+
+func _on_history_list_item_selected(index: int, _at_position: Vector2, button_idx: int) -> void:
+	if button_idx == MOUSE_BUTTON_RIGHT:
+		return _on_item_right_clicked(index, _at_position, button_idx)
+
+
+	# check if the mouse position is inside the icon rect
+	if _at_position.x <= 64:
+		return _on_item_right_clicked(index, _at_position, button_idx)
+
 	var history_size = history_list.get_item_count()
 	var checked_out_branch = GodotProject.get_checked_out_branch()
 	if (index >= history_size or (checked_out_branch.is_main and index >= history_size - 3)):
@@ -972,7 +1139,7 @@ func show_diff(heads_before, heads_after):
 	var diff = GodotProject.get_all_changes_between(PackedStringArray(heads_before), PackedStringArray(heads_after))
 	inspector.reset()
 	inspector.add_diff(diff)
-	print("Length: ", diff.size())
+	# print("Length: ", diff.size())
 	return diff
 
 

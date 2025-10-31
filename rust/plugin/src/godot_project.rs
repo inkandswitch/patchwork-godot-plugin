@@ -6,7 +6,7 @@ use automerge::{
     patches::TextRepresentation, ChangeHash, ObjType, ReadDoc,
     TextEncoding, ROOT,
 };
-use automerge::{Automerge, ObjId, Patch, PatchAction, Prop};
+use automerge::{Automerge, Change, ExpandedChange, ObjId, Patch, PatchAction, Prop};
 use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
 use autosurgeon::{Hydrate, Reconcile};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -522,6 +522,37 @@ impl GodotProjectImpl {
             .unwrap();
     }
 
+	fn _create_revert_preview_branch(&mut self, branch_doc_id: DocumentId, revert_to: Vec<ChangeHash>) {
+		println!("");
+		tracing::info!("******** CREATE REVERT PREVIEW BRANCH: {:?} to {:?}",
+			self._get_branch_name(&branch_doc_id),
+			revert_to.to_short_form()
+		);
+		println!("");
+		let branch_state = self.get_checked_out_branch_state().unwrap();
+		let heads = branch_state.doc_handle.with_doc(|d| {
+			d.get_heads()
+		});
+		let content = self._get_changed_file_content_between(Some(branch_state.doc_handle.document_id().clone()), branch_state.doc_handle.document_id().clone(), heads.clone(), revert_to.clone(), true);
+		let files = content.into_iter().map(|event| {
+			match event {
+				FileSystemEvent::FileCreated(path, content) => (path.to_string_lossy().to_string(), content),
+				FileSystemEvent::FileModified(path, content) => (path.to_string_lossy().to_string(), content),
+				FileSystemEvent::FileDeleted(path) => (path.to_string_lossy().to_string(), FileContent::Deleted),
+			}
+		}).collect::<Vec<(String, FileContent)>>();
+
+
+		self.driver_input_tx
+			.unbounded_send(InputEvent::CreateRevertPreviewBranch {
+				branch_doc_id,
+				files,
+				revert_to,
+			})
+			.unwrap();
+
+	}
+
 
 	fn _delete_branch(&mut self, branch_doc_id: DocumentId) {
         self.driver_input_tx
@@ -654,6 +685,7 @@ impl GodotProjectImpl {
 		current_doc_id: DocumentId,
 		previous_heads: Vec<ChangeHash>,
 		current_heads: Vec<ChangeHash>,
+		force_slow_diff: bool,
 	) -> Vec<FileSystemEvent> {
 
         let current_branch_state = match self.branch_states.get(&current_doc_id) {
@@ -691,7 +723,7 @@ impl GodotProjectImpl {
 		} else {
 			Some(current_doc_id.clone())
 		};
-		if descendent_doc_id.is_none() {
+		if descendent_doc_id.is_none() || force_slow_diff {
 			// neither document is the descendent of the other, we can't do a fast diff,
 			// we need to do it the slow way; get the files from both docs
 			// TODO: Is there a fast way to do this?
@@ -954,7 +986,8 @@ impl GodotProjectImpl {
     fn _sync_files_at(&self,
                       branch_doc_handle: DocHandle,
                       files: Vec<(PathBuf, FileContent)>, /*  Record<String, Variant> */
-                      heads: Option<Vec<ChangeHash>>)
+                      heads: Option<Vec<ChangeHash>>,
+					  revert: Option<Vec<ChangeHash>>)
     {
 		let filter = files.iter().map(|(path, _)| path.to_string_lossy().to_string()).collect::<HashSet<String>>();
 		println!("");
@@ -982,7 +1015,8 @@ impl GodotProjectImpl {
 				if scene.requires_resave {
 					requires_resave = true;
 				}
-			} else if let Some(stored_content) = stored_content {
+			}
+			if let Some(stored_content) = stored_content {
 				if stored_content == &content {
                     return None;
                 }
@@ -993,7 +1027,15 @@ impl GodotProjectImpl {
 		tracing::trace!("syncing actually changed files: [{}]", changed_files.iter().map(|(path, content)|
 			format!("{}: {}", path, content.to_short_form())
 		).collect::<Vec<String>>().join(", "));
-		if requires_resave {
+		if let Some(revert_heads) = revert {
+			let _ = self.driver_input_tx
+				.unbounded_send(InputEvent::RevertTo {
+					branch_doc_handle,
+					heads,
+					files: changed_files,
+					revert_to: revert_heads,
+				});
+		} else if requires_resave {
 			tracing::debug!("updates require resave");
 			// TODO: rethink this system; how do we handle resaves? SHOULD we even have nodes with IDs?
 			let _ = self.driver_input_tx
@@ -1385,7 +1427,7 @@ impl GodotProjectImpl {
 
         let mut all_diff: HashMap<String, Dictionary> = HashMap::new();
         // Get old and new content
-		let new_file_contents = self._get_changed_file_content_between(None, checked_out_branch_state.doc_handle.document_id().clone(), old_heads.clone(), curr_heads.clone());
+		let new_file_contents = self._get_changed_file_content_between(None, checked_out_branch_state.doc_handle.document_id().clone(), old_heads.clone(), curr_heads.clone(), false);
 		let changed_files_set: HashSet<String> = new_file_contents.iter().map(|event|
 			match event {
 				FileSystemEvent::FileCreated(path, _) => path.to_string_lossy().to_string(),
@@ -2151,7 +2193,7 @@ impl GodotProjectImpl {
 			} else {
 				"".to_string()
 			}, previous_heads.to_short_form(), current_heads.to_short_form());
-		let events = self._get_changed_file_content_between(from_branch_id, current_doc_id.clone(), previous_heads, current_heads);
+		let events = self._get_changed_file_content_between(from_branch_id, current_doc_id.clone(), previous_heads, current_heads, false);
 		println!("");
 
         let mut updates = Vec::new();
@@ -2227,7 +2269,8 @@ impl GodotProjectImpl {
 					self._sync_files_at(
 						branch_state.doc_handle.clone(),
 						files.into_iter().map(|(path, content)| (PathBuf::from(path), content)).collect::<Vec<(PathBuf, FileContent)>>(),
-						Some(branch_state.synced_heads.clone()));
+						Some(branch_state.synced_heads.clone()),
+					None);
                 }
             }
             None => panic!("couldn't save files, no checked out branch"),
@@ -2538,7 +2581,7 @@ impl GodotProjectImpl {
 				).collect::<Vec<(PathBuf, FileContent)>>();
 
 				// TODO: Ask Paul about this tomorrow
-				self._sync_files_at(self.get_checked_out_branch_state().unwrap().doc_handle.clone(), files, None);
+				self._sync_files_at(self.get_checked_out_branch_state().unwrap().doc_handle.clone(), files, None, None);
 			}
         }
 
@@ -2547,6 +2590,23 @@ impl GodotProjectImpl {
 
 	fn is_started(&self) -> bool {
 		self.is_started
+	}
+
+	fn _revert_to_heads(&mut self, to_revert_to: Vec<ChangeHash>) {
+		let branch_state = self.get_checked_out_branch_state().unwrap();
+		let heads = branch_state.doc_handle.with_doc(|d| {
+			d.get_heads()
+		});
+		let content = self._get_changed_file_content_between(Some(branch_state.doc_handle.document_id().clone()), branch_state.doc_handle.document_id().clone(), heads.clone(), to_revert_to.clone(), true);
+		let files = content.into_iter().map(|event| {
+			match event {
+				FileSystemEvent::FileCreated(path, content) => (path, content),
+				FileSystemEvent::FileModified(path, content) => (path, content),
+				FileSystemEvent::FileDeleted(path) => (path, FileContent::Deleted),
+			}
+		}).collect::<Vec<(PathBuf, FileContent)>>();
+		self._sync_files_at(branch_state.doc_handle.clone(), files, Some(heads), Some(to_revert_to));
+		self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(branch_state.doc_handle.document_id().clone(), None);
 	}
 }
 
@@ -2684,6 +2744,11 @@ impl GodotProject {
 
 
 	// PUBLIC API
+	#[func]
+	fn revert_to_heads(&mut self, heads: PackedStringArray) {
+		check_project_started!(self);
+		self.project._revert_to_heads(array_to_heads(heads));
+	}
 
 	#[func]
 	fn set_user_name(&self, name: String) {
@@ -2767,6 +2832,16 @@ impl GodotProject {
 		let source_branch_doc_id = DocumentId::from_str(&source_branch_doc_id).unwrap();
         let target_branch_doc_id = DocumentId::from_str(&target_branch_doc_id).unwrap();
 		self.project._create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id);
+	}
+
+	#[func]
+    fn create_revert_preview_branch(
+        &mut self,
+        branch_doc_id: String,
+        revert_to: PackedStringArray,
+    ) {
+		check_project_started!(self);
+		self.project._create_revert_preview_branch(DocumentId::from_str(&branch_doc_id).unwrap(), array_to_heads(revert_to));
 	}
     #[func]
     fn delete_branch(&mut self, branch_doc_id: String) {
