@@ -668,6 +668,8 @@ func update_ui(update_diff: bool = false) -> void:
 			prefix = change.hash.substr(0, 8) + " - "
 
 		var idx = -1
+		# Disable the last two items from being selected
+		var is_disabled = checked_out_branch and checked_out_branch.is_main and i < 2
 		# print(change)
 		if "merge_metadata" in change:
 			var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
@@ -687,6 +689,8 @@ func update_ui(update_diff: bool = false) -> void:
 		else:
 			idx = history_list.add_item(prefix + change_author + " made some changes - " + change_timestamp + "", item_context_menu_icon)
 			history_list.set_item_metadata(idx, change.hash)
+
+		history_list.set_item_disabled(idx, is_disabled)
 
 		if unsynced_changes.has(change.hash):
 			history_list.set_item_custom_fg_color(idx, Color(0.5, 0.5, 0.5))
@@ -931,10 +935,8 @@ func add_branch_with_forks(branch: Dictionary, all_branches: Array, selected_bra
 		if !("forked_from" in other_branch):
 			continue
 		if not other_branch.get("merged_into", "").is_empty():
-			print("other_branch.merged_into: ", other_branch.merged_into)
 			continue
 		if not other_branch.get("reverted_to", "").is_empty():
-			print("other_branch.reverted_to: ", other_branch.reverted_to)
 			continue
 
 		if other_branch.forked_from != branch.id:
@@ -1048,6 +1050,11 @@ func _setup_history_list_popup() -> void:
 func _on_item_right_clicked(index: int, _at_position: Vector2, _button_idx: int) -> void:
 	print("Right clicked index: ", index)
 	right_clicked_index = index
+	if history_list.is_item_disabled(index):
+		print("Right clicked index is disabled: ", index)
+		return
+	else:
+		print("Right clicked index is not disabled: ", index)
 	history_list_popup.position = DisplayServer.mouse_get_position()
 	history_list_popup.visible = true
 

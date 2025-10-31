@@ -216,11 +216,9 @@ size_flags_vertical = 3
 
 [node name="HistoryListPopup" type="PopupMenu" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/HistoryVBox/HistorySectionBody/HistoryList"]
 unique_name_in_owner = true
-item_count = 2
+item_count = 1
 item_0/text = "Reset to here"
 item_0/id = 0
-item_1/text = "Create remix from here"
-item_1/id = 1
 
 [node name="DiffVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit"]
 unique_name_in_owner = true
@@ -522,6 +520,7 @@ layout_mode = 2
 theme_override_constants/separation = 16
 
 [node name="HBoxContainer4" type="HBoxContainer" parent="RevertPreviewModal/MarginContainer/VBoxContainer"]
+visible = false
 layout_mode = 2
 
 [node name="RevertPreviewMessageIcon" type="TextureRect" parent="RevertPreviewModal/MarginContainer/VBoxContainer/HBoxContainer4"]
