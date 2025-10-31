@@ -239,8 +239,8 @@ impl ToGodot for CommitInfo {
 	}
 }
 
-impl From<&&Change> for CommitInfo {
-	fn from(change: &&Change) -> Self {
+impl From<&Change> for CommitInfo {
+	fn from(change: &Change) -> Self {
 		CommitInfo {
 			hash: change.hash().to_string(),
 			timestamp: change.timestamp(),
