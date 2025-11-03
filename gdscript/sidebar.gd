@@ -304,6 +304,7 @@ func init(end_task: bool = true) -> void:
 	history_tree.button_clicked.connect(_on_history_tree_button_clicked)
 	history_tree.empty_clicked.connect(_on_history_tree_empty_clicked)
 	history_tree.item_mouse_selected.connect(_on_history_tree_mouse_selected)
+	history_tree.allow_rmb_select = true
 	inspector.node_hovered.connect(_on_node_hovered)
 	inspector.node_unhovered.connect(_on_node_unhovered)
 
@@ -633,7 +634,7 @@ func heads_to_short_form(heads: PackedStringArray) -> String:
 		short_form += head.substr(0, 7) + ", "
 	return short_form.substr(0, short_form.length() - 2)
 
-func update_history_ui(checked_out_branch, main_branch, all_branches, history, peer_connection_info):
+func update_history_ui(checked_out_branch, history, peer_connection_info):
 	var unsynced_changes = get_unsynced_changes(peer_connection_info, checked_out_branch, history)
 
 	history_tree.clear()
@@ -676,16 +677,12 @@ func update_history_ui(checked_out_branch, main_branch, all_branches, history, p
 			history_tree.columns = base_column_count
 
 		item.set_metadata(0, change.hash)
+		# enabled flag
+		item.set_metadata(1, true)
 		history_tree.set_column_expand(column_index, true)
 		history_tree.set_column_expand_ratio(column_index, 2)
 		item.set_selectable(column_index, true)
 
-		var idx = -1
-		# Disable the last two items from being selected
-		# TODO(Lilith) properly use this
-		var is_disabled = checked_out_branch and checked_out_branch.is_main and i < 2
-
-		# print(change)
 		if "merge_metadata" in change:
 			var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
 			var merged_branch_name = str(change.merge_metadata.merged_branch_id)
@@ -705,7 +702,15 @@ func update_history_ui(checked_out_branch, main_branch, all_branches, history, p
 			item.set_text(column_index, change_author + " made some changes")
 
 		if unsynced_changes.has(change.hash):
-			item.set_custom_color(column_index, Color(0.5, 0.5, 0.5))
+			item.set_custom_color(column_index, Color(0.6, 0.6, 0.6))
+
+		if checked_out_branch and checked_out_branch.is_main and i < 2:
+			# disabled flag
+			item.set_metadata(1, false)
+			item.set_custom_color(column_index, Color(0.4, 0.4, 0.4))
+
+		else:
+			item.add_button(column_index, item_context_menu_icon, 1, false, "Open context menu")
 
 		column_index += 1;
 		# timestamp
@@ -726,7 +731,7 @@ func update_history_ui(checked_out_branch, main_branch, all_branches, history, p
 	else:
 		history_saved_selection = null
 
-func update_ui(update_diff: bool = false) -> void:
+func update_ui(should_update_diff: bool = false) -> void:
 	print("Updating UI...")
 
 	var checked_out_branch = GodotProject.get_checked_out_branch()
@@ -739,7 +744,7 @@ func update_ui(update_diff: bool = false) -> void:
 	update_branch_picker(main_branch, checked_out_branch, all_branches)
 
 	# update the history tree
-	update_history_ui(checked_out_branch, main_branch, all_branches, history, peer_connection_info)
+	update_history_ui(checked_out_branch, history, peer_connection_info)
 
 	# update sync status
 	update_sync_status(peer_connection_info, checked_out_branch, history)
@@ -773,7 +778,6 @@ func update_ui(update_diff: bool = false) -> void:
 	if checked_out_branch.is_revert_preview:
 		var heads_short_form = heads_to_short_form(checked_out_branch.reverted_to)
 		move_inspector_to_revert_preview()
-		diff_section_header.text = "Showing changes from \"" + source_branch.name + "\" reverted to \"" + heads_short_form + "\""
 
 		if source_branch && heads_short_form:
 			revert_preview_title.text = "Preview of reverting to \"" + heads_short_form + "\""
@@ -796,10 +800,8 @@ func update_ui(update_diff: bool = false) -> void:
 
 	else:
 		move_inspector_to_main()
-		if source_branch:
-			diff_section_header.text = "Showing changes from \"" + source_branch.name + "\" -> \"" + checked_out_branch.name + "\""
 
-	if update_diff: update_diff()
+	if should_update_diff: update_diff()
 
 func update_sync_status(peer_connection_info, checked_out_branch, changes) -> void:
 	if !checked_out_branch:
@@ -1030,8 +1032,9 @@ func _on_node_hovered(file_path: String, node_paths: Array) -> void:
 func _on_node_unhovered(file_path: String, node_path: Array) -> void:
 	self.update_highlight_changes({})
 
-
 @onready var history_list_popup: PopupMenu = %HistoryListPopup
+
+var context_menu_hash = null
 
 enum HistoryListPopupItem {
 	RESET_TO_COMMIT,
@@ -1040,13 +1043,12 @@ enum HistoryListPopupItem {
 
 func _on_history_list_popup_id_pressed(index: int) -> void:
 	history_list_popup.hide()
-	var selected = history_tree.get_selected()
 	var item = history_list_popup.get_item_id(index)
-	if selected == null:
+	if context_menu_hash == null:
 		printerr("no selected item")
 		return
 	if item == HistoryListPopupItem.RESET_TO_COMMIT:
-		create_revert_preview_branch(PackedStringArray([selected.get_metadata(0)]))
+		create_revert_preview_branch(PackedStringArray([context_menu_hash]))
 	elif item == HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT:
 		print("Create remix at change not implemented yet!")
 
@@ -1056,25 +1058,34 @@ func _setup_history_list_popup() -> void:
 	history_list_popup.add_item("Reset to here", HistoryListPopupItem.RESET_TO_COMMIT)
 	# history_list_popup.add_item("Create remix from here", HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT)
 
-func _on_history_tree_mouse_selected(at_position: Vector2, button_idx: int) -> void:
-	# TODO(lilith): disable for invalid items
+func _on_history_tree_mouse_selected(_at_position: Vector2, button_idx: int) -> void:
 	if button_idx == MOUSE_BUTTON_RIGHT:
+		# if the selected item is disabled, do not.
+		if history_tree.get_selected().get_metadata(1) == false: return
+		show_contextmenu(history_tree.get_selected().get_metadata(0))
+
+func show_contextmenu(item_hash):
+		context_menu_hash = item_hash
 		history_list_popup.position = DisplayServer.mouse_get_position()
 		history_list_popup.visible = true
 
-func _on_history_tree_button_clicked(item: TreeItem, column : int, id: int, mouse_button_index: int) -> void:
-	if mouse_button_index != 1: return
-	var change_hash = item.get_metadata(0)
-	var history = GodotProject.get_changes()
+func _on_history_tree_button_clicked(item: TreeItem, _column : int, id: int, mouse_button_index: int) -> void:
+	if mouse_button_index != MOUSE_BUTTON_LEFT: return
+	
+	if id == 0:
+		var change_hash = item.get_metadata(0)
+		var history = GodotProject.get_changes()
 
-	history = history.filter(func (change): return change.hash == change_hash);
-	var change = history[0] if not history.is_empty() else null
-	if change == null:
-		print("Error: No matching change found.")
-		return;
+		history = history.filter(func (c): return c.hash == change_hash);
+		if history.is_empty():
+			print("Error: No matching change found.")
+			return;
 
-	var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
-	checkout_branch(merged_branch.id)
+		var change = history[0]
+		var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
+		checkout_branch(merged_branch.id)
+	elif id == 1:
+		show_contextmenu(item.get_metadata(0))
 
 func _on_history_list_item_selected() -> void:
 	var selected_item = history_tree.get_selected()
@@ -1131,11 +1142,11 @@ func update_diff():
 			# diff_section_header.text = DIFF_SECTION_HEADER_TEXT_FORMAT % [prev_change_hash.substr(0, 7), change_hash.substr(0, 7)]
 			var text = selected_item.get_text(1 if DEV_MODE else 0)
 			var date = selected_item.get_text(2 if DEV_MODE else 1)
-			var name = text.split(" ")[0].strip_edges()
-			if name == "↪️":
-				name = text.split(" ")[1].strip_edges() + "'s merged branch"
-			diff_section_header.text = "Showing changes from %s - %s" % [name, date]
-			var diff = update_properties_diff(checked_out_branch, 2, previous_heads, change_heads)
+			var commit_name = text.split(" ")[0].strip_edges()
+			if commit_name == "↪️":
+				commit_name = text.split(" ")[1].strip_edges() + "'s merged branch"
+			diff_section_header.text = "Showing changes from %s - %s" % [commit_name, date]
+			update_properties_diff(checked_out_branch, 2, previous_heads, change_heads)
 			%ClearDiffButton.visible = true
 			inspector.visible = true
 		else:
@@ -1149,6 +1160,8 @@ func update_diff_default(checked_out_branch, history):
 
 	var heads_before
 	var heads_after
+	
+	inspector.visible = true
 
 	if checked_out_branch.is_merge_preview:
 		var source_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from)
@@ -1178,14 +1191,12 @@ func update_diff_default(checked_out_branch, history):
 	# print("heads_before: ", heads_before)
 	# print("heads_after: ", heads_after)
 
-	var diff = update_properties_diff(checked_out_branch, history, heads_before, heads_after)
-
-	inspector.visible = true
+	update_properties_diff(checked_out_branch, history, heads_before, heads_after)
 
 func update_properties_diff(checked_out_branch, change_count, heads_before, heads_after) -> Dictionary:
-
 	if (!inspector):
 		return last_diff
+
 	if (!checked_out_branch):
 		return last_diff
 
