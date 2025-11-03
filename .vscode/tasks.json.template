@@ -2,43 +2,6 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"type": "cargo",
-			"label": "cargo Build:  patchwork_editor",
-			"command": "b",
-			// "args": [
-			// 	"--release"
-			// ],
-			"options": {
-				"cwd": "${workspaceFolder}/modules/patchwork_editor/rust/plugin"
-			},
-			"problemMatcher": [
-				"$rustc"
-			],
-			"group": {
-				"kind": "build",
-				"isDefault": false
-			}
-		},
-		{
-			"type": "cargo",
-			"label": "cargo Build:  patchwork_editor (release)",
-			"command": "b",
-			"args": [
-				"--release"
-			],
-			"options": {
-				"cwd": "${workspaceFolder}/modules/patchwork_editor/rust/plugin"
-			},
-			"problemMatcher": [
-				"$rustc"
-			],
-			"group": {
-				"kind": "build",
-				"isDefault": false
-			}
-		},
-
-		{
 			"type": "shell",
 			"group": {
 				"kind": "build",
@@ -188,36 +151,6 @@
 			"windows": {
 				"command": "scons arch=x86_64 platform=windows target=template_release module_text_server_fb_enabled=yes minizip=yes deprecated=yes no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no",
 			},
-		},
-		{
-			// compound task for cargo build and building the editor
-			"label": "Build: patchwork_editor",
-			"dependsOn": [
-				"cargo Build:  patchwork_editor",
-				"Build: editor dev_build"
-			],
-			"group": {
-				"kind": "build",
-				"isDefault": true
-			},
-			"dependsOrder": "parallel",
-			// fail on error
-			"detail": "failOnStdErr"
-		},
-		{
-			// compound task for cargo build and building the editor
-			"label": "Build: patchwork_editor (optimized)",
-			"dependsOn": [
-				"cargo Build:  patchwork_editor",
-				"Build: editor optimized"
-			],
-			"group": {
-				"kind": "build",
-				"isDefault": false
-			},
-			"dependsOrder": "parallel",
-			// fail on error
-			"detail": "failOnStdErr"
 		},
 	]
 }

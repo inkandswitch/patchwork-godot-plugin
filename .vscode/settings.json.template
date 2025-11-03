@@ -106,7 +106,7 @@
     },
     "git.scanRepositories": [
         "${workspaceFolder}",
-        "${workspaceFolder}/modules/patchwork_editor"
+        "${workspaceFolder}/modules/gdsdecomp"
     ],
     "git.repositoryScanMaxDepth": 4,
     "gitlens.detectNestedRepositories": true,
@@ -130,6 +130,6 @@
     "dotnet.defaultSolution": "disable",
     "clangd.fallbackFlags": [
         "-I${workspaceFolder}",
-        "-I${workspaceFolder}/modules/patchwork_editor"
+        "-I${workspaceFolder}/modules/gdsdecomp"
     ]
 }
