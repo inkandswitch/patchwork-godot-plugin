@@ -684,7 +684,7 @@ func update_history_ui(checked_out_branch, main_branch, all_branches, history, p
 		# Disable the last two items from being selected
 		# TODO(Lilith) properly use this
 		var is_disabled = checked_out_branch and checked_out_branch.is_main and i < 2
-		
+
 		# print(change)
 		if "merge_metadata" in change:
 			var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
@@ -703,7 +703,7 @@ func update_history_ui(checked_out_branch, main_branch, all_branches, history, p
 
 		else:
 			item.set_text(column_index, change_author + " made some changes")
-			
+
 		if unsynced_changes.has(change.hash):
 			item.set_custom_color(column_index, Color(0.5, 0.5, 0.5))
 
@@ -727,6 +727,8 @@ func update_history_ui(checked_out_branch, main_branch, all_branches, history, p
 		history_saved_selection = null
 
 func update_ui(update_diff: bool = false) -> void:
+	print("Updating UI...")
+
 	var checked_out_branch = GodotProject.get_checked_out_branch()
 	var main_branch = GodotProject.get_main_branch()
 	var all_branches = GodotProject.get_branches()
@@ -1163,7 +1165,7 @@ func update_diff_default(checked_out_branch, history):
 		diff_section_header.text = "Showing changes from \"" + source_branch.name + "\" reverted to \"" + heads_short_form + "\""
 
 	# main branch cannot have content in the diff by default
-	elif checked_out_branch.is_main: 
+	elif checked_out_branch.is_main:
 		inspector.visible = false
 		diff_section_header.text = "Changes"
 
@@ -1201,8 +1203,8 @@ func update_properties_diff(checked_out_branch, change_count, heads_before, head
 
 func show_diff(heads_before, heads_after):
 	# TODO: handle dependencies of these files
-	# print("heads_before: ", heads_before)
-	# print("heads_after: ", heads_after)
+	print("heads_before: ", heads_before)
+	print("heads_after: ", heads_after)
 	var diff = GodotProject.get_all_changes_between(PackedStringArray(heads_before), PackedStringArray(heads_after))
 	inspector.reset()
 	inspector.add_diff(diff)
