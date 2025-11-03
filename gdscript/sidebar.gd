@@ -1021,8 +1021,8 @@ func update_diff_default(checked_out_branch, history):
 			heads_after = checked_out_branch.heads
 			diff_section_header.text = "Showing changes from \"" + source_branch.name + "\" -> \"" + checked_out_branch.name + "\""
 
-		print("heads_before: ", heads_before)
-		print("heads_after: ", heads_after)
+		# print("heads_before: ", heads_before)
+		# print("heads_after: ", heads_after)
 
 		var diff = update_properties_diff(checked_out_branch, history, heads_before, heads_after)
 
