@@ -1214,8 +1214,8 @@ func update_properties_diff(checked_out_branch, change_count, heads_before, head
 
 func show_diff(heads_before, heads_after):
 	# TODO: handle dependencies of these files
-	print("heads_before: ", heads_before)
-	print("heads_after: ", heads_after)
+	# print("heads_before: ", heads_before)
+	# print("heads_after: ", heads_after)
 	var diff = GodotProject.get_all_changes_between(PackedStringArray(heads_before), PackedStringArray(heads_after))
 	inspector.reset()
 	inspector.add_diff(diff)
