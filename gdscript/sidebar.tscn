@@ -209,10 +209,14 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="HistoryList" type="ItemList" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/HistoryVBox/HistorySectionBody"]
+[node name="HistoryTree" type="Tree" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/HistoryVBox/HistorySectionBody"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
+allow_search = false
+hide_folding = true
+enable_recursive_folding = false
+hide_root = true
 
 [node name="DiffVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit"]
 unique_name_in_owner = true

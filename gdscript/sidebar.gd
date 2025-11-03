@@ -6,7 +6,7 @@ extends MarginContainer
 
 const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_inspector_container.gd")
 @onready var branch_picker: OptionButton = %BranchPicker
-@onready var history_list: ItemList = %HistoryList
+@onready var history_tree: Tree = %HistoryTree
 @onready var user_button: Button = %UserButton
 @onready var inspector: DiffInspectorContainer = %BigDiffer
 @onready var merge_preview_modal: Control = %MergePreviewModal
@@ -48,6 +48,8 @@ var waiting_callables: Array = []
 
 var deterred_highlight_update = null
 
+var history_item_count = 0
+var history_saved_selection = null # hash string
 
 const CREATE_BRANCH_IDX = 1
 const MERGE_BRANCH_IDX = 2
@@ -199,7 +201,7 @@ func _ready() -> void:
 	add_listener_disable_button_if_text_is_empty(%UserNameDialog.get_ok_button(), %UserNameEntry)
 	add_listener_disable_button_if_text_is_empty(%LoadExistingButton, %ProjectIDBox)
 	user_button.pressed.connect(_on_user_button_pressed)
-	history_list.clear()
+	history_tree.clear()
 	branch_picker.clear()
 
 
@@ -284,8 +286,9 @@ func init(end_task: bool = true) -> void:
 
 	history_section_header.pressed.connect(func(): toggle_section(history_section_header, history_section_body))
 	diff_section_header.pressed.connect(func(): toggle_section(diff_section_header, diff_section_body))
-	history_list.item_clicked.connect(_on_history_list_item_selected)
-	history_list.empty_clicked.connect(_on_empty_clicked)
+	history_tree.item_selected.connect(_on_history_list_item_selected)
+	history_tree.button_clicked.connect(_on_history_tree_button_clicked)
+	history_tree.empty_clicked.connect(_on_empty_clicked)
 	inspector.node_hovered.connect(_on_node_hovered)
 	inspector.node_unhovered.connect(_on_node_unhovered)
 
@@ -549,24 +552,15 @@ func fold_section(section_header: Button, section_body: Control):
 	section_header.icon = load("res://addons/patchwork/icons/collapsable-closed.svg")
 	section_body.visible = false
 
-func update_ui(update_diff: bool = false) -> void:
-	var checked_out_branch = GodotProject.get_checked_out_branch()
-	var main_branch = GodotProject.get_main_branch()
-	var all_branches = GodotProject.get_branches()
-
-	# update branch pickers
-	diff_section_header.text = "Changes"
-
-	update_branch_picker(main_branch, checked_out_branch, all_branches)
-
-	# update history
-
-	var peer_connection_info = GodotProject.get_sync_server_connection_info()
-	var history = GodotProject.get_changes()
+func update_history_ui(checked_out_branch, main_branch, all_branches, history, peer_connection_info):
 	var unsynced_changes = get_unsynced_changes(peer_connection_info, checked_out_branch, history)
 
+	history_tree.clear()
+	history_item_count = 0
 
-	history_list.clear()
+	# create root item
+	var root = history_tree.create_item()
+	var selection = null
 
 	for i in range(history.size() - 1, -1, -1):
 		var change = history[i]
@@ -580,28 +574,76 @@ func update_ui(update_diff: bool = false) -> void:
 		else:
 			change_author = "Anonymous"
 
-		var change_timestamp = human_readable_timestamp(change.timestamp)
+		var item = history_tree.create_item(root)
+		history_item_count += 1
 
-		var prefix = ""
+		# set columns
+		var column_index = 0
+		var base_column_count = 2
 
+		# if we're a dev, we need another column for the commit hash
 		if DEV_MODE:
-			prefix = change.hash.substr(0, 8) + " - "
+			history_tree.columns = base_column_count + 1
+			item.set_text(column_index, change.hash.substr(0, 8))
+			item.set_tooltip_text(column_index, change.hash)
+			item.set_selectable(0, false)
+			history_tree.set_column_expand(0, true)
+			history_tree.set_column_expand_ratio(0, 0)
+			history_tree.set_column_custom_minimum_width(0, 80)
+			column_index += 1
+		else:
+			history_tree.columns = base_column_count
+
+		item.set_metadata(0, change.hash)
+		history_tree.set_column_expand(column_index, true)
+		history_tree.set_column_expand_ratio(column_index, 2)
+		item.set_selectable(column_index, true)
 
 		if "merge_metadata" in change:
 			var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
 			var merged_branch_name = str(change.merge_metadata.merged_branch_id)
 			if merged_branch:
 				merged_branch_name = merged_branch.name
-			history_list.add_item(prefix + "↪️ " + change_author + " merged \"" + merged_branch_name + "\" branch - " + change_timestamp)
-			history_list.set_item_metadata(history_list.get_item_count() - 1, change.hash)
+			item.set_text(column_index, "↪️ " + change_author + " merged \"" + merged_branch_name + "\" branch")
+			item.add_button(column_index, load("res://addons/patchwork/icons/branch-icon-history.svg"), 0, false, "Checkout branch " + merged_branch_name)
 
 		else:
-			history_list.add_item(prefix + change_author + " made some changes - " + change_timestamp + "")
-			history_list.set_item_metadata(history_list.get_item_count() - 1, change.hash)
+			item.set_text(column_index, change_author + " made some changes")
+
+		column_index += 1;
+		# timestamp
+		item.set_text(column_index, human_readable_timestamp(change.timestamp))
+		item.set_tooltip_text(column_index, exact_human_readable_timestamp(change.timestamp))
+		item.set_selectable(column_index, false)
+		history_tree.set_column_expand(column_index, true)
+		history_tree.set_column_expand_ratio(column_index, 0)
+		history_tree.set_column_custom_minimum_width(column_index, 150)
 
 		if unsynced_changes.has(change.hash):
-			history_list.set_item_custom_fg_color(history_list.get_item_count() - 1, Color(0.5, 0.5, 0.5))
+			item.set_custom_color(0, Color(0.5, 0.5, 0.5))
 
+		if change.hash == history_saved_selection:
+			selection = item
+
+	# restore saved selection
+	if selection != null:
+		history_tree.set_selected(selection, 0)
+	# otherwise, ensure any invalid saved selection is reset
+	else:
+		history_saved_selection = null
+
+func update_ui(update_diff: bool = false) -> void:
+	var checked_out_branch = GodotProject.get_checked_out_branch()
+	var main_branch = GodotProject.get_main_branch()
+	var all_branches = GodotProject.get_branches()
+	var history = GodotProject.get_changes()
+	var peer_connection_info = GodotProject.get_sync_server_connection_info()
+
+	# update branch pickers
+	update_branch_picker(main_branch, checked_out_branch, all_branches)
+
+	# update the history tree
+	update_history_ui(checked_out_branch, main_branch, all_branches, history, peer_connection_info)
 
 	# update sync status
 	update_sync_status(peer_connection_info, checked_out_branch, history)
@@ -633,7 +675,6 @@ func update_ui(update_diff: bool = false) -> void:
 	if checked_out_branch.is_merge_preview:
 		move_inspector_to_merge_preview()
 		var target_branch = GodotProject.get_branch_by_id(checked_out_branch.merge_into)
-		diff_section_header.text = "Showing changes for \"" + source_branch.name + "\" -> \"" + target_branch.name + "\""
 
 		if source_branch && target_branch:
 			merge_preview_source_label.text = source_branch.name
@@ -652,35 +693,7 @@ func update_ui(update_diff: bool = false) -> void:
 		if source_branch:
 			diff_section_header.text = "Showing changes from \"" + source_branch.name + "\" -> \"" + checked_out_branch.name + "\""
 
-	# DIFF
-
-	if !update_diff:
-		return
-
-	# show no diff for main branch
-	if checked_out_branch.is_main:
-		inspector.visible = false
-
-	else:
-		var heads_before
-		var heads_after
-
-		if checked_out_branch.is_merge_preview:
-			heads_before = checked_out_branch.merge_at
-			heads_after = checked_out_branch.heads
-		else:
-			heads_before = checked_out_branch.forked_at
-			heads_after = checked_out_branch.heads
-
-
-		# print("heads_before: ", heads_before)
-		# print("heads_after: ", heads_after)
-
-		var diff = update_properties_diff(checked_out_branch, history, heads_before, heads_after)
-
-		inspector.visible = true
-
-
+	if update_diff: update_diff()
 
 func update_sync_status(peer_connection_info, checked_out_branch, changes) -> void:
 	if !checked_out_branch:
@@ -849,6 +862,9 @@ func human_readable_timestamp(timestamp: int) -> String:
 	else:
 		return str(int(diff / 31536000)) + " years ago"
 
+func exact_human_readable_timestamp(timestamp: int) -> String:
+	return Time.get_datetime_string_from_unix_time(round(timestamp / 1000.0)) + " UTC"
+
 func update_highlight_changes(diff: Dictionary) -> void:
 	if (PatchworkEditor.is_changing_scene()):
 		deterred_highlight_update = func(): update_highlight_changes(diff)
@@ -900,37 +916,79 @@ func _on_node_hovered(file_path: String, node_paths: Array) -> void:
 func _on_node_unhovered(file_path: String, node_path: Array) -> void:
 	self.update_highlight_changes({})
 
-func _on_history_list_item_selected(index: int, _button, _modifiers) -> void:
-	var history_size = history_list.get_item_count()
-	var checked_out_branch = GodotProject.get_checked_out_branch()
-	if (index >= history_size or (checked_out_branch.is_main and index >= history_size - 3)):
-		# the first three commits on main are initial checkin, so we don't show them
+func _on_history_tree_button_clicked(item: TreeItem, column : int, id: int, mouse_button_index: int) -> void:
+	if mouse_button_index != 1: return
+	var change_hash = item.get_metadata(0)
+	var history = GodotProject.get_changes()
+
+	history = history.filter(func (change): return change.hash == change_hash);
+	var change = history[0] if not history.is_empty() else null
+	if change == null:
+		print("Error: No matching change found.")
+		return;
+
+	var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
+	checkout_branch(merged_branch.id)
+
+func _on_history_list_item_selected() -> void:
+	var selected_item = history_tree.get_selected()
+	if selected_item == null:
+		history_saved_selection = null
 		return
 
-	var change_hash = history_list.get_item_metadata(index)
+	# update the saved selection
+	var change_hash = selected_item.get_metadata(0)
+	history_saved_selection = change_hash
+
+	update_diff()
+
+func _on_clear_diff_button_pressed():
+	_on_empty_clicked(null, 0)
+
+func _on_empty_clicked(_vec2, _idx):
+	history_saved_selection = null
+	history_tree.deselect_all()
+	update_diff()
+
+# read the selection from the tree, and update the diff visualization accordingly.
+func update_diff():
+	var selected_item = history_tree.get_selected()
+	var checked_out_branch = GodotProject.get_checked_out_branch()
+
+	# check to see if we generate a selection diff, or a regular diff
+	if (selected_item == null
+			or checked_out_branch.is_merge_preview
+			# the first three commits on main are initial checkin, so we don't show a diff for them
+			or checked_out_branch.is_main
+				and selected_item.get_index() >= history_item_count - 3):
+		update_diff_default(checked_out_branch, GodotProject.get_changes().size())
+		return
+
+	# otherwise, we set up the diff between the selected commit and the previous.
+	var change_hash = selected_item.get_metadata(0)
 	if change_hash:
 		var change_heads = PackedStringArray([change_hash])
 		# we're just updating the diff
-		# we show changes from most recent to oldest, so the previous change is the next index
-		var prev_idx = index + 1
+		# we show changes from most recent to oldest, so the previous change is the next item
+		var prev_item = selected_item.get_next_in_tree()
 		var previous_heads: PackedStringArray = []
-		if prev_idx >= history_size:
+		if prev_item == null:
 			if checked_out_branch.is_main:
 				return
 			# get the root hash from the checked_out_branch
 			previous_heads = checked_out_branch.get("forked_at", PackedStringArray([]))
 		else:
-			previous_heads = [history_list.get_item_metadata(prev_idx)]
+			previous_heads = [prev_item.get_metadata(0)]
 
 		if previous_heads.size() > 0:
 			# diff_section_header.text = DIFF_SECTION_HEADER_TEXT_FORMAT % [prev_change_hash.substr(0, 7), change_hash.substr(0, 7)]
-			var text = history_list.get_item_text(index)
+			var text = selected_item.get_text(1 if DEV_MODE else 0)
+			var date = selected_item.get_text(2 if DEV_MODE else 1)
 			var name = text.split(" ")[0].strip_edges()
 			if name == "↪️":
 				name = text.split(" ")[1].strip_edges() + "'s merged branch"
-			var date = text.split("-")[1].strip_edges()
 			diff_section_header.text = "Showing changes from %s - %s" % [name, date]
-			var diff = update_properties_diff(checked_out_branch, ["foo", "bar"], previous_heads, change_heads)
+			var diff = update_properties_diff(checked_out_branch, 2, previous_heads, change_heads)
 			%ClearDiffButton.visible = true
 			inspector.visible = true
 		else:
@@ -938,22 +996,46 @@ func _on_history_list_item_selected(index: int, _button, _modifiers) -> void:
 	else:
 		printerr("no change hash")
 
-func _on_clear_diff_button_pressed():
-	_on_empty_clicked(Vector2.ZERO, 0)
-
-
-func _on_empty_clicked(_vec2, _idx):
+# display the default diff, for when there's no available selected diff or if we're merging
+func update_diff_default(checked_out_branch, history):
 	%ClearDiffButton.visible = false
-	update_ui(true)
 
-func update_properties_diff(checked_out_branch, changes, heads_before, heads_after) -> Dictionary:
+	# show no diff for main branch
+	if checked_out_branch.is_main:
+		inspector.visible = false
+		diff_section_header.text = "Changes"
+
+	else:
+		var heads_before
+		var heads_after
+
+		var source_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from)
+		if checked_out_branch.is_merge_preview:
+			var target_branch = GodotProject.get_branch_by_id(checked_out_branch.merge_into)
+			heads_before = checked_out_branch.merge_at
+			heads_after = checked_out_branch.heads
+			diff_section_header.text = "Showing changes for \"" + source_branch.name + "\" -> \"" + target_branch.name + "\""
+
+		else:
+			heads_before = checked_out_branch.forked_at
+			heads_after = checked_out_branch.heads
+			diff_section_header.text = "Showing changes from \"" + source_branch.name + "\" -> \"" + checked_out_branch.name + "\""
+
+		print("heads_before: ", heads_before)
+		print("heads_after: ", heads_after)
+
+		var diff = update_properties_diff(checked_out_branch, history, heads_before, heads_after)
+
+		inspector.visible = true
+
+func update_properties_diff(checked_out_branch, change_count, heads_before, heads_after) -> Dictionary:
 
 	if (!inspector):
 		return last_diff
 	if (!checked_out_branch):
 		return last_diff
 
-	if (changes.size() < 2):
+	if (change_count < 2):
 		return last_diff
 
 	if (prev_heads_before == heads_before && prev_heads_after == heads_after):
