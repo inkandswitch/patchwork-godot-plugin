@@ -268,7 +268,7 @@ func init(end_task: bool = true) -> void:
 
 	if GodotProject.get_singleton():
 		GodotProject.connect("branches_changed", self._update_ui_on_branches_changed);
-		GodotProject.connect("saved_changes", self._update_ui_on_files_changed);
+		GodotProject.connect("saved_changes", self._update_ui_on_files_saved);
 		GodotProject.connect("files_changed", self._update_ui_on_files_changed);
 		GodotProject.connect("checked_out_branch", self._update_ui_on_branch_checked_out);
 		GodotProject.connect("sync_server_connection_info_changed", _on_sync_server_connection_info_changed)
@@ -610,6 +610,9 @@ func update_history_ui(checked_out_branch, main_branch, all_branches, history, p
 		else:
 			item.set_text(column_index, change_author + " made some changes")
 
+		if unsynced_changes.has(change.hash):
+			item.set_custom_color(column_index, Color(0.5, 0.5, 0.5))
+
 		column_index += 1;
 		# timestamp
 		item.set_text(column_index, human_readable_timestamp(change.timestamp))
@@ -618,9 +621,6 @@ func update_history_ui(checked_out_branch, main_branch, all_branches, history, p
 		history_tree.set_column_expand(column_index, true)
 		history_tree.set_column_expand_ratio(column_index, 0)
 		history_tree.set_column_custom_minimum_width(column_index, 150)
-
-		if unsynced_changes.has(change.hash):
-			item.set_custom_color(0, Color(0.5, 0.5, 0.5))
 
 		if change.hash == history_saved_selection:
 			selection = item
