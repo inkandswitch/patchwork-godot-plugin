@@ -218,6 +218,12 @@ hide_folding = true
 enable_recursive_folding = false
 hide_root = true
 
+[node name="HistoryListPopup" type="PopupMenu" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit/HistoryVBox/HistorySectionBody/HistoryTree"]
+unique_name_in_owner = true
+item_count = 1
+item_0/text = "Reset to here"
+item_0/id = 0
+
 [node name="DiffVBox" type="VBoxContainer" parent="VBoxContainer/PanelContainer/MarginContainer/MainVSplit"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -465,6 +471,85 @@ layout_mode = 2
 size_flags_vertical = 3
 
 [node name="HBoxContainer2" type="HBoxContainer" parent="MergePreviewModal/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 8
+theme_override_constants/separation = 8
+
+[node name="RevertPreviewModal" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+z_index = 4
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_nb8ns")
+
+[node name="MarginContainer" type="MarginContainer" parent="RevertPreviewModal"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="VBoxContainer" type="VBoxContainer" parent="RevertPreviewModal/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="HBoxContainer3" type="HBoxContainer" parent="RevertPreviewModal/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="RevertPreviewTitle" type="Label" parent="RevertPreviewModal/MarginContainer/VBoxContainer/HBoxContainer3"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Preview of \"main\""
+
+[node name="CancelRevertButton" type="Button" parent="RevertPreviewModal/MarginContainer/VBoxContainer/HBoxContainer3"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 10
+text = "Cancel"
+
+[node name="ConfirmRevertButton" type="Button" parent="RevertPreviewModal/MarginContainer/VBoxContainer/HBoxContainer3"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 8
+text = "Revert"
+
+[node name="HSeparator" type="HSeparator" parent="RevertPreviewModal/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="HSeparator2" type="HSeparator" parent="RevertPreviewModal/MarginContainer/VBoxContainer"]
+modulate = Color(1, 1, 1, 0)
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="HBoxContainer4" type="HBoxContainer" parent="RevertPreviewModal/MarginContainer/VBoxContainer"]
+visible = false
+layout_mode = 2
+
+[node name="RevertPreviewMessageIcon" type="TextureRect" parent="RevertPreviewModal/MarginContainer/VBoxContainer/HBoxContainer4"]
+unique_name_in_owner = true
+layout_mode = 2
+texture = ExtResource("9_p7w5p")
+stretch_mode = 2
+
+[node name="RevertPreviewMessageLabel" type="Label" parent="RevertPreviewModal/MarginContainer/VBoxContainer/HBoxContainer4"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "\"main\" has changed since \"another\" was created.
+Be careful and review your changes before merging."
+
+[node name="HSeparator3" type="HSeparator" parent="RevertPreviewModal/MarginContainer/VBoxContainer"]
+modulate = Color(1, 1, 1, 0)
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="RevertPreviewDiffContainer" type="MarginContainer" parent="RevertPreviewModal/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="RevertPreviewModal/MarginContainer/VBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 8
 theme_override_constants/separation = 8
