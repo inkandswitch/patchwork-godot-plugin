@@ -39,6 +39,15 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 
 const DEV_MODE = true
 
+# Defines the column indices for the history tree.
+class HistoryColumns:
+	const HASH = 0 if DEV_MODE else -1
+	const TEXT = 1 if DEV_MODE else 0
+	const TIME = 2 if DEV_MODE else 1
+	const COUNT = 3 if DEV_MODE else 2
+	const HASH_META = 0
+	const ENABLED_META = 1
+
 # Turn this off if it keeps crashing on windows
 const TURN_ON_USER_BRANCH_PROMPT = true
 
@@ -58,6 +67,7 @@ var waiting_callables: Array = []
 
 var deterred_highlight_update = null
 
+var all_changes_count = 0
 var history_item_count = 0
 var history_saved_selection = null # hash string
 
@@ -196,6 +206,18 @@ func clear_project():
 	PatchworkConfig.set_project_value("project_doc_id", "")
 	PatchworkConfig.set_project_value("checked_out_branch_doc_id", "")
 	_on_reload_ui_button_pressed()
+
+func get_history_item_enabled(item: TreeItem) -> bool:
+	return item.get_metadata(HistoryColumns.ENABLED_META)
+
+func set_history_item_enabled(item: TreeItem, value: bool) -> void:
+	item.set_metadata(HistoryColumns.ENABLED_META, value)
+
+func get_history_item_hash(item: TreeItem) -> String:
+	return item.get_metadata(HistoryColumns.HASH_META)
+
+func set_history_item_hash(item: TreeItem, value: String) -> void:
+	item.set_metadata(HistoryColumns.HASH_META, value)
 
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
@@ -659,68 +681,66 @@ func update_history_ui(checked_out_branch, history, peer_connection_info):
 		var item = history_tree.create_item(root)
 		history_item_count += 1
 
-		# set columns
-		var column_index = 0
-		var base_column_count = 2
-
 		# if we're a dev, we need another column for the commit hash
+		history_tree.columns = HistoryColumns.COUNT
 		if DEV_MODE:
-			history_tree.columns = base_column_count + 1
-			item.set_text(column_index, change.hash.substr(0, 8))
-			item.set_tooltip_text(column_index, change.hash)
-			item.set_selectable(0, false)
-			history_tree.set_column_expand(0, true)
-			history_tree.set_column_expand_ratio(0, 0)
-			history_tree.set_column_custom_minimum_width(0, 80)
-			column_index += 1
-		else:
-			history_tree.columns = base_column_count
+			item.set_text(HistoryColumns.HASH, change.hash.substr(0, 8))
+			item.set_tooltip_text(HistoryColumns.HASH, change.hash)
+			item.set_selectable(HistoryColumns.HASH, false)
+			history_tree.set_column_expand(HistoryColumns.HASH, true)
+			history_tree.set_column_expand_ratio(HistoryColumns.HASH, 0)
+			history_tree.set_column_custom_minimum_width(HistoryColumns.HASH, 80)
 
-		item.set_metadata(0, change.hash)
-		# enabled flag
-		item.set_metadata(1, true)
-		history_tree.set_column_expand(column_index, true)
-		history_tree.set_column_expand_ratio(column_index, 2)
-		item.set_selectable(column_index, true)
+		set_history_item_hash(item, change.hash)
+		set_history_item_enabled(item, true)
+		history_tree.set_column_expand(HistoryColumns.TEXT, true)
+		history_tree.set_column_expand_ratio(HistoryColumns.TEXT, 2)
+		item.set_selectable(HistoryColumns.TEXT, true)
+
+		var text_color = Color.WHITE
 
 		if "merge_metadata" in change:
 			var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
 			var merged_branch_name = str(change.merge_metadata.merged_branch_id)
 			if merged_branch:
 				merged_branch_name = merged_branch.name
-			item.set_text(column_index, "↪️ " + change_author + " merged \"" + merged_branch_name + "\" branch")
-			item.add_button(column_index, load("res://addons/patchwork/icons/branch-icon-history.svg"), 0, false, "Checkout branch " + merged_branch_name)
+			item.set_text(HistoryColumns.TEXT, "↪️ " + change_author + " merged \"" + merged_branch_name + "\" branch")
+			item.add_button(HistoryColumns.TEXT, load("res://addons/patchwork/icons/branch-icon-history.svg"), 0, false, "Checkout branch " + merged_branch_name)
 
 		elif "reverted_to" in change:
 			var reverted_to: PackedStringArray = change.reverted_to
 			for j in range(reverted_to.size()):
 				# just truncate the hash to 7 characters
 				reverted_to[j] = reverted_to[j].substr(0, 7)
-			item.set_text(column_index, "↩️ " + change_author + " reverted to " + ", ".join(reverted_to))
+			item.set_text(HistoryColumns.TEXT, "↩️ " + change_author + " reverted to " + ", ".join(reverted_to))
 
 		else:
-			item.set_text(column_index, change_author + " made some changes")
+			item.set_text(HistoryColumns.TEXT, change_author + " made some changes")
 
 		if unsynced_changes.has(change.hash):
-			item.set_custom_color(column_index, Color(0.6, 0.6, 0.6))
+			text_color = Color(0.6, 0.6, 0.6)
 
 		if checked_out_branch and checked_out_branch.is_main and i < 2:
 			# disabled flag
-			item.set_metadata(1, false)
-			item.set_custom_color(column_index, Color(0.4, 0.4, 0.4))
-			item.set_text(column_index, "Initialized repository")
+			set_history_item_enabled(item, false)
+			text_color = Color(0.4, 0.4, 0.4)
+			item.set_text(HistoryColumns.TEXT, "Initialized repository")
 
 		else:
-			item.add_button(column_index, item_context_menu_icon, 1, false, "Open context menu")
+			item.add_button(HistoryColumns.TEXT, item_context_menu_icon, 1, false, "Open context menu")
 
-		column_index += 1;
 		# timestamp
-		item.set_text(column_index, human_readable_timestamp(change.timestamp))
-		item.set_tooltip_text(column_index, exact_human_readable_timestamp(change.timestamp))
-		item.set_selectable(column_index, false)
-		history_tree.set_column_expand(column_index, true)
-		history_tree.set_column_expand_ratio(column_index, 0)
-		history_tree.set_column_custom_minimum_width(column_index, 150)
+		item.set_text(HistoryColumns.TIME, human_readable_timestamp(change.timestamp))
+		item.set_tooltip_text(HistoryColumns.TIME, exact_human_readable_timestamp(change.timestamp))
+		item.set_selectable(HistoryColumns.TIME, false)
+		history_tree.set_column_expand(HistoryColumns.TIME, true)
+		history_tree.set_column_expand_ratio(HistoryColumns.TIME, 0)
+		history_tree.set_column_custom_minimum_width(HistoryColumns.TIME, 150)
+
+		# apply the chosen color to all fields
+		item.set_custom_color(HistoryColumns.HASH, text_color)
+		item.set_custom_color(HistoryColumns.TEXT, text_color)
+		item.set_custom_color(HistoryColumns.TIME, text_color)
 
 		if change.hash == history_saved_selection:
 			selection = item
@@ -740,6 +760,8 @@ func update_ui(should_update_diff: bool = false) -> void:
 	var all_branches = GodotProject.get_branches()
 	var history = GodotProject.get_changes()
 	var peer_connection_info = GodotProject.get_sync_server_connection_info()
+
+	all_changes_count = history.size()
 
 	# update branch pickers
 	update_branch_picker(main_branch, checked_out_branch, all_branches)
@@ -1062,8 +1084,8 @@ func _setup_history_list_popup() -> void:
 func _on_history_tree_mouse_selected(_at_position: Vector2, button_idx: int) -> void:
 	if button_idx == MOUSE_BUTTON_RIGHT:
 		# if the selected item is disabled, do not.
-		if history_tree.get_selected().get_metadata(1) == false: return
-		show_contextmenu(history_tree.get_selected().get_metadata(0))
+		if get_history_item_enabled(history_tree.get_selected()) == false: return
+		show_contextmenu(get_history_item_hash(history_tree.get_selected()))
 
 func show_contextmenu(item_hash):
 		context_menu_hash = item_hash
@@ -1074,7 +1096,7 @@ func _on_history_tree_button_clicked(item: TreeItem, _column : int, id: int, mou
 	if mouse_button_index != MOUSE_BUTTON_LEFT: return
 	
 	if id == 0:
-		var change_hash = item.get_metadata(0)
+		var change_hash = get_history_item_hash(item)
 		var history = GodotProject.get_changes()
 
 		history = history.filter(func (c): return c.hash == change_hash);
@@ -1086,7 +1108,7 @@ func _on_history_tree_button_clicked(item: TreeItem, _column : int, id: int, mou
 		var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
 		checkout_branch(merged_branch.id)
 	elif id == 1:
-		show_contextmenu(item.get_metadata(0))
+		show_contextmenu(get_history_item_hash(item))
 
 func _on_history_list_item_selected() -> void:
 	var selected_item = history_tree.get_selected()
@@ -1095,7 +1117,7 @@ func _on_history_list_item_selected() -> void:
 		return
 
 	# update the saved selection
-	var change_hash = selected_item.get_metadata(0)
+	var change_hash = get_history_item_hash(selected_item)
 	history_saved_selection = change_hash
 
 	update_diff()
@@ -1120,11 +1142,11 @@ func update_diff():
 			# the first two commits on main are initial checkin, so we don't show a diff for them
 			or checked_out_branch.is_main
 				and selected_item.get_index() >= history_item_count - 2):
-		update_diff_default(checked_out_branch, GodotProject.get_changes().size())
+		update_diff_default(checked_out_branch, all_changes_count)
 		return
 
 	# otherwise, we set up the diff between the selected commit and the previous.
-	var change_hash = selected_item.get_metadata(0)
+	var change_hash =  get_history_item_hash(selected_item)
 	if change_hash:
 		var change_heads = PackedStringArray([change_hash])
 		# we're just updating the diff
@@ -1137,7 +1159,7 @@ func update_diff():
 			# get the root hash from the checked_out_branch
 			previous_heads = checked_out_branch.get("forked_at", PackedStringArray([]))
 		else:
-			previous_heads = [prev_item.get_metadata(0)]
+			previous_heads = [get_history_item_hash(prev_item)]
 
 		if previous_heads.size() > 0:
 			# diff_section_header.text = DIFF_SECTION_HEADER_TEXT_FORMAT % [prev_change_hash.substr(0, 7), change_hash.substr(0, 7)]
