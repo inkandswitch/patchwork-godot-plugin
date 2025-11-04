@@ -708,6 +708,7 @@ func update_history_ui(checked_out_branch, history, peer_connection_info):
 			# disabled flag
 			item.set_metadata(1, false)
 			item.set_custom_color(column_index, Color(0.4, 0.4, 0.4))
+			item.set_text(column_index, "Initialized repository")
 
 		else:
 			item.add_button(column_index, item_context_menu_icon, 1, false, "Open context menu")
@@ -1181,6 +1182,7 @@ func update_diff_default(checked_out_branch, history):
 	elif checked_out_branch.is_main:
 		inspector.visible = false
 		diff_section_header.text = "Changes"
+		return
 
 	else:
 		var source_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from)
