@@ -1080,7 +1080,7 @@ func _setup_history_list_popup() -> void:
 	# TODO: adjust this when more items are added
 	history_list_popup.max_size.y = 32
 	history_list_popup.id_pressed.connect(_on_history_list_popup_id_pressed)
-	history_list_popup.add_item("Reset to here", HistoryListPopupItem.RESET_TO_COMMIT)
+	history_list_popup.add_icon_item(load("res://addons/patchwork/icons/undo-redo.svg"), "Reset to here", HistoryListPopupItem.RESET_TO_COMMIT)
 	# history_list_popup.add_item("Create remix from here", HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT)
 
 func _on_history_tree_mouse_selected(_at_position: Vector2, button_idx: int) -> void:
