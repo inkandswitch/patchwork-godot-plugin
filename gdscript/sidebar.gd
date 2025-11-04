@@ -723,7 +723,6 @@ func update_history_ui(checked_out_branch, history, peer_connection_info):
 		if checked_out_branch and checked_out_branch.is_main and i < 2:
 			# disabled flag
 			set_history_item_enabled(item, false)
-			text_color = Color(0.4, 0.4, 0.4)
 			item.set_text(HistoryColumns.TEXT, "Initialized repository")
 
 		else:
