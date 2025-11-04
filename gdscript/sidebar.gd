@@ -1077,6 +1077,8 @@ func _on_history_list_popup_id_pressed(index: int) -> void:
 
 func _setup_history_list_popup() -> void:
 	history_list_popup.clear()
+	# TODO: adjust this when more items are added
+	history_list_popup.max_size.y = 32
 	history_list_popup.id_pressed.connect(_on_history_list_popup_id_pressed)
 	history_list_popup.add_item("Reset to here", HistoryListPopupItem.RESET_TO_COMMIT)
 	# history_list_popup.add_item("Create remix from here", HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT)
