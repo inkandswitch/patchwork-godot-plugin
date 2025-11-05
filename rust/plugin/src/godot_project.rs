@@ -2582,6 +2582,7 @@ impl GodotProjectImpl {
 
 				// TODO: Ask Paul about this tomorrow
 				self._sync_files_at(self.get_checked_out_branch_state().unwrap().doc_handle.clone(), files, None, None);
+				signals.push(GodotProjectSignal::FilesChanged)
 			}
         }
 
@@ -2692,6 +2693,8 @@ pub struct GodotProject {
 	pending_editor_update: PendingEditorUpdate,
 	reload_modified_scenes_callable: Option<Callable>,
 	reload_project_settings_callable: Option<Callable>,
+	last_server_change_signal: std::time::SystemTime,
+	pending_server_change_signal: Option<PeerConnectionInfo>
 }
 
 
@@ -3060,6 +3063,8 @@ impl INode for GodotProject {
 			pending_editor_update: PendingEditorUpdate::default(),
 			reload_modified_scenes_callable: None,
 			reload_project_settings_callable: None,
+			pending_server_change_signal: None,
+			last_server_change_signal: std::time::SystemTime::UNIX_EPOCH
 		}
     }
 
@@ -3128,11 +3133,21 @@ impl INode for GodotProject {
 					self.signals().shutdown_completed().emit();
 				}
 				GodotProjectSignal::SyncServerConnectionInfoChanged(peer_connection_info) => {
-					self.signals().sync_server_connection_info_changed().emit(&peer_connection_info.to_godot());
+					// This signal causes slowdown on the UI layer -- refactor for a better solution, but for now, debounce.
+					self.pending_server_change_signal = Some(peer_connection_info);
 				}
 				GodotProjectSignal::ConnectionThreadFailed => {
 					self.signals().connection_thread_failed().emit();
 				}
+			}
+
+			// Only allow 1 SyncServerConnectionInfoChanged per second
+			let now = std::time::SystemTime::now();
+			let diff = now.duration_since(self.last_server_change_signal);
+			if (self.pending_server_change_signal.is_some() && diff.unwrap_or_default().as_secs() >= 1u64) {
+				self.last_server_change_signal = now;
+				let moved = self.pending_server_change_signal.take().unwrap();
+				self.signals().sync_server_connection_info_changed().emit(&moved.to_godot());
 			}
 		}
     }
