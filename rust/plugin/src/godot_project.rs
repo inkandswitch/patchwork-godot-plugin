@@ -2582,6 +2582,7 @@ impl GodotProjectImpl {
 
 				// TODO: Ask Paul about this tomorrow
 				self._sync_files_at(self.get_checked_out_branch_state().unwrap().doc_handle.clone(), files, None, None);
+				signals.push(GodotProjectSignal::FilesChanged)
 			}
         }
 
