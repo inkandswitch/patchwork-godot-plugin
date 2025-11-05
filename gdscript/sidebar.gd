@@ -6,7 +6,7 @@ extends MarginContainer
 
 const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_inspector_container.gd")
 @onready var branch_picker: OptionButton = %BranchPicker
-@onready var history_list: ItemList = %HistoryList
+@onready var history_tree: Tree = %HistoryTree
 @onready var user_button: Button = %UserButton
 @onready var inspector: DiffInspectorContainer = %BigDiffer
 @onready var merge_preview_modal: Control = %MergePreviewModal
@@ -39,6 +39,15 @@ const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_insp
 
 const DEV_MODE = true
 
+# Defines the column indices for the history tree.
+class HistoryColumns:
+	const HASH = 0 if DEV_MODE else -1
+	const TEXT = 1 if DEV_MODE else 0
+	const TIME = 2 if DEV_MODE else 1
+	const COUNT = 3 if DEV_MODE else 2
+	const HASH_META = 0
+	const ENABLED_META = 1
+
 # Turn this off if it keeps crashing on windows
 const TURN_ON_USER_BRANCH_PROMPT = true
 
@@ -58,6 +67,9 @@ var waiting_callables: Array = []
 
 var deterred_highlight_update = null
 
+var all_changes_count = 0
+var history_item_count = 0
+var history_saved_selection = null # hash string
 
 const CREATE_BRANCH_IDX = 1
 const MERGE_BRANCH_IDX = 2
@@ -195,6 +207,18 @@ func clear_project():
 	PatchworkConfig.set_project_value("checked_out_branch_doc_id", "")
 	_on_reload_ui_button_pressed()
 
+func get_history_item_enabled(item: TreeItem) -> bool:
+	return item.get_metadata(HistoryColumns.ENABLED_META)
+
+func set_history_item_enabled(item: TreeItem, value: bool) -> void:
+	item.set_metadata(HistoryColumns.ENABLED_META, value)
+
+func get_history_item_hash(item: TreeItem) -> String:
+	return item.get_metadata(HistoryColumns.HASH_META)
+
+func set_history_item_hash(item: TreeItem, value: String) -> void:
+	item.set_metadata(HistoryColumns.HASH_META, value)
+
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
 	print("Sidebar: ready!")
@@ -210,7 +234,7 @@ func _ready() -> void:
 	add_listener_disable_button_if_text_is_empty(%LoadExistingButton, %ProjectIDBox)
 	user_button.pressed.connect(_on_user_button_pressed)
 	_setup_history_list_popup()
-	history_list.clear()
+	history_tree.clear()
 	branch_picker.clear()
 
 
@@ -277,7 +301,7 @@ func init(end_task: bool = true) -> void:
 
 	if GodotProject.get_singleton():
 		GodotProject.connect("branches_changed", self._update_ui_on_branches_changed);
-		GodotProject.connect("saved_changes", self._update_ui_on_files_changed);
+		GodotProject.connect("saved_changes", self._update_ui_on_files_saved);
 		GodotProject.connect("files_changed", self._update_ui_on_files_changed);
 		GodotProject.connect("checked_out_branch", self._update_ui_on_branch_checked_out);
 		GodotProject.connect("sync_server_connection_info_changed", _on_sync_server_connection_info_changed)
@@ -298,8 +322,11 @@ func init(end_task: bool = true) -> void:
 
 	history_section_header.pressed.connect(func(): toggle_section(history_section_header, history_section_body))
 	diff_section_header.pressed.connect(func(): toggle_section(diff_section_header, diff_section_body))
-	history_list.item_clicked.connect(_on_history_list_item_selected)
-	history_list.empty_clicked.connect(_on_empty_clicked)
+	history_tree.item_selected.connect(_on_history_list_item_selected)
+	history_tree.button_clicked.connect(_on_history_tree_button_clicked)
+	history_tree.empty_clicked.connect(_on_history_tree_empty_clicked)
+	history_tree.item_mouse_selected.connect(_on_history_tree_mouse_selected)
+	history_tree.allow_rmb_select = true
 	inspector.node_hovered.connect(_on_node_hovered)
 	inspector.node_unhovered.connect(_on_node_unhovered)
 
@@ -454,6 +481,7 @@ func create_new_branch(disable_cancel: bool = false) -> void:
 		branch_name_input.text = user_name + "'s remix"
 		dialog.add_child(branch_name_input)
 
+		# Not scaling these values because they display correctly at 1x-2x scale
 		# Position line edit in dialog
 		branch_name_input.position = Vector2(8, 8)
 		branch_name_input.size = Vector2(200, 30)
@@ -629,24 +657,15 @@ func heads_to_short_form(heads: PackedStringArray) -> String:
 		short_form += head.substr(0, 7) + ", "
 	return short_form.substr(0, short_form.length() - 2)
 
-func update_ui(update_diff: bool = false) -> void:
-	var checked_out_branch = GodotProject.get_checked_out_branch()
-	var main_branch = GodotProject.get_main_branch()
-	var all_branches = GodotProject.get_branches()
-
-	# update branch pickers
-	diff_section_header.text = "Changes"
-
-	update_branch_picker(main_branch, checked_out_branch, all_branches)
-
-	# update history
-
-	var peer_connection_info = GodotProject.get_sync_server_connection_info()
-	var history = GodotProject.get_changes()
+func update_history_ui(checked_out_branch, history, peer_connection_info):
 	var unsynced_changes = get_unsynced_changes(peer_connection_info, checked_out_branch, history)
 
+	history_tree.clear()
+	history_item_count = 0
 
-	history_list.clear()
+	# create root item
+	var root = history_tree.create_item()
+	var selection = null
 
 	for i in range(history.size() - 1, -1, -1):
 		var change = history[i]
@@ -660,49 +679,96 @@ func update_ui(update_diff: bool = false) -> void:
 		else:
 			change_author = "Anonymous"
 
-		var change_timestamp = human_readable_timestamp(change.timestamp)
+		var item = history_tree.create_item(root)
+		history_item_count += 1
+		var editor_scale = EditorInterface.get_editor_scale()
 
-		var prefix = ""
-
+		# if we're a dev, we need another column for the commit hash
+		history_tree.columns = HistoryColumns.COUNT
 		if DEV_MODE:
-			prefix = change.hash.substr(0, 8) + " - "
+			item.set_text(HistoryColumns.HASH, change.hash.substr(0, 8))
+			item.set_tooltip_text(HistoryColumns.HASH, change.hash)
+			item.set_selectable(HistoryColumns.HASH, false)
+			history_tree.set_column_expand(HistoryColumns.HASH, true)
+			history_tree.set_column_expand_ratio(HistoryColumns.HASH, 0)
+			history_tree.set_column_custom_minimum_width(HistoryColumns.HASH, 80 * editor_scale)
 
-		var idx = -1
-		# Disable the last two items from being selected
-		var is_disabled = checked_out_branch and checked_out_branch.is_main and i < 2
-		# print(change)
+		set_history_item_hash(item, change.hash)
+		set_history_item_enabled(item, true)
+		history_tree.set_column_expand(HistoryColumns.TEXT, true)
+		history_tree.set_column_expand_ratio(HistoryColumns.TEXT, 2)
+		item.set_selectable(HistoryColumns.TEXT, true)
+
+		var text_color = Color.WHITE
+
 		if "merge_metadata" in change:
 			var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
 			var merged_branch_name = str(change.merge_metadata.merged_branch_id)
 			if merged_branch:
 				merged_branch_name = merged_branch.name
-			idx = history_list.add_item(prefix + "↪️ " + change_author + " merged \"" + merged_branch_name + "\" branch - " + change_timestamp, item_context_menu_icon)
-			history_list.set_item_metadata(idx, change.hash)
+			item.set_text(HistoryColumns.TEXT, "↪️ " + change_author + " merged \"" + merged_branch_name + "\" branch")
+			item.add_button(HistoryColumns.TEXT, load("res://addons/patchwork/icons/branch-icon-history.svg"), 0, false, "Checkout branch " + merged_branch_name)
 
 		elif "reverted_to" in change:
 			var reverted_to: PackedStringArray = change.reverted_to
 			for j in range(reverted_to.size()):
 				# just truncate the hash to 7 characters
 				reverted_to[j] = reverted_to[j].substr(0, 7)
-			idx = history_list.add_item(prefix + "↩️ " + change_author + " reverted to " + ", ".join(reverted_to) + " - " + change_timestamp, item_context_menu_icon)
-			history_list.set_item_metadata(idx, change.hash)
-		else:
-			idx = history_list.add_item(prefix + change_author + " made some changes - " + change_timestamp + "", item_context_menu_icon)
-			history_list.set_item_metadata(idx, change.hash)
+			item.set_text(HistoryColumns.TEXT, "↩️ " + change_author + " reverted to " + ", ".join(reverted_to))
 
-		history_list.set_item_disabled(idx, is_disabled)
+		else:
+			item.set_text(HistoryColumns.TEXT, change_author + " made some changes")
 
 		if unsynced_changes.has(change.hash):
-			history_list.set_item_custom_fg_color(idx, Color(0.5, 0.5, 0.5))
+			text_color = Color(0.6, 0.6, 0.6)
 
-		var rect = history_list.get_item_icon_region(idx)
-		rect.position.x = 0 #rect.size.x - item_context_menu_icon.get_width()
-		rect.position.y = 0
-		rect.size.x = item_context_menu_icon.get_width()
-		rect.size.y = item_context_menu_icon.get_height()
-		history_list.set_item_icon_region(idx, rect)
+		if checked_out_branch and checked_out_branch.is_main and i < 2:
+			# disabled flag
+			set_history_item_enabled(item, false)
+			item.set_text(HistoryColumns.TEXT, "Initialized repository")
 
+		else:
+			item.add_button(HistoryColumns.TEXT, item_context_menu_icon, 1, false, "Open context menu")
 
+		# timestamp
+		item.set_text(HistoryColumns.TIME, human_readable_timestamp(change.timestamp))
+		item.set_tooltip_text(HistoryColumns.TIME, exact_human_readable_timestamp(change.timestamp))
+		item.set_selectable(HistoryColumns.TIME, false)
+		history_tree.set_column_expand(HistoryColumns.TIME, true)
+		history_tree.set_column_expand_ratio(HistoryColumns.TIME, 0)
+		history_tree.set_column_custom_minimum_width(HistoryColumns.TIME, 150 * editor_scale)
+
+		# apply the chosen color to all fields
+		item.set_custom_color(HistoryColumns.HASH, text_color)
+		item.set_custom_color(HistoryColumns.TEXT, text_color)
+		item.set_custom_color(HistoryColumns.TIME, text_color)
+
+		if change.hash == history_saved_selection:
+			selection = item
+
+	# restore saved selection
+	if selection != null:
+		history_tree.set_selected(selection, 0)
+	# otherwise, ensure any invalid saved selection is reset
+	else:
+		history_saved_selection = null
+
+func update_ui(should_update_diff: bool = false) -> void:
+	print("Updating UI...")
+
+	var checked_out_branch = GodotProject.get_checked_out_branch()
+	var main_branch = GodotProject.get_main_branch()
+	var all_branches = GodotProject.get_branches()
+	var history = GodotProject.get_changes()
+	var peer_connection_info = GodotProject.get_sync_server_connection_info()
+
+	all_changes_count = history.size()
+
+	# update branch pickers
+	update_branch_picker(main_branch, checked_out_branch, all_branches)
+
+	# update the history tree
+	update_history_ui(checked_out_branch, history, peer_connection_info)
 
 	# update sync status
 	update_sync_status(peer_connection_info, checked_out_branch, history)
@@ -736,7 +802,6 @@ func update_ui(update_diff: bool = false) -> void:
 	if checked_out_branch.is_revert_preview:
 		var heads_short_form = heads_to_short_form(checked_out_branch.reverted_to)
 		move_inspector_to_revert_preview()
-		diff_section_header.text = "Showing changes from \"" + source_branch.name + "\" reverted to \"" + heads_short_form + "\""
 
 		if source_branch && heads_short_form:
 			revert_preview_title.text = "Preview of reverting to \"" + heads_short_form + "\""
@@ -744,7 +809,6 @@ func update_ui(update_diff: bool = false) -> void:
 	elif checked_out_branch.is_merge_preview:
 		move_inspector_to_merge_preview()
 		var target_branch = GodotProject.get_branch_by_id(checked_out_branch.merge_into)
-		diff_section_header.text = "Showing changes for \"" + source_branch.name + "\" -> \"" + target_branch.name + "\""
 
 		if source_branch && target_branch:
 			merge_preview_source_label.text = source_branch.name
@@ -760,38 +824,8 @@ func update_ui(update_diff: bool = false) -> void:
 
 	else:
 		move_inspector_to_main()
-		if source_branch:
-			diff_section_header.text = "Showing changes from \"" + source_branch.name + "\" -> \"" + checked_out_branch.name + "\""
 
-	# DIFF
-
-	if !update_diff:
-		return
-
-	# show no diff for main branch
-	if checked_out_branch.is_main:
-		inspector.visible = false
-
-	else:
-		var heads_before
-		var heads_after
-
-		if checked_out_branch.is_merge_preview:
-			heads_before = checked_out_branch.merge_at
-			heads_after = checked_out_branch.heads
-		else:
-			heads_before = checked_out_branch.forked_at
-			heads_after = checked_out_branch.heads
-
-
-		# print("heads_before: ", heads_before)
-		# print("heads_after: ", heads_after)
-
-		var diff = update_properties_diff(checked_out_branch, history, heads_before, heads_after)
-
-		inspector.visible = true
-
-
+	if should_update_diff: update_diff()
 
 func update_sync_status(peer_connection_info, checked_out_branch, changes) -> void:
 	if !checked_out_branch:
@@ -968,6 +1002,9 @@ func human_readable_timestamp(timestamp: int) -> String:
 	else:
 		return str(int(diff / 31536000)) + " years ago"
 
+func exact_human_readable_timestamp(timestamp: int) -> String:
+	return Time.get_datetime_string_from_unix_time(round(timestamp / 1000.0)) + " UTC"
+
 func update_highlight_changes(diff: Dictionary) -> void:
 	if (PatchworkEditor.is_changing_scene()):
 		deterred_highlight_update = func(): update_highlight_changes(diff)
@@ -1019,10 +1056,9 @@ func _on_node_hovered(file_path: String, node_paths: Array) -> void:
 func _on_node_unhovered(file_path: String, node_path: Array) -> void:
 	self.update_highlight_changes({})
 
-
 @onready var history_list_popup: PopupMenu = %HistoryListPopup
 
-var right_clicked_index: int = -1
+var context_menu_hash = null
 
 enum HistoryListPopupItem {
 	RESET_TO_COMMIT,
@@ -1032,72 +1068,111 @@ enum HistoryListPopupItem {
 func _on_history_list_popup_id_pressed(index: int) -> void:
 	history_list_popup.hide()
 	var item = history_list_popup.get_item_id(index)
-	if right_clicked_index == -1:
-		printerr("no right clicked index")
+	if context_menu_hash == null:
+		printerr("no selected item")
 		return
 	if item == HistoryListPopupItem.RESET_TO_COMMIT:
-		create_revert_preview_branch(PackedStringArray([history_list.get_item_metadata(right_clicked_index)]))
+		create_revert_preview_branch(PackedStringArray([context_menu_hash]))
 	elif item == HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT:
 		print("Create remix at change not implemented yet!")
-	right_clicked_index = -1
 
 func _setup_history_list_popup() -> void:
 	history_list_popup.clear()
+	# TODO: adjust this when more items are added
+	history_list_popup.max_size.y = 32 * EditorInterface.get_editor_scale()
 	history_list_popup.id_pressed.connect(_on_history_list_popup_id_pressed)
-	history_list_popup.add_item("Reset to here", HistoryListPopupItem.RESET_TO_COMMIT)
+	history_list_popup.add_icon_item(load("res://addons/patchwork/icons/undo-redo.svg"), "Reset to here", HistoryListPopupItem.RESET_TO_COMMIT)
 	# history_list_popup.add_item("Create remix from here", HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT)
 
-func _on_item_right_clicked(index: int, _at_position: Vector2, _button_idx: int) -> void:
-	print("Right clicked index: ", index)
-	right_clicked_index = index
-	if history_list.is_item_disabled(index):
-		print("Right clicked index is disabled: ", index)
-		return
-	else:
-		print("Right clicked index is not disabled: ", index)
-	history_list_popup.position = DisplayServer.mouse_get_position()
-	history_list_popup.visible = true
-
-
-func _on_history_list_item_selected(index: int, _at_position: Vector2, button_idx: int) -> void:
+func _on_history_tree_mouse_selected(_at_position: Vector2, button_idx: int) -> void:
 	if button_idx == MOUSE_BUTTON_RIGHT:
-		return _on_item_right_clicked(index, _at_position, button_idx)
+		# if the selected item is disabled, do not.
+		if get_history_item_enabled(history_tree.get_selected()) == false: return
+		show_contextmenu(get_history_item_hash(history_tree.get_selected()))
 
+func show_contextmenu(item_hash):
+		context_menu_hash = item_hash
+		history_list_popup.position = DisplayServer.mouse_get_position()
+		history_list_popup.visible = true
 
-	# check if the mouse position is inside the icon rect
-	if _at_position.x <= 64:
-		return _on_item_right_clicked(index, _at_position, button_idx)
+func _on_history_tree_button_clicked(item: TreeItem, _column : int, id: int, mouse_button_index: int) -> void:
+	if mouse_button_index != MOUSE_BUTTON_LEFT: return
+	
+	if id == 0:
+		var change_hash = get_history_item_hash(item)
+		var history = GodotProject.get_changes()
 
-	var history_size = history_list.get_item_count()
-	var checked_out_branch = GodotProject.get_checked_out_branch()
-	if (index >= history_size or (checked_out_branch.is_main and index >= history_size - 3)):
-		# the first three commits on main are initial checkin, so we don't show them
+		history = history.filter(func (c): return c.hash == change_hash);
+		if history.is_empty():
+			print("Error: No matching change found.")
+			return;
+
+		var change = history[0]
+		var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
+		checkout_branch(merged_branch.id)
+	elif id == 1:
+		show_contextmenu(get_history_item_hash(item))
+
+func _on_history_list_item_selected() -> void:
+	var selected_item = history_tree.get_selected()
+	if selected_item == null:
+		history_saved_selection = null
 		return
 
-	var change_hash = history_list.get_item_metadata(index)
+	# update the saved selection
+	var change_hash = get_history_item_hash(selected_item)
+	history_saved_selection = change_hash
+
+	update_diff()
+
+func _on_clear_diff_button_pressed():
+	_on_history_tree_empty_clicked(null, 0)
+
+func _on_history_tree_empty_clicked(_vec2, _idx):
+	history_saved_selection = null
+	history_tree.deselect_all()
+	update_diff()
+
+# read the selection from the tree, and update the diff visualization accordingly.
+func update_diff():
+	var selected_item = history_tree.get_selected()
+	var checked_out_branch = GodotProject.get_checked_out_branch()
+
+	# check to see if we generate a selection diff, or a default diff
+	if (selected_item == null
+			or checked_out_branch.is_merge_preview
+			or checked_out_branch.is_revert_preview
+			# the first two commits on main are initial checkin, so we don't show a diff for them
+			or checked_out_branch.is_main
+				and selected_item.get_index() >= history_item_count - 2):
+		update_diff_default(checked_out_branch, all_changes_count)
+		return
+
+	# otherwise, we set up the diff between the selected commit and the previous.
+	var change_hash =  get_history_item_hash(selected_item)
 	if change_hash:
 		var change_heads = PackedStringArray([change_hash])
 		# we're just updating the diff
-		# we show changes from most recent to oldest, so the previous change is the next index
-		var prev_idx = index + 1
+		# we show changes from most recent to oldest, so the previous change is the next item
+		var prev_item = selected_item.get_next_in_tree()
 		var previous_heads: PackedStringArray = []
-		if prev_idx >= history_size:
+		if prev_item == null:
 			if checked_out_branch.is_main:
 				return
 			# get the root hash from the checked_out_branch
 			previous_heads = checked_out_branch.get("forked_at", PackedStringArray([]))
 		else:
-			previous_heads = [history_list.get_item_metadata(prev_idx)]
+			previous_heads = [get_history_item_hash(prev_item)]
 
 		if previous_heads.size() > 0:
 			# diff_section_header.text = DIFF_SECTION_HEADER_TEXT_FORMAT % [prev_change_hash.substr(0, 7), change_hash.substr(0, 7)]
-			var text = history_list.get_item_text(index)
-			var name = text.split(" ")[0].strip_edges()
-			if name == "↪️":
-				name = text.split(" ")[1].strip_edges() + "'s merged branch"
-			var date = text.split("-")[1].strip_edges()
-			diff_section_header.text = "Showing changes from %s - %s" % [name, date]
-			var diff = update_properties_diff(checked_out_branch, ["foo", "bar"], previous_heads, change_heads)
+			var text = selected_item.get_text(1 if DEV_MODE else 0)
+			var date = selected_item.get_text(2 if DEV_MODE else 1)
+			var commit_name = text.split(" ")[0].strip_edges()
+			if commit_name == "↪️":
+				commit_name = text.split(" ")[1].strip_edges() + "'s merged branch"
+			diff_section_header.text = "Showing changes from %s - %s" % [commit_name, date]
+			update_properties_diff(checked_out_branch, 2, previous_heads, change_heads)
 			%ClearDiffButton.visible = true
 			inspector.visible = true
 		else:
@@ -1105,22 +1180,54 @@ func _on_history_list_item_selected(index: int, _at_position: Vector2, button_id
 	else:
 		printerr("no change hash")
 
-func _on_clear_diff_button_pressed():
-	_on_empty_clicked(Vector2.ZERO, 0)
-
-
-func _on_empty_clicked(_vec2, _idx):
+# display the default diff, for when there's no available selected diff or if we're merging/reverting
+func update_diff_default(checked_out_branch, history):
 	%ClearDiffButton.visible = false
-	update_ui(true)
 
-func update_properties_diff(checked_out_branch, changes, heads_before, heads_after) -> Dictionary:
+	var heads_before
+	var heads_after
+	
+	inspector.visible = true
 
+	if checked_out_branch.is_merge_preview:
+		var source_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from)
+		var target_branch = GodotProject.get_branch_by_id(checked_out_branch.merge_into)
+		heads_before = checked_out_branch.merge_at
+		heads_after = checked_out_branch.heads
+		diff_section_header.text = "Showing changes for \"" + source_branch.name + "\" -> \"" + target_branch.name + "\""
+
+	elif checked_out_branch.is_revert_preview:
+		var source_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from)
+		heads_before = checked_out_branch.forked_at
+		heads_after = checked_out_branch.heads
+		var heads_short_form = heads_to_short_form(checked_out_branch.reverted_to)
+		diff_section_header.text = "Showing changes from \"" + source_branch.name + "\" reverted to \"" + heads_short_form + "\""
+
+	# main branch cannot have content in the diff by default
+	elif checked_out_branch.is_main:
+		inspector.visible = false
+		diff_section_header.text = "Changes"
+		return
+
+	else:
+		var source_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from)
+		heads_before = checked_out_branch.forked_at
+		heads_after = checked_out_branch.heads
+		diff_section_header.text = "Showing changes from \"" + source_branch.name + "\" -> \"" + checked_out_branch.name + "\""
+
+	# print("heads_before: ", heads_before)
+	# print("heads_after: ", heads_after)
+
+	update_properties_diff(checked_out_branch, history, heads_before, heads_after)
+
+func update_properties_diff(checked_out_branch, change_count, heads_before, heads_after) -> Dictionary:
 	if (!inspector):
 		return last_diff
+
 	if (!checked_out_branch):
 		return last_diff
 
-	if (changes.size() < 2):
+	if (change_count < 2):
 		return last_diff
 
 	if (prev_heads_before == heads_before && prev_heads_after == heads_after):
