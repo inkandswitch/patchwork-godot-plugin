@@ -481,6 +481,7 @@ func create_new_branch(disable_cancel: bool = false) -> void:
 		branch_name_input.text = user_name + "'s remix"
 		dialog.add_child(branch_name_input)
 
+		# Not scaling these values because they display correctly at 1x-2x scale
 		# Position line edit in dialog
 		branch_name_input.position = Vector2(8, 8)
 		branch_name_input.size = Vector2(200, 30)
@@ -680,6 +681,7 @@ func update_history_ui(checked_out_branch, history, peer_connection_info):
 
 		var item = history_tree.create_item(root)
 		history_item_count += 1
+		var editor_scale = EditorInterface.get_editor_scale()
 
 		# if we're a dev, we need another column for the commit hash
 		history_tree.columns = HistoryColumns.COUNT
@@ -689,7 +691,7 @@ func update_history_ui(checked_out_branch, history, peer_connection_info):
 			item.set_selectable(HistoryColumns.HASH, false)
 			history_tree.set_column_expand(HistoryColumns.HASH, true)
 			history_tree.set_column_expand_ratio(HistoryColumns.HASH, 0)
-			history_tree.set_column_custom_minimum_width(HistoryColumns.HASH, 80)
+			history_tree.set_column_custom_minimum_width(HistoryColumns.HASH, 80 * editor_scale)
 
 		set_history_item_hash(item, change.hash)
 		set_history_item_enabled(item, true)
@@ -734,7 +736,7 @@ func update_history_ui(checked_out_branch, history, peer_connection_info):
 		item.set_selectable(HistoryColumns.TIME, false)
 		history_tree.set_column_expand(HistoryColumns.TIME, true)
 		history_tree.set_column_expand_ratio(HistoryColumns.TIME, 0)
-		history_tree.set_column_custom_minimum_width(HistoryColumns.TIME, 150)
+		history_tree.set_column_custom_minimum_width(HistoryColumns.TIME, 150 * editor_scale)
 
 		# apply the chosen color to all fields
 		item.set_custom_color(HistoryColumns.HASH, text_color)
@@ -1077,7 +1079,7 @@ func _on_history_list_popup_id_pressed(index: int) -> void:
 func _setup_history_list_popup() -> void:
 	history_list_popup.clear()
 	# TODO: adjust this when more items are added
-	history_list_popup.max_size.y = 32
+	history_list_popup.max_size.y = 32 * EditorInterface.get_editor_scale()
 	history_list_popup.id_pressed.connect(_on_history_list_popup_id_pressed)
 	history_list_popup.add_icon_item(load("res://addons/patchwork/icons/undo-redo.svg"), "Reset to here", HistoryListPopupItem.RESET_TO_COMMIT)
 	# history_list_popup.add_item("Create remix from here", HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT)
