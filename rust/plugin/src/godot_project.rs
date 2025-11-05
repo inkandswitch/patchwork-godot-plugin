@@ -2000,7 +2000,19 @@ impl GodotProjectImpl {
         self.driver_output_rx = driver_output_rx;
 
         let storage_folder_path = self.globalize_path(&"res://.patchwork".to_string());
-		let server_url = PatchworkConfigAccessor::get_project_value("server_url", DEFAULT_SERVER_URL);
+		let mut server_url = PatchworkConfigAccessor::get_project_value("server_url", "");
+		if server_url.is_empty() {
+			server_url = PatchworkConfigAccessor::get_user_value("server_url", "");
+			if server_url.is_empty() {
+				server_url = DEFAULT_SERVER_URL.to_string();
+				tracing::info!("Using default server url: {:?}", server_url);
+			} else {
+				tracing::info!("Using user override for server url: {:?}", server_url);
+			}
+		} else {
+			tracing::info!("Using project override for server url: {:?}", server_url);
+		}
+
         let mut driver: GodotProjectDriver = GodotProjectDriver::create(storage_folder_path, server_url);
         let maybe_user_name: String = PatchworkConfigAccessor::get_user_value("user_name", "");
         driver.spawn(
