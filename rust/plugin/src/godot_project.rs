@@ -1761,8 +1761,33 @@ impl GodotProjectImpl {
                 return format!("<ExtResource not found>").to_variant();
             };
 
+
             let mut get_changed_prop_dict =
                 |prop: String, old_value: Option<VariantStrValue>, new_value: Option<VariantStrValue>| {
+					// HACK: prevent loading script files during the diff and creating issues for the editor
+					if prop == "script" {
+						if old_value.is_some() && new_value.is_some() {
+							return Some(dict! {
+								"name": prop.clone(),
+								"change_type": "modified",
+								"old_value": "<script_changed>",
+								"new_value":"<script_changed>"
+							});
+						} else if old_value.is_some() {
+							return Some(dict! {
+								"name": prop.clone(),
+								"change_type": "deleted",
+								"old_value": "<script_deleted>"
+							});
+						} else if new_value.is_some() {
+							return Some(dict! {
+								"name": prop.clone(),
+								"change_type": "added",
+								"new_value": "<script_added>"
+							});
+						}
+						return None;
+					}
 					if old_value.is_some() && new_value.is_some() {
 						let mut changed = false;
 						match (old_value.as_ref().unwrap(), new_value.as_ref().unwrap()) {
