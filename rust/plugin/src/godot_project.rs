@@ -1251,7 +1251,10 @@ impl GodotProjectImpl {
         let _ = FileContent::write_file_content(&PathBuf::from(self.globalize_path(&temp_path)), content);
         // get the import file content
         let import_path = format!("{}.import", path);
-        let import_file_content = self._get_file_at(import_path.clone(), Some(heads.clone()));
+        let mut import_file_content = self._get_file_at(import_path.clone(), Some(heads.clone()));
+		if import_file_content.is_none() { // try at current heads
+			import_file_content = self._get_file_at(import_path.clone(), None);
+		}
         if let Some(import_file_content) = import_file_content {
             if let FileContent::String(import_file_content) = import_file_content {
                 let import_file_content = import_file_content.replace("res://", &temp_dir);
@@ -1449,14 +1452,16 @@ impl GodotProjectImpl {
 
             changed_files_map.insert(path.clone(), change_type.to_string());
             if old_content_type != VariantType::OBJECT && new_content_type != VariantType::OBJECT {
+				let old_content = if old_content_type != VariantType::NIL { Some(old_file_content) } else { None };
+				let new_content = if new_content_type != VariantType::NIL { Some(new_file_content) } else { None };
                 // if both the old and new one are binary, or if one is none and the other is binary, then we can use the resource diff
                 let _ = all_diff.insert(
                     path.clone(),
                     self._get_non_scene_diff(
                         &path,
                         &change_type,
-                        Some(old_file_content),
-                        Some(new_file_content),
+                        old_content,
+                        new_content,
                         &old_heads,
                         &curr_heads,
                     ),
