@@ -23,7 +23,7 @@ use crate::{
     utils::get_linked_docs_of_branch,
 };
 use automerge::{
-    patches::TextRepresentation, transaction::Transactable, ChangeHash, ObjType, PatchLog, ReadDoc,
+    transaction::Transactable, ChangeHash, ObjType, PatchLog, ReadDoc,
     TextEncoding, ROOT,
 };
 use automerge_repo::{tokio::FsStorage, ConnDirection, DocHandle, DocumentId, RepoHandle};
@@ -894,7 +894,7 @@ impl DriverState {
         branch_doc_handle.with_doc_mut(|d| {
             let mut tx = match heads {
                 Some(heads) => d.transaction_at(
-                    PatchLog::inactive(TextRepresentation::String(TextEncoding::Utf8CodeUnit)),
+                    PatchLog::inactive(),
                     &heads,
                 ),
                 None => d.transaction(),
@@ -1252,8 +1252,7 @@ fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = Subscription
         let diff = doc_handle.with_doc(|d| {
             d.diff(
                 &heads_before,
-                &heads_after,
-                automerge::patches::TextRepresentation::String(TextEncoding::Utf8CodeUnit),
+                &heads_after
             )
         });
 
