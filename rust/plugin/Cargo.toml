@@ -16,8 +16,8 @@ bench = false
 doc = false
 
 [dependencies]
-automerge = "0.6.0"
-automerge_repo = { git = "https://github.com/automerge/automerge-repo-rs", branch = "fix-stuck-sync", features = [
+automerge = "1.0.0-beta.6"
+automerge_repo = { git = "https://github.com/nikitalita/automerge-repo-rs", branch = "latest-beta", features = [
   "tokio",
 ] }
 autosurgeon = "0.8.7"
