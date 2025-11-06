@@ -893,10 +893,15 @@ impl DriverState {
         }
         branch_doc_handle.with_doc_mut(|d| {
             let mut tx = match heads {
-                Some(heads) => d.transaction_at(
-                    PatchLog::inactive(),
-                    &heads,
-                ),
+                Some(heads) => {
+					let current_heads = d.get_heads();
+					if heads == current_heads {
+						d.transaction()
+					} else {
+						tracing::warn!("creating transaction at heads {:?} since current heads is {:?}, this may be really slow!", heads, current_heads);
+						d.transaction_at(PatchLog::inactive(), &heads)
+					}
+				}
                 None => d.transaction(),
             };
 
