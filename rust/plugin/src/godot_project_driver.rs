@@ -685,6 +685,7 @@ impl DriverState {
                 },
             );
         });
+		tracing::debug!("driver: created new branch: {:?}", new_branch_handle.document_id());
     }
 
 	fn create_revert_preview_branch(
