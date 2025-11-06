@@ -259,9 +259,10 @@ fn branch_state_to_dict(branch_state: &BranchState) -> Dictionary {
         // the branch docs are not synced correctly so this flag is used in the UI to
         // indicate that the branch is not loaded and prevent users from checking it out
 		// *************
-		// TODO: Turn this back on!! Automerge 0.7.0 is causing a deadlock when this is enabled
+		// TODO: Should we be getting the heads from the doc handle instead of the synced_heads?
+		// the former currently causes a deadlock on Automerge 0.7.0
         // "is_not_loaded": branch_state.doc_handle.with_doc(|d| d.get_heads().len() == 0),
-		"is_not_loaded": false,
+		"is_not_loaded": branch_state.synced_heads.is_empty(),
         "heads": heads_to_array(branch_state.synced_heads.clone()),
         "is_merge_preview": branch_state.merge_info.is_some(),
 		"is_revert_preview": branch_state.revert_info.is_some(),
