@@ -717,7 +717,8 @@ func update_history_ui(checked_out_branch, history, peer_connection_info):
 			item.set_text(HistoryColumns.TEXT, "↩️ " + change_author + " reverted to " + ", ".join(reverted_to))
 
 		else:
-			item.set_text(HistoryColumns.TEXT, change_author + " made some changes")
+			var changed_files = change.changed_files if "changed_files" in change else []
+			item.set_text(HistoryColumns.TEXT, summarize_changes(change_author, changed_files))
 
 		if unsynced_changes.has(change.hash):
 			text_color = Color(0.6, 0.6, 0.6)
@@ -1097,7 +1098,7 @@ func show_contextmenu(item_hash):
 
 func _on_history_tree_button_clicked(item: TreeItem, _column : int, id: int, mouse_button_index: int) -> void:
 	if mouse_button_index != MOUSE_BUTTON_LEFT: return
-	
+
 	if id == 0:
 		var change_hash = get_history_item_hash(item)
 		var history = GodotProject.get_changes()
@@ -1186,7 +1187,7 @@ func update_diff_default(checked_out_branch, history):
 
 	var heads_before
 	var heads_after
-	
+
 	inspector.visible = true
 
 	if checked_out_branch.is_merge_preview:
@@ -1254,3 +1255,33 @@ func _on_copy_project_id_button_pressed() -> void:
 	var project_id = PatchworkConfig.get_project_value("project_doc_id", "")
 	if not project_id.is_empty():
 		DisplayServer.clipboard_set(project_id)
+
+# Summarize changes from an array of shape [[path, change_type], ...]
+func summarize_changes(author: String, changes) -> String:
+	var strings = [
+		get_summary_text(changes, "added"),
+		get_summary_text(changes, "removed"),
+		get_summary_text(changes, "modified", "edited")].filter(func(d): return d != "")
+
+	if (strings.size() == 3 || strings.size() == 0):
+		# avoid too long of a string if many ops are made, or as a fallback
+		# example: sisko made some changes
+		return "%s made some changes"
+	if (strings.size() == 2):
+		# example: sisko added baseball.png and edited 2 files
+		return "%s %s and %s" % [author, strings[0], strings[1]]
+	# changes size is 1
+	# example: sisko edited baseball.png
+	return "%s %s" % [author, strings[0]]
+
+func get_summary_text(changes, operation: String, display_operation = null) -> String:
+	# override the displayed operation if desired
+	if (display_operation == null): display_operation = operation
+	changes = changes.filter(func(d): return d[1] == operation)
+	if (changes.is_empty()): return ""
+	if (changes.size() == 1):
+		# example: edited baseball.png
+		return "%s %s" % [display_operation, changes[0][0].get_file()]
+
+	# example: edited 2 files
+	return "%s %s files" % [display_operation, changes.size()]

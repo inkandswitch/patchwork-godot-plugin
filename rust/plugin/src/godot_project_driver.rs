@@ -15,7 +15,7 @@ use crate::branch::{BinaryDocState, BranchState, BranchStateForkInfo, BranchStat
 use crate::file_utils::FileContent;
 use crate::godot_parser::GodotScene;
 use crate::utils::{
-    commit_with_attribution_and_timestamp, heads_to_vec_string, print_branch_state, vec_string_to_heads, CommitMetadata, MergeMetadata, ToShortForm
+    ChangeType, ChangedFile, CommitMetadata, MergeMetadata, ToShortForm, commit_with_attribution_and_timestamp, heads_to_vec_string, print_branch_state, vec_string_to_heads
 };
 use crate::{
     godot_parser,
@@ -586,6 +586,7 @@ async fn init_project_doc_handles(
                         branch_id: Some(main_branch_doc_handle.document_id().to_string()),
                         merge_metadata: None,
 						reverted_to: None,
+                        changed_files: None
                     },
                 );
             });
@@ -624,6 +625,7 @@ async fn init_project_doc_handles(
                         branch_id: None,
                         merge_metadata: None,
 						reverted_to: None,
+                        changed_files: None
                     },
                 );
             });
@@ -682,6 +684,7 @@ impl DriverState {
                     branch_id: None,
                     merge_metadata: None,
 					reverted_to: None,
+                    changed_files: None
                 },
             );
         });
@@ -729,6 +732,7 @@ impl DriverState {
                     branch_id: None,
                     merge_metadata: None,
 					reverted_to: None,
+                    changed_files: None
                 },
             );
         });
@@ -810,6 +814,7 @@ impl DriverState {
                     branch_id: Some(source_branch_doc_id.to_string()),
                     merge_metadata: None,
 					reverted_to: None,
+                    changed_files: None
                 },
             );
         });
@@ -840,6 +845,7 @@ impl DriverState {
                     branch_id: None,
                     merge_metadata: None,
 					reverted_to: None,
+                    changed_files: None
                 },
             );
         });
@@ -873,6 +879,7 @@ impl DriverState {
                                 branch_id: None,
                                 merge_metadata: None,
 								reverted_to: None,
+                                changed_files: None
                             },
                         );
                     });
@@ -900,15 +907,21 @@ impl DriverState {
                 None => d.transaction(),
             };
 
+            let mut changes : Vec<ChangedFile> = Vec::new();
             let files = tx.get_obj_id(ROOT, "files").unwrap();
 
             // write text entries to doc
             for (path, content) in text_entries {
                 // get existing file url or create new one
-                let file_entry = match tx.get(&files, &path) {
-                    Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
-                    _ => tx.put_object(&files, &path, ObjType::Map).unwrap(),
+                let (file_entry, change_type) = match tx.get(&files, &path) {
+                    Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => (file_entry, ChangeType::Modified),
+                    _ => (tx.put_object(&files, &path, ObjType::Map).unwrap(), ChangeType::Added)
                 };
+
+                changes.push(ChangedFile {
+                    path,
+                    change_type
+                });
 
                 // delete url in file entry if it previously had one
                 if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
@@ -932,21 +945,45 @@ impl DriverState {
 
             // write scene entries to doc
             for (path, godot_scene) in scene_entries {
-                godot_scene.reconcile(&mut tx, path);
+                // get the change flag
+                let change_type = match tx.get(&files, &path) {
+                    Ok(Some(_)) => ChangeType::Modified,
+                    _ => ChangeType::Added
+                };
+                godot_scene.reconcile(&mut tx, path.clone());
+                changes.push(ChangedFile {
+                    path,
+                    change_type
+                });
             }
 
             // write binary entries to doc
             for (path, binary_doc_handle) in binary_entries {
+                // get the change flag
+                let change_type = match tx.get(&files, &path) {
+                    Ok(Some(_)) => ChangeType::Modified,
+                    _ => ChangeType::Added
+                };
+
                 let file_entry = tx.put_object(&files, &path, ObjType::Map);
                 let _ = tx.put(
                     file_entry.unwrap(),
                     "url",
                     format!("automerge:{}", &binary_doc_handle.document_id()),
                 );
+
+                changes.push(ChangedFile {
+                    path,
+                    change_type
+                });
             }
 
 			for path in deleted_entries {
 				let _ = tx.delete(&files, &path);
+                changes.push(ChangedFile {
+                    path,
+                    change_type: ChangeType::Removed
+                });
 			}
 
             commit_with_attribution_and_timestamp(
@@ -959,6 +996,7 @@ impl DriverState {
 						Some(revert) => Some(heads_to_vec_string(revert)),
 						None => None,
 					},
+                    changed_files: Some(changes)
                 },
             );
         });
@@ -1028,6 +1066,7 @@ impl DriverState {
                         branch_id: Some(target_branch_doc_id.to_string()),
                         merge_metadata: Some(merge_metadata),
 						reverted_to: None,
+                        changed_files: None
                     },
                 );
             });
@@ -1047,6 +1086,7 @@ impl DriverState {
 						branch_id: Some(source_branch_doc_id.to_string()),
 						merge_metadata: None,
 						reverted_to: None,
+                        changed_files: None
 					},
 				);
 			});
