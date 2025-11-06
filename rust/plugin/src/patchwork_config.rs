@@ -1,4 +1,4 @@
-use godot::classes::{ConfigFile, Engine, FileAccess};
+use godot::classes::{ConfigFile, DirAccess, Engine, FileAccess, Os, ProjectSettings};
 use godot::global::Error;
 use godot::prelude::*;
 use godot::builtin::{Variant};
@@ -11,10 +11,12 @@ pub struct PatchworkConfig {
 
     project_config: Gd<ConfigFile>,
     user_config: Gd<ConfigFile>,
+	user_config_path: GString,
 }
 
+const CONFIG_FILE_NAME: &str = "patchwork.cfg";
+const USER_DIR_NAME: &str = "patchwork_plugin";
 const CONFIG_PROJECT_FILE: &str = "res://patchwork.cfg";
-const USER_CONFIG_FILE: &str = "user://patchwork.cfg";
 
 #[godot_api]
 impl PatchworkConfig {
@@ -46,7 +48,7 @@ impl PatchworkConfig {
     #[func]
     pub fn set_user_value(&mut self, key: GString, value: Variant) {
         self.user_config.set_value("patchwork", &key, &value);
-        if self.user_config.save(USER_CONFIG_FILE) != Error::OK{
+        if self.user_config.save(&self.user_config_path) != Error::OK{
             godot_error!("Failed to save patchwork user configuration");
         }
     }
@@ -55,18 +57,27 @@ impl PatchworkConfig {
 #[godot_api]
 impl IObject for PatchworkConfig {
     fn init(_base: Base<Object>) -> Self {
+		// user_data_dir points to "user://", which is project specific, so we need to get the base dir and join it with the plugin name
+		let user_dir = Os::singleton().get_user_data_dir().get_base_dir().path_join(USER_DIR_NAME);
+		let user_config_path = user_dir.path_join(CONFIG_FILE_NAME);
+
 		let mut project_config = ConfigFile::new_gd();
 		let mut user_config = ConfigFile::new_gd();
 		if FileAccess::file_exists(CONFIG_PROJECT_FILE) {
 			project_config.load(CONFIG_PROJECT_FILE);
 		}
-		if FileAccess::file_exists(USER_CONFIG_FILE) {
-			user_config.load(USER_CONFIG_FILE);
+		if FileAccess::file_exists(&user_config_path) {
+			user_config.load(&user_config_path);
+		} else {
+			if (!DirAccess::dir_exists_absolute(&user_dir)) {
+				DirAccess::make_dir_recursive_absolute(&user_dir);
+			}
 		}
 		Self {
 			base: _base,
 			project_config,
 			user_config,
+			user_config_path,
 		}
 	}
 }
