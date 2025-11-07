@@ -1,4 +1,8 @@
 
+use automerge::ChangeHash;
+use crate::file_utils::FileContent;
+
+
 
 pub struct DiffLine {
 	pub new_line_no: i64,
@@ -89,5 +93,35 @@ impl TextDiffFile {
 			diff_file.diff_hunks.push(diff_hunk);
 		}
 		diff_file
+	}
+}
+
+
+pub struct ImportedDiff {
+	pub old_heads: Vec<ChangeHash>,
+	pub new_heads: Vec<ChangeHash>,
+	pub old_content: Option<FileContent>,
+    pub new_content: Option<FileContent>,
+    pub old_import_info: Option<FileContent>,
+    pub new_import_info: Option<FileContent>,
+}
+
+impl ImportedDiff {
+	pub fn create(
+		old_heads: Vec<ChangeHash>,
+		new_heads: Vec<ChangeHash>,
+		old_content: Option<FileContent>,
+		new_content: Option<FileContent>,
+		old_import_info: Option<FileContent>,
+		new_import_info: Option<FileContent>,
+	) -> ImportedDiff {
+		ImportedDiff {
+			old_heads,
+			new_heads,
+			old_content,
+			new_content,
+			old_import_info,
+			new_import_info,
+		}
 	}
 }

@@ -1,5 +1,5 @@
 use crate::branch::BranchState;
-use crate::differ::TextDiffFile;
+use crate::differ::{ImportedDiff, TextDiffFile};
 use crate::file_utils::{FileContent};
 use godot::classes::editor_plugin::DockSlot;
 use ::safer_ffi::prelude::*;
@@ -1148,23 +1148,35 @@ impl GodotProjectImpl {
     fn _get_resource_at(
         &self,
         path: String,
-        content: &FileContent,
+		file_content: &FileContent,
         heads: Vec<ChangeHash>,
     ) -> Option<Variant> {
+		let import_path = format!("{}.import", path);
+        let mut import_file_content = self._get_file_at(import_path.clone(), Some(heads.clone()));
+		if import_file_content.is_none() { // try at current heads
+			import_file_content = self._get_file_at(import_path.clone(), None);
+		}
+        return self._create_temp_resource_from_content(&path, &file_content, &heads, import_file_content.as_ref());
+    }
+
+	fn _create_temp_resource_from_content(
+		&self,
+		path: &str,
+		content: &FileContent,
+		heads: &Vec<ChangeHash>,
+		import_file_content: Option<&FileContent>,
+	) -> Option<Variant> {
         let temp_dir = format!(
             "res://.patchwork/temp_{}/",
             heads.first().to_short_form()
         );
         let temp_path = path.replace("res://", &temp_dir);
-        // append _old or _new to the temp path (i.e. res://thing.<EXT> -> user://temp_123_456/thing_old.<EXT>)
-        let _ = FileContent::write_file_content(&PathBuf::from(self.globalize_path(&temp_path)), content);
-        // get the import file content
-        let import_path = format!("{}.import", path);
-        let mut import_file_content = self._get_file_at(import_path.clone(), Some(heads.clone()));
-		if import_file_content.is_none() { // try at current heads
-			import_file_content = self._get_file_at(import_path.clone(), None);
+		if let Err(e) = FileContent::write_file_content(&PathBuf::from(self.globalize_path(&temp_path)), content) {
+			tracing::error!("error writing file to temp path: {:?}", e);
+			return None;
 		}
-        if let Some(import_file_content) = import_file_content {
+
+		if let Some(import_file_content) = import_file_content {
             if let FileContent::String(import_file_content) = import_file_content {
                 let import_file_content = import_file_content.replace("res://", &temp_dir);
                 // regex to replace uid=uid://<...> and uid=uid://<invalid> with uid=uid://<...> and uid=uid://<invalid>
@@ -1179,6 +1191,7 @@ impl GodotProjectImpl {
 
                 let res = PatchworkEditorAccessor::import_and_load_resource(&temp_path);
                 if res.is_nil() {
+					tracing::error!("error importing resource: {:?}", temp_path);
                     return None;
                 }
                 return Some(res);
@@ -1191,9 +1204,8 @@ impl GodotProjectImpl {
         if let Some(resource) = resource {
             return Some(resource.to_variant());
         }
-        None
-    }
-
+		None
+	}
 
     fn _get_resource_diff(
         &self,
@@ -1204,29 +1216,93 @@ impl GodotProjectImpl {
         old_heads: &Vec<ChangeHash>,
         curr_heads: &Vec<ChangeHash>,
     ) -> Dictionary {
+        let imported_diff = self._get_imported_diff(path, old_content, new_content, old_heads, curr_heads);
+        let result = self._imported_diff_to_dict(path, change_type, &imported_diff);
+        result
+    }
+
+	fn _imported_diff_to_dict(
+		&self,
+		path: &String,
+		change_type: &str,
+		imported_diff: &ImportedDiff,
+	) -> Dictionary {
         let mut result = dict! {
             "path" : path.to_variant(),
             "diff_type" : "resource_changed".to_variant(),
             "change_type" : change_type.to_variant(),
-            "old_content" : old_content.unwrap_or(&FileContent::Deleted).to_variant(),
-            "new_content" : new_content.unwrap_or(&FileContent::Deleted).to_variant(),
+            "old_content" : imported_diff.old_content.as_ref().unwrap_or(&FileContent::Deleted).to_variant(),
+            "new_content" : imported_diff.new_content.as_ref().unwrap_or(&FileContent::Deleted).to_variant(),
         };
-        if let Some(old_content) = old_content {
+		if let Some(old_content) = imported_diff.old_content.as_ref() {
             if let Some(old_resource) =
-                self._get_resource_at(path.clone(), old_content, old_heads.clone())
+                self._create_temp_resource_from_content(&path, old_content, &imported_diff.old_heads, imported_diff.old_import_info.as_ref())
             {
                 let _ = result.insert("old_resource", old_resource);
             }
         }
-        if let Some(new_content) = new_content {
+        if let Some(new_content) = imported_diff.new_content.as_ref() {
             if let Some(new_resource) =
-                self._get_resource_at(path.clone(), new_content, curr_heads.clone())
+                self._create_temp_resource_from_content(&path, new_content, &imported_diff.new_heads, imported_diff.new_import_info.as_ref())
             {
                 let _ = result.insert("new_resource", new_resource);
             }
         }
-        result
-    }
+
+		result
+	}
+
+	fn _get_imported_diff(
+		&self,
+		path: &String,
+		old_content: Option<&FileContent>,
+		new_content: Option<&FileContent>,
+		old_heads: &Vec<ChangeHash>,
+		curr_heads: &Vec<ChangeHash>,
+	) -> ImportedDiff {
+		let import_path = format!("{}.import", path);
+		let get_import_file_content = |heads: &Vec<ChangeHash>| -> Option<FileContent> {
+			let mut import_file_content = self._get_file_at(import_path.clone(), Some(heads.clone()));
+			if import_file_content.is_none() { // try at current heads
+				import_file_content = self._get_file_at(import_path.clone(), None);
+			}
+			import_file_content
+		};
+		let old_import_file_content = if let Some(content) = old_content {
+			if !matches!(content, FileContent::Deleted) {
+				get_import_file_content(old_heads)
+			} else {
+				None
+			}
+		} else {
+			None
+		};
+		let new_import_file_content = if let Some(content) = new_content {
+			if !matches!(content, FileContent::Deleted) {
+				get_import_file_content(curr_heads)
+			} else {
+				None
+			}
+		} else {
+			None
+		};
+		ImportedDiff::create(
+			old_heads.clone(),
+			curr_heads.clone(),
+			if let Some(old_content) = old_content {
+				Some(old_content.clone())
+			} else {
+				None
+			},
+			if let Some(new_content) = new_content {
+				Some(new_content.clone())
+			} else {
+				None
+			},
+			old_import_file_content,
+			new_import_file_content,
+		)
+	}
 
     fn _get_text_file_diff(
         &self,
