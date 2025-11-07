@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     str::FromStr,
     time::{Duration, SystemTime, UNIX_EPOCH},
+    fmt
 };
 
 use crate::{doc_utils::SimpleDocReader, godot_helpers::{GodotConvertExt, ToGodotExt, ToVariantExt}, branch::BranchState};
@@ -9,7 +10,7 @@ use automerge::{
     transaction::{CommitOptions, Transaction}, Change, ChangeHash, ReadDoc, ROOT
 };
 use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
-use godot::{builtin::{dict, Dictionary, GString, PackedStringArray, Variant}, meta::ToGodot, prelude::GodotConvert};
+use godot::{builtin::{Array, Dictionary, GString, PackedStringArray, Variant, dict}, meta::ToGodot, prelude::GodotConvert};
 use serde::{Deserialize, Serialize};
 
 pub(crate) fn get_linked_docs_of_branch(
@@ -89,11 +90,36 @@ pub struct MergeMetadata {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub enum ChangeType {
+	Added,
+	Removed,
+	Modified
+}
+
+impl fmt::Display for ChangeType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		match self {
+			ChangeType::Added => write!(f, "added"),
+			ChangeType::Removed => write!(f, "removed"),
+			ChangeType::Modified => write!(f, "modified")
+		}
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ChangedFile {
+    pub change_type: ChangeType,
+    pub path: String
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct CommitMetadata {
     pub username: Option<String>,
     pub branch_id: Option<String>,
     pub merge_metadata: Option<MergeMetadata>,
 	pub reverted_to: Option<Vec<String>>,
+    /// Changed files in this commit. Only valid for commits to branch documents.
+    pub changed_files: Option<Vec<ChangedFile>>
 }
 
 pub(crate) fn commit_with_attribution_and_timestamp(tx: Transaction, metadata: &CommitMetadata) {
@@ -207,6 +233,25 @@ impl ToGodot for MergeMetadata {
 	}
 }
 
+impl GodotConvertExt for Vec<ChangedFile> {
+	type Via = Array<PackedStringArray>;
+}
+
+impl ToGodotExt for Vec<ChangedFile> {
+	type ToVia<'v> = Array<PackedStringArray>;
+	fn _to_godot(&self) -> Array<PackedStringArray> {
+        self.iter().map(|s| {
+            let mut inner_array = PackedStringArray::new();
+            inner_array.push(&s.path.to_godot());
+            inner_array.push(&s.change_type.to_string().to_godot());
+            return inner_array;
+        }).collect::<Array<PackedStringArray>>()
+	}
+	fn _to_variant(&self) -> Variant {
+        self._to_godot().to_variant()
+	}
+}
+
 impl GodotConvert for CommitInfo {
 	type Via = Dictionary;
 }
@@ -231,6 +276,9 @@ impl ToGodot for CommitInfo {
 			if let Some(reverted_to) = &metadata.reverted_to {
 				let _ = md.insert("reverted_to", reverted_to.to_godot());
 			}
+            if let Some(changed_files) = &metadata.changed_files {
+                let _ = md.insert("changed_files", changed_files.to_godot());
+            }
 		}
 		md
 	}
