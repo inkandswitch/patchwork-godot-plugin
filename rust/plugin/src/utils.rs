@@ -7,11 +7,36 @@ use std::{
 
 use crate::{doc_utils::SimpleDocReader, godot_helpers::{GodotConvertExt, ToGodotExt, ToVariantExt}, branch::BranchState};
 use automerge::{
-    transaction::{CommitOptions, Transaction}, Change, ChangeHash, ReadDoc, ROOT
+    Automerge, Change, ChangeHash, Patch, PatchLog, ROOT, ReadDoc, transaction::{CommitOptions, Transaction}
 };
 use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
 use godot::{builtin::{Array, Dictionary, GString, PackedStringArray, Variant, dict}, meta::ToGodot, prelude::GodotConvert};
 use serde::{Deserialize, Serialize};
+
+// These functions are for compatibilities sake, and they will be removed in the future
+#[inline(always)]
+pub(crate) fn get_default_patch_log() -> PatchLog {
+	#[cfg(not(feature = "automerge_0_6"))]
+	{
+		PatchLog::inactive()
+	}
+	#[cfg(feature = "automerge_0_6")]
+	{
+		PatchLog::inactive(automerge::patches::TextRepresentation::String(automerge::TextEncoding::Utf8CodeUnit))
+	}
+}
+
+#[inline(always)]
+pub(crate) fn get_automerge_doc_diff(doc: &Automerge, old_heads: &[ChangeHash], new_heads: &[ChangeHash]) -> Vec<Patch> {
+	#[cfg(not(feature = "automerge_0_6"))]
+	{
+		doc.diff(old_heads, new_heads)
+	}
+	#[cfg(feature = "automerge_0_6")]
+	{
+		doc.diff(old_heads, new_heads, automerge::patches::TextRepresentation::String(automerge::TextEncoding::Utf8CodeUnit))
+	}
+}
 
 pub(crate) fn get_linked_docs_of_branch(
     branch_doc_handle: &DocHandle,

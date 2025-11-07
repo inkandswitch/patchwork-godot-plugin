@@ -15,7 +15,7 @@ use crate::branch::{BinaryDocState, BranchState, BranchStateForkInfo, BranchStat
 use crate::file_utils::FileContent;
 use crate::godot_parser::GodotScene;
 use crate::utils::{
-    ChangeType, ChangedFile, CommitMetadata, MergeMetadata, ToShortForm, commit_with_attribution_and_timestamp, heads_to_vec_string, print_branch_state, vec_string_to_heads
+    ChangeType, ChangedFile, CommitMetadata, MergeMetadata, ToShortForm, commit_with_attribution_and_timestamp, get_automerge_doc_diff, get_default_patch_log, heads_to_vec_string, print_branch_state
 };
 use crate::{
     godot_parser,
@@ -901,7 +901,7 @@ impl DriverState {
         branch_doc_handle.with_doc_mut(|d| {
             let mut tx = match heads {
                 Some(heads) => d.transaction_at(
-                    PatchLog::inactive(TextRepresentation::String(TextEncoding::Utf8CodeUnit)),
+                    get_default_patch_log(),
                     &heads,
                 ),
                 None => d.transaction(),
@@ -1290,11 +1290,7 @@ fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = Subscription
         let _ = doc_handle.changed().await;
         let heads_after = doc_handle.with_doc(|d| d.get_heads());
         let diff = doc_handle.with_doc(|d| {
-            d.diff(
-                &heads_before,
-                &heads_after,
-                automerge::patches::TextRepresentation::String(TextEncoding::Utf8CodeUnit),
-            )
+            get_automerge_doc_diff(d, &heads_before, &heads_after)
         });
 
         Some((

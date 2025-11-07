@@ -3,7 +3,7 @@ use crate::file_utils::{FileContent};
 use godot::classes::editor_plugin::DockSlot;
 use ::safer_ffi::prelude::*;
 use automerge::{
-    patches::TextRepresentation, ChangeHash, ObjType, ReadDoc,
+    ChangeHash, ObjType, ReadDoc,
     TextEncoding, ROOT,
 };
 use automerge::{Automerge, Change, ExpandedChange, ObjId, Patch, PatchAction, Prop};
@@ -32,7 +32,7 @@ use crate::godot_parser::{self, GodotScene, TypeOrInstance};
 use crate::godot_project_driver::{ConnectionThreadError, DocHandleType};
 use crate::patches::{get_changed_files_vec};
 use crate::patchwork_config::PatchworkConfig;
-use crate::utils::{are_valid_heads, array_to_heads, CommitInfo, ToShortForm};
+use crate::utils::{CommitInfo, ToShortForm, are_valid_heads, array_to_heads, get_automerge_doc_diff};
 use crate::{
     doc_utils::SimpleDocReader,
     godot_project_driver::{GodotProjectDriver, InputEvent, OutputEvent},
@@ -790,10 +790,10 @@ impl GodotProjectImpl {
 			} else {
 				d.keys_at(&curr_files_id.unwrap(), &curr_heads).into_iter().collect::<HashSet<String>>()
 			};
-			let patches = d.diff(
+			let patches = get_automerge_doc_diff(
+				d,
 				&previous_heads,
 				&curr_heads,
-				TextRepresentation::String(TextEncoding::Utf8CodeUnit),
 			);
 			(patches, old_file_set, curr_file_set)
 		});
@@ -1419,11 +1419,7 @@ impl GodotProjectImpl {
 
         // only get the first 6 chars of the hash
         let patches: Vec<Patch> = checked_out_branch_state.doc_handle.with_doc(|d| {
-            d.diff(
-                &old_heads,
-                &curr_heads,
-                TextRepresentation::String(TextEncoding::Utf8CodeUnit),
-            )
+            get_automerge_doc_diff(d, &old_heads, &curr_heads)
         });
         let mut changed_files_map = HashMap::new();
         let mut scene_files = Vec::new();
