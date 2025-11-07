@@ -7,9 +7,6 @@ use std::future::Future;
 use std::pin::Pin;
 use std::{collections::HashMap, str::FromStr};
 use tokio::task::JoinHandle;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
 
 use crate::branch::{BinaryDocState, BranchState, BranchStateForkInfo, BranchStateMergeInfo, BranchStateRevertInfo};
 use crate::file_utils::FileContent;
@@ -18,13 +15,12 @@ use crate::utils::{
     ChangeType, ChangedFile, CommitMetadata, MergeMetadata, ToShortForm, commit_with_attribution_and_timestamp, get_automerge_doc_diff, get_default_patch_log, heads_to_vec_string, print_branch_state
 };
 use crate::{
-    godot_parser,
     branch::{BranchesMetadataDoc, GodotProjectDoc, ForkInfo, MergeInfo, Branch},
     utils::get_linked_docs_of_branch,
 };
 use automerge::{
-    patches::TextRepresentation, transaction::Transactable, ChangeHash, ObjType, PatchLog, ReadDoc,
-    TextEncoding, ROOT,
+    transaction::Transactable, ChangeHash, ObjType, PatchLog, ReadDoc,
+    ROOT,
 };
 use automerge_repo::{tokio::FsStorage, ConnDirection, DocHandle, DocumentId, RepoHandle};
 use autosurgeon::{hydrate, reconcile};

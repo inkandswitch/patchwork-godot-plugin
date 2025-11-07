@@ -1,4 +1,3 @@
-use core::fmt;
 use std::fs::File;
 use std::io;
 use std::io::{Read, Write};
@@ -6,11 +5,8 @@ use std::path::{PathBuf};
 use std::str;
 use automerge::{Automerge, ChangeHash, ObjType, ReadDoc};
 use automerge::ObjId;
-use automerge_repo::{DocHandle, DocumentId};
-use autosurgeon::Hydrate;
-use godot::builtin::{GString, PackedByteArray, Variant, VariantType};
-use godot::meta::{GodotConvert, ToGodot};
-use ya_md5::{Md5Hasher, Hash, Md5Error};
+use automerge_repo::{DocumentId};
+use ya_md5::{Md5Hasher};
 
 use crate::doc_utils::SimpleDocReader;
 use crate::godot_parser::{GodotScene, recognize_scene, parse_scene};
@@ -112,15 +108,6 @@ impl FileContent {
 		}
 	}
 
-	pub fn get_variant_type(&self) -> VariantType {
-		match self {
-			FileContent::String(_) => VariantType::STRING,
-			FileContent::Binary(_) => VariantType::PACKED_BYTE_ARRAY,
-			FileContent::Scene(_) => VariantType::OBJECT,
-			FileContent::Deleted => VariantType::NIL,
-		}
-	}
-
 	// NOTE: Probably not appropriate to put here, should have this in BranchState
 	pub fn hydrate_content_at(file_entry: ObjId, doc: &Automerge, path: &String, heads: &Vec<ChangeHash>) -> Result<FileContent, Result<DocumentId, io::Error>> {
 		let structured_content = doc
@@ -197,29 +184,6 @@ impl Default for &FileContent {
 		&FileContent::Deleted
 	}
 }
-
-impl GodotConvert for FileContent {
-	type Via = Variant;
-}
-
-impl ToGodot for FileContent {
-	type ToVia < 'v > = Variant;
-	fn to_godot(&self) -> Self::ToVia < '_ > {
-		// < Self as crate::obj::EngineBitfield > ::ord(* self)
-		self.to_variant()
-	}
-	fn to_variant(&self) -> Variant {
-		match self {
-			FileContent::String(s) => GString::from(s).to_variant(),
-			FileContent::Binary(bytes) => PackedByteArray::from(bytes.as_slice()).to_variant(),
-			FileContent::Scene(scene) => scene.serialize().to_variant(),
-			FileContent::Deleted => Variant::nil(),
-		}
-	}
-}
-
-
-
 
 pub fn calculate_file_hash(path: &PathBuf) -> Option<String> {
 	if !path.is_file() {
