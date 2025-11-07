@@ -919,6 +919,10 @@ impl DriverState {
                     change_type
                 });
 
+				if let Ok(Some((_, _))) = tx.get(&file_entry, "deleted") {
+                    let _ = tx.delete(&file_entry, "deleted");
+                }
+
                 // delete url in file entry if it previously had one
                 if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
                     let _ = tx.delete(&file_entry, "url");
@@ -942,10 +946,25 @@ impl DriverState {
             // write scene entries to doc
             for (path, godot_scene) in scene_entries {
                 // get the change flag
-                let change_type = match tx.get(&files, &path) {
-                    Ok(Some(_)) => ChangeType::Modified,
-                    _ => ChangeType::Added
+                let (file_entry, change_type) = match tx.get(&files, &path) {
+                    Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => (file_entry, ChangeType::Modified),
+                    _ => (tx.put_object(&files, &path, ObjType::Map).unwrap(), ChangeType::Added)
                 };
+
+				if let Ok(Some((_, _))) = tx.get(&file_entry, "deleted") {
+                    let _ = tx.delete(&file_entry, "deleted");
+                }
+
+                // delete content in file entry if it previously had one
+                if let Ok(Some((_, _))) = tx.get(&file_entry, "content") {
+                    let _ = tx.delete(&file_entry, "content");
+                }
+
+                // delete url in file entry if it previously had one
+                if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
+                    let _ = tx.delete(&file_entry, "url");
+                }
+
                 godot_scene.reconcile(&mut tx, path.clone());
                 changes.push(ChangedFile {
                     path,
@@ -956,14 +975,27 @@ impl DriverState {
             // write binary entries to doc
             for (path, binary_doc_handle) in binary_entries {
                 // get the change flag
-                let change_type = match tx.get(&files, &path) {
-                    Ok(Some(_)) => ChangeType::Modified,
-                    _ => ChangeType::Added
+                let (file_entry, change_type) = match tx.get(&files, &path) {
+                    Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => (file_entry, ChangeType::Modified),
+                    _ => (tx.put_object(&files, &path, ObjType::Map).unwrap(), ChangeType::Added)
                 };
 
-                let file_entry = tx.put_object(&files, &path, ObjType::Map);
+				if let Ok(Some((_, _))) = tx.get(&file_entry, "deleted") {
+                    let _ = tx.delete(&file_entry, "deleted");
+                }
+
+                // delete structured content in file entry if it previously had one
+                if let Ok(Some((_, _))) = tx.get(&file_entry, "structured_content") {
+                    let _ = tx.delete(&file_entry, "structured_content");
+                }
+
+                // delete content in file entry if it previously had one
+                if let Ok(Some((_, _))) = tx.get(&file_entry, "content") {
+                    let _ = tx.delete(&file_entry, "content");
+                }
+
                 let _ = tx.put(
-                    file_entry.unwrap(),
+                    file_entry,
                     "url",
                     format!("automerge:{}", &binary_doc_handle.document_id()),
                 );
@@ -975,11 +1007,28 @@ impl DriverState {
             }
 
 			for path in deleted_entries {
-				let _ = tx.delete(&files, &path);
-                changes.push(ChangedFile {
-                    path,
+				changes.push(ChangedFile {
+                    path: path.clone(),
                     change_type: ChangeType::Removed
                 });
+				let file_entry = match tx.get(&files, &path) {
+                    Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => file_entry,
+                    _ => {
+						continue;
+					}
+                };
+
+                // do NOT delete the url if it previously had one, we need it to know which linked docs to retrieved
+                // delete structured content in file entry if it previously had one
+                if let Ok(Some((_, _))) = tx.get(&file_entry, "structured_content") {
+                    let _ = tx.delete(&file_entry, "structured_content");
+                }
+
+				if let Ok(Some((_, _))) = tx.get(&file_entry, "content") {
+                    let _ = tx.delete(&file_entry, "content");
+                }
+
+				let _ = tx.put(&file_entry, "deleted", true);
 			}
 
             commit_with_attribution_and_timestamp(
