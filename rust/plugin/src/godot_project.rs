@@ -1,4 +1,5 @@
 use crate::branch::BranchState;
+use crate::differ::TextDiffFile;
 use crate::file_utils::{FileContent};
 use godot::classes::editor_plugin::DockSlot;
 use ::safer_ffi::prelude::*;
@@ -1144,98 +1145,6 @@ impl GodotProjectImpl {
         return VariantStrValue::Variant(prop_value);
     }
 
-    fn get_diff_dict(
-        old_path: String,
-        new_path: String,
-        old_text: &String,
-        new_text: &String,
-    ) -> Dictionary {
-        let diff = TextDiff::from_lines(old_text, new_text);
-        let mut unified = diff.unified_diff();
-        unified.header(old_path.as_str(), new_path.as_str());
-        // The diff of a file is a list of hunks, each hunk is a list of lines
-        // the diff viewer expects the following data, but in Dictionary form
-        // struct DiffLine {
-        //     int new_line_no;
-        //     int old_line_no;
-        //     String content;
-        //     String status;
-        // These are manipulated by the diff viewer, no need to include them
-        //     String old_text;
-        //     String new_text;
-        // };
-
-        // struct DiffHunk {
-        //     int new_start;
-        //     int old_start;
-        //     int new_lines;
-        //     int old_lines;
-        //     List<DiffLine> diff_lines;
-        // };
-
-        // struct DiffFile {
-        //     String new_file;
-        //     String old_file;
-        //     List<DiffHunk> diff_hunks;
-        // };
-
-        fn get_range(ops: &[DiffOp]) -> (usize, usize, usize, usize) {
-            let first = ops[0];
-            let last = ops[ops.len() - 1];
-            let old_start = first.old_range().start;
-            let new_start = first.new_range().start;
-            let old_end = last.old_range().end;
-            let new_end = last.new_range().end;
-            (
-                old_start + 1,
-                new_start + 1,
-                old_end - old_start,
-                new_end - new_start,
-            )
-        }
-        let mut diff_file = Dictionary::new();
-        let _ = diff_file.insert("new_file", new_path);
-        let _ = diff_file.insert("old_file", old_path);
-        let mut diff_hunks = Array::new();
-        for (i, hunk) in unified.iter_hunks().enumerate() {
-            let mut diff_hunk = Dictionary::new();
-            let header = hunk.header();
-            let (old_start, new_start, old_lines, new_lines) = get_range(&hunk.ops());
-            let _ = diff_hunk.insert("old_start", old_start as i64);
-            let _ = diff_hunk.insert("new_start", new_start as i64);
-            let _ = diff_hunk.insert("old_lines", old_lines as i64);
-            let _ = diff_hunk.insert("new_lines", new_lines as i64);
-            let mut diff_lines = Array::new();
-            for (idx, change) in hunk.iter_changes().enumerate() {
-                let mut diff_line = Dictionary::new();
-                // get the tag
-                let status = match change.tag() {
-                    ChangeTag::Equal => " ",
-                    ChangeTag::Delete => "-",
-                    ChangeTag::Insert => "+",
-                };
-                if let Some(old_index) = change.old_index() {
-                    let _ = diff_line.insert("old_line_no", old_index as i64 + 1);
-                } else {
-                    let _ = diff_line.insert("old_line_no", -1);
-                }
-                if let Some(new_index) = change.new_index() {
-                    let _ = diff_line.insert("new_line_no", new_index as i64 + 1);
-                } else {
-                    let _ = diff_line.insert("new_line_no", -1);
-                }
-                let content = change.as_str().unwrap();
-                let _ = diff_line.insert("content", content);
-                let _ = diff_line.insert("status", status);
-                diff_lines.push(&diff_line);
-            }
-            let _ = diff_hunk.insert("diff_lines", diff_lines);
-            diff_hunks.push(&diff_hunk);
-        }
-        let _ = diff_file.insert("diff_hunks", diff_hunks);
-        diff_file
-    }
-
     fn _get_resource_at(
         &self,
         path: String,
@@ -1337,13 +1246,13 @@ impl GodotProjectImpl {
         } else {
             &empty_string
         };
-        let diff = Self::get_diff_dict(path.clone(), path.clone(), old_text, new_text);
+        let text_diff = TextDiffFile::create(path.clone(), path.clone(), old_text, new_text);
         let result = dict! {
             "path" : path.to_variant(),
             "change_type" : change_type.to_variant(),
             "old_content" : old_content.unwrap_or(&FileContent::Deleted).to_variant(),
             "new_content" : new_content.unwrap_or(&FileContent::Deleted).to_variant(),
-            "text_diff" : diff,
+            "text_diff" : text_diff.to_godot(),
             "diff_type" : "text_changed".to_variant(),
         };
         result

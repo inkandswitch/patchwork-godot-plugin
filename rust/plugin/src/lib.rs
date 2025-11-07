@@ -25,6 +25,7 @@ pub mod godot_project;
 pub mod branch;
 mod godot_project_driver;
 mod patches;
+mod differ;
 pub mod utils;
 
 fn unregister_singleton(singleton_name: &str) {
