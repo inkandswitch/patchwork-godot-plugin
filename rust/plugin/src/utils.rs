@@ -5,13 +5,37 @@ use std::{
     fmt
 };
 
-use crate::{doc_utils::SimpleDocReader, godot_helpers::{GodotConvertExt, ToGodotExt, ToVariantExt}, branch::BranchState};
+use crate::{doc_utils::SimpleDocReader, branch::BranchState};
 use automerge::{
-    transaction::{CommitOptions, Transaction}, Change, ChangeHash, ReadDoc, ROOT
+    Automerge, Change, ChangeHash, Patch, PatchLog, ROOT, ReadDoc, transaction::{CommitOptions, Transaction}
 };
 use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
-use godot::{builtin::{Array, Dictionary, GString, PackedStringArray, Variant, dict}, meta::ToGodot, prelude::GodotConvert};
 use serde::{Deserialize, Serialize};
+
+// These functions are for compatibilities sake, and they will be removed in the future
+#[inline(always)]
+pub(crate) fn get_default_patch_log() -> PatchLog {
+	#[cfg(not(feature = "automerge_0_6"))]
+	{
+		PatchLog::inactive()
+	}
+	#[cfg(feature = "automerge_0_6")]
+	{
+		PatchLog::inactive(automerge::patches::TextRepresentation::String(automerge::TextEncoding::Utf8CodeUnit))
+	}
+}
+
+#[inline(always)]
+pub(crate) fn get_automerge_doc_diff(doc: &Automerge, old_heads: &[ChangeHash], new_heads: &[ChangeHash]) -> Vec<Patch> {
+	#[cfg(not(feature = "automerge_0_6"))]
+	{
+		doc.diff(old_heads, new_heads)
+	}
+	#[cfg(feature = "automerge_0_6")]
+	{
+		doc.diff(old_heads, new_heads, automerge::patches::TextRepresentation::String(automerge::TextEncoding::Utf8CodeUnit))
+	}
+}
 
 pub(crate) fn get_linked_docs_of_branch(
     branch_doc_handle: &DocHandle,
@@ -148,37 +172,6 @@ pub(crate) fn print_branch_state(message: &str, branch_state: &BranchState) {
 	tracing::trace!("synced heads: {:?}", branch_state.synced_heads);
 }
 
-pub(crate) fn are_valid_heads(packed_string_array: &PackedStringArray) -> bool {
-    // check if these are all hex strings
-	for h in packed_string_array.to_vec().iter() {
-		if !h.to_string().chars().all(|c| c.is_ascii_hexdigit()) {
-			return false;
-		}
-	}
-	return true;
-}
-
-pub(crate) fn array_to_heads(packed_string_array: PackedStringArray) -> Vec<ChangeHash> {
-    packed_string_array
-        .to_vec()
-        .iter()
-        .map(|h| ChangeHash::from_str(h.to_string().as_str()).unwrap())
-        .collect()
-}
-
-pub(crate) fn heads_to_array(heads: Vec<ChangeHash>) -> PackedStringArray {
-    heads
-        .iter()
-        .map(|h| GString::from(h.to_string()))
-        .collect::<PackedStringArray>()
-}
-
-pub(crate) fn heads_to_vec_string(heads: Vec<ChangeHash>) -> Vec<String> {
-    heads
-        .iter()
-        .map(|h| h.to_string())
-        .collect()
-}
 
 pub(crate) fn vec_string_to_heads(heads: Vec<String>) -> Result<Vec<ChangeHash>, String> {
 	let mut result = Vec::new();
@@ -211,82 +204,6 @@ pub struct CommitInfo {
 	pub metadata: Option<CommitMetadata>,
 }
 
-impl GodotConvert for MergeMetadata {
-	type Via = Dictionary;
-}
-
-impl ToGodot for MergeMetadata {
-	type ToVia<'v> = Dictionary;
-	fn to_godot(&self) -> Dictionary {
-		dict! {
-			"merged_branch_id": self.merged_branch_id.to_godot(),
-			"merged_at_heads": self.merged_at_heads.to_godot(),
-			"forked_at_heads": self.forked_at_heads.to_godot(),
-		}
-	}
-	fn to_variant(&self) -> Variant {
-				dict! {
-			"merged_branch_id": self.merged_branch_id.to_godot(),
-			"merged_at_heads": self.merged_at_heads.to_godot(),
-			"forked_at_heads": self.forked_at_heads.to_godot(),
-		}.to_variant()
-	}
-}
-
-impl GodotConvertExt for Vec<ChangedFile> {
-	type Via = Array<PackedStringArray>;
-}
-
-impl ToGodotExt for Vec<ChangedFile> {
-	type ToVia<'v> = Array<PackedStringArray>;
-	fn _to_godot(&self) -> Array<PackedStringArray> {
-        self.iter().map(|s| {
-            let mut inner_array = PackedStringArray::new();
-            inner_array.push(&s.path.to_godot());
-            inner_array.push(&s.change_type.to_string().to_godot());
-            return inner_array;
-        }).collect::<Array<PackedStringArray>>()
-	}
-	fn _to_variant(&self) -> Variant {
-        self._to_godot().to_variant()
-	}
-}
-
-impl GodotConvert for CommitInfo {
-	type Via = Dictionary;
-}
-
-impl ToGodot for CommitInfo {
-	type ToVia<'v> = Dictionary;
-	fn to_godot(&self) -> Dictionary {
-		let mut md = dict! {
-			"hash": self.hash.to_godot(),
-			"timestamp": self.timestamp.to_godot(),
-		};
-		if let Some(metadata) = &self.metadata {
-			if let Some(username) = &metadata.username {
-				let _ = md.insert("username", username.to_godot());
-			}
-			if let Some(branch_id) = &metadata.branch_id {
-				let _ = md.insert("branch_id", branch_id.to_godot());
-			}
-			if let Some(merge_metadata) = &metadata.merge_metadata {
-				let _ = md.insert("merge_metadata", merge_metadata.to_godot());
-			}
-			if let Some(reverted_to) = &metadata.reverted_to {
-				let _ = md.insert("reverted_to", reverted_to.to_godot());
-			}
-            if let Some(changed_files) = &metadata.changed_files {
-                let _ = md.insert("changed_files", changed_files.to_godot());
-            }
-		}
-		md
-	}
-	fn to_variant(&self) -> Variant {
-		self.to_godot().to_variant()
-	}
-}
-
 impl From<&&Change> for CommitInfo {
 	fn from(change: &&Change) -> Self {
 		CommitInfo {
@@ -297,153 +214,23 @@ impl From<&&Change> for CommitInfo {
 	}
 }
 
-fn branch_state_to_dict(branch_state: &BranchState) -> Dictionary {
-    let mut branch = dict! {
-        "name": branch_state.name.clone(),
-        "id": branch_state.doc_handle.document_id().to_string(),
-        "is_main": branch_state.is_main,
-
-        // we shouldn't have branches that don't have any changes but sometimes
-        // the branch docs are not synced correctly so this flag is used in the UI to
-        // indicate that the branch is not loaded and prevent users from checking it out
-        "is_not_loaded": branch_state.doc_handle.with_doc(|d| d.get_heads().len() == 0),
-        "heads": heads_to_array(branch_state.synced_heads.clone()),
-        "is_merge_preview": branch_state.merge_info.is_some(),
-		"is_revert_preview": branch_state.revert_info.is_some(),
-    };
-
-    if let Some(fork_info) = &branch_state.fork_info {
-        let _ = branch.insert("forked_from", fork_info.forked_from.to_string());
-        let _ = branch.insert("forked_at", heads_to_array(fork_info.forked_at.clone()));
-    }
-
-    if let Some(merge_info) = &branch_state.merge_info {
-        let _ = branch.insert("merge_into", merge_info.merge_into.to_string());
-        let _ = branch.insert("merge_at", heads_to_array(merge_info.merge_at.clone()));
-    }
-
-	if let Some(created_by) = &branch_state.created_by {
-		let _ = branch.insert("created_by", created_by.to_string());
-	}
-
-	if let Some(merged_into) = &branch_state.merged_into {
-		let _ = branch.insert("merged_into", merged_into.to_string());
-	}
-
-	if let Some(reverted_to) = &branch_state.revert_info {
-		let _ = branch.insert("reverted_to", heads_to_array(reverted_to.reverted_to.clone()));
-	}
-
-    branch
-}
-
-impl GodotConvert for BranchState {
-	type Via = Dictionary;
-}
-
-impl ToGodot for BranchState {
-	type ToVia<'v> = Dictionary;
-	fn to_godot(&self) -> Dictionary {
-		branch_state_to_dict(self)
-	}
-}
-
-impl ToVariantExt for Option<BranchState> {
-	fn _to_variant(&self) -> Variant {
-		match self {
-			Some(branch_state) => branch_state.to_godot().to_variant(),
-			None => Variant::nil(),
+impl From<&Change> for CommitInfo {
+	fn from(change: &Change) -> Self {
+		CommitInfo {
+			hash: change.hash().to_string(),
+			timestamp: change.timestamp(),
+			metadata: change.message().and_then(|m| serde_json::from_str::<CommitMetadata>(&m).ok()),
 		}
 	}
 }
 
-impl ToVariantExt for Option<&BranchState> {
-	fn _to_variant(&self) -> Variant {
-		match self {
-			Some(branch_state) => branch_state.to_godot().to_variant(),
-			None => Variant::nil(),
-		}
-	}
+pub(crate) fn heads_to_vec_string(heads: Vec<ChangeHash>) -> Vec<String> {
+    heads
+        .iter()
+        .map(|h| h.to_string())
+        .collect()
 }
 
-
-fn peer_connection_info_to_dict(peer_connection_info: &PeerConnectionInfo) -> Dictionary {
-    let mut doc_sync_states = Dictionary::new();
-
-    for (doc_id, doc_state) in peer_connection_info.docs.iter() {
-        let last_received = doc_state
-            .last_received
-            .map(system_time_to_variant)
-            .unwrap_or(Variant::nil());
-
-        let last_sent = doc_state
-            .last_sent
-            .map(system_time_to_variant)
-            .unwrap_or(Variant::nil());
-
-        let last_sent_heads = doc_state
-            .last_sent_heads
-            .as_ref()
-            .map(|heads| heads_to_array(heads.clone()).to_variant())
-            .unwrap_or(Variant::nil());
-
-        let last_acked_heads = doc_state
-            .last_acked_heads
-            .as_ref()
-            .map(|heads| heads_to_array(heads.clone()).to_variant())
-            .unwrap_or(Variant::nil());
-
-        let _ = doc_sync_states.insert(
-            doc_id.to_string(),
-            dict! {
-                "last_received": last_received,
-                "last_sent": last_sent,
-                "last_sent_heads": last_sent_heads,
-                "last_acked_heads": last_acked_heads,
-            },
-        );
-    }
-
-    let last_received = peer_connection_info
-        .last_received
-        .map(system_time_to_variant)
-        .unwrap_or(Variant::nil());
-
-    let last_sent = peer_connection_info
-        .last_sent
-        .map(system_time_to_variant)
-        .unwrap_or(Variant::nil());
-
-    let is_connected = !last_received.is_nil();
-
-    dict! {
-        "doc_sync_states": doc_sync_states,
-        "last_received": last_received,
-        "last_sent": last_sent,
-        "is_connected": is_connected,
-    }
-}
-
-fn system_time_to_variant(time: SystemTime) -> Variant {
-    time.duration_since(UNIX_EPOCH)
-        .ok()
-        .map(|d| d.as_secs().to_variant())
-        .unwrap_or(Variant::nil())
-}
-
-impl GodotConvertExt for PeerConnectionInfo {
-	type Via = Dictionary;
-}
-
-impl ToGodotExt for PeerConnectionInfo {
-	type ToVia<'v> = Dictionary;
-	fn _to_godot(&self) -> Self::ToVia<'_> {
-		peer_connection_info_to_dict(self)
-	}
-	fn _to_variant(&self) -> Variant {
-		peer_connection_info_to_dict(self).to_variant()
-	}
-}
 
 pub trait ToShortForm {
     fn to_short_form(&self) -> String;

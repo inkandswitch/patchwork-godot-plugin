@@ -3,7 +3,7 @@ use crate::file_utils::{FileContent};
 use godot::classes::editor_plugin::DockSlot;
 use ::safer_ffi::prelude::*;
 use automerge::{
-    patches::TextRepresentation, ChangeHash, ObjType, ReadDoc,
+    ChangeHash, ObjType, ReadDoc,
     TextEncoding, ROOT,
 };
 use automerge::{Automerge, Change, ExpandedChange, ObjId, Patch, PatchAction, Prop};
@@ -26,13 +26,13 @@ use std::any::Any;
 use std::collections::{HashSet};
 use std::path::PathBuf;
 use std::{collections::HashMap, str::FromStr};
-use crate::godot_helpers::{get_resource_or_scene_path_for_object, ToGodotExt, ToVariantExt};
+use crate::godot_helpers::{ToDict, ToGodotExt, ToVariantExt, VariantTypeGetter, are_valid_heads, array_to_heads, get_resource_or_scene_path_for_object};
 use crate::file_system_driver::{FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
 use crate::godot_parser::{self, GodotScene, TypeOrInstance};
 use crate::godot_project_driver::{ConnectionThreadError, DocHandleType};
 use crate::patches::{get_changed_files_vec};
 use crate::patchwork_config::PatchworkConfig;
-use crate::utils::{are_valid_heads, array_to_heads, CommitInfo, ToShortForm};
+use crate::utils::{CommitInfo, ToShortForm, get_automerge_doc_diff};
 use crate::{
     doc_utils::SimpleDocReader,
     godot_project_driver::{GodotProjectDriver, InputEvent, OutputEvent},
@@ -790,10 +790,10 @@ impl GodotProjectImpl {
 			} else {
 				d.keys_at(&curr_files_id.unwrap(), &curr_heads).into_iter().collect::<HashSet<String>>()
 			};
-			let patches = d.diff(
+			let patches = get_automerge_doc_diff(
+				d,
 				&previous_heads,
 				&curr_heads,
-				TextRepresentation::String(TextEncoding::Utf8CodeUnit),
 			);
 			(patches, old_file_set, curr_file_set)
 		});
@@ -1419,11 +1419,7 @@ impl GodotProjectImpl {
 
         // only get the first 6 chars of the hash
         let patches: Vec<Patch> = checked_out_branch_state.doc_handle.with_doc(|d| {
-            d.diff(
-                &old_heads,
-                &curr_heads,
-                TextRepresentation::String(TextEncoding::Utf8CodeUnit),
-            )
+            get_automerge_doc_diff(d, &old_heads, &curr_heads)
         });
         let mut changed_files_map = HashMap::new();
         let mut scene_files = Vec::new();
@@ -1924,7 +1920,7 @@ impl GodotProjectImpl {
                         if let Some(old_node) = old_scene.nodes.get(node_id) {
                             old_type = old_node.type_or_instance.clone();
                         }
-                        if let Some(content) = old_scene.get_node_content(node_id) {
+                        if let Some(content) = old_scene.get_node(node_id).map(|n| n.to_dict()) {
                             if let Some(props) = content.get("properties") {
                                 old_props = props.to::<Dictionary>();
                             }
@@ -1936,7 +1932,7 @@ impl GodotProjectImpl {
                         if let Some(new_node) = new_scene.nodes.get(node_id) {
                             new_type = new_node.type_or_instance.clone();
                         }
-                        if let Some(content) = new_scene.get_node_content(node_id) {
+                        if let Some(content) = new_scene.get_node(node_id).map(|n| n.to_dict()) {
                             if let Some(props) = content.get("properties") {
                                 new_props = props.to::<Dictionary>();
                             }

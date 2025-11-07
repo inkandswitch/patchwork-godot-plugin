@@ -1,5 +1,4 @@
 use automerge::{transaction::Transaction, Automerge, ChangeHash, ObjId, Prop, ReadDoc, Value};
-use godot::builtin::Variant;
 
 pub trait SimpleDocReader {
     fn get_bytes<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<Vec<u8>>;
@@ -32,8 +31,6 @@ pub trait SimpleDocReader {
         prop: P,
         heads: &[automerge::ChangeHash],
     ) -> Option<ObjId>;
-
-    fn get_variant<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<Variant>;
 }
 
 impl SimpleDocReader for Automerge {
@@ -76,19 +73,6 @@ impl SimpleDocReader for Automerge {
         match self.get(obj, prop) {
             Ok(Some((Value::Scalar(cow), _))) => match cow.into_owned() {
                 automerge::ScalarValue::F64(num) => Some(num),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-
-    fn get_variant<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<Variant> {
-        match self.get(obj, prop) {
-            Ok(Some((Value::Scalar(cow), _))) => match cow.into_owned() {
-                automerge::ScalarValue::F64(num) => Some(Variant::from(num)),
-                automerge::ScalarValue::Int(num) => Some(Variant::from(num)),
-                automerge::ScalarValue::Str(smol_str) => Some(Variant::from(smol_str.to_string())),
-                automerge::ScalarValue::Boolean(bool) => Some(Variant::from(bool)),
                 _ => None,
             },
             _ => None,
@@ -180,19 +164,6 @@ impl SimpleDocReader for Transaction<'_> {
         match self.get(obj, prop) {
             Ok(Some((Value::Scalar(cow), _))) => match cow.into_owned() {
                 automerge::ScalarValue::F64(num) => Some(num),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-
-    fn get_variant<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<Variant> {
-        match self.get(obj, prop) {
-            Ok(Some((Value::Scalar(cow), _))) => match cow.into_owned() {
-                automerge::ScalarValue::F64(num) => Some(Variant::from(num)),
-                automerge::ScalarValue::Int(num) => Some(Variant::from(num)),
-                automerge::ScalarValue::Str(smol_str) => Some(Variant::from(smol_str.to_string())),
-                automerge::ScalarValue::Boolean(bool) => Some(Variant::from(bool)),
                 _ => None,
             },
             _ => None,

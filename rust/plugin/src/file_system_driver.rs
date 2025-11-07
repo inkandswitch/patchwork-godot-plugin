@@ -801,7 +801,6 @@ mod tests {
     use tokio::sync::mpsc;
     use std::path::Path;
     use autosurgeon::Doc;
-	use godot::classes::physics_server_3d::G6dofJointAxisFlag;
 
 	const WAIT_TIME: u64 = DEBOUNCE_TIME * 2;
 
