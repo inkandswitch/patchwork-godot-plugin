@@ -716,6 +716,10 @@ func update_history_ui(checked_out_branch, history, peer_connection_info):
 				reverted_to[j] = reverted_to[j].substr(0, 7)
 			item.set_text(HistoryColumns.TEXT, "↩️ " + change_author + " reverted to " + ", ".join(reverted_to))
 
+		elif checked_out_branch and checked_out_branch.is_main and i < 2:
+			# disabled flag
+			set_history_item_enabled(item, false)
+			item.set_text(HistoryColumns.TEXT, "Initialized repository")
 		else:
 			var changed_files = change.changed_files if "changed_files" in change else []
 			item.set_text(HistoryColumns.TEXT, summarize_changes(change_author, changed_files))
@@ -723,10 +727,6 @@ func update_history_ui(checked_out_branch, history, peer_connection_info):
 		if unsynced_changes.has(change.hash):
 			text_color = Color(0.6, 0.6, 0.6)
 
-		if checked_out_branch and checked_out_branch.is_main and i < 2:
-			# disabled flag
-			set_history_item_enabled(item, false)
-			item.set_text(HistoryColumns.TEXT, "Initialized repository")
 
 		else:
 			item.add_button(HistoryColumns.TEXT, item_context_menu_icon, 1, false, "Open context menu")
@@ -1266,7 +1266,7 @@ func summarize_changes(author: String, changes) -> String:
 	if (strings.size() == 3 || strings.size() == 0):
 		# avoid too long of a string if many ops are made, or as a fallback
 		# example: sisko made some changes
-		return "%s made some changes"
+		return "%s made some changes" % [author]
 	if (strings.size() == 2):
 		# example: sisko added baseball.png and edited 2 files
 		return "%s %s and %s" % [author, strings[0], strings[1]]
