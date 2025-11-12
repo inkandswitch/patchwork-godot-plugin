@@ -110,6 +110,9 @@ impl FileContent {
 
 	// NOTE: Probably not appropriate to put here, should have this in BranchState
 	pub fn hydrate_content_at(file_entry: ObjId, doc: &Automerge, path: &String, heads: &Vec<ChangeHash>) -> Result<FileContent, Result<DocumentId, io::Error>> {
+		if let Ok(Some((_, _))) = doc.get_at(&file_entry, "deleted", &heads) {
+			return Ok(FileContent::Deleted);
+		}
 		let structured_content = doc
 		.get_at(&file_entry, "structured_content", heads)
 		.unwrap()
@@ -118,10 +121,6 @@ impl FileContent {
 		if structured_content.is_some() {
 			let scene: GodotScene = GodotScene::hydrate_at(doc, path, heads).ok().unwrap();
 			return Ok(FileContent::Scene(scene));
-		}
-
-		if let Ok(Some((_, _))) = doc.get_at(&file_entry, "deleted", &heads) {
-			return Ok(FileContent::Deleted);
 		}
 
 		// try to read file as text
