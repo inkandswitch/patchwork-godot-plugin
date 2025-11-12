@@ -48,12 +48,8 @@ Most of the Godot editor works as you're used to. To start using the collaborati
 
 To collaborate with others, you need to be in the same Patchwork Project.
 
-<aside>
-💡
+>💡 A Patchwork Project is a shared online session where everyone can see the same thing. Think of it sort of like a Google Doc. If you're familiar with Git, it's also similar to a Git repo with live synchronization.
 
- A Patchwork Project is a shared online session where everyone can see the same thing. Think of it sort of like a Google Doc. If you're familiar with Git, it's also similar to a Git repo with live synchronization.
-
-</aside>
 
 You can either create a new project or load an existing one.
 
@@ -85,12 +81,10 @@ When you start out in a Project, you're editing on the main copy.
 
 Anytime you save (ctrl-s or cmd-s), your changes will now be shared with all collaborators in the project.
 
-<aside>
-⚠️
 
-If you're making a larger change, or you're in a classroom setting where many people are working in the same project, then you should avoid editing directly on main, and instead work on a branch. See the next section.
+> ⚠️ If you're making a larger change or many people are working in the same project, then you should avoid editing directly on main, and instead work on a branch. See the next section.
 
-</aside>
+
 
 You can see a log of recent changes by you and others in the History list.
 
