@@ -1,4 +1,9 @@
+#include "core/version_generated.gen.h"
+#if GODOT_VERSION_MAJOR == 4 && GODOT_VERSION_MINOR < 5
 #include "editor/editor_vcs_interface.h"
+#else
+#include "editor/version_control/editor_vcs_interface.h"
+#endif
 #include "scene/gui/rich_text_label.h"
 class TextDiffer : public Object {
 	GDCLASS(TextDiffer, Object);

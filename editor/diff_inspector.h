@@ -31,7 +31,12 @@
 #ifndef DIFF_INSPECTOR_H
 #define DIFF_INSPECTOR_H
 
+#include "core/version_generated.gen.h"
+#if GODOT_VERSION_MAJOR == 4 && GODOT_VERSION_MINOR < 5
 #include "editor/editor_inspector.h"
+#else
+#include "editor/inspector/editor_inspector.h"
+#endif
 #include "scene/gui/scroll_container.h"
 #include "scene/resources/style_box_flat.h"
 class EditorProperty;

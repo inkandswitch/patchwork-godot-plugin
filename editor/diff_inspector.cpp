@@ -32,9 +32,10 @@
 
 #include "core/error/error_macros.h"
 #include "core/object/object.h"
-#include "editor/editor_inspector.h"
 #include "editor/editor_string_names.h"
 #include "editor/themes/editor_scale.h"
+#include "scene/main/timer.h"
+
 void DiffInspectorSection::_test_unfold() {
 	if (!vbox_added) {
 		add_child(vbox);
