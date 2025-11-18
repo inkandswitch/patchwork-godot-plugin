@@ -1528,7 +1528,7 @@ impl GodotProjectImpl {
             let mut deleted_sub_resources: HashSet<String> = HashSet::new();
             let mut all_changed_sub_resource_ids: HashSet<String> = HashSet::new();
 
-            let mut changed_node_ids: HashSet<String> = HashSet::new();
+            let mut changed_node_ids: HashSet<i32> = HashSet::new();
 
             for patch in patches.iter() {
                 match_path(&patch_path, &patch).inspect(
@@ -1540,14 +1540,14 @@ impl GodotProjectImpl {
                             if path.len() > 2 {
                                 if let Some((_, Prop::Map(key))) = path.get(path.len() - 2) {
                                     if key == "properties" {
-                                        changed_node_ids.insert(node_id.clone());
+                                        changed_node_ids.insert(node_id.clone().parse::<i32>().unwrap());
                                         return;
                                     }
                                 }
                             }
                             if let Some((_, Prop::Map(key))) = path.last() {
                                 if key != "child_node_ids" {
-                                    changed_node_ids.insert(node_id.clone());
+                                    changed_node_ids.insert(node_id.clone().parse::<i32>().unwrap());
                                     return;
                                 }
                             }
@@ -1885,7 +1885,7 @@ impl GodotProjectImpl {
                     let mut node_info = Dictionary::new();
                     let _ = node_info.insert("change_type", if added { "added" } else { "removed" });
                     if let Some(scene) = if added { &new_scene } else { &old_scene } {
-                        let _ = node_info.insert("node_path", scene.get_node_path(&node_id));
+                        let _ = node_info.insert("node_path", scene.get_node_path(*node_id));
                         if let Some(node) = scene.nodes.get(&node_id.clone()) {
 							let tp = fn_get_class_name(&node.type_or_instance, &new_scene);
 							let _ = node_info.insert("type", tp);
@@ -1909,7 +1909,7 @@ impl GodotProjectImpl {
                     let _ = node_info.insert("change_type", "modified");
 
                     if let Some(scene) = &new_scene {
-                        let _ = node_info.insert("node_path", scene.get_node_path(node_id));
+                        let _ = node_info.insert("node_path", scene.get_node_path(*node_id));
                     }
                     let mut old_props = Dictionary::new();
                     let mut new_props = Dictionary::new();
@@ -1920,7 +1920,7 @@ impl GodotProjectImpl {
                         if let Some(old_node) = old_scene.nodes.get(node_id) {
                             old_type = old_node.type_or_instance.clone();
                         }
-                        if let Some(content) = old_scene.get_node(node_id).map(|n| n.to_dict()) {
+                        if let Some(content) = old_scene.get_node(*node_id).map(|n| n.to_dict()) {
                             if let Some(props) = content.get("properties") {
                                 old_props = props.to::<Dictionary>();
                             }
@@ -1932,7 +1932,7 @@ impl GodotProjectImpl {
                         if let Some(new_node) = new_scene.nodes.get(node_id) {
                             new_type = new_node.type_or_instance.clone();
                         }
-                        if let Some(content) = new_scene.get_node(node_id).map(|n| n.to_dict()) {
+                        if let Some(content) = new_scene.get_node(*node_id).map(|n| n.to_dict()) {
                             if let Some(props) = content.get("properties") {
                                 new_props = props.to::<Dictionary>();
                             }
