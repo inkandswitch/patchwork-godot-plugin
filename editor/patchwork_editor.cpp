@@ -452,6 +452,15 @@ Ref<Resource> PatchworkEditor::import_and_load_resource(const String &p_path) {
 	List<String> import_variants;
 	List<String> import_options;
 	Variant metadata;
+	// set the default values for the import options in case they are not present in the import file
+	List<ResourceImporter::ImportOption> opts;
+	importer->get_import_options(p_path, &opts);
+	for (const ResourceImporter::ImportOption &E : opts) {
+		if (!params.has(E.option.name)) { //this one is not present
+			params[E.option.name] = E.default_value;
+		}
+	}
+
 	err = importer->import(ResourceUID::INVALID_ID, p_path, import_base_path, params, &import_variants, &import_options, &metadata);
 	ERR_FAIL_COND_V_MSG(err != OK, {}, "Failed to import resource at path " + p_path);
 	// load the resource
