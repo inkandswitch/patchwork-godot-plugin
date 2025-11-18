@@ -102,22 +102,18 @@ jobs:
         id: compile-editor
         uses: ./.github/actions/godot-build
         with:
-          sconsflags: arch=x86_64 ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }}
+          scons-flags: arch=x86_64 ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }}
           platform: ${{ matrix.platform }}
           target: editor
-          tests: false
-          scons-cache-limit: 4096
 
       - name: Compile Editor for macos arm64
         uses: ./.github/actions/godot-build
         if: matrix.platform == 'macos' && matrix.target == 'editor'
         with:
           # generate the bundle on this one; generate_bundle automatically lipos the binaries
-          sconsflags: arch=arm64 ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }} generate_bundle=yes
+          scons-flags: arch=arm64 ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }} generate_bundle=yes
           platform: ${{ matrix.platform }}
           target: editor
-          tests: false
-          scons-cache-limit: 4096
 
       - name: cleanup macos
         if: matrix.platform == 'macos' && matrix.target == 'editor'
