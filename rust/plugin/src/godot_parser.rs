@@ -371,7 +371,7 @@ impl GodotScene {
 
             // Store optional properties
             if let Some(parent_id) = &node.parent_id {
-                tx.put(&node_obj, "parent_id", parent_id.clone()).unwrap();
+                tx.put(&node_obj, "parent", parent_id.clone()).unwrap();
             } else if tx.get_string(&node_obj, "parent").is_some() {
                 tx.delete(&node_obj, "parent").unwrap();
             }
@@ -770,7 +770,7 @@ impl GodotScene {
                 };
 
             // Get optional properties
-            let parent_id = doc.get_string_at(&node_obj, "parent_id", &heads);
+            let parent_id = doc.get_string_at(&node_obj, "parent", &heads);
             let owner = doc.get_string_at(&node_obj, "owner", &heads);
             let index = doc.get_int_at(&node_obj, "index", &heads).map(|i| i);
             let groups = doc.get_string_at(&node_obj, "groups", &heads);
