@@ -29,8 +29,7 @@ fn hydrate_nodes<D: ReadDoc>(
 
 
 fn reconcile_nodes<R: Reconciler>(outer: &HashMap<i32, GodotNode>, reconciler: R) -> Result<(), R::Error> {
-	// TODO: don't use clone
-    let string_map: HashMap<String, GodotNode> = outer.iter().map(|(k, v)| (k.to_string(), v.clone())).collect();
+    let string_map: HashMap<String, &GodotNode> = outer.iter().map(|(k, v)| (k.to_string(), v)).collect();
 	string_map.reconcile(reconciler)
 }
 
