@@ -21,12 +21,14 @@ mod file_system_driver;
 mod file_utils;
 mod godot_helpers;
 pub mod godot_parser;
-pub mod godot_project;
+mod godot_project;
 pub mod branch;
 mod godot_project_driver;
 mod patches;
 mod differ;
 pub mod utils;
+mod godot_project_impl;
+mod godot_accessors;
 
 fn unregister_singleton(singleton_name: &str) {
     if Engine::singleton().has_singleton(singleton_name) {
