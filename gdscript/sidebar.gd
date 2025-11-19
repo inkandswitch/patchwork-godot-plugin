@@ -51,6 +51,10 @@ class HistoryColumns:
 # Turn this off if it keeps crashing on windows
 const TURN_ON_USER_BRANCH_PROMPT = true
 
+const INITIAL_COMMIT_TEXT = "Initialized repository"
+
+const NUM_INITIAL_COMMITS = 2
+
 const DIFF_SECTION_HEADER_TEXT_FORMAT = "Changes: Showing diff between %s and %s"
 
 const TEMP_DIR = "user://tmp"
@@ -716,10 +720,10 @@ func update_history_ui(checked_out_branch, history, peer_connection_info):
 				reverted_to[j] = reverted_to[j].substr(0, 7)
 			item.set_text(HistoryColumns.TEXT, "↩️ " + change_author + " reverted to " + ", ".join(reverted_to))
 
-		elif checked_out_branch and checked_out_branch.is_main and i < 2:
+		elif checked_out_branch and checked_out_branch.is_main and i < NUM_INITIAL_COMMITS:
 			# disabled flag
 			set_history_item_enabled(item, false)
-			item.set_text(HistoryColumns.TEXT, "Initialized repository")
+			item.set_text(HistoryColumns.TEXT, INITIAL_COMMIT_TEXT)
 		else:
 			var changed_files = change.changed_files if "changed_files" in change else []
 			item.set_text(HistoryColumns.TEXT, summarize_changes(change_author, changed_files))
@@ -1145,7 +1149,7 @@ func update_diff():
 			or checked_out_branch.is_revert_preview
 			# the first two commits on main are initial checkin, so we don't show a diff for them
 			or checked_out_branch.is_main
-				and selected_item.get_index() >= history_item_count - 2):
+				and selected_item.get_text(HistoryColumns.TEXT) == INITIAL_COMMIT_TEXT):
 		update_diff_default(checked_out_branch, all_changes_count)
 		return
 
@@ -1167,8 +1171,8 @@ func update_diff():
 
 		if previous_heads.size() > 0:
 			# diff_section_header.text = DIFF_SECTION_HEADER_TEXT_FORMAT % [prev_change_hash.substr(0, 7), change_hash.substr(0, 7)]
-			var text = selected_item.get_text(1 if DEV_MODE else 0)
-			var date = selected_item.get_text(2 if DEV_MODE else 1)
+			var text = selected_item.get_text(HistoryColumns.TEXT)
+			var date = selected_item.get_text(HistoryColumns.TIME)
 			var commit_name = text.split(" ")[0].strip_edges()
 			if commit_name == "↪️":
 				commit_name = text.split(" ")[1].strip_edges() + "'s merged branch"
