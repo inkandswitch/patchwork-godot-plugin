@@ -84,7 +84,9 @@ pub enum InputEvent {
 
     SetUserName {
         name: String,
-    }
+    },
+
+    StartShutdown,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -111,6 +113,8 @@ pub enum OutputEvent {
     CompletedCreateBranch {
         branch_doc_id: DocumentId,
     },
+
+    CompletedShutdown,
 
     PeerConnectionInfoChanged {
         peer_connection_info: PeerConnectionInfo,
@@ -492,6 +496,16 @@ impl GodotProjectDriver {
 							InputEvent::RevertTo { branch_doc_handle, files, heads, revert_to } => {
                                 state.save_files(branch_doc_handle, files, heads, true, Some(revert_to));
                             },
+
+                            InputEvent::StartShutdown => {
+                                tracing::info!("shutting down");
+
+                                let result = repo_handle_clone.stop();
+
+                                tracing::info!("shutdown result: {:?}", result);
+
+                                tx.unbounded_send(OutputEvent::CompletedShutdown).unwrap();
+                            }
 
                             InputEvent::SetUserName { name } => {
                                 state.user_name = Some(name.clone());
