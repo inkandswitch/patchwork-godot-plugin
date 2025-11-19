@@ -32,17 +32,26 @@ use crate::{
     godot_project_driver::{GodotProjectDriver, InputEvent, OutputEvent},
 };
 
+/// Represents the state of the currently checked out branch.
 #[derive(Debug, Clone)]
 enum CheckedOutBranchState {
+	/// No branch is currently checked out.
     NothingCheckedOut(Option<DocumentId>),
+	/// A branch is currently being checked out.
     CheckingOut(DocumentId, Option<DocumentId>),
+	/// A branch is currently checked out.
     CheckedOut(DocumentId, Option<DocumentId>),
 }
 
+/// The different types of Godot-recognized string values that can be stored in a Variant.
 enum VariantStrValue {
+	/// A normal string that doesn't refer to a resource.
     Variant(String),
+	/// A Godot resource path string.
     ResourcePath(String),
+	/// A Godot sub-resource identifier string.
     SubResourceID(String),
+	/// A Godot external resource identifier string.
     ExtResourceID(String),
 }
 
@@ -58,6 +67,7 @@ impl std::fmt::Display for VariantStrValue {
     }
 }
 
+/// A struct representing a path within an Automerge document, along with the associated patch action.
 #[derive(Debug, Clone)]
 struct PathWithAction {
     path: Vec<(ObjId, Prop)>,
@@ -85,6 +95,8 @@ fn match_path(path: &Vec<Prop>, patch: &Patch) -> Option<PathWithAction> {
     })
 }
 
+/// Manages the state and operations of a Patchwork project within Godot.
+/// Its API is exposed to GDScript via the GodotProject struct.
 #[derive(Debug)]
 pub struct GodotProjectImpl {
     doc_handles: HashMap<DocumentId, DocHandle>,
@@ -131,8 +143,10 @@ impl Default for GodotProjectImpl {
 	}
 }
 
+/// The default server URL used for syncing Patchwork projects. Can be overridden by user or project configuration.
 const DEFAULT_SERVER_URL: &str = "24.199.97.236:8080";
 
+/// Notifications that can be emitted via process and consumed by GodotProject, in order to trigger signals to GDScript.
 pub enum GodotProjectSignal {
 	CheckedOutBranch,
 	FilesChanged,
