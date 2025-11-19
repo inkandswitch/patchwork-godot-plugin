@@ -1,8 +1,13 @@
 #include "text_diff.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
+#if GODOT_VERSION_MAJOR == 4 && GODOT_VERSION_MINOR < 5
 #include "editor/editor_vcs_interface.h"
 #include "editor/plugins/version_control_editor_plugin.h"
+#else
+#include "editor/version_control/editor_vcs_interface.h"
+#include "editor/version_control/version_control_editor_plugin.h"
+#endif
 #include "scene/gui/rich_text_label.h"
 using DiffViewType = VersionControlEditorPlugin::DiffViewType;
 

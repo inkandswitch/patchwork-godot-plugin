@@ -28,7 +28,7 @@ If any are missing, see [Detailed Setup](#detailed-setup) below.
 
 ```bash
 # Clone custom Godot fork
-git clone -b patchwork-4.4 https://github.com/nikitalita/godot
+git clone -b patchwork-4.6 https://github.com/nikitalita/godot
 cd godot
 
 # Clone plugin into modules/
@@ -358,7 +358,7 @@ sudo apt-get install build-essential pkg-config libx11-dev libxcursor-dev \
 
 ### 4. Platform-Specific Setup
 
-#### macOS: Vulkan SDK (Required for patchwork-4.4)
+#### macOS: Vulkan SDK (Required for patchwork-4.6)
 
 ```bash
 cd godot  # In the godot repository root

@@ -12,6 +12,7 @@ use crate::file_utils::FileContent;
 use crate::godot_parser::{GodotNode, TypeOrInstance};
 use crate::utils::{ChangedFile, CommitInfo, MergeMetadata};
 use crate::branch::BranchState;
+use crate::differ::{DiffLine, DiffHunk, TextDiffFile};
 use automerge::{transaction::Transaction, Automerge, ObjId, Prop, ReadDoc, Value};
 use godot::builtin::Variant;
 
@@ -556,5 +557,62 @@ impl ToGodotExt for Vec<ChangedFile> {
 	}
 	fn _to_variant(&self) -> Variant {
         self._to_godot().to_variant()
+	}
+}
+
+impl GodotConvert for DiffLine {
+	type Via = Dictionary;
+}
+
+impl ToGodot for DiffLine {
+	type ToVia<'v> = Dictionary where Self: 'v;
+	fn to_godot(&self) -> Self::ToVia<'_> {
+		dict! {
+			"new_line_no": self.new_line_no,
+			"old_line_no": self.old_line_no,
+			"content": self.content.to_godot(),
+			"status": self.status.to_godot(),
+		}
+	}
+	fn to_variant(&self) -> Variant {
+		self.to_godot().to_variant()
+	}
+}
+
+impl GodotConvert for DiffHunk {
+	type Via = Dictionary;
+}
+
+impl ToGodot for DiffHunk {
+	type ToVia<'v> = Dictionary where Self: 'v;
+	fn to_godot(&self) -> Self::ToVia<'_> {
+		dict! {
+			"new_start": self.new_start,
+			"old_start": self.old_start,
+			"new_lines": self.new_lines,
+			"old_lines": self.old_lines,
+			"diff_lines": self.diff_lines.iter().map(|line| line.to_godot()).collect::<Array<Dictionary>>(),
+		}
+	}
+	fn to_variant(&self) -> Variant {
+		self.to_godot().to_variant()
+	}
+}
+
+impl GodotConvert for TextDiffFile {
+	type Via = Dictionary;
+}
+
+impl ToGodot for TextDiffFile {
+	type ToVia<'v> = Dictionary where Self: 'v;
+	fn to_godot(&self) -> Self::ToVia<'_> {
+		dict! {
+			"new_file": self.new_file.to_godot(),
+			"old_file": self.old_file.to_godot(),
+			"diff_hunks": self.diff_hunks.iter().map(|hunk| hunk.to_godot()).collect::<Array<Dictionary>>(),
+		}
+	}
+	fn to_variant(&self) -> Variant {
+		self.to_godot().to_variant()
 	}
 }

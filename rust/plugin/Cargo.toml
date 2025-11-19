@@ -43,6 +43,7 @@ notify = { git = "https://github.com/nikitalita/notify", features = [
 notify-debouncer-mini = { git = "https://github.com/nikitalita/notify", features = [
   "macos_fsevent",
 ] }
+rand = "0.9.2"
 # notify = { path = "/Users/nikita/Workspace/godot-ws/notify/notify", features = ["macos_kqueue"] }
 # notify-debouncer-mini = { path = "/Users/nikita/Workspace/godot-ws/notify/notify-debouncer-mini", features = ["macos_kqueue"] }
 

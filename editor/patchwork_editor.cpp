@@ -1,18 +1,26 @@
 #include "patchwork_editor.h"
 #include "core/variant/callable.h"
 #include "core/variant/callable_bind.h"
+#include "core/version_generated.gen.h"
 #include "editor/debugger/editor_debugger_node.h"
+#if GODOT_VERSION_MAJOR == 4 && GODOT_VERSION_MINOR < 5
 #include "editor/plugins/shader_editor_plugin.h"
+#include <editor/editor_file_system.h>
+#include <editor/editor_inspector.h>
+#include <editor/plugins/script_editor_plugin.h>
+#else
+#include "editor/shader/shader_editor_plugin.h"
+#include <editor/file_system/editor_file_system.h>
+#include <editor/inspector/editor_inspector.h>
+#include <editor/script/script_editor_plugin.h>
+#endif
 #include "scene/gui/box_container.h"
 
 #include <core/io/json.h>
 #include <core/io/missing_resource.h>
 #include <core/variant/variant.h>
-#include <editor/editor_file_system.h>
-#include <editor/editor_inspector.h>
 #include <editor/editor_interface.h>
 #include <editor/editor_undo_redo_manager.h>
-#include <editor/plugins/script_editor_plugin.h>
 #include <main/main.h>
 #include <modules/gdscript/gdscript.h>
 #include <scene/resources/packed_scene.h>
@@ -390,6 +398,20 @@ Ref<ResourceImporter> PatchworkEditor::get_importer_by_name(const String &p_name
 	return ResourceFormatImporter::get_singleton()->get_importer_by_name(p_name);
 }
 
+inline Vector<String> _get_section_keys(const Ref<ConfigFile> &p_config_file, const String &p_section) {
+#if GODOT_VERSION_MAJOR == 4 && GODOT_VERSION_MINOR < 5
+	List<String> param_keys;
+	p_config_file->get_section_keys(p_section, &param_keys);
+	Vector<String> param_keys_vector;
+	for (auto &param_key : param_keys) {
+		param_keys_vector.push_back(param_key);
+	}
+	return param_keys_vector;
+#else
+	return p_config_file->get_section_keys(p_section);
+#endif
+}
+
 Ref<Resource> PatchworkEditor::import_and_load_resource(const String &p_path) {
 	// get the import path
 	auto import_path = p_path + ".import";
@@ -399,10 +421,10 @@ Ref<Resource> PatchworkEditor::import_and_load_resource(const String &p_path) {
 	Error err = import_file->load(import_path);
 	ERR_FAIL_COND_V_MSG(err != OK, {}, "Failed to load import file at path " + import_path);
 	// get the importer name
-	List<String> param_keys;
+	;
 	HashMap<StringName, Variant> params;
 	String importer_name = import_file->get_value("remap", "importer");
-	import_file->get_section_keys("params", &param_keys);
+	Vector<String> param_keys = _get_section_keys(import_file, "params");
 	for (auto &param_key : param_keys) {
 		auto param_value = import_file->get_value("params", param_key);
 		params[param_key] = param_value;
@@ -410,8 +432,7 @@ Ref<Resource> PatchworkEditor::import_and_load_resource(const String &p_path) {
 	String import_base_path = import_file->get_value("remap", "path", "");
 	if (import_base_path.is_empty()) {
 		// iterate through the remap keys, find one that begins with 'path'
-		List<String> remap_keys;
-		import_file->get_section_keys("remap", &remap_keys);
+		Vector<String> remap_keys = _get_section_keys(import_file, "remap");
 		for (auto &remap_key : remap_keys) {
 			if (remap_key.begins_with("path")) {
 				import_base_path = import_file->get_value("remap", remap_key);
@@ -431,6 +452,15 @@ Ref<Resource> PatchworkEditor::import_and_load_resource(const String &p_path) {
 	List<String> import_variants;
 	List<String> import_options;
 	Variant metadata;
+	// set the default values for the import options in case they are not present in the import file
+	List<ResourceImporter::ImportOption> opts;
+	importer->get_import_options(p_path, &opts);
+	for (const ResourceImporter::ImportOption &E : opts) {
+		if (!params.has(E.option.name)) { //this one is not present
+			params[E.option.name] = E.default_value;
+		}
+	}
+
 	err = importer->import(ResourceUID::INVALID_ID, p_path, import_base_path, params, &import_variants, &import_options, &metadata);
 	ERR_FAIL_COND_V_MSG(err != OK, {}, "Failed to import resource at path " + p_path);
 	// load the resource
@@ -603,9 +633,14 @@ void PatchworkEditor::close_scene_file(const String &p_path) {
 	EditorNode::get_singleton()->load_scene(p_path);
 
 	// Main::iteration();
+#if GODOT_VERSION_MAJOR == 4 && GODOT_VERSION_MINOR < 5
+	constexpr int CLOSE_MENU_OPTION = EditorNode::FILE_CLOSE;
+#else
+	constexpr int CLOSE_MENU_OPTION = EditorNode::SCENE_CLOSE;
+#endif
 
 	// this needs to be bound to GDScript
-	EditorNode::get_singleton()->trigger_menu_option(EditorNode::FILE_CLOSE, true);
+	EditorNode::get_singleton()->trigger_menu_option(CLOSE_MENU_OPTION, true);
 }
 
 void PatchworkEditor::close_files_if_open(const Vector<String> &p_paths) {

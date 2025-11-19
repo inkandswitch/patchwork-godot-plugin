@@ -23,7 +23,7 @@ use automerge::{
     ROOT,
 };
 use automerge_repo::{tokio::FsStorage, ConnDirection, DocHandle, DocumentId, RepoHandle};
-use autosurgeon::{hydrate, reconcile};
+use autosurgeon::{Reconcile, Reconciler, hydrate, reconcile };
 use futures::{
     channel::mpsc::{UnboundedReceiver, UnboundedSender},
     StreamExt,
@@ -946,7 +946,12 @@ impl DriverState {
                     Ok(Some(_)) => ChangeType::Modified,
                     _ => ChangeType::Added
                 };
-                godot_scene.reconcile(&mut tx, path.clone());
+                // godot_scene.reconcile(&mut tx, path.clone());
+				let scene_file = tx.get_obj_id(&files, &path).unwrap_or_else(|| tx.put_object(&files, &path, ObjType::Map).unwrap());
+				autosurgeon::reconcile_prop(&mut tx, &scene_file, "structured_content", godot_scene).unwrap_or_else(|e| {
+					tracing::error!("error reconciling scene: {}", e);
+					panic!("error reconciling scene: {}", e);
+				});
                 changes.push(ChangedFile {
                     path,
                     change_type

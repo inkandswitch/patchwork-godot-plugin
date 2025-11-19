@@ -1,4 +1,5 @@
 use crate::branch::BranchState;
+use crate::differ::{ImportedDiff, TextDiffFile};
 use crate::file_utils::{FileContent};
 use godot::classes::editor_plugin::DockSlot;
 use ::safer_ffi::prelude::*;
@@ -1144,118 +1145,38 @@ impl GodotProjectImpl {
         return VariantStrValue::Variant(prop_value);
     }
 
-    fn get_diff_dict(
-        old_path: String,
-        new_path: String,
-        old_text: &String,
-        new_text: &String,
-    ) -> Dictionary {
-        let diff = TextDiff::from_lines(old_text, new_text);
-        let mut unified = diff.unified_diff();
-        unified.header(old_path.as_str(), new_path.as_str());
-        // The diff of a file is a list of hunks, each hunk is a list of lines
-        // the diff viewer expects the following data, but in Dictionary form
-        // struct DiffLine {
-        //     int new_line_no;
-        //     int old_line_no;
-        //     String content;
-        //     String status;
-        // These are manipulated by the diff viewer, no need to include them
-        //     String old_text;
-        //     String new_text;
-        // };
-
-        // struct DiffHunk {
-        //     int new_start;
-        //     int old_start;
-        //     int new_lines;
-        //     int old_lines;
-        //     List<DiffLine> diff_lines;
-        // };
-
-        // struct DiffFile {
-        //     String new_file;
-        //     String old_file;
-        //     List<DiffHunk> diff_hunks;
-        // };
-
-        fn get_range(ops: &[DiffOp]) -> (usize, usize, usize, usize) {
-            let first = ops[0];
-            let last = ops[ops.len() - 1];
-            let old_start = first.old_range().start;
-            let new_start = first.new_range().start;
-            let old_end = last.old_range().end;
-            let new_end = last.new_range().end;
-            (
-                old_start + 1,
-                new_start + 1,
-                old_end - old_start,
-                new_end - new_start,
-            )
-        }
-        let mut diff_file = Dictionary::new();
-        let _ = diff_file.insert("new_file", new_path);
-        let _ = diff_file.insert("old_file", old_path);
-        let mut diff_hunks = Array::new();
-        for (i, hunk) in unified.iter_hunks().enumerate() {
-            let mut diff_hunk = Dictionary::new();
-            let header = hunk.header();
-            let (old_start, new_start, old_lines, new_lines) = get_range(&hunk.ops());
-            let _ = diff_hunk.insert("old_start", old_start as i64);
-            let _ = diff_hunk.insert("new_start", new_start as i64);
-            let _ = diff_hunk.insert("old_lines", old_lines as i64);
-            let _ = diff_hunk.insert("new_lines", new_lines as i64);
-            let mut diff_lines = Array::new();
-            for (idx, change) in hunk.iter_changes().enumerate() {
-                let mut diff_line = Dictionary::new();
-                // get the tag
-                let status = match change.tag() {
-                    ChangeTag::Equal => " ",
-                    ChangeTag::Delete => "-",
-                    ChangeTag::Insert => "+",
-                };
-                if let Some(old_index) = change.old_index() {
-                    let _ = diff_line.insert("old_line_no", old_index as i64 + 1);
-                } else {
-                    let _ = diff_line.insert("old_line_no", -1);
-                }
-                if let Some(new_index) = change.new_index() {
-                    let _ = diff_line.insert("new_line_no", new_index as i64 + 1);
-                } else {
-                    let _ = diff_line.insert("new_line_no", -1);
-                }
-                let content = change.as_str().unwrap();
-                let _ = diff_line.insert("content", content);
-                let _ = diff_line.insert("status", status);
-                diff_lines.push(&diff_line);
-            }
-            let _ = diff_hunk.insert("diff_lines", diff_lines);
-            diff_hunks.push(&diff_hunk);
-        }
-        let _ = diff_file.insert("diff_hunks", diff_hunks);
-        diff_file
-    }
-
     fn _get_resource_at(
         &self,
         path: String,
-        content: &FileContent,
+		file_content: &FileContent,
         heads: Vec<ChangeHash>,
     ) -> Option<Variant> {
+		let import_path = format!("{}.import", path);
+        let mut import_file_content = self._get_file_at(import_path.clone(), Some(heads.clone()));
+		if import_file_content.is_none() { // try at current heads
+			import_file_content = self._get_file_at(import_path.clone(), None);
+		}
+        return self._create_temp_resource_from_content(&path, &file_content, &heads, import_file_content.as_ref());
+    }
+
+	fn _create_temp_resource_from_content(
+		&self,
+		path: &str,
+		content: &FileContent,
+		heads: &Vec<ChangeHash>,
+		import_file_content: Option<&FileContent>,
+	) -> Option<Variant> {
         let temp_dir = format!(
             "res://.patchwork/temp_{}/",
             heads.first().to_short_form()
         );
         let temp_path = path.replace("res://", &temp_dir);
-        // append _old or _new to the temp path (i.e. res://thing.<EXT> -> user://temp_123_456/thing_old.<EXT>)
-        let _ = FileContent::write_file_content(&PathBuf::from(self.globalize_path(&temp_path)), content);
-        // get the import file content
-        let import_path = format!("{}.import", path);
-        let mut import_file_content = self._get_file_at(import_path.clone(), Some(heads.clone()));
-		if import_file_content.is_none() { // try at current heads
-			import_file_content = self._get_file_at(import_path.clone(), None);
+		if let Err(e) = FileContent::write_file_content(&PathBuf::from(self.globalize_path(&temp_path)), content) {
+			tracing::error!("error writing file to temp path: {:?}", e);
+			return None;
 		}
-        if let Some(import_file_content) = import_file_content {
+
+		if let Some(import_file_content) = import_file_content {
             if let FileContent::String(import_file_content) = import_file_content {
                 let import_file_content = import_file_content.replace("res://", &temp_dir);
                 // regex to replace uid=uid://<...> and uid=uid://<invalid> with uid=uid://<...> and uid=uid://<invalid>
@@ -1270,6 +1191,7 @@ impl GodotProjectImpl {
 
                 let res = PatchworkEditorAccessor::import_and_load_resource(&temp_path);
                 if res.is_nil() {
+					tracing::error!("error importing resource: {:?}", temp_path);
                     return None;
                 }
                 return Some(res);
@@ -1282,9 +1204,8 @@ impl GodotProjectImpl {
         if let Some(resource) = resource {
             return Some(resource.to_variant());
         }
-        None
-    }
-
+		None
+	}
 
     fn _get_resource_diff(
         &self,
@@ -1295,29 +1216,93 @@ impl GodotProjectImpl {
         old_heads: &Vec<ChangeHash>,
         curr_heads: &Vec<ChangeHash>,
     ) -> Dictionary {
+        let imported_diff = self._get_imported_diff(path, old_content, new_content, old_heads, curr_heads);
+        let result = self._imported_diff_to_dict(path, change_type, &imported_diff);
+        result
+    }
+
+	fn _imported_diff_to_dict(
+		&self,
+		path: &String,
+		change_type: &str,
+		imported_diff: &ImportedDiff,
+	) -> Dictionary {
         let mut result = dict! {
             "path" : path.to_variant(),
             "diff_type" : "resource_changed".to_variant(),
             "change_type" : change_type.to_variant(),
-            "old_content" : old_content.unwrap_or(&FileContent::Deleted).to_variant(),
-            "new_content" : new_content.unwrap_or(&FileContent::Deleted).to_variant(),
+            "old_content" : imported_diff.old_content.as_ref().unwrap_or(&FileContent::Deleted).to_variant(),
+            "new_content" : imported_diff.new_content.as_ref().unwrap_or(&FileContent::Deleted).to_variant(),
         };
-        if let Some(old_content) = old_content {
+		if let Some(old_content) = imported_diff.old_content.as_ref() {
             if let Some(old_resource) =
-                self._get_resource_at(path.clone(), old_content, old_heads.clone())
+                self._create_temp_resource_from_content(&path, old_content, &imported_diff.old_heads, imported_diff.old_import_info.as_ref())
             {
                 let _ = result.insert("old_resource", old_resource);
             }
         }
-        if let Some(new_content) = new_content {
+        if let Some(new_content) = imported_diff.new_content.as_ref() {
             if let Some(new_resource) =
-                self._get_resource_at(path.clone(), new_content, curr_heads.clone())
+                self._create_temp_resource_from_content(&path, new_content, &imported_diff.new_heads, imported_diff.new_import_info.as_ref())
             {
                 let _ = result.insert("new_resource", new_resource);
             }
         }
-        result
-    }
+
+		result
+	}
+
+	fn _get_imported_diff(
+		&self,
+		path: &String,
+		old_content: Option<&FileContent>,
+		new_content: Option<&FileContent>,
+		old_heads: &Vec<ChangeHash>,
+		curr_heads: &Vec<ChangeHash>,
+	) -> ImportedDiff {
+		let import_path = format!("{}.import", path);
+		let get_import_file_content = |heads: &Vec<ChangeHash>| -> Option<FileContent> {
+			let mut import_file_content = self._get_file_at(import_path.clone(), Some(heads.clone()));
+			if import_file_content.is_none() { // try at current heads
+				import_file_content = self._get_file_at(import_path.clone(), None);
+			}
+			import_file_content
+		};
+		let old_import_file_content = if let Some(content) = old_content {
+			if !matches!(content, FileContent::Deleted) {
+				get_import_file_content(old_heads)
+			} else {
+				None
+			}
+		} else {
+			None
+		};
+		let new_import_file_content = if let Some(content) = new_content {
+			if !matches!(content, FileContent::Deleted) {
+				get_import_file_content(curr_heads)
+			} else {
+				None
+			}
+		} else {
+			None
+		};
+		ImportedDiff::create(
+			old_heads.clone(),
+			curr_heads.clone(),
+			if let Some(old_content) = old_content {
+				Some(old_content.clone())
+			} else {
+				None
+			},
+			if let Some(new_content) = new_content {
+				Some(new_content.clone())
+			} else {
+				None
+			},
+			old_import_file_content,
+			new_import_file_content,
+		)
+	}
 
     fn _get_text_file_diff(
         &self,
@@ -1337,13 +1322,13 @@ impl GodotProjectImpl {
         } else {
             &empty_string
         };
-        let diff = Self::get_diff_dict(path.clone(), path.clone(), old_text, new_text);
+        let text_diff = TextDiffFile::create(path.clone(), path.clone(), old_text, new_text);
         let result = dict! {
             "path" : path.to_variant(),
             "change_type" : change_type.to_variant(),
             "old_content" : old_content.unwrap_or(&FileContent::Deleted).to_variant(),
             "new_content" : new_content.unwrap_or(&FileContent::Deleted).to_variant(),
-            "text_diff" : diff,
+            "text_diff" : text_diff.to_godot(),
             "diff_type" : "text_changed".to_variant(),
         };
         result
@@ -1528,7 +1513,7 @@ impl GodotProjectImpl {
             let mut deleted_sub_resources: HashSet<String> = HashSet::new();
             let mut all_changed_sub_resource_ids: HashSet<String> = HashSet::new();
 
-            let mut changed_node_ids: HashSet<String> = HashSet::new();
+            let mut changed_node_ids: HashSet<i32> = HashSet::new();
 
             for patch in patches.iter() {
                 match_path(&patch_path, &patch).inspect(
@@ -1540,14 +1525,14 @@ impl GodotProjectImpl {
                             if path.len() > 2 {
                                 if let Some((_, Prop::Map(key))) = path.get(path.len() - 2) {
                                     if key == "properties" {
-                                        changed_node_ids.insert(node_id.clone());
+                                        changed_node_ids.insert(node_id.clone().parse::<i32>().unwrap());
                                         return;
                                     }
                                 }
                             }
                             if let Some((_, Prop::Map(key))) = path.last() {
                                 if key != "child_node_ids" {
-                                    changed_node_ids.insert(node_id.clone());
+                                    changed_node_ids.insert(node_id.clone().parse::<i32>().unwrap());
                                     return;
                                 }
                             }
@@ -1885,7 +1870,7 @@ impl GodotProjectImpl {
                     let mut node_info = Dictionary::new();
                     let _ = node_info.insert("change_type", if added { "added" } else { "removed" });
                     if let Some(scene) = if added { &new_scene } else { &old_scene } {
-                        let _ = node_info.insert("node_path", scene.get_node_path(&node_id));
+                        let _ = node_info.insert("node_path", scene.get_node_path(*node_id));
                         if let Some(node) = scene.nodes.get(&node_id.clone()) {
 							let tp = fn_get_class_name(&node.type_or_instance, &new_scene);
 							let _ = node_info.insert("type", tp);
@@ -1909,7 +1894,7 @@ impl GodotProjectImpl {
                     let _ = node_info.insert("change_type", "modified");
 
                     if let Some(scene) = &new_scene {
-                        let _ = node_info.insert("node_path", scene.get_node_path(node_id));
+                        let _ = node_info.insert("node_path", scene.get_node_path(*node_id));
                     }
                     let mut old_props = Dictionary::new();
                     let mut new_props = Dictionary::new();
@@ -1920,7 +1905,7 @@ impl GodotProjectImpl {
                         if let Some(old_node) = old_scene.nodes.get(node_id) {
                             old_type = old_node.type_or_instance.clone();
                         }
-                        if let Some(content) = old_scene.get_node(node_id).map(|n| n.to_dict()) {
+                        if let Some(content) = old_scene.get_node(*node_id).map(|n| n.to_dict()) {
                             if let Some(props) = content.get("properties") {
                                 old_props = props.to::<Dictionary>();
                             }
@@ -1932,7 +1917,7 @@ impl GodotProjectImpl {
                         if let Some(new_node) = new_scene.nodes.get(node_id) {
                             new_type = new_node.type_or_instance.clone();
                         }
-                        if let Some(content) = new_scene.get_node(node_id).map(|n| n.to_dict()) {
+                        if let Some(content) = new_scene.get_node(*node_id).map(|n| n.to_dict()) {
                             if let Some(props) = content.get("properties") {
                                 new_props = props.to::<Dictionary>();
                             }

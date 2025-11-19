@@ -8,7 +8,7 @@ env:
   GODOT_REPOSITORY: nikitalita/godot
   GODOT_BASE_BRANCH: master
   # Change the README too
-  GODOT_MAIN_SYNC_REF: patchwork-4.4
+  GODOT_MAIN_SYNC_REF: patchwork-4.6
   SCONSFLAGS: verbose=yes warnings=all werror=no module_text_server_fb_enabled=yes minizip=yes deprecated=yes module_patchwork_editor_enabled=yes
   SCONSFLAGS_TEMPLATE: no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no
   SCONS_CACHE_MSVC_CONFIG: true
@@ -102,22 +102,18 @@ jobs:
         id: compile-editor
         uses: ./.github/actions/godot-build
         with:
-          sconsflags: arch=x86_64 ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }}
+          scons-flags: arch=x86_64 ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }}
           platform: ${{ matrix.platform }}
           target: editor
-          tests: false
-          scons-cache-limit: 4096
 
       - name: Compile Editor for macos arm64
         uses: ./.github/actions/godot-build
         if: matrix.platform == 'macos' && matrix.target == 'editor'
         with:
           # generate the bundle on this one; generate_bundle automatically lipos the binaries
-          sconsflags: arch=arm64 ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }} generate_bundle=yes
+          scons-flags: arch=arm64 ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }} generate_bundle=yes
           platform: ${{ matrix.platform }}
           target: editor
-          tests: false
-          scons-cache-limit: 4096
 
       - name: cleanup macos
         if: matrix.platform == 'macos' && matrix.target == 'editor'
