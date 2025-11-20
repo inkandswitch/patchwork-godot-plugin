@@ -1,6 +1,8 @@
-use crate::file_utils::{FileContent};
+use crate::file_utils::FileContent;
 use crate::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
+use crate::godot_project_api::GodotProjectViewModel;
 use crate::godot_project_impl::{GodotProjectImpl, GodotProjectSignal};
+use automerge::ChangeHash;
 use godot::classes::editor_plugin::DockSlot;
 use ::safer_ffi::prelude::*;
 use automerge_repo::{DocumentId, PeerConnectionInfo};
@@ -141,6 +143,7 @@ impl PendingEditorUpdate {
 #[class(base=Node)]
 pub struct GodotProject {
 	base: Base<Node>,
+	// todo (Lilith's PR): change this to GodotProjectViewModel trait ideally
 	project: GodotProjectImpl,
 	pending_editor_update: PendingEditorUpdate,
 	reload_project_settings_callable: Option<Callable>,
@@ -169,36 +172,179 @@ macro_rules! check_project_started_and_return_default {
 	};
 }
 
-#[godot_api]
+// new API
+/// This implementation binds as closely as possible to [GodotProjectViewModel].
+#[godot_api(secondary)]
 impl GodotProject {
-	#[signal]
-	fn checked_out_branch(branch: Dictionary);
-
-	#[signal]
-	fn files_changed();
-
-	#[signal]
-	fn saved_changes();
-
-	#[signal]
-	fn branches_changed(branches: Array<Dictionary>);
-
-	#[signal]
-	fn sync_server_connection_info_changed(peer_connection_info: Dictionary);
-
-	#[signal]
-	fn connection_thread_failed();
+	#[func]
+	fn clear_project(&mut self) {
+		check_project_started!(self);
+		self.project.clear_project();
+	}
 
 	#[func]
-	fn revert_to_heads(&mut self, heads: PackedStringArray) {
-		check_project_started!(self);
-		self.project.revert_to_heads(array_to_heads(heads));
+	fn get_user_name(&self) -> String {
+		check_project_started_and_return_default!(self, String::new());
+		self.project.get_user_name()
 	}
 
 	#[func]
 	fn set_user_name(&self, name: String) {
 		check_project_started!(self);
 		self.project.set_user_name(name);
+	}
+
+	#[func]
+    fn print_sync_debug(&self) {
+		check_project_started!(self);
+		self.project.print_sync_debug();
+	}
+
+	#[func]
+	fn can_create_merge_preview_branch(&self) -> bool {
+		check_project_started_and_return_default!(self, false);
+		self.project.can_create_merge_preview_branch()
+	}
+
+	#[func]
+	fn create_merge_preview_branch(&mut self) {
+		check_project_started!(self);
+		self.project.create_merge_preview_branch();
+	}
+
+	#[func]
+	fn can_create_revert_preview_branch(&self, head: String) -> bool {
+		check_project_started_and_return_default!(self, false);
+		if let Ok(hash) = ChangeHash::from_str(&head) {
+			return self.project.can_create_revert_preview_branch(hash);
+		}
+		false
+	}
+
+	#[func]
+	fn create_revert_preview_branch(&mut self, head: String) {
+		check_project_started!(self);
+		if let Ok(hash) = ChangeHash::from_str(&head) {
+			self.project.create_revert_preview_branch(hash);
+		}
+	}
+
+	#[func]
+	fn preview_branch_active(&self) -> bool {
+		check_project_started_and_return_default!(self, false);
+		self.project.preview_branch_active()
+	}
+
+	#[func]
+	fn confirm_preview_branch(&mut self) {
+		check_project_started!(self);
+		self.project.confirm_preview_branch();
+	}
+
+	#[func]
+	fn discard_preview_branch(&mut self) {
+		check_project_started!(self);
+		self.project.discard_preview_branch();
+	}
+
+	#[func]
+	fn get_branch_history(&self) -> PackedStringArray {
+		check_project_started_and_return_default!(self, PackedStringArray::new());
+		self.project.get_branch_history().to_godot()
+	}
+
+	#[func]
+	fn get_change_username(&self, hash: String) -> String {
+		check_project_started_and_return_default!(self, String::new());
+		if let Ok(hash) = ChangeHash::from_str(&hash) {
+			return self.project.get_change_username(hash);
+		}
+		String::new()
+	}
+
+	#[func]
+	fn is_change_synced(&self, hash: String) -> bool {
+		check_project_started_and_return_default!(self, false);
+		if let Ok(hash) = ChangeHash::from_str(&hash) {
+			return self.project.is_change_synced(hash);
+		}
+		false
+	}
+
+	#[func]
+	fn get_change_summary(&self, hash: String) -> String {
+		check_project_started_and_return_default!(self, String::new());
+		if let Ok(hash) = ChangeHash::from_str(&hash) {
+			return self.project.get_change_summary(hash);
+		}
+		String::new()
+	}
+
+	#[func]
+	fn is_change_merge(&self, hash: String) -> bool {
+		check_project_started_and_return_default!(self, false);
+		if let Ok(hash) = ChangeHash::from_str(&hash) {
+			return self.project.is_change_merge(hash);
+		}
+		false
+	}
+
+	#[func]
+	fn is_change_setup(&self, hash: String) -> bool {
+		check_project_started_and_return_default!(self, false);
+		if let Ok(hash) = ChangeHash::from_str(&hash) {
+			return self.project.is_change_setup(hash);
+		}
+		false
+	}
+
+	#[func]
+	fn get_change_exact_timestamp(&self, hash: String) -> String {
+		check_project_started_and_return_default!(self, String::new());
+		if let Ok(hash) = ChangeHash::from_str(&hash) {
+			return self.project.get_change_exact_timestamp(hash);
+		}
+		String::new()
+	}
+
+	#[func]
+	fn get_change_human_timestamp(&self, hash: String) -> String {
+		check_project_started_and_return_default!(self, String::new());
+		if let Ok(hash) = ChangeHash::from_str(&hash) {
+			return self.project.get_change_human_timestamp(hash);
+		}
+		String::new()
+	}
+
+	#[func]
+	fn get_change_merge_id(&self, hash: String) -> Variant {
+		check_project_started_and_return_default!(self, Variant::nil());
+		if let Ok(hash) = ChangeHash::from_str(&hash) {
+			return self.project.get_change_merge_id(hash).to_variant();
+		}
+		Variant::nil()
+	}
+	
+	#[func]
+    fn get_sync_status(&self) -> Dictionary {
+		check_project_started_and_return_default!(self, dict!{});
+		self.project.get_sync_status().to_godot()
+	}
+}
+
+// old API -- will be removed
+#[godot_api]
+impl GodotProject {
+	#[signal]
+	fn checked_out_branch(branch: Dictionary);
+
+	#[signal]
+	fn state_changed();
+
+	#[func]
+	fn revert_to_heads(&mut self, heads: PackedStringArray) {
+		check_project_started!(self);
+		self.project.revert_to_heads(array_to_heads(heads));
 	}
 
 	#[func]
@@ -213,13 +359,6 @@ impl GodotProject {
 		self.project.get_heads().to_godot()
 	}
 
-
-	#[func]
-	fn get_files(&self) -> PackedStringArray {
-		check_project_started_and_return_default!(self, PackedStringArray::new());
-		self.project.get_files().to_godot()
-	}
-
     #[func]
     pub fn get_singleton() -> Gd<Self> {
         Engine::singleton()
@@ -227,13 +366,6 @@ impl GodotProject {
             .unwrap()
             .cast::<Self>()
     }
-
-    #[func]
-    fn get_changes(&self) -> Array<Dictionary> /* String[]  */ {
-		check_project_started_and_return_default!(self, Array::new());
-		let changes = self.project.get_changes();
-		changes.iter().map(|c| c.to_godot()).collect::<Array<Dictionary>>()
-	}
 
     #[func]
     fn get_main_branch(&self) -> Variant /* Branch? */ {
@@ -244,7 +376,7 @@ impl GodotProject {
     #[func]
     fn get_branch_by_id(&self, branch_id: String) -> Variant /* Branch? */ {
 		check_project_started_and_return_default!(self, Variant::nil());
-		self.project.get_branch_by_id(&branch_id).to_variant()
+		self.project.get_branch_by_id(&DocumentId::from_str(&branch_id).unwrap()).to_variant()
 	}
     #[func]
     fn merge_branch(&mut self, source_branch_doc_id: String, target_branch_doc_id: String) {
@@ -256,28 +388,6 @@ impl GodotProject {
     fn create_branch(&mut self, name: String) {
 		check_project_started!(self);
 		self.project.create_branch(name);
-	}
-
-    #[func]
-    fn create_merge_preview_branch(
-        &mut self,
-        source_branch_doc_id: String,
-        target_branch_doc_id: String,
-    ) {
-		check_project_started!(self);
-		let source_branch_doc_id = DocumentId::from_str(&source_branch_doc_id).unwrap();
-        let target_branch_doc_id = DocumentId::from_str(&target_branch_doc_id).unwrap();
-		self.project.create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id);
-	}
-
-	#[func]
-    fn create_revert_preview_branch(
-        &mut self,
-        branch_doc_id: String,
-        revert_to: PackedStringArray,
-    ) {
-		check_project_started!(self);
-		self.project.create_revert_preview_branch(DocumentId::from_str(&branch_doc_id).unwrap(), array_to_heads(revert_to));
 	}
 
     #[func]
@@ -304,17 +414,6 @@ impl GodotProject {
 		check_project_started_and_return_default!(self, Variant::nil());
 		self.project.get_checked_out_branch_state().map(|b|b.to_godot().to_variant()).unwrap_or_default()
 	}
-
-    #[func]
-    fn get_sync_server_connection_info(&self) -> Variant {
-		check_project_started_and_return_default!(self, Variant::nil());
-        match self.project.get_sync_server_connection_info() {
-            Some(peer_connection_info) => {
-                peer_connection_info.to_variant()
-            }
-            None => Variant::nil(),
-        }
-    }
 
     #[func]
     fn get_all_changes_between(
@@ -502,31 +601,21 @@ impl INode for GodotProject {
 					self.signals().checked_out_branch().emit(&branch);
 				}
 				GodotProjectSignal::FilesChanged => {
-					self.signals().files_changed().emit();
+					self.signals().state_changed().emit();
 				}
 				GodotProjectSignal::SavedChanges => {
-					self.signals().saved_changes().emit();
+					self.signals().state_changed().emit();
 				}
 				GodotProjectSignal::BranchesChanged => {
 					let branches = self.get_branches();
-					self.signals().branches_changed().emit(&branches);
+					self.signals().state_changed().emit();
 				}
-				GodotProjectSignal::SyncServerConnectionInfoChanged(peer_connection_info) => {
-					// This signal causes slowdown on the UI layer -- refactor for a better solution, but for now, debounce.
-					self.pending_server_change_signal = Some(peer_connection_info);
+				GodotProjectSignal::SyncServerConnectionInfoChanged(_peer_connection_info) => {
+					self.signals().state_changed().emit();
 				}
 				GodotProjectSignal::ConnectionThreadFailed => {
-					self.signals().connection_thread_failed().emit();
+					self.signals().state_changed().emit();
 				}
-			}
-
-			// Only allow 1 SyncServerConnectionInfoChanged per second
-			let now = std::time::SystemTime::now();
-			let diff = now.duration_since(self.last_server_change_signal);
-			if self.pending_server_change_signal.is_some() && diff.unwrap_or_default().as_secs() >= 1u64 {
-				self.last_server_change_signal = now;
-				let moved = self.pending_server_change_signal.take().unwrap();
-				self.signals().sync_server_connection_info_changed().emit(&moved.to_godot());
 			}
 		}
     }

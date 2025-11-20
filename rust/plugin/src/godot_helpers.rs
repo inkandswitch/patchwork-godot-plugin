@@ -10,6 +10,7 @@ use godot::{prelude::*, meta::ToGodot, meta::GodotConvert};
 // use godot::prelude::{GString, Variant, Dc};
 use crate::file_utils::FileContent;
 use crate::godot_parser::{GodotNode, TypeOrInstance};
+use crate::godot_project_api::SyncStatus;
 use crate::utils::{ChangedFile, CommitInfo, MergeMetadata};
 use crate::branch::BranchState;
 use crate::differ::{DiffLine, DiffHunk, TextDiffFile};
@@ -254,7 +255,7 @@ impl ToGodot for CommitInfo {
 	type ToVia<'v> = Dictionary;
 	fn to_godot(&self) -> Dictionary {
 		let mut md = dict! {
-			"hash": self.hash.to_godot(),
+			"hash": self.hash.to_string().to_godot(),
 			"timestamp": self.timestamp.to_godot(),
 		};
 		if let Some(metadata) = &self.metadata {
@@ -351,62 +352,27 @@ impl ToVariantExt for Option<&BranchState> {
 	}
 }
 
+impl GodotConvert for SyncStatus {
+	type Via = Dictionary;
+}
 
-fn peer_connection_info_to_dict(peer_connection_info: &PeerConnectionInfo) -> Dictionary {
-    let mut doc_sync_states = Dictionary::new();
-
-    for (doc_id, doc_state) in peer_connection_info.docs.iter() {
-        let last_received = doc_state
-            .last_received
-            .map(system_time_to_variant)
-            .unwrap_or(Variant::nil());
-
-        let last_sent = doc_state
-            .last_sent
-            .map(system_time_to_variant)
-            .unwrap_or(Variant::nil());
-
-        let last_sent_heads = doc_state
-            .last_sent_heads
-            .as_ref()
-            .map(|heads| heads_to_array(heads.clone()).to_variant())
-            .unwrap_or(Variant::nil());
-
-        let last_acked_heads = doc_state
-            .last_acked_heads
-            .as_ref()
-            .map(|heads| heads_to_array(heads.clone()).to_variant())
-            .unwrap_or(Variant::nil());
-
-        let _ = doc_sync_states.insert(
-            doc_id.to_string(),
-            dict! {
-                "last_received": last_received,
-                "last_sent": last_sent,
-                "last_sent_heads": last_sent_heads,
-                "last_acked_heads": last_acked_heads,
-            },
-        );
-    }
-
-    let last_received = peer_connection_info
-        .last_received
-        .map(system_time_to_variant)
-        .unwrap_or(Variant::nil());
-
-    let last_sent = peer_connection_info
-        .last_sent
-        .map(system_time_to_variant)
-        .unwrap_or(Variant::nil());
-
-    let is_connected = !last_received.is_nil();
-
-    dict! {
-        "doc_sync_states": doc_sync_states,
-        "last_received": last_received,
-        "last_sent": last_sent,
-        "is_connected": is_connected,
-    }
+impl ToGodot for SyncStatus {
+	type ToVia<'v> = Dictionary;
+	
+	fn to_godot(&self) -> Dictionary {
+		dict! {
+			"state": match self {
+				SyncStatus::Unknown => "unknown",
+				SyncStatus::Disconnected(_) => "disconnected",
+				SyncStatus::UpToDate => "up_to_date",
+				SyncStatus::Syncing => "syncing"
+			},
+			"unsynced_changes": match self {
+				SyncStatus::Disconnected(num) => *num as i32,
+				_ => 0
+			}
+		}
+	}
 }
 
 fn system_time_to_variant(time: SystemTime) -> Variant {
@@ -415,21 +381,6 @@ fn system_time_to_variant(time: SystemTime) -> Variant {
         .map(|d| d.as_secs().to_variant())
         .unwrap_or(Variant::nil())
 }
-
-impl GodotConvertExt for PeerConnectionInfo {
-	type Via = Dictionary;
-}
-
-impl ToGodotExt for PeerConnectionInfo {
-	type ToVia<'v> = Dictionary;
-	fn _to_godot(&self) -> Self::ToVia<'_> {
-		peer_connection_info_to_dict(self)
-	}
-	fn _to_variant(&self) -> Variant {
-		peer_connection_info_to_dict(self).to_variant()
-	}
-}
-
 
 impl GodotConvert for FileContent {
 	type Via = Variant;

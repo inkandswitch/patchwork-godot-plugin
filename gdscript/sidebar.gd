@@ -81,31 +81,11 @@ const MERGE_BRANCH_IDX = 2
 signal reload_ui();
 signal user_name_initialized();
 
-
-func _update_ui_on_branches_changed(_branches: Array):
-	print("update_ui_on_branches_changed")
-	var current_branch = GodotProject.get_checked_out_branch()
-	var update_diff = false
-	for branch in _branches:
-		if branch.get("id", "") == current_branch.get("id", ""):
-			update_diff = true
-			break
-	update_ui(update_diff)
-
-func _update_ui_on_files_saved():
-	print("update_ui_on_files_saved")
-	update_ui(true)
-
-func _update_ui_on_files_changed():
-	print("update_ui_on_files_changed")
-	update_ui(true)
+func _update_ui_on_state_change():
+	update_ui()
 
 func _update_ui_on_branch_checked_out(_branch):
-	print("update_ui_on_branch_checked_out")
-	update_ui(true)
-
-func _on_sync_server_connection_info_changed(_peer_connection_info: Dictionary) -> void:
-	update_ui(false)
+	update_ui()
 
 func _on_initial_checked_out_branch(_branch):
 	print("on_initial_checked_out_branch")
@@ -186,10 +166,9 @@ func _clear_user_name_initialized_connections():
 
 func _on_user_name_confirmed():
 	if %UserNameEntry.text.strip_edges() != "":
-		var current_name = PatchworkConfig.get_user_value("user_name", "")
+		var current_name = GodotProject.get_user_name()
 		var new_user_name = %UserNameEntry.text.strip_edges()
 		print(new_user_name)
-		PatchworkConfig.set_user_value("user_name", new_user_name)
 		GodotProject.set_user_name(new_user_name)
 		if current_name.is_empty():
 			user_name_initialized.emit()
@@ -197,7 +176,7 @@ func _on_user_name_confirmed():
 	update_ui(false)
 
 func _on_user_button_pressed(disable_cancel: bool = false):
-	%UserNameEntry.text = PatchworkConfig.get_user_value("user_name", "")
+	%UserNameEntry.text = GodotProject.get_user_name()
 	%UserNameDialog.popup_centered()
 	%UserNameDialog.get_cancel_button().visible = not disable_cancel
 
@@ -205,10 +184,7 @@ func _on_clear_project_button_pressed():
 	popup_box(self, $ConfirmationDialog, "Are you sure you want to clear the project?", "Clear Project", func(): clear_project())
 
 func clear_project():
-	GodotProject.stop()
-	PatchworkConfig.set_user_value("user_name", "")
-	PatchworkConfig.set_project_value("project_doc_id", "")
-	PatchworkConfig.set_project_value("checked_out_branch_doc_id", "")
+	GodotProject.clear_project()
 	_on_reload_ui_button_pressed()
 
 func get_history_item_enabled(item: TreeItem) -> bool:
@@ -299,16 +275,13 @@ func init(end_task: bool = true) -> void:
 	branch_picker.disabled = false
 	fork_button.disabled = false
 	%CopyProjectIDButton.disabled = false
-	update_ui(true)
+	update_ui()
 	# @Paul: I think somewhere besides the plugin sidebar gets instantiated. Is this something godot does?
 	# to paper over this we check if plugin and godot_project are set
 
 	if GodotProject.get_singleton():
-		GodotProject.connect("branches_changed", self._update_ui_on_branches_changed);
-		GodotProject.connect("saved_changes", self._update_ui_on_files_saved);
-		GodotProject.connect("files_changed", self._update_ui_on_files_changed);
+		GodotProject.connect("state_changed", self._update_ui_on_state_change);
 		GodotProject.connect("checked_out_branch", self._update_ui_on_branch_checked_out);
-		GodotProject.connect("sync_server_connection_info_changed", _on_sync_server_connection_info_changed)
 
 	merge_button.pressed.connect(create_merge_preview_branch)
 	fork_button.pressed.connect(create_new_branch)
@@ -337,6 +310,7 @@ func init(end_task: bool = true) -> void:
 	if not check_and_prompt_for_user_name(self._check_for_user_branch):
 		return
 
+	# todo: miserable UI that waits 5 seconds before nagging the user to make a branch, make better
 	if not TURN_ON_USER_BRANCH_PROMPT:
 		return
 	var timeout = 5.0
@@ -348,31 +322,8 @@ func init(end_task: bool = true) -> void:
 	timer.start()
 
 func _on_sync_status_icon_pressed():
-	var sync_info = GodotProject.get_sync_server_connection_info()
-	var checked_out_branch = GodotProject.get_checked_out_branch()
-
-	print("Sync info ===========================", )
-	print("is connected: ", sync_info.is_connected)
-	print("last received: ", human_readable_timestamp(sync_info.last_received * 1000.0))
-	print("last sent: ", human_readable_timestamp(sync_info.last_sent * 1000.0))
-
-
-	if checked_out_branch && sync_info.doc_sync_states.has(checked_out_branch.id):
-		var doc_sync_state = sync_info.doc_sync_states[checked_out_branch.id]
-
-		print(checked_out_branch.name, ":")
-		print("  acked heads: ", doc_sync_state.last_acked_heads)
-		print("  sent heads: ", doc_sync_state.last_sent_heads)
-		if doc_sync_state.last_sent != null:
-			print("  last sent: ", human_readable_timestamp(doc_sync_state.last_sent * 1000.0))
-		else:
-			print("  last sent: -")
-		if doc_sync_state.last_received != null:
-			print("  last received: ", human_readable_timestamp(doc_sync_state.last_received * 1000.0))
-		else:
-			print("  last received: -")
-
-	print("=====================================", )
+	GodotProject.print_sync_debug()
+	print("_____ PRINT")
 
 func _on_branch_picker_item_selected(_index: int) -> void:
 	var selected_branch = branch_picker.get_item_metadata(_index)
@@ -478,9 +429,7 @@ func create_new_branch(disable_cancel: bool = false) -> void:
 		var branch_name_input = LineEdit.new()
 		branch_name_input.placeholder_text = "Branch name"
 
-		var user_name = PatchworkConfig.get_user_value("user_name", "")
-		if !user_name:
-			user_name = "Anonymous"
+		var user_name = GodotProject.get_user_name()
 
 		branch_name_input.text = user_name + "'s remix"
 		dialog.add_child(branch_name_input)
@@ -535,102 +484,66 @@ func move_inspector_to_main() -> void:
 		inspector.visible = true
 
 func create_merge_preview_branch():
-	var checked_out_branch = GodotProject.get_checked_out_branch()
-	if not checked_out_branch:
-		printerr("no checked out branch")
+	# this shouldn't be possible due to UI disabling, but just in case
+	if not GodotProject.can_create_merge_preview_branch():
 		return
-
-	if checked_out_branch.is_main:
-		popup_box(self, $ErrorDialog, "Can't merge the main branch!", "Error")
-		return
-
-	var forked_from_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from)
-
-	var source_branch_doc_id = checked_out_branch.id
-	var target_branch_doc_id = forked_from_branch.id
 
 	task_modal.do_task("Creating merge preview", func():
-		GodotProject.create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id)
-
+		GodotProject.create_merge_preview_branch()
 		await GodotProject.checked_out_branch
 	)
 
-func create_revert_preview_branch(heads: PackedStringArray):
-	if not heads or heads.size() == 0:
-		printerr("no heads")
-		return
-
-	var checked_out_branch = GodotProject.get_checked_out_branch()
-	if not checked_out_branch:
-		printerr("no checked out branch")
-		return
-
-	var source_branch_doc_id = checked_out_branch.id
+func create_revert_preview_branch(head):
+	# this shouldn't be possible due to UI disabling, but just in case
+	if !GodotProject.can_create_revert_preview_branch(head): return
 
 	task_modal.do_task("Creating revert preview", func():
-		GodotProject.create_revert_preview_branch(source_branch_doc_id, heads)
-
+		GodotProject.create_revert_preview_branch(head)
 		await GodotProject.checked_out_branch
 	)
 
 func cancel_revert_preview():
-	var checked_out_branch = GodotProject.get_checked_out_branch()
-	if not checked_out_branch:
-		printerr("no checked out branch")
-		return
-	var source_branch_doc_id = checked_out_branch.forked_from
-
+	if !GodotProject.preview_branch_active(): return
 	task_modal.do_task("Cancel revert preview", func():
-
-		GodotProject.delete_branch(checked_out_branch.id)
-		GodotProject.checkout_branch(source_branch_doc_id)
+		GodotProject.discard_preview_branch()
 		await GodotProject.checked_out_branch
 	)
 
 func confirm_revert_preview():
+	if !GodotProject.preview_branch_active(): return
 	var checked_out_branch = GodotProject.get_checked_out_branch()
-	if not checked_out_branch:
-		printerr("no checked out branch")
-		return
-
-	var source_branch_doc_id = checked_out_branch.forked_from
 	var reverted_to_heads = checked_out_branch.reverted_to
 
 	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before reverting.", func():
 		popup_box(self, $ConfirmationDialog, "Are you sure you want to revert to \"%s\" ?" % [String(", ").join(reverted_to_heads)], "Revert Branch", func():
 			task_modal.do_task("Reverting to \"%s\"" % [String(", ").join(reverted_to_heads)], func():
-				GodotProject.delete_branch(checked_out_branch.id)
-				GodotProject.checkout_branch(source_branch_doc_id)
-				await GodotProject.checked_out_branch
-				GodotProject.revert_to_heads(reverted_to_heads)
+				GodotProject.confirm_preview_branch()
 				await GodotProject.checked_out_branch
 			)
 		)
 	)
 
 func cancel_merge_preview():
+	if !GodotProject.preview_branch_active(): return
 	task_modal.do_task("Cancel merge preview", func():
-		var checked_out_branch = GodotProject.get_checked_out_branch()
-
-		GodotProject.delete_branch(checked_out_branch.id)
-		GodotProject.checkout_branch(checked_out_branch.forked_from)
+		GodotProject.discard_preview_branch()
 		await GodotProject.checked_out_branch
 	)
 
 
 func confirm_merge_preview():
+	if !GodotProject.preview_branch_active(): return
 	var checked_out_branch = GodotProject.get_checked_out_branch()
-
-	var source_branch_doc_id = checked_out_branch.id
-	var target_branch_doc_id = checked_out_branch.merge_into
 
 	var original_source_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from)
 	var target_branch = GodotProject.get_branch_by_id(checked_out_branch.merge_into)
 
+	# todo: do we want to put these branch strings into rust; make access easier?
 	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before merging.", func():
 		popup_box(self, $ConfirmationDialog, "Are you sure you want to merge \"%s\" into \"%s\" ?" % [original_source_branch.name, target_branch.name], "Merge Branch", func():
 			task_modal.do_task("Merging \"%s\" into \"%s\"" % [original_source_branch.name, target_branch.name], func():
-				GodotProject.merge_branch(source_branch_doc_id, target_branch_doc_id)
+				GodotProject.confirm_preview_branch()
+				await GodotProject.checked_out_branch
 			)
 		)
 	)
@@ -661,8 +574,8 @@ func heads_to_short_form(heads: PackedStringArray) -> String:
 		short_form += head.substr(0, 7) + ", "
 	return short_form.substr(0, short_form.length() - 2)
 
-func update_history_ui(checked_out_branch, history, peer_connection_info):
-	var unsynced_changes = get_unsynced_changes(peer_connection_info, checked_out_branch, history)
+func update_history_ui():
+	var history = GodotProject.get_branch_history()
 
 	history_tree.clear()
 	history_item_count = 0
@@ -672,16 +585,8 @@ func update_history_ui(checked_out_branch, history, peer_connection_info):
 	var selection = null
 
 	for i in range(history.size() - 1, -1, -1):
-		var change = history[i]
-
-		if !("branch_id" in change) || change.branch_id != checked_out_branch.id:
-			continue
-
-		var change_author
-		if "username" in change:
-			change_author = change.username
-		else:
-			change_author = "Anonymous"
+		var change_hash = history[i]
+		var change_author = GodotProject.get_change_username(change_hash)
 
 		var item = history_tree.create_item(root)
 		history_item_count += 1
@@ -690,14 +595,14 @@ func update_history_ui(checked_out_branch, history, peer_connection_info):
 		# if we're a dev, we need another column for the commit hash
 		history_tree.columns = HistoryColumns.COUNT
 		if DEV_MODE:
-			item.set_text(HistoryColumns.HASH, change.hash.substr(0, 8))
-			item.set_tooltip_text(HistoryColumns.HASH, change.hash)
+			item.set_text(HistoryColumns.HASH, change_hash.substr(0, 8))
+			item.set_tooltip_text(HistoryColumns.HASH, change_hash)
 			item.set_selectable(HistoryColumns.HASH, false)
 			history_tree.set_column_expand(HistoryColumns.HASH, true)
 			history_tree.set_column_expand_ratio(HistoryColumns.HASH, 0)
 			history_tree.set_column_custom_minimum_width(HistoryColumns.HASH, 80 * editor_scale)
 
-		set_history_item_hash(item, change.hash)
+		set_history_item_hash(item, change_hash)
 		set_history_item_enabled(item, true)
 		history_tree.set_column_expand(HistoryColumns.TEXT, true)
 		history_tree.set_column_expand_ratio(HistoryColumns.TEXT, 2)
@@ -705,39 +610,25 @@ func update_history_ui(checked_out_branch, history, peer_connection_info):
 
 		var text_color = Color.WHITE
 
-		if "merge_metadata" in change:
-			var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
-			var merged_branch_name = str(change.merge_metadata.merged_branch_id)
-			if merged_branch:
-				merged_branch_name = merged_branch.name
-			item.set_text(HistoryColumns.TEXT, "↪️ " + change_author + " merged \"" + merged_branch_name + "\" branch")
-			item.add_button(HistoryColumns.TEXT, load("res://addons/patchwork/icons/branch-icon-history.svg"), 0, false, "Checkout branch " + merged_branch_name)
+		if GodotProject.is_change_merge(change_hash):
+			var merged_branch = GodotProject.get_branch_by_id(GodotProject.get_change_merge_id(change_hash))
+			item.add_button(HistoryColumns.TEXT, load("res://addons/patchwork/icons/branch-icon-history.svg"), 0, false, "Checkout branch " + merged_branch.name)
 
-		elif "reverted_to" in change:
-			var reverted_to: PackedStringArray = change.reverted_to
-			for j in range(reverted_to.size()):
-				# just truncate the hash to 7 characters
-				reverted_to[j] = reverted_to[j].substr(0, 7)
-			item.set_text(HistoryColumns.TEXT, "↩️ " + change_author + " reverted to " + ", ".join(reverted_to))
+		item.set_text(HistoryColumns.TEXT, GodotProject.get_change_summary(change_hash))
 
-		elif checked_out_branch and checked_out_branch.is_main and i < NUM_INITIAL_COMMITS:
-			# disabled flag
-			set_history_item_enabled(item, false)
-			item.set_text(HistoryColumns.TEXT, INITIAL_COMMIT_TEXT)
-		else:
-			var changed_files = change.changed_files if "changed_files" in change else []
-			item.set_text(HistoryColumns.TEXT, summarize_changes(change_author, changed_files))
+		# disable initial commits
+		if GodotProject.is_change_setup(change_hash):
+			set_history_item_enabled(item, false);
 
-		if unsynced_changes.has(change.hash):
+		if !GodotProject.is_change_synced(change_hash):
 			text_color = Color(0.6, 0.6, 0.6)
-
 
 		else:
 			item.add_button(HistoryColumns.TEXT, item_context_menu_icon, 1, false, "Open context menu")
 
 		# timestamp
-		item.set_text(HistoryColumns.TIME, human_readable_timestamp(change.timestamp))
-		item.set_tooltip_text(HistoryColumns.TIME, exact_human_readable_timestamp(change.timestamp))
+		item.set_text(HistoryColumns.TIME, GodotProject.get_change_human_timestamp(change_hash))
+		item.set_tooltip_text(HistoryColumns.TIME, GodotProject.get_change_exact_timestamp(change_hash))
 		item.set_selectable(HistoryColumns.TIME, false)
 		history_tree.set_column_expand(HistoryColumns.TIME, true)
 		history_tree.set_column_expand_ratio(HistoryColumns.TIME, 0)
@@ -748,7 +639,7 @@ func update_history_ui(checked_out_branch, history, peer_connection_info):
 		item.set_custom_color(HistoryColumns.TEXT, text_color)
 		item.set_custom_color(HistoryColumns.TIME, text_color)
 
-		if change.hash == history_saved_selection:
+		if change_hash == history_saved_selection:
 			selection = item
 
 	# restore saved selection
@@ -764,19 +655,15 @@ func update_ui(should_update_diff: bool = false) -> void:
 	var checked_out_branch = GodotProject.get_checked_out_branch()
 	var main_branch = GodotProject.get_main_branch()
 	var all_branches = GodotProject.get_branches()
-	var history = GodotProject.get_changes()
-	var peer_connection_info = GodotProject.get_sync_server_connection_info()
-
-	all_changes_count = history.size()
 
 	# update branch pickers
 	update_branch_picker(main_branch, checked_out_branch, all_branches)
 
 	# update the history tree
-	update_history_ui(checked_out_branch, history, peer_connection_info)
+	update_history_ui()
 
 	# update sync status
-	update_sync_status(peer_connection_info, checked_out_branch, history)
+	update_sync_status()
 
 	# update action buttons
 
@@ -832,90 +719,31 @@ func update_ui(should_update_diff: bool = false) -> void:
 
 	if should_update_diff: update_diff()
 
-func update_sync_status(peer_connection_info, checked_out_branch, changes) -> void:
-	if !checked_out_branch:
-		return
+func update_sync_status() -> void:
+	var sync_status = GodotProject.get_sync_status()
+	print(sync_status);
 
-	if !peer_connection_info:
-		printerr("no peer connection info")
-		return
-
-	# unknown sync status
-	if !peer_connection_info.doc_sync_states.has(checked_out_branch.id):
+	if sync_status.state == "unknown":
 		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
 		sync_status_icon.tooltip_text = "Disconnected - might have unsynced changes"
-		return
 
-	var sync_status = peer_connection_info.doc_sync_states[checked_out_branch.id];
-
-	# fully synced
-	if sync_status.last_acked_heads == checked_out_branch.heads:
-		if peer_connection_info.is_connected:
-			sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-check.svg")
-			sync_status_icon.tooltip_text = "Fully synced"
-		else:
-			sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
-			sync_status_icon.tooltip_text = "Disconnected - no unsynced local changes"
-		return
-
-	# partially synced
-	if peer_connection_info.is_connected:
+	elif sync_status.state == "syncing":
 		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-sync.svg")
 		sync_status_icon.tooltip_text = "Syncing"
-	else:
+
+	elif sync_status.state == "up_to_date":
+		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-check.svg")
+		sync_status_icon.tooltip_text = "Fully synced"
+
+	elif sync_status.state == "disconnected":
 		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
-
-		var unsynced_changes = get_unsynced_changes(peer_connection_info, checked_out_branch, changes)
-		var unsynced_changes_count = unsynced_changes.size()
-
-		if unsynced_changes_count == 1:
+		if sync_status.unsynced_changes == 0:
+			sync_status_icon.tooltip_text = "Disconnected - no unsynced local changes"
+		elif sync_status.unsynced_changes == 1:
 			sync_status_icon.tooltip_text = "Disconnected - 1 local change that hasn't been synced"
 		else:
-			sync_status_icon.tooltip_text = "Disconnected - %s local changes that haven't been synced" % [unsynced_changes_count]
-
-
-func get_unsynced_changes(connection_info, checked_out_branch, changes):
-	var dict = {}
-
-	if not checked_out_branch:
-		printerr("no checked out branch")
-		return
-
-	for change in changes:
-		dict[change.hash] = true
-
-
-	if !connection_info:
-		return dict
-
-	var doc_sync_states = connection_info.doc_sync_states
-
-	if !doc_sync_states:
-		return dict
-
-	if !(checked_out_branch.id in doc_sync_states):
-		return dict
-
-	var sync_status = doc_sync_states[checked_out_branch.id]
-
-	if !sync_status:
-		return dict
-
-
-	var synced_until_index = -1
-	for i in range(changes.size()):
-		var change = changes[i]
-		if sync_status.last_acked_heads.has(change.hash):
-			synced_until_index = i
-			break
-
-	if synced_until_index == -1:
-		return dict
-
-	for i in range(synced_until_index + 1):
-		dict.erase(changes[i].hash)
-
-	return dict
+			sync_status_icon.tooltip_text = "Disconnected - %s local changes that haven't been synced" % [sync_status.unsynced_changes]
+	else: printerr("unknown sync status: " + sync_status.state)
 
 func update_branch_picker(main_branch, checked_out_branch, all_branches) -> void:
 	branch_picker.clear()
@@ -988,28 +816,6 @@ func add_branch_with_forks(branch: Dictionary, all_branches: Array, selected_bra
 		var is_last_child = child_index == forked_off_branches.size() - 1
 		add_branch_with_forks(forked_off_branch, all_branches, selected_branch_id, new_indentation, is_last_child)
 
-func human_readable_timestamp(timestamp: int) -> String:
-	var now = Time.get_unix_time_from_system() * 1000 # Convert to ms
-	var diff = (now - timestamp) / 1000 # Convert diff to seconds
-
-	if diff < 60:
-		return str(int(diff)) + " seconds ago"
-	elif diff < 3600:
-		return str(int(diff / 60)) + " minutes ago"
-	elif diff < 86400:
-		return str(int(diff / 3600)) + " hours ago"
-	elif diff < 604800:
-		return str(int(diff / 86400)) + " days ago"
-	elif diff < 2592000:
-		return str(int(diff / 604800)) + " weeks ago"
-	elif diff < 31536000:
-		return str(int(diff / 2592000)) + " months ago"
-	else:
-		return str(int(diff / 31536000)) + " years ago"
-
-func exact_human_readable_timestamp(timestamp: int) -> String:
-	return Time.get_datetime_string_from_unix_time(round(timestamp / 1000.0)) + " UTC"
-
 func update_highlight_changes(diff: Dictionary) -> void:
 	if (PatchworkEditor.is_changing_scene()):
 		deterred_highlight_update = func(): update_highlight_changes(diff)
@@ -1077,7 +883,7 @@ func _on_history_list_popup_id_pressed(index: int) -> void:
 		printerr("no selected item")
 		return
 	if item == HistoryListPopupItem.RESET_TO_COMMIT:
-		create_revert_preview_branch(PackedStringArray([context_menu_hash]))
+		create_revert_preview_branch(context_menu_hash)
 	elif item == HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT:
 		print("Create remix at change not implemented yet!")
 
@@ -1105,16 +911,12 @@ func _on_history_tree_button_clicked(item: TreeItem, _column : int, id: int, mou
 
 	if id == 0:
 		var change_hash = get_history_item_hash(item)
-		var history = GodotProject.get_changes()
-
-		history = history.filter(func (c): return c.hash == change_hash);
-		if history.is_empty():
+		var merged_branch = GodotProject.get_change_merge_id(change_hash)
+		if !merged_branch:
 			print("Error: No matching change found.")
-			return;
+			return
 
-		var change = history[0]
-		var merged_branch = GodotProject.get_branch_by_id(change.merge_metadata.merged_branch_id)
-		checkout_branch(merged_branch.id)
+		checkout_branch(merged_branch)
 	elif id == 1:
 		show_contextmenu(get_history_item_hash(item))
 
@@ -1259,33 +1061,3 @@ func _on_copy_project_id_button_pressed() -> void:
 	var project_id = PatchworkConfig.get_project_value("project_doc_id", "")
 	if not project_id.is_empty():
 		DisplayServer.clipboard_set(project_id)
-
-# Summarize changes from an array of shape [[path, change_type], ...]
-func summarize_changes(author: String, changes) -> String:
-	var strings = [
-		get_summary_text(changes, "added"),
-		get_summary_text(changes, "removed"),
-		get_summary_text(changes, "modified", "edited")].filter(func(d): return d != "")
-
-	if (strings.size() == 3 || strings.size() == 0):
-		# avoid too long of a string if many ops are made, or as a fallback
-		# example: sisko made some changes
-		return "%s made some changes" % [author]
-	if (strings.size() == 2):
-		# example: sisko added baseball.png and edited 2 files
-		return "%s %s and %s" % [author, strings[0], strings[1]]
-	# changes size is 1
-	# example: sisko edited baseball.png
-	return "%s %s" % [author, strings[0]]
-
-func get_summary_text(changes, operation: String, display_operation = null) -> String:
-	# override the displayed operation if desired
-	if (display_operation == null): display_operation = operation
-	changes = changes.filter(func(d): return d[1] == operation)
-	if (changes.is_empty()): return ""
-	if (changes.size() == 1):
-		# example: edited baseball.png
-		return "%s %s" % [display_operation, changes[0][0].get_file()]
-
-	# example: edited 2 files
-	return "%s %s files" % [display_operation, changes.size()]
