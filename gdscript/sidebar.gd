@@ -58,15 +58,10 @@ const DIFF_SECTION_HEADER_TEXT_FORMAT = "Changes: Showing diff between %s and %s
 const TEMP_DIR = "user://tmp"
 
 var plugin: EditorPlugin
-
 var task_modal: TaskModal = TaskModal.new()
-
 var item_context_menu_icon: Texture2D = preload("../icons/GuiTabMenuHl_rotated.svg")
-
 var highlight_changes = false
-
 var waiting_callables: Array = []
-
 var deferred_highlight_update = null
 
 var all_changes_count = 0
@@ -179,7 +174,6 @@ func _ready() -> void:
 	# if we're hot-reloading, so we check the Engine for the singleton instead.
 	# The rest of the accessor uses outside of _ready() should be fine.
 	var godot_project = Engine.get_singleton("GodotProject")
-	# TODO(Lilith) check and see if moving this here messes everything up
 	if !godot_project: return
 
 	bind_listeners(godot_project)
@@ -365,8 +359,7 @@ func create_new_branch() -> void:
 		var new_branch_name = branch_name_input.text.strip_edges()
 		dialog.queue_free()
 
-		# todo (Lilith): use await
-		task_modal.do_task("Creating new branch \"%s\"" % new_branch_name, func():
+		task_modal.start_task("Creating new branch \"%s\"" % new_branch_name, func():
 			GodotProject.create_branch(new_branch_name)
 			await GodotProject.checked_out_branch
 		)
@@ -417,7 +410,7 @@ func confirm_revert_preview():
 		return
 
 	var target = Utils.short_hash(GodotProject.get_checked_out_branch().reverted_to)
-	# todo (Lilith): use await
+
 	Utils.popup_box(self, $ConfirmationDialog, "Are you sure you want to revert to \"%s\" ?" % target, "Revert Branch", func():
 		task_modal.do_task("Reverting to \"%s\"" % target, func():
 			GodotProject.confirm_preview_branch()
