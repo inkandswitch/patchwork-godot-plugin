@@ -359,7 +359,7 @@ func create_new_branch() -> void:
 		var new_branch_name = branch_name_input.text.strip_edges()
 		dialog.queue_free()
 
-		task_modal.start_task("Creating new branch \"%s\"" % new_branch_name, func():
+		task_modal.do_task("Creating new branch \"%s\"" % new_branch_name, func():
 			GodotProject.create_branch(new_branch_name)
 			await GodotProject.checked_out_branch
 		)
