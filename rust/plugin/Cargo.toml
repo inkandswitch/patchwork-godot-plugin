@@ -55,6 +55,7 @@ glob = "0.3.1"
 rlimit = "0.10.2"
 tracing = "0.1.40"
 tracing-appender = "0.2.2"
+chrono = "0.4.31"
 
 [build-dependencies]
 cbindgen = "^0.27"
