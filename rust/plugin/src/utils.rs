@@ -8,6 +8,7 @@ use automerge::{
 };
 use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
 use chrono::{DateTime, Local, NaiveDateTime, Utc};
+use godot::builtin::Dictionary;
 use serde::{Deserialize, Serialize};
 
 // These functions are for compatibilities sake, and they will be removed in the future
@@ -198,19 +199,16 @@ pub(crate) fn strategic_waiting(loc: &str) {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CommitInfo {
 	pub hash: ChangeHash,
+	pub prev_change: Option<ChangeHash>,
 	pub timestamp: i64,
 	pub metadata: Option<CommitMetadata>,
-    pub synced: bool
+    pub synced: bool,
+	pub summary: String
 }
 
 impl From<&&Change> for CommitInfo {
 	fn from(change: &&Change) -> Self {
-		CommitInfo {
-			hash: change.hash(),
-			timestamp: change.timestamp(),
-			metadata: change.message().and_then(|m| serde_json::from_str::<CommitMetadata>(&m).ok()),
-            synced: false
-		}
+		CommitInfo::from(*change)
 	}
 }
 
@@ -220,9 +218,26 @@ impl From<&Change> for CommitInfo {
 			hash: change.hash(),
 			timestamp: change.timestamp(),
 			metadata: change.message().and_then(|m| serde_json::from_str::<CommitMetadata>(&m).ok()),
-            synced: false
+
+			// set during ingestion
+			synced: false,
+			summary: "".to_string(),
+			prev_change: None
 		}
 	}
+}
+
+#[derive(Debug)]
+pub struct BranchWrapper {
+	pub state: BranchState,
+	pub children: Vec<DocumentId>
+}
+
+#[derive(Debug)]
+pub struct DiffWrapper {
+	// todo: convert to rust
+	pub dict: Dictionary,
+	pub title: String
 }
 
 pub(crate) fn heads_to_vec_string(heads: Vec<ChangeHash>) -> Vec<String> {
@@ -349,7 +364,7 @@ pub fn human_readable_timestamp(timestamp: i64) -> String {
 }
 
 pub fn exact_human_readable_timestamp(timestamp: i64) -> String {
-    let dt = DateTime::from_timestamp(timestamp, 0);
+    let dt = DateTime::from_timestamp(timestamp / 1000, 0);
     let datetime : DateTime<Local> = DateTime::from(dt.unwrap());
     return datetime.format("%Y-%m-%d %H:%M:%S").to_string();
 }

@@ -2,7 +2,7 @@ use crate::branch::BranchState;
 use crate::differ::{ImportedDiff, TextDiffFile};
 use crate::file_utils::{FileContent};
 use crate::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
-use crate::godot_project_api::GodotProjectViewModel;
+use crate::godot_project_api::{BranchViewModel, ChangeViewModel, GodotProjectViewModel};
 use ::safer_ffi::prelude::*;
 use automerge::{
     ChangeHash, ObjId, ObjType, ROOT, ReadDoc
@@ -19,15 +19,16 @@ use godot::prelude::*;
 use godot::prelude::Dictionary;
 use tracing::instrument;
 use std::any::Any;
+use std::cell::RefCell;
 use std::collections::{HashSet};
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 use std::{collections::HashMap, str::FromStr};
 use crate::godot_helpers::{ToDict, VariantTypeGetter};
 use crate::file_system_driver::{FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
 use crate::godot_parser::{self, GodotScene, TypeOrInstance};
 use crate::godot_project_driver::{ConnectionThreadError, DocHandleType};
 use crate::patches::{get_changed_files_vec};
-use crate::utils::{ChangeType, ChangedFile, CommitInfo, ToShortForm, get_automerge_doc_diff, summarize_changes};
+use crate::utils::{CommitInfo, ToShortForm, get_automerge_doc_diff, summarize_changes};
 use crate::{
     doc_utils::SimpleDocReader,
     godot_project_driver::{GodotProjectDriver, InputEvent, OutputEvent},
@@ -35,7 +36,7 @@ use crate::{
 
 /// Represents the state of the currently checked out branch.
 #[derive(Debug, Clone)]
-enum CheckedOutBranchState {
+pub(super) enum CheckedOutBranchState {
 	/// No branch is currently checked out.
     NothingCheckedOut(Option<DocumentId>),
 	/// A branch is currently being checked out.
@@ -101,12 +102,12 @@ fn match_path(path: &Vec<Prop>, patch: &Patch) -> Option<PathWithAction> {
 #[derive(Debug)]
 pub struct GodotProjectImpl {
     doc_handles: HashMap<DocumentId, DocHandle>,
-    branch_states: HashMap<DocumentId, BranchState>,
-    checked_out_branch_state: CheckedOutBranchState,
+    pub(super) branch_states: HashMap<DocumentId, BranchState>,
+    pub(super) checked_out_branch_state: CheckedOutBranchState,
     project_doc_id: Option<DocumentId>,
     new_project: bool,
 	should_update_godot: bool,
-	just_checked_out_new_branch: bool,
+	pub(super) just_checked_out_new_branch: bool,
 	last_synced: Option<(DocumentId, Vec<ChangeHash>)>,
     driver: Option<GodotProjectDriver>,
     pub(super) driver_input_tx: UnboundedSender<InputEvent>,
@@ -118,6 +119,8 @@ pub struct GodotProjectImpl {
 	initial_load: bool,
     pub(super) history: Vec<ChangeHash>,
     pub(super) changes: HashMap<ChangeHash, CommitInfo>,
+	// use RefCell for interior cache mutability
+	pub(super) diff_cache: RefCell<HashMap<(Vec<ChangeHash>, Vec<ChangeHash>), Dictionary>>
 }
 
 impl Default for GodotProjectImpl {
@@ -143,7 +146,8 @@ impl Default for GodotProjectImpl {
 			is_started: false,
 			initial_load: true,
 			history: Vec::new(),
-			changes: HashMap::new()
+			changes: HashMap::new(),
+			diff_cache: RefCell::new(HashMap::new())
 		}
 	}
 }
@@ -162,7 +166,6 @@ pub enum GodotProjectSignal {
 }
 
 impl GodotProjectImpl {
-
 	pub fn globalize_path(&self, path: &String) -> String {
 		// trim the project_dir from the front of the path
 		if path.starts_with("res://") {
@@ -195,15 +198,6 @@ impl GodotProjectImpl {
 
     pub fn get_project_doc_id(&self) -> Option<DocumentId> {
 		self.project_doc_id.clone()
-	}
-
-	pub fn get_heads(&self) -> Vec<ChangeHash> {
-		match self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state
-                .doc_handle
-                .with_doc(|d| d.get_heads()),
-				_ => Vec::new(),
-		}
 	}
 
     /// Expensive operation to ingest all branch changes from automerge into the project data.
@@ -240,26 +234,45 @@ impl GodotProjectImpl {
 		}
 
 		// Consume changes into self.changes
+		let mut prev_change = None;
 		for (i, mut change) in changes.into_iter().enumerate() {
             self.history.push(change.hash);
 			// If we're after the most recent ingested commit, we're not synced!
 			change.synced = (i as i32) <= synced_until_index;
+			change.summary = self.get_change_summary(&change);
+			change.prev_change = prev_change;
+			prev_change = Some(change.hash);
             self.changes.insert(change.hash, change);
         }
     }
 
-	pub fn get_main_branch(&self) -> Option<&BranchState> {
-		self
-            .branch_states
-            .values()
-            .find(|branch_state| branch_state.is_main)
-    }
+	fn get_change_summary(&self, change: &CommitInfo) -> String {
+		(|| {
+			let meta = change.metadata.as_ref();
+			let author = meta?.username.as_ref()?;
 
-	pub fn get_branch_by_id(&self, branch_id: &DocumentId) -> Option<&BranchState> {
-        self
-			.branch_states
-			.get(&branch_id)
-    }
+			// merge commit
+			if let Some(merge_info) = &meta?.merge_metadata {
+				let merged_branch = &self.get_branch(merge_info.merged_branch_id.clone())?.get_name();
+				return Some(format!("↪️ {author} merged {merged_branch} branch"));
+			}
+
+			// revert commit
+			if let Some(revert_info) = &meta?.reverted_to {
+				let heads = revert_info.iter()
+					.map(|s| &s[..7])
+					.collect::<Vec<&str>>().join(", ");
+				return Some(format!("↩️ {author} reverted to {heads}"));
+			}
+
+			// initial commit
+			if change.is_setup() {
+				return Some(format!("Initialized repository"));
+			}
+
+			return Some(summarize_changes(&author, meta?.changed_files.as_ref()?));
+		})().unwrap_or("Invalid data".to_string())
+	}
 
 	pub fn get_branch_name(&self, branch_id: &DocumentId) -> String {
 		self.branch_states.get(branch_id).map(|b| b.name.clone()).unwrap_or(branch_id.to_string())
@@ -283,30 +296,6 @@ impl GodotProjectImpl {
 
 		// setting previous branch to None so that we don't delete any files when we checkout the new branch
         self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(target_branch_doc_id, None);
-    }
-
-	#[instrument(skip(self), fields(name = ?name), level = tracing::Level::INFO)]
-	pub fn create_branch(&mut self, name: String) {
-		println!("");
-		tracing::info!("******** CREATE BRANCH");
-		println!("");
-        let source_branch_doc_id = match &self.get_checked_out_branch_state() {
-            Some(branch_state) => branch_state.doc_handle.document_id(),
-            None => {
-                panic!("couldn't create branch, no checked out branch");
-            }
-        };
-
-        self.driver_input_tx
-            .unbounded_send(InputEvent::CreateBranch {
-                name,
-                source_branch_doc_id: source_branch_doc_id.clone(),
-            })
-            .unwrap();
-
-		// TODO: do we want to set this? or let _process set it?
-        self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut(Some(source_branch_doc_id));
-		// self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut(None);
     }
 
 	pub fn create_merge_preview_branch_between(
@@ -366,72 +355,6 @@ impl GodotProjectImpl {
             .unbounded_send(InputEvent::DeleteBranch { branch_doc_id })
             .unwrap();
     }
-
-	pub fn checkout_branch(&mut self, branch_doc_id: DocumentId) {
-		let current_branch = match &self.checked_out_branch_state {
-			CheckedOutBranchState::CheckedOut(doc_id, _) => Some(doc_id.clone()),
-			CheckedOutBranchState::CheckingOut(doc_id, _) => {
-				tracing::error!("**@#%@#%!@#%#@!*** CHECKING OUT BRANCH WHILE STILL CHECKING OUT?!?!?! {:?}", doc_id);
-				Some(doc_id.clone())
-			},
-			CheckedOutBranchState::NothingCheckedOut(current_branch_id) => {
-				tracing::warn!("Checking out a branch while not checked out on any branch????");
-				current_branch_id.clone()
-			}
-		};
-        let target_branch_state = match self.branch_states.get(&branch_doc_id) {
-            Some(branch_state) => branch_state,
-            None => panic!("couldn't checkout branch, branch doc id not found")
-        };
-		println!("");
-		tracing::debug!("******** CHECKOUT: {:?}\n", target_branch_state.name);
-		println!("");
-
-        if target_branch_state.synced_heads == target_branch_state.doc_handle.with_doc(|d| d.get_heads()) {
-            self.checked_out_branch_state =
-                CheckedOutBranchState::CheckedOut(
-					branch_doc_id.clone(),
-					current_branch.clone());
-			self.just_checked_out_new_branch = true;
-        } else {
-			tracing::debug!("checked out branch {:?} has unsynced heads", target_branch_state.name);
-            self.checked_out_branch_state =
-				CheckedOutBranchState::CheckingOut(
-					branch_doc_id.clone(),
-					current_branch.clone()
-				);
-        }
-    }
-
-	pub fn get_branches(&self) -> Vec<&BranchState> {
-        let mut branches = self
-            .branch_states
-            .values()
-            .filter(|branch_state| branch_state.merge_info.is_none())
-            .collect::<Vec<&BranchState>>();
-
-        branches.sort_by(|a, b| {
-            let a_is_main = a.is_main;
-            let b_is_main = b.is_main;
-
-            if a_is_main && !b_is_main {
-                return std::cmp::Ordering::Less;
-            }
-            if !a_is_main && b_is_main {
-                return std::cmp::Ordering::Greater;
-            }
-
-            let name_a = a.name.clone().to_lowercase();
-            let name_b = b.name.clone().to_lowercase();
-            name_a.cmp(&name_b)
-        });
-
-        branches
-    }
-
-	pub fn get_sync_server_connection_info(&self) -> Option<&PeerConnectionInfo> {
-		self.sync_server_connection_info.as_ref()
-	}
 
 	pub fn get_descendent_document(
 		&self,
@@ -1198,6 +1121,18 @@ impl GodotProjectImpl {
             };
         }
     }
+
+	pub fn get_cached_diff(
+		&self,
+		heads_before: Vec<ChangeHash>,
+		heads_after: Vec<ChangeHash>
+	) -> Dictionary {
+		(*self.diff_cache.borrow_mut())
+			.entry((heads_before.clone(), heads_after.clone()))
+			.or_insert_with(||
+			self.get_changes_between(heads_before, heads_after))
+			.clone()
+	}
 
 	#[instrument(skip_all, level = tracing::Level::DEBUG)]
     pub fn get_changes_between(

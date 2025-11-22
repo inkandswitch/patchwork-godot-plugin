@@ -1,31 +1,17 @@
 use std::path::PathBuf;
-use std::str::FromStr;
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::{collections::HashMap, fmt::Display};
+use std::{fmt::Display};
 
-use automerge::{Change, ChangeHash};
-use automerge_repo::{DocumentId, PeerConnectionInfo};
+use automerge::{ChangeHash};
+use automerge_repo::{DocumentId};
 use godot::meta::GodotType;
 use godot::{prelude::*, meta::ToGodot, meta::GodotConvert};
 // use godot::prelude::{GString, Variant, Dc};
 use crate::file_utils::FileContent;
 use crate::godot_parser::{GodotNode, TypeOrInstance};
-use crate::godot_project_api::SyncStatus;
-use crate::utils::{ChangedFile, CommitInfo, MergeMetadata};
-use crate::branch::BranchState;
+use crate::godot_project_api::{BranchViewModel, ChangeViewModel, DiffViewModel, SyncStatus};
+use crate::utils::{ChangedFile};
 use crate::differ::{DiffLine, DiffHunk, TextDiffFile};
-use automerge::{transaction::Transaction, Automerge, ObjId, Prop, ReadDoc, Value};
 use godot::builtin::Variant;
-
-pub trait ToRust<T, R> {
-	fn to_rust(&self) -> R;
-}
-
-// pub trait ToGodotExt<T> {
-// 	fn to_godot(&self) -> T;
-// 	fn to_variant(&self) -> Variant;
-// }
-
 
 pub trait VariantTypeGetter {
 	fn get_variant_type(&self) -> VariantType;
@@ -65,20 +51,6 @@ pub trait ToGodotExt: Sized + GodotConvertExt {
 	}
 }
 
-fn option_to_godot_tg<TG: ToGodot>(option: &Option<TG>) -> Variant {
-	match option {
-		Some(s) => s.to_variant(),
-		None => Variant::nil(),
-	}
-}
-
-fn option_to_godot<TG: ToGodotExt>(option: &Option<TG>) -> Variant {
-	match option {
-		Some(s) => s._to_variant(),
-		None => Variant::nil(),
-	}
-}
-
 pub trait ToVariantExt: Sized {
 	fn _to_variant(&self) -> Variant;
 	fn to_variant(&self) -> Variant {
@@ -86,33 +58,9 @@ pub trait ToVariantExt: Sized {
 	}
 }
 
-
-// packed string array to vector of strings
-impl ToRust<PackedStringArray, Vec<String>> for PackedStringArray {
-	fn to_rust(&self) -> Vec<String> {
-		let mut result = Vec::new();
-		for i in 0..self.len() {
-			result.push(self.get(i).unwrap().to_string());
-		}
-		result
-	}
-}
-
-impl ToRust<PackedStringArray, Vec<ChangeHash>> for PackedStringArray {
-	fn to_rust(&self) -> Vec<ChangeHash> {
-		let mut result = Vec::new();
-		for i in 0..self.len() {
-			result.push(ChangeHash::from_str(&self.get(i).unwrap().to_string()).unwrap());
-		}
-		result
-	}
-}
-
-
 impl GodotConvertExt for DocumentId {
 	type Via = GString;
 }
-
 
 impl ToGodotExt for DocumentId {
 	type ToVia < 'v > = GString;
@@ -124,11 +72,6 @@ impl ToGodotExt for DocumentId {
 	}
 }
 
-
-fn opt_to_variant(opt: Option<DocumentId>) -> Variant {
-    opt.map(|id| id.to_variant()).unwrap_or_default()
-}
-
 impl ToVariantExt for Option<DocumentId> {
 	fn _to_variant(&self) -> Variant {
 		match self {
@@ -138,35 +81,26 @@ impl ToVariantExt for Option<DocumentId> {
 	}
 }
 
-// impl ToVariantExt for DocumentId {
-//     type ToVia<'v> = GString where Self: 'v;
-//     fn _to_variant(&self) -> Self::ToVia<'_> {
-//         GString::from(self.to_string())
-//     }
-// }
-
-// impl<T: ToVariantExt> ToVariantExt for &T {
-//     type ToVia<'v> = T::ToVia<'v> where Self: 'v;
-//     fn _to_variant(&self) -> Self::ToVia<'_> {
-//         (*self)._to_variant()
-//     }
-// }
-
-pub fn get_scene_path_for_node(node: &Gd<Node>) -> String {
-	let mut node = node.clone();
-	while node.get_scene_file_path().is_empty() && node.get_parent().is_some() {
-		node = node.get_parent().unwrap();
-	}
-	node.get_scene_file_path().to_string()
+impl GodotConvertExt for ChangeHash {
+	type Via = GString;
 }
 
-pub fn get_resource_or_scene_path_for_object(object: &Gd<Object>) -> String {
-	if let Ok(node) = object.clone().try_cast::<Node>() {
-		get_scene_path_for_node(&node)
-	} else if let Ok(resource) = object.clone().try_cast::<Resource>() {
-		resource.get_path().to_string()
-	} else {
-		"".to_string()
+impl ToGodotExt for ChangeHash {
+	type ToVia < 'v > = GString;
+	fn _to_godot(&self) -> Self::ToVia < '_ > {
+		GString::from(self.to_string())
+	}
+	fn _to_variant(&self) -> Variant {
+		self._to_godot().to_variant()
+	}
+}
+
+impl ToVariantExt for Option<ChangeHash> {
+	fn _to_variant(&self) -> Variant {
+		match self {
+			Some(id) => id.to_variant(),
+			None => Variant::nil(),
+		}
 	}
 }
 
@@ -199,156 +133,42 @@ impl ToGodotExt for PathBuf {
 	}
 }
 
-pub(crate) fn are_valid_heads(packed_string_array: &PackedStringArray) -> bool {
-    // check if these are all hex strings
-	for h in packed_string_array.to_vec().iter() {
-		if !h.to_string().chars().all(|c| c.is_ascii_hexdigit()) {
-			return false;
-		}
-	}
-	return true;
-}
+// I couldn't figure out how to use GodotConvert with impls, so just use methods for these.
 
-pub(crate) fn array_to_heads(packed_string_array: PackedStringArray) -> Vec<ChangeHash> {
-    packed_string_array
-        .to_vec()
-        .iter()
-        .map(|h| ChangeHash::from_str(h.to_string().as_str()).unwrap())
-        .collect()
-}
-
-pub(crate) fn heads_to_array(heads: Vec<ChangeHash>) -> PackedStringArray {
-    heads
-        .iter()
-        .map(|h| GString::from(h.to_string()))
-        .collect::<PackedStringArray>()
-}
-
-
-impl GodotConvert for MergeMetadata {
-	type Via = Dictionary;
-}
-
-impl ToGodot for MergeMetadata {
-	type ToVia<'v> = Dictionary;
-	fn to_godot(&self) -> Dictionary {
-		dict! {
-			"merged_branch_id": self.merged_branch_id.to_godot(),
-			"merged_at_heads": self.merged_at_heads.to_godot(),
-			"forked_at_heads": self.forked_at_heads.to_godot(),
-		}
-	}
-	fn to_variant(&self) -> Variant {
-				dict! {
-			"merged_branch_id": self.merged_branch_id.to_godot(),
-			"merged_at_heads": self.merged_at_heads.to_godot(),
-			"forked_at_heads": self.forked_at_heads.to_godot(),
-		}.to_variant()
+pub(crate) fn branch_view_model_to_dict(branch: &impl BranchViewModel) -> Dictionary {
+	let merge_into = branch.get_merge_into();
+	let var = merge_into.to_variant();
+	dict! {
+		"id": branch.get_id().to_godot(),
+		"name": branch.get_name(),
+		"parent": branch.get_parent().to_variant(),
+		"children": branch.get_children().to_godot(),
+		"is_available": branch.is_available(),
+		"is_loaded": branch.is_loaded(),
+		// todo: figure out how to make to_godot work for this
+		"reverted_to": branch.get_reverted_to().to_variant(),
+		"merge_into": var
 	}
 }
 
-impl GodotConvert for CommitInfo {
-	type Via = Dictionary;
-}
-
-impl ToGodot for CommitInfo {
-	type ToVia<'v> = Dictionary;
-	fn to_godot(&self) -> Dictionary {
-		let mut md = dict! {
-			"hash": self.hash.to_string().to_godot(),
-			"timestamp": self.timestamp.to_godot(),
-		};
-		if let Some(metadata) = &self.metadata {
-			if let Some(username) = &metadata.username {
-				let _ = md.insert("username", username.to_godot());
-			}
-			if let Some(branch_id) = &metadata.branch_id {
-				let _ = md.insert("branch_id", branch_id.to_godot());
-			}
-			if let Some(merge_metadata) = &metadata.merge_metadata {
-				let _ = md.insert("merge_metadata", merge_metadata.to_godot());
-			}
-			if let Some(reverted_to) = &metadata.reverted_to {
-				let _ = md.insert("reverted_to", reverted_to.to_godot());
-			}
-            if let Some(changed_files) = &metadata.changed_files {
-                let _ = md.insert("changed_files", changed_files.to_godot());
-            }
-		}
-		md
-	}
-	fn to_variant(&self) -> Variant {
-		self.to_godot().to_variant()
+pub(crate) fn diff_view_model_to_dict(diff: &impl DiffViewModel) -> Dictionary {
+	dict! {
+		"dict": diff.get_dict().to_godot(),
+		"title": diff.get_title().to_godot()
 	}
 }
 
-
-fn branch_state_to_dict(branch_state: &BranchState) -> Dictionary {
-    let mut branch = dict! {
-        "name": branch_state.name.clone(),
-        "id": branch_state.doc_handle.document_id().to_string(),
-        "is_main": branch_state.is_main,
-
-        // we shouldn't have branches that don't have any changes but sometimes
-        // the branch docs are not synced correctly so this flag is used in the UI to
-        // indicate that the branch is not loaded and prevent users from checking it out
-        "is_not_loaded": branch_state.doc_handle.with_doc(|d| d.get_heads().len() == 0),
-        "heads": heads_to_array(branch_state.synced_heads.clone()),
-        "is_merge_preview": branch_state.merge_info.is_some(),
-		"is_revert_preview": branch_state.revert_info.is_some(),
-    };
-
-    if let Some(fork_info) = &branch_state.fork_info {
-        let _ = branch.insert("forked_from", fork_info.forked_from.to_string());
-        let _ = branch.insert("forked_at", heads_to_array(fork_info.forked_at.clone()));
-    }
-
-    if let Some(merge_info) = &branch_state.merge_info {
-        let _ = branch.insert("merge_into", merge_info.merge_into.to_string());
-        let _ = branch.insert("merge_at", heads_to_array(merge_info.merge_at.clone()));
-    }
-
-	if let Some(created_by) = &branch_state.created_by {
-		let _ = branch.insert("created_by", created_by.to_string());
-	}
-
-	if let Some(merged_into) = &branch_state.merged_into {
-		let _ = branch.insert("merged_into", merged_into.to_string());
-	}
-
-	if let Some(reverted_to) = &branch_state.revert_info {
-		let _ = branch.insert("reverted_to", heads_to_array(reverted_to.reverted_to.clone()));
-	}
-
-    branch
-}
-
-impl GodotConvert for BranchState {
-	type Via = Dictionary;
-}
-
-impl ToGodot for BranchState {
-	type ToVia<'v> = Dictionary;
-	fn to_godot(&self) -> Dictionary {
-		branch_state_to_dict(self)
-	}
-}
-
-impl ToVariantExt for Option<BranchState> {
-	fn _to_variant(&self) -> Variant {
-		match self {
-			Some(branch_state) => branch_state.to_godot().to_variant(),
-			None => Variant::nil(),
-		}
-	}
-}
-
-impl ToVariantExt for Option<&BranchState> {
-	fn _to_variant(&self) -> Variant {
-		match self {
-			Some(branch_state) => branch_state.to_godot().to_variant(),
-			None => Variant::nil(),
-		}
+pub(crate) fn change_view_model_to_dict(change: &impl ChangeViewModel) -> Dictionary {
+	dict! {
+		"hash": change.get_hash().to_string(),
+		"username": change.get_username(),
+		"is_synced": change.is_synced(),
+		"summary": change.get_summary(),
+		"is_merge": change.is_merge(),
+		"merge_id": change.get_merge_id().to_variant(),
+		"is_setup": change.is_setup(),
+		"exact_timestamp": change.get_exact_timestamp(),
+		"human_timestamp": change.get_human_timestamp(),
 	}
 }
 
@@ -358,7 +178,7 @@ impl GodotConvert for SyncStatus {
 
 impl ToGodot for SyncStatus {
 	type ToVia<'v> = Dictionary;
-	
+
 	fn to_godot(&self) -> Dictionary {
 		dict! {
 			"state": match self {
@@ -373,13 +193,6 @@ impl ToGodot for SyncStatus {
 			}
 		}
 	}
-}
-
-fn system_time_to_variant(time: SystemTime) -> Variant {
-    time.duration_since(UNIX_EPOCH)
-        .ok()
-        .map(|d| d.as_secs().to_variant())
-        .unwrap_or(Variant::nil())
 }
 
 impl GodotConvert for FileContent {
@@ -413,7 +226,6 @@ impl VariantTypeGetter for FileContent {
 	}
 }
 
-
 pub trait ToDict {
 	fn to_dict(&self) -> Dictionary;
 }
@@ -422,75 +234,39 @@ impl ToDict for GodotNode {
 	fn to_dict(&self) -> Dictionary {
 		let mut content = Dictionary::new();
         // Add basic node properties
-        content.insert("name", self.name.clone());
+        let _ = content.insert("name", self.name.clone());
 
         // Add type or instance
         match &self.type_or_instance {
             TypeOrInstance::Type(type_name) => {
-                content.insert("type", type_name.clone());
+                let _ = content.insert("type", type_name.clone());
             }
             TypeOrInstance::Instance(instance_id) => {
-                content.insert("instance", instance_id.clone());
+                let _ = content.insert("instance", instance_id.clone());
             }
         }
 
         // Add optional properties
         if let Some(owner) = &self.owner {
-            content.insert("owner", owner.clone());
+            let _ = content.insert("owner", owner.clone());
         }
         if let Some(index) = self.index {
-            content.insert("index", index);
+            let _ = content.insert("index", index);
         }
         if let Some(groups) = &self.groups {
-            content.insert("groups", groups.clone());
+            let _ = content.insert("groups", groups.clone());
         }
 
         // Add node properties as a nested dictionary
         let mut properties = Dictionary::new();
         for (key, property) in &self.properties {
-            properties.insert(key.clone(), property.value.clone());
+            let _ = properties.insert(key.clone(), property.value.clone());
         }
-        content.insert("properties", properties);
+        let _ = content.insert("properties", properties);
 
         content
 	}
 }
-
-pub trait VariantDocReader {
-    fn get_variant<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<Variant>;
-}
-
-impl VariantDocReader for Automerge {
-    fn get_variant<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<Variant> {
-        match self.get(obj, prop) {
-            Ok(Some((Value::Scalar(cow), _))) => match cow.into_owned() {
-                automerge::ScalarValue::F64(num) => Some(Variant::from(num)),
-                automerge::ScalarValue::Int(num) => Some(Variant::from(num)),
-                automerge::ScalarValue::Str(smol_str) => Some(Variant::from(smol_str.to_string())),
-                automerge::ScalarValue::Boolean(bool) => Some(Variant::from(bool)),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-
-}
-
-impl VariantDocReader for Transaction<'_> {
-    fn get_variant<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<Variant> {
-        match self.get(obj, prop) {
-            Ok(Some((Value::Scalar(cow), _))) => match cow.into_owned() {
-                automerge::ScalarValue::F64(num) => Some(Variant::from(num)),
-                automerge::ScalarValue::Int(num) => Some(Variant::from(num)),
-                automerge::ScalarValue::Str(smol_str) => Some(Variant::from(smol_str.to_string())),
-                automerge::ScalarValue::Boolean(bool) => Some(Variant::from(bool)),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-}
-
 
 impl GodotConvertExt for Vec<ChangedFile> {
 	type Via = Array<PackedStringArray>;

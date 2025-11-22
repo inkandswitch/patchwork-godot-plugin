@@ -7,6 +7,7 @@ extends MarginContainer
 const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_inspector_container.gd")
 @onready var branch_picker: OptionButton = %BranchPicker
 @onready var history_tree: Tree = %HistoryTree
+@onready var history_list_popup: PopupMenu = %HistoryListPopup
 @onready var user_button: Button = %UserButton
 @onready var inspector: DiffInspectorContainer = %BigDiffer
 @onready var merge_preview_modal: Control = %MergePreviewModal
@@ -48,9 +49,6 @@ class HistoryColumns:
 	const HASH_META = 0
 	const ENABLED_META = 1
 
-# Turn this off if it keeps crashing on windows
-const TURN_ON_USER_BRANCH_PROMPT = true
-
 const INITIAL_COMMIT_TEXT = "Initialized repository"
 
 const NUM_INITIAL_COMMITS = 2
@@ -69,7 +67,7 @@ var highlight_changes = false
 
 var waiting_callables: Array = []
 
-var deterred_highlight_update = null
+var deferred_highlight_update = null
 
 var all_changes_count = 0
 var history_item_count = 0
@@ -79,109 +77,83 @@ const CREATE_BRANCH_IDX = 1
 const MERGE_BRANCH_IDX = 2
 
 signal reload_ui();
-signal user_name_initialized();
+signal user_name_dialog_closed();
 
 func _update_ui_on_state_change():
 	update_ui()
 
-func _update_ui_on_branch_checked_out(_branch):
+func _update_ui_on_branch_checked_out():
 	update_ui()
-
-func _on_initial_checked_out_branch(_branch):
-	print("on_initial_checked_out_branch")
-	GodotProject.disconnect("checked_out_branch", self._on_initial_checked_out_branch)
-	init(true)
 
 func _on_reload_ui_button_pressed():
 	reload_ui.emit()
 
+# Display a "Loading Patchwork" modal until we receive a checked_out_branch signal, then initialize.
+# Used when creating a new project, manually loading an existing project from ID, or auto-loading
+# an existing project from the project.
 func wait_for_checked_out_branch():
-	var godot_project = Engine.get_singleton("GodotProject")
-	if not godot_project.get_checked_out_branch():
-		godot_project.connect("checked_out_branch", self._on_initial_checked_out_branch)
+	if not GodotProject.get_checked_out_branch():
 		task_modal.start_task("Loading Patchwork")
-	else:
-		init(false)
+		await GodotProject.checked_out_branch
+		task_modal.end_task("Loading Patchwork")
+	init()
 
-
-
-func start_and_wait_for_checkout():
-	var godot_project = Engine.get_singleton("GodotProject")
-	godot_project.start()
-	make_init_button_invisible()
-	wait_for_checked_out_branch()
-
-func check_and_prompt_for_user_name(callback: Callable):
-	for connection in user_name_initialized.get_connections():
-		user_name_initialized.disconnect(connection.callable)
-	var user_name = PatchworkConfig.get_user_value("user_name", "")
-	if user_name.is_empty():
-		user_name_initialized.connect(callback)
+# Asks the user for their username, if there is none stored.
+# If they cancel or close, returns false. If the username is confirmed, returns true.
+func require_user_name() -> bool:
+	if !GodotProject.has_user_name():
 		_on_user_button_pressed(true)
-		return false
+		await user_name_dialog_closed
+		return GodotProject.has_user_name()
 	return true
 
 func _on_init_button_pressed():
 	if create_unsaved_files_dialog("Please save your unsaved files before initializing a new project."):
 		return
-	if not check_and_prompt_for_user_name(self._on_init_button_pressed):
+	if not await require_user_name():
 		return
-	print("Initializing new project!")
-	start_and_wait_for_checkout()
+
+	GodotProject.new_project();
+	await wait_for_checked_out_branch()
 
 func _on_load_project_button_pressed():
 	if create_unsaved_files_dialog("Please save your unsaved files before loading an existing project."):
 		return
-	if not check_and_prompt_for_user_name(self._on_load_project_button_pressed):
-		return
 	var doc_id = %ProjectIDBox.text.strip_edges()
 	if doc_id.is_empty():
-		popup_box(self, $ErrorDialog, "Project ID is empty", "Error")
+		Utils.popup_box(self, $ErrorDialog, "Project ID is empty", "Error")
 		return
-	print("Loading project ", doc_id)
-	PatchworkConfig.set_project_value("project_doc_id", doc_id)
-	start_and_wait_for_checkout()
+	if not await require_user_name():
+		return
 
-func add_listener_disable_button_if_text_is_empty(button: Button, line_edit: LineEdit):
-	var listener = func(new_text: String):
-		button.disabled = new_text.strip_edges().is_empty()
-	line_edit.text_changed.connect(listener)
-	listener.call(line_edit.text)
+	GodotProject.load_project(doc_id);
+	await wait_for_checked_out_branch()
 
-func make_init_button_visible():
-	%InitPanelContainer.visible = true
-	%MainVSplit.visible = false
-
-func make_init_button_invisible():
-	%InitPanelContainer.visible = false
-	%MainVSplit.visible = true
-
-func get_doc_id() -> String:
-	var patchwork_config = Engine.get_singleton("PatchworkConfig")
-	return patchwork_config.get_project_value("project_doc_id", "")
-
-func _clear_user_name_initialized_connections():
-	for connection in user_name_initialized.get_connections():
-		user_name_initialized.disconnect(connection.callable)
-
-func _on_user_name_confirmed():
-	if %UserNameEntry.text.strip_edges() != "":
-		var current_name = GodotProject.get_user_name()
-		var new_user_name = %UserNameEntry.text.strip_edges()
-		print(new_user_name)
-		GodotProject.set_user_name(new_user_name)
-		if current_name.is_empty():
-			user_name_initialized.emit()
-			call_deferred("_clear_user_name_initialized_connections")
-	update_ui(false)
+func update_init_panel():
+	var visible = !GodotProject.has_project()
+	%InitPanelContainer.visible = visible
+	%MainVSplit.visible = !visible
+	branch_picker.disabled = visible
+	fork_button.disabled = visible
+	%CopyProjectIDButton.disabled = visible
 
 func _on_user_button_pressed(disable_cancel: bool = false):
 	%UserNameEntry.text = GodotProject.get_user_name()
 	%UserNameDialog.popup_centered()
 	%UserNameDialog.get_cancel_button().visible = not disable_cancel
 
+func _on_user_name_canceled():
+	user_name_dialog_closed.emit()
+
+func _on_user_name_confirmed():
+	var new_user_name = %UserNameEntry.text.strip_edges()
+	if new_user_name != "": GodotProject.set_user_name(new_user_name)
+	user_name_dialog_closed.emit()
+	update_ui()
+
 func _on_clear_project_button_pressed():
-	popup_box(self, $ConfirmationDialog, "Are you sure you want to clear the project?", "Clear Project", func(): clear_project())
+	Utils.popup_box(self, $ConfirmationDialog, "Are you sure you want to clear the project?", "Clear Project",
+		func(): clear_project(), func(): pass)
 
 func clear_project():
 	GodotProject.clear_project()
@@ -201,22 +173,19 @@ func set_history_item_hash(item: TreeItem, value: String) -> void:
 
 # TODO: It seems that Sidebar is being instantiated by the editor before the plugin does?
 func _ready() -> void:
-	print("Sidebar: ready!")
-	%ReloadUIButton.pressed.connect(self._on_reload_ui_button_pressed)
-	if DEV_MODE:
-		%ClearProjectButton.visible = true
-		%ClearProjectButton.pressed.connect(self._on_clear_project_button_pressed)
-	else:
-		%ClearProjectButton.visible = false
-	%InitializeButton.pressed.connect(self._on_init_button_pressed)
-	%LoadExistingButton.pressed.connect(self._on_load_project_button_pressed)
-	add_listener_disable_button_if_text_is_empty(%UserNameDialog.get_ok_button(), %UserNameEntry)
-	add_listener_disable_button_if_text_is_empty(%LoadExistingButton, %ProjectIDBox)
-	user_button.pressed.connect(_on_user_button_pressed)
-	_setup_history_list_popup()
-	history_tree.clear()
-	branch_picker.clear()
+	# @Paul: I think somewhere besides the plugin sidebar gets instantiated. Is this something godot does?
+	# to paper over this we check if plugin and godot_project are set
+	# The singleton class accessor is still pointing to the old GodotProject singleton
+	# if we're hot-reloading, so we check the Engine for the singleton instead.
+	# The rest of the accessor uses outside of _ready() should be fine.
+	var godot_project = Engine.get_singleton("GodotProject")
+	# TODO(Lilith) check and see if moving this here messes everything up
+	if !godot_project: return
 
+	bind_listeners(godot_project)
+	setup_history_list_popup()
+
+	print("Sidebar: ready!")
 
 	# need to add task_modal as a child to the plugin otherwise process won't be called
 	add_child(task_modal)
@@ -225,63 +194,24 @@ func _ready() -> void:
 	else:
 		print("Sidebar: in editor!!!!!!!!!!!!")
 
-func _try_init():
-	# The singleton class accessor is still pointing to the old GodotProject singleton
-	# if we're hot-reloading, so we check the Engine for the singleton instead.
-	# The rest of the accessor uses outside of _ready() should be fine.
-	var godot_project = Engine.get_singleton("GodotProject")
-	if godot_project:
-		var doc_id = get_doc_id()
-		if not godot_project.is_started() and doc_id.is_empty():
-			print("Not initialized, showing init button")
-			make_init_button_visible()
-			return
-		else:
-			print("Initialized, hiding init button")
-			make_init_button_invisible()
-			wait_for_checked_out_branch()
+func bind_listeners(godot_project):
+	%ReloadUIButton.pressed.connect(self._on_reload_ui_button_pressed)
+	if DEV_MODE:
+		%ClearProjectButton.visible = true
+		%ClearProjectButton.pressed.connect(self._on_clear_project_button_pressed)
 	else:
-		print("!!!!!!GodotProject not initialized!")
+		%ClearProjectButton.visible = false
+	%InitializeButton.pressed.connect(self._on_init_button_pressed)
+	%LoadExistingButton.pressed.connect(self._on_load_project_button_pressed)
+	Utils.add_listener_disable_button_if_text_is_empty(%UserNameDialog.get_ok_button(), %UserNameEntry)
+	Utils.add_listener_disable_button_if_text_is_empty(%LoadExistingButton, %ProjectIDBox)
+	user_button.pressed.connect(_on_user_button_pressed)
 
+	%UserNameDialog.canceled.connect(_on_user_name_canceled)
+	%UserNameDialog.confirmed.connect(_on_user_name_confirmed)
 
-func _process(delta: float) -> void:
-	if deterred_highlight_update:
-		var c = deterred_highlight_update
-		deterred_highlight_update = null
-		c.call()
-
-	if waiting_callables.size() > 0:
-		var callables = waiting_callables.duplicate()
-		for callable in callables:
-			callable.call()
-		waiting_callables.clear()
-
-func _check_for_user_branch():
-	var all_branches = GodotProject.get_branches()
-	var user_name = PatchworkConfig.get_user_value("user_name", "")
-	var has_user_branch = false
-	for branch in all_branches:
-		if not branch.is_main and branch.has("created_by") and branch.created_by == PatchworkConfig.get_user_value("user_name", ""):
-			has_user_branch = true
-			break
-	if not has_user_branch:
-		create_new_branch(true)
-
-
-func init(end_task: bool = true) -> void:
-	print("Sidebar initialized!")
-	if end_task:
-		task_modal.end_task("Loading Patchwork")
-	branch_picker.disabled = false
-	fork_button.disabled = false
-	%CopyProjectIDButton.disabled = false
-	update_ui()
-	# @Paul: I think somewhere besides the plugin sidebar gets instantiated. Is this something godot does?
-	# to paper over this we check if plugin and godot_project are set
-
-	if GodotProject.get_singleton():
-		GodotProject.connect("state_changed", self._update_ui_on_state_change);
-		GodotProject.connect("checked_out_branch", self._update_ui_on_branch_checked_out);
+	godot_project.state_changed.connect(self._update_ui_on_state_change);
+	godot_project.checked_out_branch.connect(self._update_ui_on_branch_checked_out);
 
 	merge_button.pressed.connect(create_merge_preview_branch)
 	fork_button.pressed.connect(create_new_branch)
@@ -306,33 +236,54 @@ func init(end_task: bool = true) -> void:
 	history_tree.allow_rmb_select = true
 	inspector.node_hovered.connect(_on_node_hovered)
 	inspector.node_unhovered.connect(_on_node_unhovered)
+	%CopyProjectIDButton.pressed.connect(_on_copy_project_id_button_pressed)
 
-	if not check_and_prompt_for_user_name(self._check_for_user_branch):
-		return
+func _try_init():
+	var godot_project = Engine.get_singleton("GodotProject")
+	if godot_project:
+		if !godot_project.has_project():
+			print("Not initialized, showing init panel")
+			update_ui()
+			return
+		else:
+			print("Initialized, hiding init panel")
+			wait_for_checked_out_branch()
+	else:
+		print("No GodotProject singleton!!!!!!!!")
 
-	# todo: miserable UI that waits 5 seconds before nagging the user to make a branch, make better
-	if not TURN_ON_USER_BRANCH_PROMPT:
-		return
-	var timeout = 5.0
-	var timer = Timer.new()
-	timer.wait_time = timeout
-	timer.one_shot = true
-	timer.timeout.connect(self._check_for_user_branch)
-	add_child(timer)
-	timer.start()
+func _process(delta: float) -> void:
+	if deferred_highlight_update:
+		var c = deferred_highlight_update
+		deferred_highlight_update = null
+		c.call()
+
+	if waiting_callables.size() > 0:
+		var callables = waiting_callables.duplicate()
+		for callable in callables:
+			callable.call()
+		waiting_callables.clear()
+
+func init() -> void:
+	print("Sidebar initialized!")
+	update_ui()
+
+	# Here, the user could easily just hit X and remain anonymous. This can only happen in the case
+	# of a project loaded from a file, where the user's config hasn't been set.
+	# If we want to force the user to enter a username, we could do `while(!require_user_name()): pass`.
+	# But that seems bad.
+	require_user_name()
 
 func _on_sync_status_icon_pressed():
 	GodotProject.print_sync_debug()
-	print("_____ PRINT")
 
 func _on_branch_picker_item_selected(_index: int) -> void:
-	var selected_branch = branch_picker.get_item_metadata(_index)
+	var selected_branch = GodotProject.get_branch(branch_picker.get_item_metadata(_index))
 
 	# reset selection in branch picker in case checkout_branch fails
 	# once branch is actually checked out, the branch picker will update
-	update_ui(false)
+	update_ui()
 
-	if "is_not_loaded" in selected_branch && selected_branch.is_not_loaded:
+	if !selected_branch.is_loaded:
 		# Show warning dialog that branch is not synced correctly
 		var dialog = AcceptDialog.new()
 		dialog.title = "Branch Not Available"
@@ -353,33 +304,6 @@ func _on_branch_picker_item_selected(_index: int) -> void:
 
 	checkout_branch(selected_branch.id)
 
-
-static var void_func = func(): return
-static func popup_box(parent_window: Node, dialog: AcceptDialog, message: String, box_title: String, confirm_func: Callable = void_func, cancel_func: Callable = void_func):
-	if (dialog == null):
-		dialog = AcceptDialog.new()
-	if (dialog.get_parent() != parent_window):
-		if (dialog.get_parent() == null):
-			parent_window.add_child(dialog)
-		else:
-			dialog.reparent(parent_window)
-	dialog.reset_size()
-	dialog.set_text(message)
-	dialog.set_title(box_title)
-	var _confirm_func: Callable
-	var _cancel_func: Callable
-	var arr = dialog.get_signal_connection_list("confirmed")
-	for dict in arr:
-		dialog.disconnect("confirmed", dict.callable)
-	arr = dialog.get_signal_connection_list("canceled")
-	for dict in arr:
-		dialog.disconnect("canceled", dict.callable)
-	dialog.connect("confirmed", confirm_func)
-	dialog.connect("canceled", cancel_func)
-	dialog.popup_centered()
-
-var current_cvs_action = []
-
 func create_unsaved_files_dialog(message: String):
 	if PatchworkEditor.unsaved_files_open():
 		var dialog = AcceptDialog.new()
@@ -396,91 +320,68 @@ func create_unsaved_files_dialog(message: String):
 		return true
 	return false
 
-
-func ensure_user_has_no_unsaved_files(message: String, callback: Callable):
-	# todo: add back auto save
-	if create_unsaved_files_dialog(message):
-		return
-
-	else:
-		callback.call()
-
 func checkout_branch(branch_id: String) -> void:
-	var branch = GodotProject.get_branch_by_id(branch_id)
+	var branch = GodotProject.get_branch(branch_id)
 	if (!branch):
-		popup_box(self, $ErrorDialog, "Branch not found", "Error")
+		Utils.popup_box(self, $ErrorDialog, "Branch not found", "Error")
 		return
 
-	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before checking out another branch.", func():
-		task_modal.do_task(
-			"Checking out branch \"%s\"" % [branch.name],
-			func():
-				GodotProject.checkout_branch(branch_id)
+	if create_unsaved_files_dialog("You have unsaved files open. You need to save them before checking out another branch."):
+		return;
 
-				await GodotProject.checked_out_branch
+	task_modal.do_task(
+		"Checking out branch \"%s\"" % [branch.name],
+		func():
+			GodotProject.checkout_branch(branch_id)
+			await GodotProject.checked_out_branch
+	)
+
+func create_new_branch() -> void:
+	if create_unsaved_files_dialog("You have unsaved files open. You need to save them before creating a new branch."):
+		return
+
+	var dialog = ConfirmationDialog.new()
+	dialog.title = "Create New Branch"
+
+	var branch_name_input = LineEdit.new()
+	branch_name_input.placeholder_text = "Branch name"
+	branch_name_input.text = GodotProject.get_user_name() + "'s remix"
+	dialog.add_child(branch_name_input)
+
+	# Not scaling these values because they display correctly at 1x-2x scale
+	# Position line edit in dialog
+	branch_name_input.position = Vector2(8, 8)
+	branch_name_input.size = Vector2(200, 30)
+
+	# Make dialog big enough for line edit
+	dialog.size = Vector2(220, 100)
+
+	dialog.get_ok_button().text = "Create"
+	Utils.add_listener_disable_button_if_text_is_empty(dialog.get_ok_button(), branch_name_input)
+
+	dialog.canceled.connect(func(): dialog.queue_free())
+
+	dialog.confirmed.connect(func():
+		var new_branch_name = branch_name_input.text.strip_edges()
+		dialog.queue_free()
+
+		# todo (Lilith): use await
+		task_modal.do_task("Creating new branch \"%s\"" % new_branch_name, func():
+			GodotProject.create_branch(new_branch_name)
+			await GodotProject.checked_out_branch
 		)
 	)
 
-func create_new_branch(disable_cancel: bool = false) -> void:
-	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before creating a new branch.", func():
-		var dialog = ConfirmationDialog.new()
-		dialog.title = "Create New Branch"
+	add_child(dialog)
 
-		var branch_name_input = LineEdit.new()
-		branch_name_input.placeholder_text = "Branch name"
+	dialog.popup_centered()
 
-		var user_name = GodotProject.get_user_name()
+	# focus on the branch name input
+	branch_name_input.grab_focus()
 
-		branch_name_input.text = user_name + "'s remix"
-		dialog.add_child(branch_name_input)
-
-		# Not scaling these values because they display correctly at 1x-2x scale
-		# Position line edit in dialog
-		branch_name_input.position = Vector2(8, 8)
-		branch_name_input.size = Vector2(200, 30)
-
-		# Make dialog big enough for line edit
-		dialog.size = Vector2(220, 100)
-
-		dialog.get_cancel_button().visible = not disable_cancel
-
-		dialog.get_ok_button().text = "Create"
-		add_listener_disable_button_if_text_is_empty(dialog.get_ok_button(), branch_name_input)
-
-		dialog.canceled.connect(func(): dialog.queue_free())
-
-		dialog.confirmed.connect(func():
-			var new_branch_name = branch_name_input.text.strip_edges()
-			dialog.queue_free()
-
-			task_modal.do_task("Creating new branch \"%s\"" % [new_branch_name], func():
-				GodotProject.create_branch(new_branch_name)
-
-				await GodotProject.checked_out_branch
-			)
-		)
-
-		add_child(dialog)
-
-		dialog.popup_centered()
-
-		# focus on the branch name input
-		branch_name_input.grab_focus()
-	)
-
-func move_inspector_to_merge_preview() -> void:
-	if inspector and main_diff_container and merge_preview_diff_container and inspector.get_parent() != merge_preview_diff_container:
-		inspector.reparent(merge_preview_diff_container)
-		inspector.visible = true
-
-func move_inspector_to_revert_preview() -> void:
-	if inspector and main_diff_container and revert_preview_diff_container and inspector.get_parent() != revert_preview_diff_container:
-		inspector.reparent(revert_preview_diff_container)
-		inspector.visible = true
-
-func move_inspector_to_main() -> void:
-	if inspector and main_diff_container and merge_preview_diff_container and inspector.get_parent() != main_diff_container:
-		inspector.reparent(main_diff_container)
+func move_inspector_to(node: Node) -> void:
+	if inspector and main_diff_container and node and inspector.get_parent() != node:
+		inspector.reparent(node)
 		inspector.visible = true
 
 func create_merge_preview_branch():
@@ -503,28 +404,28 @@ func create_revert_preview_branch(head):
 	)
 
 func cancel_revert_preview():
-	if !GodotProject.preview_branch_active(): return
+	if !GodotProject.is_revert_preview_branch_active(): return
 	task_modal.do_task("Cancel revert preview", func():
 		GodotProject.discard_preview_branch()
 		await GodotProject.checked_out_branch
 	)
 
 func confirm_revert_preview():
-	if !GodotProject.preview_branch_active(): return
-	var checked_out_branch = GodotProject.get_checked_out_branch()
-	var reverted_to_heads = checked_out_branch.reverted_to
+	if !GodotProject.is_revert_preview_branch_active(): return
 
-	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before reverting.", func():
-		popup_box(self, $ConfirmationDialog, "Are you sure you want to revert to \"%s\" ?" % [String(", ").join(reverted_to_heads)], "Revert Branch", func():
-			task_modal.do_task("Reverting to \"%s\"" % [String(", ").join(reverted_to_heads)], func():
-				GodotProject.confirm_preview_branch()
-				await GodotProject.checked_out_branch
-			)
-		)
-	)
+	if create_unsaved_files_dialog("You have unsaved files open. You need to save them before reverting."):
+		return
+
+	var target = Utils.short_hash(GodotProject.get_checked_out_branch().reverted_to)
+	# todo (Lilith): use await
+	Utils.popup_box(self, $ConfirmationDialog, "Are you sure you want to revert to \"%s\" ?" % target, "Revert Branch", func():
+		task_modal.do_task("Reverting to \"%s\"" % target, func():
+			GodotProject.confirm_preview_branch()
+			await GodotProject.checked_out_branch
+		), func(): pass)
 
 func cancel_merge_preview():
-	if !GodotProject.preview_branch_active(): return
+	if !GodotProject.is_merge_preview_branch_active(): return
 	task_modal.do_task("Cancel merge preview", func():
 		GodotProject.discard_preview_branch()
 		await GodotProject.checked_out_branch
@@ -532,19 +433,19 @@ func cancel_merge_preview():
 
 
 func confirm_merge_preview():
-	if !GodotProject.preview_branch_active(): return
-	var checked_out_branch = GodotProject.get_checked_out_branch()
+	if !GodotProject.is_merge_preview_branch_active(): return
 
-	var original_source_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from)
-	var target_branch = GodotProject.get_branch_by_id(checked_out_branch.merge_into)
+	if create_unsaved_files_dialog("You have unsaved files open. You need to save them before merging."):
+		return
 
-	# todo: do we want to put these branch strings into rust; make access easier?
-	ensure_user_has_no_unsaved_files("You have unsaved files open. You need to save them before merging.", func():
-		popup_box(self, $ConfirmationDialog, "Are you sure you want to merge \"%s\" into \"%s\" ?" % [original_source_branch.name, target_branch.name], "Merge Branch", func():
-			task_modal.do_task("Merging \"%s\" into \"%s\"" % [original_source_branch.name, target_branch.name], func():
-				GodotProject.confirm_preview_branch()
-				await GodotProject.checked_out_branch
-			)
+	var current_branch = GodotProject.get_checked_out_branch()
+	var forked_from = GodotProject.get_branch(current_branch.parent).name
+	var target = GodotProject.get_branch(current_branch.merge_into).name
+
+	Utils.popup_box(self, $ConfirmationDialog, "Are you sure you want to merge \"%s\" into \"%s\" ?" % [forked_from, target], "Merge Branch", func():
+		task_modal.do_task("Merging \"%s\" into \"%s\"" % [forked_from, target], func():
+			GodotProject.confirm_preview_branch()
+			await GodotProject.checked_out_branch
 		)
 	)
 
@@ -567,14 +468,8 @@ func fold_section(section_header: Button, section_body: Control):
 	section_header.icon = load("res://addons/patchwork/icons/collapsable-closed.svg")
 	section_body.visible = false
 
-
-func heads_to_short_form(heads: PackedStringArray) -> String:
-	var short_form = ""
-	for head in heads:
-		short_form += head.substr(0, 7) + ", "
-	return short_form.substr(0, short_form.length() - 2)
-
-func update_history_ui():
+func update_history_tree():
+	if !GodotProject.has_project(): return
 	var history = GodotProject.get_branch_history()
 
 	history_tree.clear()
@@ -585,9 +480,7 @@ func update_history_ui():
 	var selection = null
 
 	for i in range(history.size() - 1, -1, -1):
-		var change_hash = history[i]
-		var change_author = GodotProject.get_change_username(change_hash)
-
+		var change = GodotProject.get_change(history[i])
 		var item = history_tree.create_item(root)
 		history_item_count += 1
 		var editor_scale = EditorInterface.get_editor_scale()
@@ -595,14 +488,14 @@ func update_history_ui():
 		# if we're a dev, we need another column for the commit hash
 		history_tree.columns = HistoryColumns.COUNT
 		if DEV_MODE:
-			item.set_text(HistoryColumns.HASH, change_hash.substr(0, 8))
-			item.set_tooltip_text(HistoryColumns.HASH, change_hash)
+			item.set_text(HistoryColumns.HASH, Utils.short_hash(change.hash))
+			item.set_tooltip_text(HistoryColumns.HASH, change.hash)
 			item.set_selectable(HistoryColumns.HASH, false)
 			history_tree.set_column_expand(HistoryColumns.HASH, true)
 			history_tree.set_column_expand_ratio(HistoryColumns.HASH, 0)
 			history_tree.set_column_custom_minimum_width(HistoryColumns.HASH, 80 * editor_scale)
 
-		set_history_item_hash(item, change_hash)
+		set_history_item_hash(item, change.hash)
 		set_history_item_enabled(item, true)
 		history_tree.set_column_expand(HistoryColumns.TEXT, true)
 		history_tree.set_column_expand_ratio(HistoryColumns.TEXT, 2)
@@ -610,25 +503,26 @@ func update_history_ui():
 
 		var text_color = Color.WHITE
 
-		if GodotProject.is_change_merge(change_hash):
-			var merged_branch = GodotProject.get_branch_by_id(GodotProject.get_change_merge_id(change_hash))
-			item.add_button(HistoryColumns.TEXT, load("res://addons/patchwork/icons/branch-icon-history.svg"), 0, false, "Checkout branch " + merged_branch.name)
+		if change.is_merge:
+			var merged_branch = GodotProject.get_branch(change.merge_id)
+			item.add_button(HistoryColumns.TEXT, load("res://addons/patchwork/icons/branch-icon-history.svg"), 0,
+				false, "Checkout branch " + merged_branch.name)
 
-		item.set_text(HistoryColumns.TEXT, GodotProject.get_change_summary(change_hash))
+		item.set_text(HistoryColumns.TEXT, change.summary)
 
 		# disable initial commits
-		if GodotProject.is_change_setup(change_hash):
+		if change.is_setup:
 			set_history_item_enabled(item, false);
 
-		if !GodotProject.is_change_synced(change_hash):
+		if !change.is_synced:
 			text_color = Color(0.6, 0.6, 0.6)
 
 		else:
 			item.add_button(HistoryColumns.TEXT, item_context_menu_icon, 1, false, "Open context menu")
 
 		# timestamp
-		item.set_text(HistoryColumns.TIME, GodotProject.get_change_human_timestamp(change_hash))
-		item.set_tooltip_text(HistoryColumns.TIME, GodotProject.get_change_exact_timestamp(change_hash))
+		item.set_text(HistoryColumns.TIME, change.human_timestamp)
+		item.set_tooltip_text(HistoryColumns.TIME, change.exact_timestamp)
 		item.set_selectable(HistoryColumns.TIME, false)
 		history_tree.set_column_expand(HistoryColumns.TIME, true)
 		history_tree.set_column_expand_ratio(HistoryColumns.TIME, 0)
@@ -639,7 +533,7 @@ func update_history_ui():
 		item.set_custom_color(HistoryColumns.TEXT, text_color)
 		item.set_custom_color(HistoryColumns.TIME, text_color)
 
-		if change_hash == history_saved_selection:
+		if change.hash == history_saved_selection:
 			selection = item
 
 	# restore saved selection
@@ -649,75 +543,84 @@ func update_history_ui():
 	else:
 		history_saved_selection = null
 
-func update_ui(should_update_diff: bool = false) -> void:
-	print("Updating UI...")
-
-	var checked_out_branch = GodotProject.get_checked_out_branch()
+func update_action_buttons():
+	if !GodotProject.has_project(): return
 	var main_branch = GodotProject.get_main_branch()
-	var all_branches = GodotProject.get_branches()
-
-	# update branch pickers
-	update_branch_picker(main_branch, checked_out_branch, all_branches)
-
-	# update the history tree
-	update_history_ui()
-
-	# update sync status
-	update_sync_status()
-
-	# update action buttons
-
-	if checked_out_branch && checked_out_branch.is_main:
+	var current_branch = GodotProject.get_checked_out_branch()
+	if !main_branch or !current_branch: return
+	if main_branch.id == current_branch.id:
 		merge_button.disabled = true
 		merge_button.tooltip_text = "Can't merge main because it's not a remix of another branch"
 	else:
 		merge_button.disabled = false
 		merge_button.tooltip_text = ""
 
+func update_user_name():
+	user_button.text = GodotProject.get_user_name()
+	if user_button.text == "": user_button.text = "Anonymous"
 
-	# update user name
+func update_merge_preview():
+	var active = GodotProject.is_merge_preview_branch_active()
+	merge_preview_modal.visible = active
+	if !active: return
 
-	var user_name = PatchworkConfig.get_user_value("user_name", "")
+	var current_branch = GodotProject.get_checked_out_branch()
+	var source_branch = GodotProject.get_branch(current_branch.parent)
+	var target_branch = GodotProject.get_branch(current_branch.merge_into)
 
-	user_button.text = user_name
+	if !source_branch or !target_branch:
+		printerr("Branch merge info invalid!")
+		return;
 
-	# update merge preview
+	merge_preview_source_label.text = source_branch.name
+	merge_preview_target_label.text = target_branch.name
+	merge_preview_title.text = "Preview of \"" + target_branch.name + "\""
 
-	if !checked_out_branch:
+	if GodotProject.is_safe_to_merge():
+		merge_preview_message_label.text = "\"" + target_branch.name + "\" has changed since \"" + source_branch.name + "\" was created.\nBe careful and review your changes before merging."
+		merge_preview_message_icon.texture = load("res://addons/patchwork/icons/warning-circle.svg")
+	else:
+		merge_preview_message_label.text = "This branch is safe to merge.\n \"" + target_branch.name + "\" hasn't changed since \"" + source_branch.name + "\" was created."
+		merge_preview_message_icon.texture = load("res://addons/patchwork/icons/checkmark-circle.svg")
+
+func update_revert_preview():
+	var active = GodotProject.is_revert_preview_branch_active()
+	revert_preview_modal.visible = active
+	if !active: return
+
+	var current_branch = GodotProject.get_checked_out_branch()
+
+	if !current_branch || !current_branch.reverted_to:
+		printerr("Branch revert info invalid!")
 		return
 
-	merge_preview_modal.visible = checked_out_branch.is_merge_preview
-	revert_preview_modal.visible = checked_out_branch.is_revert_preview
+	var change_hash = Utils.short_hash(current_branch.reverted_to)
 
-	var source_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from) if checked_out_branch.has("forked_from") else null
+	revert_preview_title.text = "Preview of reverting to %s" % change_hash
 
-	if checked_out_branch.is_revert_preview:
-		var heads_short_form = heads_to_short_form(checked_out_branch.reverted_to)
-		move_inspector_to_revert_preview()
-
-		if source_branch && heads_short_form:
-			revert_preview_title.text = "Preview of reverting to \"" + heads_short_form + "\""
-
-	elif checked_out_branch.is_merge_preview:
-		move_inspector_to_merge_preview()
-		var target_branch = GodotProject.get_branch_by_id(checked_out_branch.merge_into)
-
-		if source_branch && target_branch:
-			merge_preview_source_label.text = source_branch.name
-			merge_preview_target_label.text = target_branch.name
-			merge_preview_title.text = "Preview of \"" + target_branch.name + "\""
-
-			if source_branch.forked_at != target_branch.heads:
-				merge_preview_message_label.text = "\"" + target_branch.name + "\" has changed since \"" + source_branch.name + "\" was created.\nBe careful and review your changes before merging."
-				merge_preview_message_icon.texture = load("res://addons/patchwork/icons/warning-circle.svg")
-			else:
-				merge_preview_message_label.text = "This branch is safe to merge.\n \"" + target_branch.name + "\" hasn't changed since \"" + source_branch.name + "\" was created."
-				merge_preview_message_icon.texture = load("res://addons/patchwork/icons/checkmark-circle.svg")
-
+func update_inspector():
+	if !GodotProject.has_project(): return
+	if GodotProject.is_revert_preview_branch_active():
+		move_inspector_to(revert_preview_diff_container)
+	elif GodotProject.is_merge_preview_branch_active():
+		move_inspector_to(merge_preview_diff_container)
 	else:
-		move_inspector_to_main()
+		move_inspector_to(main_diff_container)
 
-	if should_update_diff: update_diff()
+# Refresh the entire UI, rebinding all data.
+func update_ui() -> void:
+	print("Updating UI...")
+
+	update_init_panel();
+	update_branch_picker()
+	update_history_tree()
+	update_sync_status()
+	update_action_buttons()
+	update_user_name()
+	update_inspector()
+	update_revert_preview()
+	update_merge_preview()
+	update_diff()
 
 func update_sync_status() -> void:
 	var sync_status = GodotProject.get_sync_status()
@@ -745,50 +648,44 @@ func update_sync_status() -> void:
 			sync_status_icon.tooltip_text = "Disconnected - %s local changes that haven't been synced" % [sync_status.unsynced_changes]
 	else: printerr("unknown sync status: " + sync_status.state)
 
-func update_branch_picker(main_branch, checked_out_branch, all_branches) -> void:
+# Update the branch selector.
+func update_branch_picker() -> void:
+	if !GodotProject.has_project(): return
 	branch_picker.clear()
 
-	if !checked_out_branch:
-		return
-
-	if !main_branch:
+	var main_branch = GodotProject.get_main_branch();
+	var checked_out_branch = GodotProject.get_checked_out_branch()
+	if !checked_out_branch or !main_branch:
 		return
 
 	branch_picker_cover.text = checked_out_branch.name
-	add_branch_with_forks(main_branch, all_branches, checked_out_branch.id)
+	add_branch_to_picker(main_branch, checked_out_branch.id)
 
-func add_branch_with_forks(branch: Dictionary, all_branches: Array, selected_branch_id: String, indentation: String = "", is_last: bool = false) -> void:
-	# print("branch: ", branch)
+# Recursively add a branch and all of its child forks to the branch picker.
+func add_branch_to_picker(branch: Dictionary, selected_branch_id: String, indentation: String = "", is_last: bool = false) -> void:
+	if !branch.is_available: return
+
 	var label
-	if branch.is_main:
+	if !branch.parent:
 		label = branch.name
-	elif not branch.get("merged_into", "").is_empty():
-		print("branch.merged_into: ", branch.merged_into)
-		return
 	else:
-		var connection
-		if is_last:
-			connection = "└─ "
-		else:
-			connection = "├─ "
-
+		var connection = "└─ " if is_last else "├─ "
 		label = indentation + connection + branch.name
-
 
 	var branch_index = branch_picker.get_item_count()
 	branch_picker.add_item(label, branch_index)
 
 	# this should not happen, but right now the sync is not working correctly so we need to surface this in the interface
-	if branch.is_not_loaded:
+	if !branch.is_loaded:
 		branch_picker.set_item_icon(branch_index, load("res://addons/patchwork/icons/warning.svg"))
 
-	branch_picker.set_item_metadata(branch_index, branch)
+	branch_picker.set_item_metadata(branch_index, branch.id)
 
 	if branch.id == selected_branch_id:
 		branch_picker.select(branch_index)
 
-	var new_indentation = ""
-	if branch.is_main:
+	var new_indentation
+	if !branch.parent:
 		new_indentation = ""
 	else:
 		if is_last:
@@ -796,29 +693,14 @@ func add_branch_with_forks(branch: Dictionary, all_branches: Array, selected_bra
 		else:
 			new_indentation = indentation + "│   "
 
-
-	var forked_off_branches = []
-	for other_branch in all_branches:
-		if !("forked_from" in other_branch):
-			continue
-		if not other_branch.get("merged_into", "").is_empty():
-			continue
-		if not other_branch.get("reverted_to", "").is_empty():
-			continue
-
-		if other_branch.forked_from != branch.id:
-			continue
-
-		forked_off_branches.append(other_branch)
-
-	for child_index in range(forked_off_branches.size()):
-		var forked_off_branch = forked_off_branches[child_index]
-		var is_last_child = child_index == forked_off_branches.size() - 1
-		add_branch_with_forks(forked_off_branch, all_branches, selected_branch_id, new_indentation, is_last_child)
+	for i in range(branch.children.size()):
+		var child = branch.children[i]
+		var is_last_child = i == branch.children.size() - 1
+		add_branch_to_picker(GodotProject.get_branch(child), selected_branch_id, new_indentation, is_last_child)
 
 func update_highlight_changes(diff: Dictionary) -> void:
 	if (PatchworkEditor.is_changing_scene()):
-		deterred_highlight_update = func(): update_highlight_changes(diff)
+		deferred_highlight_update = func(): update_highlight_changes(diff)
 		return
 
 	var edited_root = EditorInterface.get_edited_scene_root()
@@ -834,16 +716,12 @@ func update_highlight_changes(diff: Dictionary) -> void:
 		else:
 			HighlightChangesLayer.remove_highlight(edited_root)
 
-
-var prev_heads_before
-var prev_heads_after
-var last_diff: Dictionary = {}
-
+var last_diff = null
 
 func _on_node_hovered(file_path: String, node_paths: Array) -> void:
 	# print("on_node_hovered: ", file_path, node_path)
 	var node: Node = EditorInterface.get_edited_scene_root()
-	if node.scene_file_path != file_path:
+	if node.scene_file_path != file_path or !last_diff:
 		# don't highlight changes for other files
 		return
 	var lst_diff = last_diff
@@ -867,8 +745,6 @@ func _on_node_hovered(file_path: String, node_paths: Array) -> void:
 func _on_node_unhovered(file_path: String, node_path: Array) -> void:
 	self.update_highlight_changes({})
 
-@onready var history_list_popup: PopupMenu = %HistoryListPopup
-
 var context_menu_hash = null
 
 enum HistoryListPopupItem {
@@ -887,10 +763,10 @@ func _on_history_list_popup_id_pressed(index: int) -> void:
 	elif item == HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT:
 		print("Create remix at change not implemented yet!")
 
-func _setup_history_list_popup() -> void:
+func setup_history_list_popup() -> void:
 	history_list_popup.clear()
 	# TODO: adjust this when more items are added
-	history_list_popup.max_size.y = 32 * EditorInterface.get_editor_scale()
+	history_list_popup.max_size.y = 48 * EditorInterface.get_editor_scale()
 	history_list_popup.id_pressed.connect(_on_history_list_popup_id_pressed)
 	history_list_popup.add_icon_item(load("res://addons/patchwork/icons/undo-redo.svg"), "Reset to here", HistoryListPopupItem.RESET_TO_COMMIT)
 	# history_list_popup.add_item("Create remix from here", HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT)
@@ -902,16 +778,17 @@ func _on_history_tree_mouse_selected(_at_position: Vector2, button_idx: int) -> 
 		show_contextmenu(get_history_item_hash(history_tree.get_selected()))
 
 func show_contextmenu(item_hash):
-		context_menu_hash = item_hash
-		history_list_popup.position = DisplayServer.mouse_get_position()
-		history_list_popup.visible = true
+	context_menu_hash = item_hash
+	history_list_popup.position = DisplayServer.mouse_get_position()
+	history_list_popup.visible = true
 
 func _on_history_tree_button_clicked(item: TreeItem, _column : int, id: int, mouse_button_index: int) -> void:
 	if mouse_button_index != MOUSE_BUTTON_LEFT: return
 
 	if id == 0:
 		var change_hash = get_history_item_hash(item)
-		var merged_branch = GodotProject.get_change_merge_id(change_hash)
+		var change = GodotProject.get_change(change_hash)
+		var merged_branch = change.merge_id
 		if !merged_branch:
 			print("Error: No matching change found.")
 			return
@@ -940,124 +817,46 @@ func _on_history_tree_empty_clicked(_vec2, _idx):
 	history_tree.deselect_all()
 	update_diff()
 
-# read the selection from the tree, and update the diff visualization accordingly.
+# Read the selection from the tree, and update the diff visualization accordingly.
 func update_diff():
+	if !GodotProject.has_project(): return
 	var selected_item = history_tree.get_selected()
-	var checked_out_branch = GodotProject.get_checked_out_branch()
+	var diff;
 
-	# check to see if we generate a selection diff, or a default diff
 	if (selected_item == null
-			or checked_out_branch.is_merge_preview
-			or checked_out_branch.is_revert_preview
-			# the first two commits on main are initial checkin, so we don't show a diff for them
-			or checked_out_branch.is_main
-				and selected_item.get_text(HistoryColumns.TEXT) == INITIAL_COMMIT_TEXT):
-		update_diff_default(checked_out_branch, all_changes_count)
-		return
-
-	# otherwise, we set up the diff between the selected commit and the previous.
-	var change_hash =  get_history_item_hash(selected_item)
-	if change_hash:
-		var change_heads = PackedStringArray([change_hash])
-		# we're just updating the diff
-		# we show changes from most recent to oldest, so the previous change is the next item
-		var prev_item = selected_item.get_next_in_tree()
-		var previous_heads: PackedStringArray = []
-		if prev_item == null:
-			if checked_out_branch.is_main:
-				return
-			# get the root hash from the checked_out_branch
-			previous_heads = checked_out_branch.get("forked_at", PackedStringArray([]))
-		else:
-			previous_heads = [get_history_item_hash(prev_item)]
-
-		if previous_heads.size() > 0:
-			# diff_section_header.text = DIFF_SECTION_HEADER_TEXT_FORMAT % [prev_change_hash.substr(0, 7), change_hash.substr(0, 7)]
-			var text = selected_item.get_text(HistoryColumns.TEXT)
-			var date = selected_item.get_text(HistoryColumns.TIME)
-			var commit_name = text.split(" ")[0].strip_edges()
-			if commit_name == "↪️":
-				commit_name = text.split(" ")[1].strip_edges() + "'s merged branch"
-			diff_section_header.text = "Showing changes from %s - %s" % [commit_name, date]
-			update_properties_diff(checked_out_branch, 2, previous_heads, change_heads)
-			%ClearDiffButton.visible = true
-			inspector.visible = true
-		else:
-			printerr("no prev change hash")
+			or GodotProject.is_merge_preview_branch_active()
+			or GodotProject.is_revert_preview_branch_active()):
+		diff = GodotProject.get_default_diff()
+		show_diff(diff, false)
 	else:
-		printerr("no change hash")
+		var hash = get_history_item_hash(selected_item)
+		diff = GodotProject.get_diff(hash)
+		if (!diff):
+			show_invalid_diff()
+			return
+		show_diff(diff, true)
 
-# display the default diff, for when there's no available selected diff or if we're merging/reverting
-func update_diff_default(checked_out_branch, history):
-	%ClearDiffButton.visible = false
-
-	var heads_before
-	var heads_after
-
-	inspector.visible = true
-
-	if checked_out_branch.is_merge_preview:
-		var source_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from)
-		var target_branch = GodotProject.get_branch_by_id(checked_out_branch.merge_into)
-		heads_before = checked_out_branch.merge_at
-		heads_after = checked_out_branch.heads
-		diff_section_header.text = "Showing changes for \"" + source_branch.name + "\" -> \"" + target_branch.name + "\""
-
-	elif checked_out_branch.is_revert_preview:
-		var source_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from)
-		heads_before = checked_out_branch.forked_at
-		heads_after = checked_out_branch.heads
-		var heads_short_form = heads_to_short_form(checked_out_branch.reverted_to)
-		diff_section_header.text = "Showing changes from \"" + source_branch.name + "\" reverted to \"" + heads_short_form + "\""
-
-	# main branch cannot have content in the diff by default
-	elif checked_out_branch.is_main:
+# Inspect the diff dictionary.
+func show_diff(diff, is_change) -> void:
+	if !diff:
 		inspector.visible = false
 		diff_section_header.text = "Changes"
+		%ClearDiffButton.visible = false
 		return
-
-	else:
-		var source_branch = GodotProject.get_branch_by_id(checked_out_branch.forked_from)
-		heads_before = checked_out_branch.forked_at
-		heads_after = checked_out_branch.heads
-		diff_section_header.text = "Showing changes from \"" + source_branch.name + "\" -> \"" + checked_out_branch.name + "\""
-
-	# print("heads_before: ", heads_before)
-	# print("heads_after: ", heads_after)
-
-	update_properties_diff(checked_out_branch, history, heads_before, heads_after)
-
-func update_properties_diff(checked_out_branch, change_count, heads_before, heads_after) -> Dictionary:
-	if (!inspector):
-		return last_diff
-
-	if (!checked_out_branch):
-		return last_diff
-
-	if (change_count < 2):
-		return last_diff
-
-	if (prev_heads_before == heads_before && prev_heads_after == heads_after):
-		return last_diff
-
-	prev_heads_before = heads_before
-	prev_heads_after = heads_after
-	last_diff = show_diff(heads_before, heads_after)
-	return last_diff
-
-
-func show_diff(heads_before, heads_after):
-	# TODO: handle dependencies of these files
-	# print("heads_before: ", heads_before)
-	# print("heads_after: ", heads_after)
-	var diff = GodotProject.get_all_changes_between(PackedStringArray(heads_before), PackedStringArray(heads_after))
+	last_diff = diff
+	%ClearDiffButton.visible = is_change
+	inspector.visible = true
+	diff_section_header.text = diff.title
 	inspector.reset()
-	inspector.add_diff(diff)
-	# print("Length: ", diff.size())
-	return diff
+	inspector.add_diff(diff.dict)
 
+# Show an invalid diff for a commit with no valid diff (e.g. setup commits)
+func show_invalid_diff() -> void:
+	inspector.visible = false
+	diff_section_header.text = "No diff available for selection"
+	%ClearDiffButton.visible = true
 
 func _on_copy_project_id_button_pressed() -> void:
-	var project_id = PatchworkConfig.get_project_value("project_doc_id", "")
+	var project_id = GodotProject.get_project_id()
 	if not project_id.is_empty():
 		DisplayServer.clipboard_set(project_id)
