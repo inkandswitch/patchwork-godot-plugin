@@ -10,7 +10,7 @@ pub enum SyncStatus {
     Disconnected(usize),
     /// The server is currently syncing our changes.
     Syncing,
-    /// The server is up to date with our changes.
+    /// The server is up to date with our changes, or the project is not started.
     UpToDate
 }
 
@@ -125,6 +125,7 @@ pub trait BranchViewModel {
 	fn get_merge_into(&self) -> Option<DocumentId>;
 }
 
+/// API surface for a Diff exposed to the UI.
 pub trait DiffViewModel {
 	// TODO: Change this to Rust API not Godot
 	/// Get the [Dictionary] containing the diff data.
