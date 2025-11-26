@@ -710,17 +710,17 @@ func update_highlight_changes(diff: Dictionary) -> void:
 
 	if edited_root:
 		if not (not diff || diff.is_empty()):
-				var path = edited_root.scene_file_path
-				var scene_changes = diff.get(path)
-				if scene_changes:
-					HighlightChangesLayer.highlight_changes(edited_root, scene_changes)
+			var path = edited_root.scene_file_path
+			var scene_changes = diff.dict.get(path)
+			if scene_changes:
+				HighlightChangesLayer.highlight_changes(edited_root, scene_changes)
 		else:
 			HighlightChangesLayer.remove_highlight(edited_root)
 
 var last_diff = null
 
 func _on_node_hovered(file_path: String, node_paths: Array) -> void:
-	# print("on_node_hovered: ", file_path, node_path)
+	# print("on_node_hovered: ", file_path, node_paths)
 	var node: Node = EditorInterface.get_edited_scene_root()
 	if node.scene_file_path != file_path or !last_diff:
 		# don't highlight changes for other files
