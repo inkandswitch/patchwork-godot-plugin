@@ -23,22 +23,22 @@ We have long-term plans to upstream our changes into Godot, which will allow thi
 
 Download our fork of Godot for your platform
 
-- [Mac OS](https://github.com/inkandswitch/patchwork-godot-plugin/releases/download/v0.0.1-alpha.18/patchwork_editor-v0.0.1-alpha.17-macos.zip)
-- [Windows](https://github.com/inkandswitch/patchwork-godot-plugin/releases/download/v0.0.1-alpha.18/patchwork_editor-v0.0.1-alpha.17-windows.zip)
-- [Linux](https://github.com/inkandswitch/patchwork-godot-plugin/releases/download/v0.0.1-alpha.18/patchwork_editor-v0.0.1-alpha.17-linux.zip)
+- [Mac OS](https://github.com/inkandswitch/patchwork-godot-plugin/releases/download/v0.0.1-alpha.19/patchwork_editor-v0.0.1-alpha.19-macos.zip)
+- [Windows](https://github.com/inkandswitch/patchwork-godot-plugin/releases/download/v0.0.1-alpha.19/patchwork_editor-v0.0.1-alpha.19-windows.zip)
+- [Linux](https://github.com/inkandswitch/patchwork-godot-plugin/releases/download/v0.0.1-alpha.19/patchwork_editor-v0.0.1-alpha.19-linux.zip)
 
 Then you can either:
 
 Download example project with plugin already set up
 
-- [Moddable Platformer](https://github.com/inkandswitch/patchwork-godot-plugin/releases/download/v0.0.1-alpha.18/moddable-platformer-with-patchwork.zip) (recommended)
-- [Threadbare](https://github.com/inkandswitch/patchwork-godot-plugin/releases/download/v0.0.1-alpha.18/threadbare-with-patchwork.zip) (experimental)
+- [Moddable Platformer](https://github.com/inkandswitch/patchwork-godot-plugin/releases/download/v0.0.1-alpha.19/moddable-platformer-with-patchwork.zip) (recommended)
+- [Threadbare](https://github.com/inkandswitch/patchwork-godot-plugin/releases/download/v0.0.1-alpha.19/threadbare-with-patchwork.zip) (experimental)
 
 *or* 
 
 Download the plugin and copy it into an existing project
 
-- [Plugin](https://github.com/inkandswitch/patchwork-godot-plugin/releases/download/v0.0.1-alpha.18/patchwork-godot-plugin.zip)
+- [Plugin](https://github.com/inkandswitch/patchwork-godot-plugin/releases/download/v0.0.1-alpha.19/patchwork-godot-plugin.zip)
 
 ## Getting Started
 
