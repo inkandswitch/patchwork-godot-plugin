@@ -183,7 +183,8 @@ impl GodotProjectViewModel for GodotProjectImpl {
 
     fn get_sync_status(&self) -> SyncStatus {
 		if !self.is_started() {
-			return SyncStatus::Unknown;
+			// We have no reason to be connected, therefore just mark it as OK.
+			return SyncStatus::UpToDate;
 		}
         let Some(info) = &self.sync_server_connection_info else {
             return SyncStatus::Unknown;
