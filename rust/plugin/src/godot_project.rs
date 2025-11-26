@@ -143,7 +143,6 @@ impl PendingEditorUpdate {
 #[class(base=Node)]
 pub struct GodotProject {
 	base: Base<Node>,
-	// todo (Lilith's PR): change this to GodotProjectViewModel trait ideally
 	project: GodotProjectImpl,
 	pending_editor_update: PendingEditorUpdate,
 	reload_project_settings_callable: Option<Callable>

@@ -490,7 +490,7 @@ impl GodotProjectDriver {
                             },
 
 							InputEvent::RevertTo { branch_doc_handle, files, heads, revert_to } => {
-                                state.save_files(branch_doc_handle, files, heads, true, Some(revert_to));
+                                state.save_files(branch_doc_handle, files, heads, false, Some(revert_to));
                             },
 
                             InputEvent::SetUserName { name } => {
@@ -568,7 +568,8 @@ async fn init_project_doc_handles(
                         branch_id: Some(main_branch_doc_handle.document_id()),
                         merge_metadata: None,
 						reverted_to: None,
-                        changed_files: None
+                        changed_files: None,
+						is_setup: Some(true)
                     },
                 );
             });
@@ -607,7 +608,8 @@ async fn init_project_doc_handles(
                         branch_id: None,
                         merge_metadata: None,
 						reverted_to: None,
-                        changed_files: None
+                        changed_files: None,
+						is_setup: Some(true)
                     },
                 );
             });
@@ -666,7 +668,8 @@ impl DriverState {
                     branch_id: None,
                     merge_metadata: None,
 					reverted_to: None,
-                    changed_files: None
+                    changed_files: None,
+					is_setup: Some(true)
                 },
             );
         });
@@ -714,7 +717,8 @@ impl DriverState {
                     branch_id: None,
                     merge_metadata: None,
 					reverted_to: None,
-                    changed_files: None
+                    changed_files: None,
+					is_setup: Some(true)
                 },
             );
         });
@@ -796,7 +800,8 @@ impl DriverState {
                     branch_id: Some(source_branch_doc_id),
                     merge_metadata: None,
 					reverted_to: None,
-                    changed_files: None
+                    changed_files: None,
+					is_setup: Some(true)
                 },
             );
         });
@@ -827,7 +832,8 @@ impl DriverState {
                     branch_id: None,
                     merge_metadata: None,
 					reverted_to: None,
-                    changed_files: None
+                    changed_files: None,
+					is_setup: Some(true)
                 },
             );
         });
@@ -861,7 +867,8 @@ impl DriverState {
                                 branch_id: None,
                                 merge_metadata: None,
 								reverted_to: None,
-                                changed_files: None
+                                changed_files: None,
+								is_setup: Some(new_project)
                             },
                         );
                     });
@@ -983,7 +990,8 @@ impl DriverState {
 						Some(revert) => Some(heads_to_vec_string(revert)),
 						None => None,
 					},
-                    changed_files: Some(changes)
+                    changed_files: Some(changes),
+					is_setup: Some(new_project)
                 },
             );
         });
@@ -1053,7 +1061,8 @@ impl DriverState {
                         branch_id: Some(target_branch_doc_id),
                         merge_metadata: Some(merge_metadata),
 						reverted_to: None,
-                        changed_files: None
+                        changed_files: None,
+						is_setup: Some(false)
                     },
                 );
             });
@@ -1073,7 +1082,8 @@ impl DriverState {
 						branch_id: Some(source_branch_doc_id),
 						merge_metadata: None,
 						reverted_to: None,
-                        changed_files: None
+                        changed_files: None,
+						is_setup: Some(false)
 					},
 				);
 			});

@@ -458,8 +458,10 @@ impl ChangeViewModel for CommitInfo {
 	}
 
 	fn is_setup(&self) -> bool {
-		// TODO (Lilith's PR, important): Mark initial commits as initial in metadata instead of just counting
-		return false;
+        let Some(meta) = &self.metadata else {
+            return false;
+        };
+        return meta.is_setup.unwrap_or(false);
 	}
 
 	fn get_exact_timestamp(&self) -> String {

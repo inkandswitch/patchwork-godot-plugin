@@ -142,7 +142,9 @@ pub struct CommitMetadata {
     pub merge_metadata: Option<MergeMetadata>,
 	pub reverted_to: Option<Vec<String>>,
     /// Changed files in this commit. Only valid for commits to branch documents.
-    pub changed_files: Option<Vec<ChangedFile>>
+    pub changed_files: Option<Vec<ChangedFile>>,
+	/// Whether this change was created to initialize the repository.
+	pub is_setup: Option<bool>
 }
 
 pub(crate) fn commit_with_attribution_and_timestamp(tx: Transaction, metadata: &CommitMetadata) {

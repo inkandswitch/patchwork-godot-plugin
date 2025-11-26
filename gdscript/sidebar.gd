@@ -518,7 +518,7 @@ func update_history_tree():
 		if change.is_setup:
 			set_history_item_enabled(item, false);
 
-		if !change.is_synced:
+		elif !change.is_synced:
 			text_color = Color(0.6, 0.6, 0.6)
 
 		else:
