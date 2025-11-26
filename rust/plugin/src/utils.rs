@@ -352,15 +352,20 @@ pub fn human_readable_timestamp(timestamp: i64) -> String {
     // Difference in seconds
     let diff = (now - timestamp) / 1000;
 
-    match diff {
-        s if s < 60 => format!("{} seconds ago", s),
-        s if s < 3600 => format!("{} minutes ago", s / 60),
-        s if s < 86400 => format!("{} hours ago", s / 3600),
-        s if s < 604800 => format!("{} days ago", s / 86400),
-        s if s < 2_592_000 => format!("{} weeks ago", s / 604_800),
-        s if s < 31_536_000 => format!("{} months ago", s / 2_592_000),
-        s => format!("{} years ago", s / 31_536_000),
-    }
+	fn pluralize(num: i64, s: &str) -> String {
+		if num == 1 {format!("{num} {}", s.to_string())}
+		else {format!("{num} {}s", s.to_string())}
+	}
+
+    return match diff {
+        s if s < 60 => pluralize(s, "second"),
+        s if s < 3600 => pluralize(s / 60, "minute"),
+        s if s < 86400 => pluralize(s / 3600, "hour"),
+        s if s < 604800 => pluralize(s / 86400, "day"),
+        s if s < 2_592_000 => pluralize(s / 604_800, "week"),
+        s if s < 31_536_000 => pluralize(s / 2_592_000, "month"),
+        s => pluralize(s / 31_536_000, "year"),
+    } + " ago";
 }
 
 pub fn exact_human_readable_timestamp(timestamp: i64) -> String {
