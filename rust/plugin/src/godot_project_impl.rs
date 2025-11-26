@@ -2017,10 +2017,6 @@ impl GodotProjectImpl {
 						files = files.into_iter().filter_map(
 						|(path, content)|{
 							if let FileContent::Scene(content) = content {
-								if content.requires_resave {
-									driver_updates.push(FileSystemUpdateEvent::FileSaved(PathBuf::from(self.globalize_path(&path)), FileContent::Scene(content)));
-									return None;
-								}
 								return Some((path, FileContent::Scene(content)));
 							}
 							Some((path, content))
