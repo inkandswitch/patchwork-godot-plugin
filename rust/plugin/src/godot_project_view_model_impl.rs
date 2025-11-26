@@ -252,7 +252,8 @@ impl GodotProjectViewModel for GodotProjectImpl {
         tracing::debug!("=====================================");
     }
 
-	fn get_branch(&self, id: DocumentId) -> Option<impl BranchViewModel> {
+	#[allow(refining_impl_trait)] // can't seem to specify use<> on the trait...
+	fn get_branch(&self, id: &DocumentId) -> Option<impl BranchViewModel + use<>> {
         let state = self
 			.branch_states
 			.get(&id)?;
@@ -288,12 +289,12 @@ impl GodotProjectViewModel for GodotProjectImpl {
             .branch_states
             .values()
             .find(|branch_state| branch_state.is_main);
-		self.get_branch(state?.doc_handle.document_id())
+		self.get_branch(&state?.doc_handle.document_id())
 	}
 
 	fn get_checked_out_branch(&self) -> Option<impl BranchViewModel> {
         let state = self.get_checked_out_branch_state();
-		self.get_branch(state?.doc_handle.document_id())
+		self.get_branch(&state?.doc_handle.document_id())
 	}
 
 	#[instrument(skip(self), fields(name = ?name), level = tracing::Level::INFO)]
@@ -383,19 +384,19 @@ impl GodotProjectViewModel for GodotProjectImpl {
 		// generate the summary
 		let title;
 		if self.is_merge_preview_branch_active() {
-			let source_name = self.get_branch(branch_state.fork_info.as_ref()?.forked_from.clone())?.get_name();
-			let target_name = self.get_branch(branch_state.merge_info.as_ref()?.merge_into.clone())?.get_name();
+			let source_name = self.get_branch(&branch_state.fork_info.as_ref()?.forked_from.clone())?.get_name();
+			let target_name = self.get_branch(&branch_state.merge_info.as_ref()?.merge_into.clone())?.get_name();
 			title = format!("Showing changes for {} -> {}", source_name, target_name);
 		}
 		else if self.is_revert_preview_branch_active() {
-			let source_name = self.get_branch(branch_state.fork_info.as_ref()?.forked_from.clone())?.get_name();
+			let source_name = self.get_branch(&branch_state.fork_info.as_ref()?.forked_from.clone())?.get_name();
 			// assume reverted_to is always just 1 hash
 			let short_heads = &branch_state.revert_info.as_ref()?.reverted_to
 				.first()?.to_string()[..7];
 			title = format!("Showing changes for {} reverted to {}", source_name, short_heads);
 		}
 		else {
-			let source_name = self.get_branch(branch_state.fork_info.as_ref()?.forked_from.clone())?.get_name();
+			let source_name = self.get_branch(&branch_state.fork_info.as_ref()?.forked_from.clone())?.get_name();
 			title = format!("Showing changes from {} -> {}", source_name, branch_state.name);
 		}
 

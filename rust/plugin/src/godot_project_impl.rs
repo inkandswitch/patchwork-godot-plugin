@@ -22,6 +22,7 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::collections::{HashSet};
 use std::path::{PathBuf};
+use std::time::SystemTime;
 use std::{collections::HashMap, str::FromStr};
 use crate::godot_helpers::{ToDict, VariantTypeGetter};
 use crate::file_system_driver::{FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
@@ -120,7 +121,9 @@ pub struct GodotProjectImpl {
     pub(super) history: Vec<ChangeHash>,
     pub(super) changes: HashMap<ChangeHash, CommitInfo>,
 	// use RefCell for interior cache mutability
-	pub(super) diff_cache: RefCell<HashMap<(Vec<ChangeHash>, Vec<ChangeHash>), Dictionary>>
+	pub(super) diff_cache: RefCell<HashMap<(Vec<ChangeHash>, Vec<ChangeHash>), Dictionary>>,
+	last_ingest: (SystemTime, i32),
+	ingest_requested: bool
 }
 
 impl Default for GodotProjectImpl {
@@ -147,7 +150,9 @@ impl Default for GodotProjectImpl {
 			initial_load: true,
 			history: Vec::new(),
 			changes: HashMap::new(),
-			diff_cache: RefCell::new(HashMap::new())
+			diff_cache: RefCell::new(HashMap::new()),
+			last_ingest: (SystemTime::UNIX_EPOCH, 0),
+			ingest_requested: false
 		}
 	}
 }
@@ -158,11 +163,7 @@ const DEFAULT_SERVER_URL: &str = "24.199.97.236:8080";
 /// Notifications that can be emitted via process and consumed by GodotProject, in order to trigger signals to GDScript.
 pub enum GodotProjectSignal {
 	CheckedOutBranch,
-	FilesChanged,
-	SavedChanges,
-	BranchesChanged,
-	SyncServerConnectionInfoChanged(PeerConnectionInfo),
-	ConnectionThreadFailed,
+	ChangesIngested
 }
 
 impl GodotProjectImpl {
@@ -206,6 +207,8 @@ impl GodotProjectImpl {
         let Some(branch_state) = self.get_checked_out_branch_state() else {
             return;
         };
+
+		tracing::info!("Ingesting changes...");
 
 		let last_acked_heads = self.sync_server_connection_info
 			.as_ref()
@@ -253,7 +256,7 @@ impl GodotProjectImpl {
 
 			// merge commit
 			if let Some(merge_info) = &meta?.merge_metadata {
-				let merged_branch = &self.get_branch(merge_info.merged_branch_id.clone())?.get_name();
+				let merged_branch = &self.get_branch(&merge_info.merged_branch_id.clone())?.get_name();
 				return Some(format!("↪️ {author} merged {merged_branch} branch"));
 			}
 
@@ -824,9 +827,11 @@ impl GodotProjectImpl {
 				self.branch_states.get(&branch_doc_id)
             }
             _ => {
-                tracing::info!(
-                    "Tried to get checked out branch state when nothing is checked out"
-                );
+				// disabling this due to spam; calling this method for a None result isn't
+				// an issue I think
+                // tracing::info!(
+                //     "Tried to get checked out branch state when nothing is checked out"
+                // );
                 None
             }
         }
@@ -2065,9 +2070,46 @@ impl GodotProjectImpl {
 		}
 	}
 
+	/// Request for a change ingestion to be dispatched.
+	fn request_ingestion(&mut self) {
+		self.ingest_requested = true;
+	}
+
+	/// If able, ingest changes, clear the ingestion request, and return true.
+	/// Otherwise, return false.
+	fn try_ingest_changes(&mut self) -> bool {
+		// Do not try to ingest if we haven't requested.
+		if !self.ingest_requested {
+			return false;
+		}
+		let now = SystemTime::now();
+		let Ok(last_diff) = now.duration_since(self.last_ingest.0) else { return false; };
+
+		// Impose an arbitrary cap on requests within a time period.
+		// This is so that immediate syncs -- such as those from a local server -- don't have to wait before getting synced.
+		// But it also prevents spam of like a hundred slowing down the ingestion.
+		if last_diff.as_millis() < 1 {
+			if self.last_ingest.1 >= 3 {
+				return false;
+			}
+		}
+		else {
+			// since we're past the duration with no other requests, the counter resets.
+			self.last_ingest = (now, 0);
+		}
+		self.ingest_changes();
+		self.ingest_requested = false;
+		self.last_ingest.1 += 1;
+		true
+	}
+
+	// TODO: this is a very long and complicated method. Ideally it could be factored out to be simpler.
 	#[instrument(target = "patchwork_rust_core::godot_project::inner_process", level = tracing::Level::DEBUG, skip_all)]
 	pub fn process(&mut self, _delta: f64) -> (Vec<FileSystemEvent>, Vec<GodotProjectSignal>) {
 		let mut signals: Vec<GodotProjectSignal> = Vec::new();
+		if self.try_ingest_changes() {
+			signals.push(GodotProjectSignal::ChangesIngested);
+		}
 
 		if let Some(driver) = &mut self.driver {
 			if let Some(error) = driver.connection_thread_get_last_error() {
@@ -2077,7 +2119,7 @@ impl GodotProjectImpl {
 						if !driver.respawn_connection_thread() {
 							tracing::error!("automerge repo driver connection thread failed too many times, aborting");
 							// TODO: make the GUI do something with this
-							signals.push(GodotProjectSignal::ConnectionThreadFailed);
+							self.request_ingestion();
 						}
 					}
 					ConnectionThreadError::ConnectionThreadError(error) => {
@@ -2163,7 +2205,7 @@ impl GodotProjectImpl {
                                 self.should_update_godot = self.should_update_godot || (new_branch_state_doc_id == active_branch_state.doc_handle.document_id() && trigger_reload);
                                 if !trigger_reload {
                                     tracing::debug!("TRIGGER saved changes: {}", active_branch_state.name);
-                                    signals.push(GodotProjectSignal::SavedChanges);
+                                    self.request_ingestion();
                                 }
                             }
                         }
@@ -2183,7 +2225,7 @@ impl GodotProjectImpl {
                 OutputEvent::PeerConnectionInfoChanged {
                     peer_connection_info,
                 } => {
-                    let new_sync_server_connection_info = match self
+                    let _info = match self
                         .sync_server_connection_info
                         .as_mut()
                     {
@@ -2230,14 +2272,13 @@ impl GodotProjectImpl {
                             peer_connection_info
                         }
                     };
-
-                    signals.push(GodotProjectSignal::SyncServerConnectionInfoChanged(new_sync_server_connection_info));
+					self.request_ingestion();
                 }
             }
         }
 
 		if branches_changed {
-			signals.push(GodotProjectSignal::BranchesChanged);
+			self.request_ingestion();
 		}
 
 		let has_pending_updates = self.just_checked_out_new_branch || self.should_update_godot;
@@ -2310,6 +2351,7 @@ impl GodotProjectImpl {
 			});
 			PatchworkConfigAccessor::set_project_value("checked_out_branch_doc_id", &checked_out_branch_doc_id.to_string());
 			signals.push(GodotProjectSignal::CheckedOutBranch);
+			self.request_ingestion();
 		} else if self.should_update_godot {
 			self.initial_load = false;
 			// * Sync from the current branch @ previously synced_heads to the current branch @ synced_heads
@@ -2325,6 +2367,7 @@ impl GodotProjectImpl {
 			).unwrap_or_default();
 			updates = self.sync_patchwork_to_godot(Some(current_branch_id), last_synced_heads);
 			self.last_synced = self.get_checked_out_branch_state().map(|branch_state| (branch_state.doc_handle.document_id().clone(), branch_state.synced_heads.clone()));
+			self.request_ingestion();
 		} else if let Some(fs_driver) = self.file_system_driver.as_mut() {
 			let mut new_files = Vec::new();
 			while let Some(event) = fs_driver.try_next() {
@@ -2350,13 +2393,10 @@ impl GodotProjectImpl {
 
 				// TODO: Ask Paul about this tomorrow
 				self._sync_files_at(self.get_checked_out_branch_state().unwrap().doc_handle.clone(), files, None, None);
-				signals.push(GodotProjectSignal::FilesChanged)
+				self.request_ingestion();
 			}
         }
 
-		if signals.len() > 0 {
-			self.ingest_changes();
-		}
 		(updates, signals)
 	}
 }

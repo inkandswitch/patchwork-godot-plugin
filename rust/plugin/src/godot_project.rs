@@ -226,7 +226,7 @@ impl GodotProject {
 		let Ok(id) = DocumentId::from_str(&id) else {
 			return Variant::nil();
 		};
-		self.branch_to_variant(self.project.get_branch(id))
+		self.branch_to_variant(self.project.get_branch(&id))
 	}
 
 	#[func]
@@ -489,19 +489,7 @@ impl INode for GodotProject {
 					}
 					self.signals().checked_out_branch().emit();
 				}
-				GodotProjectSignal::FilesChanged => {
-					self.signals().state_changed().emit();
-				}
-				GodotProjectSignal::SavedChanges => {
-					self.signals().state_changed().emit();
-				}
-				GodotProjectSignal::BranchesChanged => {
-					self.signals().state_changed().emit();
-				}
-				GodotProjectSignal::SyncServerConnectionInfoChanged(_peer_connection_info) => {
-					self.signals().state_changed().emit();
-				}
-				GodotProjectSignal::ConnectionThreadFailed => {
+				GodotProjectSignal::ChangesIngested => {
 					self.signals().state_changed().emit();
 				}
 			}
