@@ -514,14 +514,14 @@ func update_history_tree():
 
 		item.set_text(HistoryColumns.TEXT, change.summary)
 
+		if !change.is_synced:
+			text_color = Color(0.6, 0.6, 0.6)
+
 		# disable initial commits
 		if change.is_setup:
 			set_history_item_enabled(item, false);
 
-		elif !change.is_synced:
-			text_color = Color(0.6, 0.6, 0.6)
-
-		else:
+		if change.is_synced && !change.is_setup:
 			item.add_button(HistoryColumns.TEXT, item_context_menu_icon, 1, false, "Open context menu")
 
 		# timestamp
