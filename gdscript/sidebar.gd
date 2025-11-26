@@ -75,9 +75,11 @@ signal reload_ui();
 signal user_name_dialog_closed();
 
 func _update_ui_on_state_change():
+	print("Patchwork: Updating UI due to state change...")
 	update_ui()
 
 func _update_ui_on_branch_checked_out():
+	print("Patchwork: Updating UI due to branch checked out...")
 	update_ui()
 
 func _on_reload_ui_button_pressed():
@@ -144,6 +146,7 @@ func _on_user_name_confirmed():
 	var new_user_name = %UserNameEntry.text.strip_edges()
 	if new_user_name != "": GodotProject.set_user_name(new_user_name)
 	user_name_dialog_closed.emit()
+	print("Patchwork: Updating UI due to username confirmation...")
 	update_ui()
 
 func _on_clear_project_button_pressed():
@@ -237,6 +240,7 @@ func _try_init():
 	if godot_project:
 		if !godot_project.has_project():
 			print("Not initialized, showing init panel")
+			print("Patchwork: Updating UI due to init...")
 			update_ui()
 			return
 		else:
@@ -259,6 +263,7 @@ func _process(delta: float) -> void:
 
 func init() -> void:
 	print("Sidebar initialized!")
+	print("Patchwork: Updating UI due to init...")
 	update_ui()
 
 	# Here, the user could easily just hit X and remain anonymous. This can only happen in the case
@@ -275,6 +280,7 @@ func _on_branch_picker_item_selected(_index: int) -> void:
 
 	# reset selection in branch picker in case checkout_branch fails
 	# once branch is actually checked out, the branch picker will update
+	print("Patchwork: Updating UI due to branch picker selection...")
 	update_ui()
 
 	if !selected_branch.is_loaded:
@@ -378,6 +384,9 @@ func move_inspector_to(node: Node) -> void:
 		inspector.visible = true
 
 func create_merge_preview_branch():
+	if create_unsaved_files_dialog("Please save your unsaved files before merging."):
+		return
+
 	# this shouldn't be possible due to UI disabling, but just in case
 	if not GodotProject.can_create_merge_preview_branch():
 		return
@@ -388,6 +397,8 @@ func create_merge_preview_branch():
 	)
 
 func create_revert_preview_branch(head):
+	if create_unsaved_files_dialog("Please save your unsaved files before reverting."):
+		return
 	# this shouldn't be possible due to UI disabling, but just in case
 	if !GodotProject.can_create_revert_preview_branch(head): return
 
@@ -602,8 +613,6 @@ func update_inspector():
 
 # Refresh the entire UI, rebinding all data.
 func update_ui() -> void:
-	print("Updating UI...")
-
 	update_init_panel();
 	update_branch_picker()
 	update_history_tree()
@@ -617,7 +626,6 @@ func update_ui() -> void:
 
 func update_sync_status() -> void:
 	var sync_status = GodotProject.get_sync_status()
-	print(sync_status);
 
 	if sync_status.state == "unknown":
 		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
