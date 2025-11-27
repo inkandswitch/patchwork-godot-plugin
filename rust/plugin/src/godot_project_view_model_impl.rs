@@ -253,7 +253,6 @@ impl GodotProjectViewModel for GodotProjectImpl {
         tracing::debug!("=====================================");
     }
 
-	#[allow(refining_impl_trait)] // can't seem to specify use<> on the trait...
 	fn get_branch(&self, id: &DocumentId) -> Option<impl BranchViewModel + use<>> {
         let state = self
 			.branch_states

@@ -41,7 +41,7 @@ pub trait GodotProjectViewModel {
 
 	/// Gets the [BranchViewModel] for the provided branch [DocumentId],
 	/// or [None] if the document ID isn't a branch in the project.
-	fn get_branch(&self, id: &DocumentId) -> Option<impl BranchViewModel>;
+	fn get_branch(&self, id: &DocumentId) -> Option<impl BranchViewModel + use<Self>>;
 	/// Gets the [BranchViewModel] for the main root branch, or [None] if we have no project.
 	fn get_main_branch(&self) -> Option<impl BranchViewModel>;
 	/// Gets the [BranchViewModel] for the current checked out branch, or [None] if we have no project.
