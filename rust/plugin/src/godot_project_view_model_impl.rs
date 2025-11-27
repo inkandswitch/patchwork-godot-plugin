@@ -498,7 +498,7 @@ impl BranchViewModel for BranchWrapper {
 	}
 
 	fn is_available(&self) -> bool {
-		!self.state.merged_into.is_some()
+		!self.get_merge_into().is_some() && !self.get_reverted_to().is_some()
 	}
 
 	fn is_loaded(&self) -> bool {

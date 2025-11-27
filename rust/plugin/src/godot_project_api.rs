@@ -115,7 +115,7 @@ pub trait BranchViewModel {
 	fn get_parent(&self) -> Option<DocumentId>;
 	/// Get the children of the branch, i.e. any branches that were forked from this branch.
 	fn get_children(&self) -> Vec<DocumentId>;
-	/// Whether the branch is available for selection (i.e. hasn't been merged into its parent)
+	/// Whether the branch is user-exposed for checkout (i.e. isn't a merge or revert preview)
 	fn is_available(&self) -> bool;
 	/// Whether the branch is loaded.
 	fn is_loaded(&self) -> bool;
