@@ -47,11 +47,7 @@ pub struct GodotScene {
     pub nodes: HashMap<i32, GodotNode>,
     pub connections: HashMap<String, GodotConnection>, // key is concatenation of all properties of the connection
     pub editable_instances: Vec<String>,
-    pub main_resource: Option<SubResourceNode>,
-	 // TODO: this is a hack to force the frontend to resave the scene
-	 // if we add a new node id to a node in the scene, it's not serialized
-	 // or saved to the doc
-	pub requires_resave: bool,
+    pub main_resource: Option<SubResourceNode>
 }
 
 #[derive(Debug, Clone, Hydrate, Reconcile, PartialEq, Eq)]
@@ -544,7 +540,6 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
 
     let mut parsed_node_ids = HashSet::new();
 
-	let mut required_resave = false;
     return match result {
         Some(tree) => {
             let content_bytes = source.as_bytes();
@@ -712,14 +707,9 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                     // Check if node has a patchwork_id in metadata
                     let mut node_id_num = match heading.get("unique_id") {
                         Some(unique_id) => unique_id.parse::<i32>().unwrap_or(UNIQUE_SCENE_ID_UNASSIGNED),
-                        None => UNIQUE_SCENE_ID_UNASSIGNED
+                        None => return Err("Missing required 'unique_id' attribute in node section".to_string())
                     };
-					if node_id_num == UNIQUE_SCENE_ID_UNASSIGNED {
-						required_resave = true;
-					} else {
-						parsed_node_ids.insert(node_id_num);
-					}
-
+					parsed_node_ids.insert(node_id_num);
 
                     let name = match heading.get("name") {
                         Some(name) => unquote(name),
@@ -1003,8 +993,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 nodes,
                 connections,
                 editable_instances,
-                main_resource,
-				requires_resave: required_resave,
+                main_resource
             })
         }
         None => Err("Failed to parse scene file".to_string()),

@@ -28,7 +28,9 @@ mod patches;
 mod differ;
 pub mod utils;
 mod godot_project_impl;
+mod godot_project_api;
 mod godot_accessors;
+mod godot_project_view_model_impl;
 
 fn unregister_singleton(singleton_name: &str) {
     if Engine::singleton().has_singleton(singleton_name) {

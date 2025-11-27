@@ -693,9 +693,6 @@ impl FileSystemDriver {
 								if new_hash_str != hash_str {
 									tracing::error!("THIS SHOULD NOT HAPPEN: file {:?} previous calced hash {:?} != written hash {:?}", path, new_hash_str, hash_str);
 								}
-								if let FileContent::Scene(content) = &mut content {
-									content.requires_resave = false;
-								}
 								if modified {
 									tracing::trace!("file {:?} changed, hash {} -> {}", path, file_hashes.get(&path).unwrap(), new_hash_str);
 									events.push(FileSystemEvent::FileModified(path.clone(), content));
