@@ -1,5 +1,4 @@
 use core::str;
-use std::ffi::OsStr;
 use std::sync::atomic::Ordering;
 use std::{path::PathBuf, sync::atomic::AtomicBool};
 use std::sync::Arc;
@@ -19,9 +18,9 @@ use std::time::Duration as StdDuration;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::Mutex;
 use glob::Pattern;
-use crate::file_utils::{calculate_file_hash, get_buffer_and_hash, FileContent};
+use crate::helpers::utils::ToShortForm;
 
-use crate::utils::ToShortForm;
+use super::file_utils::{calculate_file_hash, get_buffer_and_hash, FileContent};
 
 // static const var for debounce time
 const DEBOUNCE_TIME: u64 = 100;

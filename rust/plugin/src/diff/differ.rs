@@ -1,7 +1,7 @@
 
 use automerge::ChangeHash;
-use crate::file_utils::FileContent;
 
+use crate::fs::file_utils::FileContent;
 
 
 pub struct DiffLine {

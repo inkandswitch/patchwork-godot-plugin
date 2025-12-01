@@ -8,31 +8,30 @@ use std::pin::Pin;
 use std::{collections::HashMap, str::FromStr};
 use tokio::task::JoinHandle;
 
-use crate::branch::{BinaryDocState, BranchState, BranchStateForkInfo, BranchStateMergeInfo, BranchStateRevertInfo};
-use crate::file_utils::FileContent;
-use crate::godot_parser::GodotScene;
-use crate::utils::{
-    ChangeType, ChangedFile, CommitMetadata, MergeMetadata, ToShortForm, commit_with_attribution_and_timestamp, get_automerge_doc_diff, get_default_patch_log, heads_to_vec_string, print_branch_state
+use crate::helpers::branch::{BinaryDocState, BranchState, BranchStateForkInfo, BranchStateMergeInfo, BranchStateRevertInfo};
+use crate::fs::file_utils::FileContent;
+use crate::parser::godot_parser::GodotScene;
+use crate::helpers::doc_utils::SimpleDocReader;
+use crate::helpers::utils::ToShortForm;
+use crate::helpers::utils::{
+    ChangeType, ChangedFile, CommitMetadata, MergeMetadata, commit_with_attribution_and_timestamp, get_automerge_doc_diff, get_default_patch_log, heads_to_vec_string, print_branch_state
 };
 use crate::{
-    branch::{BranchesMetadataDoc, GodotProjectDoc, ForkInfo, MergeInfo, Branch},
-    utils::get_linked_docs_of_branch,
+    helpers::branch::{BranchesMetadataDoc, GodotProjectDoc, ForkInfo, MergeInfo, Branch},
+    helpers::utils::get_linked_docs_of_branch,
 };
 use automerge::{
-    transaction::Transactable, ChangeHash, ObjType, PatchLog, ReadDoc,
+    transaction::Transactable, ChangeHash, ObjType, ReadDoc,
     ROOT,
 };
 use automerge_repo::{tokio::FsStorage, ConnDirection, DocHandle, DocumentId, RepoHandle};
-use autosurgeon::{Reconcile, Reconciler, hydrate, reconcile };
+use autosurgeon::{hydrate, reconcile };
 use futures::{
     channel::mpsc::{UnboundedReceiver, UnboundedSender},
     StreamExt,
 };
 
 use tokio::{net::TcpStream, runtime::Runtime};
-
-use crate::{doc_utils::SimpleDocReader};
-
 
 const SERVER_REPO_ID: &str = "sync-server";
 

@@ -6,11 +6,11 @@ use automerge_repo::{DocumentId};
 use godot::meta::GodotType;
 use godot::{prelude::*, meta::ToGodot, meta::GodotConvert};
 // use godot::prelude::{GString, Variant, Dc};
-use crate::file_utils::FileContent;
-use crate::godot_parser::{GodotNode, TypeOrInstance};
-use crate::godot_project_api::{BranchViewModel, ChangeViewModel, DiffViewModel, SyncStatus};
-use crate::utils::{ChangedFile};
-use crate::differ::{DiffLine, DiffHunk, TextDiffFile};
+use crate::fs::file_utils::FileContent;
+use crate::parser::godot_parser::{GodotNode, TypeOrInstance};
+use crate::project::godot_project_api::{BranchViewModel, ChangeViewModel, DiffViewModel, SyncStatus};
+use crate::helpers::utils::{ChangedFile};
+use crate::diff::differ::{DiffLine, DiffHunk, TextDiffFile};
 use godot::builtin::Variant;
 
 pub trait VariantTypeGetter {

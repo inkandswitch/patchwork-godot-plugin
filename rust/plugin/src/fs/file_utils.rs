@@ -7,10 +7,10 @@ use automerge::{Automerge, ChangeHash, ObjType, ReadDoc};
 use automerge::ObjId;
 use automerge_repo::{DocumentId};
 use ya_md5::{Md5Hasher};
+use crate::helpers::doc_utils::SimpleDocReader;
+use crate::helpers::utils::{ToShortForm, parse_automerge_url};
 
-use crate::doc_utils::SimpleDocReader;
-use crate::godot_parser::{GodotScene, recognize_scene, parse_scene};
-use crate::utils::{parse_automerge_url, ToShortForm};
+use crate::parser::godot_parser::{GodotScene, parse_scene, recognize_scene};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FileContent {

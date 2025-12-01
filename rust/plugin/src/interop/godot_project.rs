@@ -1,7 +1,7 @@
-use crate::file_utils::FileContent;
-use crate::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
-use crate::godot_project_api::{BranchViewModel, GodotProjectViewModel};
-use crate::godot_project_impl::{GodotProjectImpl, GodotProjectSignal};
+use crate::fs::file_utils::FileContent;
+use crate::interop::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
+use crate::project::godot_project_api::{BranchViewModel, GodotProjectViewModel};
+use crate::project::godot_project_impl::{GodotProjectImpl, GodotProjectSignal};
 use automerge::ChangeHash;
 use godot::classes::editor_plugin::DockSlot;
 use ::safer_ffi::prelude::*;
@@ -19,8 +19,8 @@ use tracing::instrument;
 use std::collections::{HashSet};
 use std::path::PathBuf;
 use std::{collections::HashMap, str::FromStr};
-use crate::godot_helpers::{ToGodotExt, branch_view_model_to_dict, change_view_model_to_dict, diff_view_model_to_dict};
-use crate::file_system_driver::{FileSystemEvent};
+use crate::interop::godot_helpers::{ToGodotExt, branch_view_model_to_dict, change_view_model_to_dict, diff_view_model_to_dict};
+use crate::fs::file_system_driver::{FileSystemEvent};
 
 // This is the worst thing I've ever done
 // Get the file system

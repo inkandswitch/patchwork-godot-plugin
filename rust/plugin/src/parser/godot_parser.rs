@@ -6,9 +6,9 @@ use autosurgeon::{hydrate, hydrate_prop, Hydrate, HydrateError, Prop, Reconcile,
 use rand::Rng;
 use safer_ffi::layout::into_raw;
 use std::{collections::{HashMap, HashSet}, fmt::Display};
-use tree_sitter::{Language, Parser, Query, QueryCursor, StreamingIterator};
-use uuid;
-use crate::{doc_utils::SimpleDocReader, utils::print_doc};
+use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator};
+
+use crate::helpers::doc_utils::SimpleDocReader;
 
 const NO_NODE_UNIQUE_ID_PREFIX: &str = "<XXX>";
 const UNIQUE_SCENE_ID_UNASSIGNED: i32 = 0;
@@ -26,7 +26,6 @@ fn hydrate_nodes<D: ReadDoc>(
 		Err(res.err().unwrap())
 	}
 }
-
 
 fn reconcile_nodes<R: Reconciler>(outer: &HashMap<i32, GodotNode>, reconciler: R) -> Result<(), R::Error> {
     let string_map: HashMap<String, &GodotNode> = outer.iter().map(|(k, v)| (k.to_string(), v)).collect();

@@ -1,8 +1,3 @@
-use crate::branch::BranchState;
-use crate::differ::{ImportedDiff, TextDiffFile};
-use crate::file_utils::{FileContent};
-use crate::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
-use crate::godot_project_api::{BranchViewModel, ChangeViewModel, GodotProjectViewModel};
 use ::safer_ffi::prelude::*;
 use automerge::{
     ChangeHash, ObjId, ObjType, ROOT, ReadDoc
@@ -24,16 +19,19 @@ use std::collections::{HashSet};
 use std::path::{PathBuf};
 use std::time::SystemTime;
 use std::{collections::HashMap, str::FromStr};
-use crate::godot_helpers::{ToDict, VariantTypeGetter};
-use crate::file_system_driver::{FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
-use crate::godot_parser::{self, GodotScene, TypeOrInstance};
-use crate::godot_project_driver::{ConnectionThreadError, DocHandleType};
-use crate::patches::{get_changed_files_vec};
-use crate::utils::{CommitInfo, ToShortForm, get_automerge_doc_diff, summarize_changes};
-use crate::{
-    doc_utils::SimpleDocReader,
-    godot_project_driver::{GodotProjectDriver, InputEvent, OutputEvent},
-};
+
+use crate::diff::differ::{ImportedDiff, TextDiffFile};
+use crate::fs::file_system_driver::{FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
+use crate::fs::file_utils::FileContent;
+use crate::helpers::branch::BranchState;
+use crate::helpers::doc_utils::SimpleDocReader;
+use crate::helpers::utils::{CommitInfo, ToShortForm, get_automerge_doc_diff, get_changed_files_vec, summarize_changes};
+use crate::interop::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
+use crate::parser::godot_parser::{GodotScene, TypeOrInstance};
+use crate::project::godot_project_driver::{ConnectionThreadError, DocHandleType, GodotProjectDriver, InputEvent, OutputEvent};
+use crate::project::godot_project_api::{BranchViewModel, ChangeViewModel, GodotProjectViewModel};
+use crate::interop::godot_helpers::ToDict;
+use crate::interop::godot_helpers::VariantTypeGetter;
 
 /// Represents the state of the currently checked out branch.
 #[derive(Debug, Clone)]
@@ -1213,7 +1211,7 @@ impl GodotProjectImpl {
             let old_scene = match checked_out_branch_state
                 .doc_handle
                 .with_doc(|d: &Automerge| {
-                    godot_parser::GodotScene::hydrate_at(d, &path, &old_heads)
+                    GodotScene::hydrate_at(d, &path, &old_heads)
                 }) {
                 Ok(scene) => Some(scene),
                 Err(_) => None,
@@ -1222,7 +1220,7 @@ impl GodotProjectImpl {
             let new_scene = match checked_out_branch_state
                 .doc_handle
                 .with_doc(|d: &Automerge| {
-                    godot_parser::GodotScene::hydrate_at(d, &path, &curr_heads)
+                    GodotScene::hydrate_at(d, &path, &curr_heads)
                 }) {
                 Ok(scene) => Some(scene),
                 Err(_) => None,

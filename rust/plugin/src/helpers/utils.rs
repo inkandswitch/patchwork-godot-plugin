@@ -1,13 +1,13 @@
 use std::{
-    collections::HashMap, fmt, path::Path, str::FromStr, time::{Duration, SystemTime, UNIX_EPOCH}
+    collections::{HashMap, HashSet}, fmt, path::Path, str::FromStr, time::{Duration, SystemTime, UNIX_EPOCH}
 };
 
-use crate::{doc_utils::SimpleDocReader, branch::BranchState};
+use crate::{helpers::doc_utils::SimpleDocReader, helpers::branch::BranchState};
 use automerge::{
     Automerge, Change, ChangeHash, Patch, PatchLog, ROOT, ReadDoc, transaction::{CommitOptions, Transaction}
 };
-use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
-use chrono::{DateTime, Local, NaiveDateTime, Utc};
+use automerge_repo::{DocHandle, DocumentId};
+use chrono::{DateTime, Local};
 use godot::builtin::Dictionary;
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +35,40 @@ pub(crate) fn get_automerge_doc_diff(doc: &Automerge, old_heads: &[ChangeHash], 
 		doc.diff(old_heads, new_heads, automerge::patches::TextRepresentation::String(automerge::TextEncoding::Utf8CodeUnit))
 	}
 }
+
+
+pub(crate) fn get_changed_files_vec(patches: &Vec<automerge::Patch>) -> Vec<String> {
+    let mut changed_files = HashSet::new();
+
+    // log all patches
+    for patch in patches.iter() {
+        let first_key = match patch.path.get(0) {
+            Some((_, prop)) => match prop {
+                automerge::Prop::Map(string) => string,
+                _ => continue,
+            },
+            _ => continue,
+        };
+
+        // get second key
+        let second_key = match patch.path.get(1) {
+            Some((_, prop)) => match prop {
+                automerge::Prop::Map(string) => string,
+                _ => continue,
+            },
+            _ => continue,
+        };
+
+        if first_key == "files" {
+            changed_files.insert(second_key.to_string());
+        }
+
+        // tracing::debug!("changed files: {:?}", changed_files);
+    }
+
+    return changed_files.iter().cloned().collect::<Vec<String>>();
+}
+
 
 pub(crate) fn get_linked_docs_of_branch(
     branch_doc_handle: &DocHandle,

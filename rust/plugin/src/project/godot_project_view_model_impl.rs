@@ -5,11 +5,7 @@ use automerge_repo::DocumentId;
 use godot::builtin::Dictionary;
 use tracing::instrument;
 
-use crate::godot_project_api::{BranchViewModel, ChangeViewModel, DiffViewModel, SyncStatus};
-use crate::godot_project_driver::InputEvent;
-use crate::utils::{BranchWrapper, CommitInfo, DiffWrapper, exact_human_readable_timestamp, human_readable_timestamp};
-use crate::{godot_accessors::PatchworkConfigAccessor, godot_project_api::GodotProjectViewModel};
-use crate::godot_project_impl::{CheckedOutBranchState, GodotProjectImpl};
+use crate::{helpers::utils::{BranchWrapper, CommitInfo, DiffWrapper, exact_human_readable_timestamp, human_readable_timestamp}, interop::godot_accessors::PatchworkConfigAccessor, project::{godot_project_api::{BranchViewModel, ChangeViewModel, DiffViewModel, GodotProjectViewModel, SyncStatus}, godot_project_driver::InputEvent, godot_project_impl::{CheckedOutBranchState, GodotProjectImpl}}};
 
 impl GodotProjectViewModel for GodotProjectImpl {
 	fn has_project(&self) -> bool {

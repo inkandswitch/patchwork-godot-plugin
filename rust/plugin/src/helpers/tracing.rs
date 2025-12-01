@@ -1,7 +1,61 @@
-
 use std::fmt;
 use std::io::Write;
 
+use godot::classes::ProjectSettings;
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::{EnvFilter, Layer, fmt::{format::Writer, time::FormatTime}, layer::SubscriberExt, util::SubscriberInitExt};
+
+fn get_user_dir() -> String {
+    let user_dir = ProjectSettings::singleton()
+        .globalize_path("user://")
+        .to_string();
+    user_dir
+}
+
+struct CompactTime;
+impl FormatTime for CompactTime {
+    fn format_time(&self, w: &mut Writer<'_>) -> Result<(), std::fmt::Error> {
+        write!(
+            w,
+            "{}",
+            TimeNoDate::from(std::time::SystemTime::now())
+        )
+    }
+}
+static mut M_FILE_WRITER_MUTEX: Option<WorkerGuard> = None;
+pub fn initialize_tracing() {
+
+    let file_appender = tracing_appender::rolling::daily(get_user_dir(), "patchwork.log");
+    let (non_blocking_file_writer, _guard) = tracing_appender::non_blocking(file_appender);
+	// if the mutex gets dropped, the file writer will be closed, so we need to keep it alive
+	unsafe{M_FILE_WRITER_MUTEX = Some(_guard);}
+    println!("!!! Logging to {:?}/patchwork.log", get_user_dir());
+    let stdout_layer = tracing_subscriber::fmt::layer()
+        .with_timer(CompactTime)
+        .compact()
+        .with_writer(CustomStdoutWriter::custom_stdout)
+        .with_filter(EnvFilter::new("info")
+        .add_directive("patchwork_rust_core=debug".parse().unwrap())
+        .add_directive("automerge_repo=info".parse().unwrap()));
+    let file_layer = tracing_subscriber::fmt::layer()
+        .with_line_number(true)
+		.with_ansi(false)
+        .with_writer(non_blocking_file_writer.clone())
+        .with_filter(EnvFilter::new("info")
+        .add_directive("patchwork_rust_core=trace".parse().unwrap())
+        .add_directive("automerge_repo=debug".parse().unwrap()));
+    if let Err(e) = tracing_subscriber::registry()
+        // stdout writer
+        .with(stdout_layer)
+        // we want a file writer too
+        .with(file_layer)
+        .try_init()
+    {
+        tracing::error!("Failed to initialize tracing subscriber: {:?}", e);
+    } else {
+        tracing::info!("Tracing subscriber initialized");
+    }
+}
 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

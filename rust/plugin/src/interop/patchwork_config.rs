@@ -1,4 +1,4 @@
-use godot::classes::{ConfigFile, DirAccess, Engine, FileAccess, Os, ProjectSettings};
+use godot::classes::{ConfigFile, DirAccess, Engine, FileAccess, Os};
 use godot::global::Error;
 use godot::prelude::*;
 use godot::builtin::{Variant};
@@ -69,7 +69,7 @@ impl IObject for PatchworkConfig {
 		if FileAccess::file_exists(&user_config_path) {
 			user_config.load(&user_config_path);
 		} else {
-			if (!DirAccess::dir_exists_absolute(&user_dir)) {
+			if !DirAccess::dir_exists_absolute(&user_dir) {
 				DirAccess::make_dir_recursive_absolute(&user_dir);
 			}
 		}
