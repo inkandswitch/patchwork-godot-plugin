@@ -720,7 +720,6 @@ func update_highlight_changes(diff: Dictionary) -> void:
 var last_diff = null
 
 func _on_node_hovered(file_path: String, node_paths: Array) -> void:
-	# print("on_node_hovered: ", file_path, node_paths)
 	var node: Node = EditorInterface.get_edited_scene_root()
 	if node.scene_file_path != file_path or !last_diff:
 		# don't highlight changes for other files

@@ -816,17 +816,9 @@ impl GodotProjectImpl {
 
 	pub fn get_checked_out_branch_state(&self) -> Option<&BranchState> {
         match &self.checked_out_branch_state {
-            CheckedOutBranchState::CheckedOut(branch_doc_id, _) => {
-				self.branch_states.get(&branch_doc_id)
-            }
-            _ => {
-				// disabling this due to spam; calling this method for a None result isn't
-				// an issue I think
-                // tracing::info!(
-                //     "Tried to get checked out branch state when nothing is checked out"
-                // );
-                None
-            }
+            CheckedOutBranchState::CheckedOut(branch_doc_id, _) =>
+				self.branch_states.get(&branch_doc_id),
+            _ => None
         }
     }
 
