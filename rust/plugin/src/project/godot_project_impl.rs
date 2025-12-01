@@ -5,17 +5,13 @@ use automerge::{
 use automerge::{Automerge, Patch, PatchAction, Prop};
 use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
-use godot::classes::file_access::ModeFlags;
 use godot::classes::resource_loader::CacheMode;
 use godot::classes::{ClassDb, ResourceLoader};
 use godot::global::str_to_var;
-use godot::classes::{DirAccess, FileAccess};
 use godot::prelude::*;
 use godot::prelude::Dictionary;
 use tracing::instrument;
-use std::any::Any;
-use std::cell::RefCell;
-use std::collections::{HashSet};
+use std::{cell::RefCell, collections::HashSet};
 use std::path::{PathBuf};
 use std::time::SystemTime;
 use std::{collections::HashMap, str::FromStr};
@@ -820,38 +816,38 @@ impl GodotProjectImpl {
         }
     }
 
-    fn write_variant_to_file(&self, path: &String, variant: &Variant) {
-        // mkdir -p everything
-        let dir = PathBuf::from(path)
-            .parent()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string();
-        // do the mkdir
-        // get the first part "e.g. res:// or user://"
-        let root = path.split("//").nth(0).unwrap_or("").to_string() + "//";
-        let dir_access = DirAccess::open(&root);
-        if let Some(mut dir_access) = dir_access {
-            let _ = dir_access.make_dir_recursive(&GString::from(dir));
-        }
+    // fn write_variant_to_file(&self, path: &String, variant: &Variant) {
+    //     // mkdir -p everything
+    //     let dir = PathBuf::from(path)
+    //         .parent()
+    //         .unwrap()
+    //         .to_str()
+    //         .unwrap()
+    //         .to_string();
+    //     // do the mkdir
+    //     // get the first part "e.g. res:// or user://"
+    //     let root = path.split("//").nth(0).unwrap_or("").to_string() + "//";
+    //     let dir_access = DirAccess::open(&root);
+    //     if let Some(mut dir_access) = dir_access {
+    //         let _ = dir_access.make_dir_recursive(&GString::from(dir));
+    //     }
 
-        let file = FileAccess::open(path, ModeFlags::WRITE);
-        if let None = file {
-            tracing::error!("error opening file: {}", path);
-            return;
-        }
-        let mut file = file.unwrap();
-        // if it's a packedbytearray, write the bytes
-        if let Ok(packed_byte_array) = variant.try_to::<PackedByteArray>() {
-            file.store_buffer(&packed_byte_array);
-        } else if let Ok(string) = variant.try_to::<String>() {
-            file.store_line(&GString::from(string));
-        } else {
-            tracing::error!("unsupported variant type!! {:?}", variant.type_id());
-        }
-        file.close();
-    }
+    //     let file = FileAccess::open(path, ModeFlags::WRITE);
+    //     if let None = file {
+    //         tracing::error!("error opening file: {}", path);
+    //         return;
+    //     }
+    //     let mut file = file.unwrap();
+    //     // if it's a packedbytearray, write the bytes
+    //     if let Ok(packed_byte_array) = variant.try_to::<PackedByteArray>() {
+    //         file.store_buffer(&packed_byte_array);
+    //     } else if let Ok(string) = variant.try_to::<String>() {
+    //         file.store_line(&GString::from(string));
+    //     } else {
+    //         tracing::error!("unsupported variant type!! {:?}", variant.type_id());
+    //     }
+    //     file.close();
+    // }
 
     fn get_varstr_value(&self, prop_value: String) -> VariantStrValue {
         if prop_value.starts_with("Resource(") || prop_value.starts_with("SubResource(") || prop_value.starts_with("ExtResource(") {
@@ -1995,7 +1991,6 @@ impl GodotProjectImpl {
                     ).collect::<Vec<(String, FileContent)>>();
 					if new_project {
 						// Hack to prevent long reloads when opening a new project; we just resave all the scenes that need it
-						let mut driver_updates: Vec<FileSystemUpdateEvent> = Vec::new();
 						let before_size: usize = files.len();
 						files = files.into_iter().filter_map(
 						|(path, content)|{
@@ -2005,7 +2000,7 @@ impl GodotProjectImpl {
 							Some((path, content))
 						}
 						).collect::<Vec<_>>();
-						let events: Vec<FileSystemEvent> = driver.batch_update_blocking(driver_updates);
+						let events: Vec<FileSystemEvent> = driver.batch_update_blocking(Vec::new());
 						if before_size - files.len() != events.len() {
 							tracing::error!("**** THIS SHOULD NOT HAPPEN: resaved {} files, but expected {} files back", before_size - files.len(), events.len());
 							files = driver.get_all_files_blocking().into_iter().map(

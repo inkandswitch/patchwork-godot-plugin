@@ -1,16 +1,13 @@
 use automerge::{
-    transaction::{Transactable, Transaction},
-    Automerge, ChangeHash, ObjType, ROOT, ReadDoc as AutomergeReadDoc
+    Automerge, ChangeHash, ROOT, ReadDoc as AutomergeReadDoc
 };
-use autosurgeon::{hydrate, hydrate_prop, Hydrate, HydrateError, Prop, Reconcile, ReadDoc, Reconciler};
+use autosurgeon::{Hydrate, HydrateError, Prop, Reconcile, ReadDoc, Reconciler};
 use rand::Rng;
-use safer_ffi::layout::into_raw;
 use std::{collections::{HashMap, HashSet}, fmt::Display};
 use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator};
 
 use crate::helpers::doc_utils::SimpleDocReader;
 
-const NO_NODE_UNIQUE_ID_PREFIX: &str = "<XXX>";
 const UNIQUE_SCENE_ID_UNASSIGNED: i32 = 0;
 fn hydrate_nodes<D: ReadDoc>(
     doc: &D,
@@ -241,13 +238,13 @@ impl GodotScene {
         }
     }
 
-    fn get_ext_resource_path(&self, ext_resource_id: &str) -> Option<String> {
-        let ext_resource = self.ext_resources.get(ext_resource_id);
-        if let Some(ext_resource) = ext_resource {
-            return Some(ext_resource.path.clone());
-        }
-        None
-    }
+    // fn get_ext_resource_path(&self, ext_resource_id: &str) -> Option<String> {
+    //     let ext_resource = self.ext_resources.get(ext_resource_id);
+    //     if let Some(ext_resource) = ext_resource {
+    //         return Some(ext_resource.path.clone());
+    //     }
+    //     None
+    // }
 
 	pub fn hydrate_at(
         doc: &Automerge,
@@ -273,7 +270,7 @@ impl GodotScene {
     pub fn serialize(&self) -> String {
         let mut output = String::new();
 
-        if (self.resource_type != "PackedScene") {
+        if self.resource_type != "PackedScene" {
             output.push_str(&format!("[gd_resource type=\"{}\"", self.resource_type));
             if let Some(script_class) = &self.script_class {
                 output.push_str(&format!(" script_class=\"{}\"", script_class));
@@ -366,7 +363,7 @@ impl GodotScene {
         let mut connections: Vec<(&String, &GodotConnection)> =
             self.connections.iter().collect::<Vec<_>>();
 
-        connections.sort_by(|(id_a, conn_a), (id_b, conn_b)| {
+        connections.sort_by(|(_, conn_a), (_, conn_b)| {
 			let sort_a = node_paths_visited.get(&conn_a.from_node_id).unwrap_or(&-1);
 			let sort_b = node_paths_visited.get(&conn_b.from_node_id).unwrap_or(&-1);
 			if sort_a == sort_b {
@@ -704,7 +701,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 // NODE
                 } else if section_id == "node" {
                     // Check if node has a patchwork_id in metadata
-                    let mut node_id_num = match heading.get("unique_id") {
+                    let node_id_num = match heading.get("unique_id") {
                         Some(unique_id) => unique_id.parse::<i32>().unwrap_or(UNIQUE_SCENE_ID_UNASSIGNED),
                         None => return Err("Missing required 'unique_id' attribute in node section".to_string())
                     };

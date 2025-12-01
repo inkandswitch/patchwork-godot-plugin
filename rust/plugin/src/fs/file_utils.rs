@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io;
-use std::io::{Read, Write};
+use std::io::{Write};
 use std::path::{PathBuf};
 use std::str;
 use automerge::{Automerge, ChangeHash, ObjType, ReadDoc};
@@ -216,23 +216,23 @@ pub fn get_buffer_and_hash(path: &PathBuf) -> Result<(Vec<u8>, String), io::Erro
 	Ok((buf, hash_str))
 }
 
-pub fn is_file_binary(path: &PathBuf) -> bool {
-	if !path.is_file() {
-		return false;
-	}
+// pub fn is_file_binary(path: &PathBuf) -> bool {
+// 	if !path.is_file() {
+// 		return false;
+// 	}
 
-	let mut file = match File::open(path) {
-		Ok(file) => file,
-		Err(_) => return false,
-	};
+// 	let mut file = match File::open(path) {
+// 		Ok(file) => file,
+// 		Err(_) => return false,
+// 	};
 
-	// check the first 8000 bytes for a null byte
-	let mut buffer = [0; 8000];
-	if file.read(&mut buffer).is_err() {
-		return false;
-	}
-	return is_buf_binary(&buffer);
-}
+// 	// check the first 8000 bytes for a null byte
+// 	let mut buffer = [0; 8000];
+// 	if file.read(&mut buffer).is_err() {
+// 		return false;
+// 	}
+// 	return is_buf_binary(&buffer);
+// }
 
 pub fn is_buf_binary(buf: &[u8]) -> bool {
 	buf.iter().take(8000).filter(|&b| *b == 0).count() > 0

@@ -14,7 +14,7 @@ use crate::parser::godot_parser::GodotScene;
 use crate::helpers::doc_utils::SimpleDocReader;
 use crate::helpers::utils::ToShortForm;
 use crate::helpers::utils::{
-    ChangeType, ChangedFile, CommitMetadata, MergeMetadata, commit_with_attribution_and_timestamp, get_automerge_doc_diff, get_default_patch_log, heads_to_vec_string, print_branch_state
+    ChangeType, ChangedFile, CommitMetadata, MergeMetadata, commit_with_attribution_and_timestamp, get_default_patch_log, heads_to_vec_string, print_branch_state
 };
 use crate::{
     helpers::branch::{BranchesMetadataDoc, GodotProjectDoc, ForkInfo, MergeInfo, Branch},
@@ -119,7 +119,7 @@ pub enum OutputEvent {
 enum SubscriptionMessage {
     Changed {
         doc_handle: DocHandle,
-        diff: Vec<automerge::Patch>,
+        // diff: Vec<automerge::Patch>,
     },
     Added {
         doc_handle: DocHandle,
@@ -379,8 +379,6 @@ impl GodotProjectDriver {
             let mut sync_server_conn_info_changes = repo_handle.peer_conn_info_changes(RepoId::from(SERVER_REPO_ID)).fuse();
 
             loop {
-                let repo_handle_clone = repo_handle.clone();
-
                 futures::select! {
 
                     next = sync_server_conn_info_changes.next() => {
@@ -422,7 +420,7 @@ impl GodotProjectDriver {
 
                     message = state.all_doc_changes.select_next_some() => {
                        let doc_handle = match message {
-                            SubscriptionMessage::Changed { doc_handle, diff: _ } => {
+                            SubscriptionMessage::Changed { doc_handle /*, diff: _*/ } => {
                                 doc_handle
                             },
                             SubscriptionMessage::Added { doc_handle } => {
@@ -1132,14 +1130,14 @@ impl DriverState {
                         },
                         is_main: branch_doc_handle.document_id()
                             == self.main_branch_doc_handle.document_id(),
-						created_by: branch.created_by.clone(),
-						merged_into: match branch.merged_into {
-							Some(merged_into) => match DocumentId::from_str(&merged_into) {
-								Ok(merged_into) => Some(merged_into),
-								Err(_) => None,
-							},
-							None => None,
-						},
+						// created_by: branch.created_by.clone(),
+						// merged_into: match branch.merged_into {
+						// 	Some(merged_into) => match DocumentId::from_str(&merged_into) {
+						// 		Ok(merged_into) => Some(merged_into),
+						// 		Err(_) => None,
+						// 	},
+						// 	None => None,
+						// },
 						revert_info: match branch.reverted_to {
 							Some(reverted_to) => Some(BranchStateRevertInfo {
 								reverted_to: reverted_to.iter().map(|h| ChangeHash::from_str(h).unwrap()).collect(),
@@ -1199,12 +1197,12 @@ impl DriverState {
         }
     }
 
-    fn add_binary_doc_handle(&mut self, path: &String, binary_doc_handle: &DocHandle) {
+    fn add_binary_doc_handle(&mut self, _path: &String, binary_doc_handle: &DocHandle) {
         self.binary_doc_states.insert(
             binary_doc_handle.document_id().clone(),
             BinaryDocState {
                 doc_handle: Some(binary_doc_handle.clone()),
-                path: path.clone(),
+                // path: path.clone(),
             },
         );
 
@@ -1282,17 +1280,17 @@ fn clone_doc(repo_handle: &RepoHandle, doc_handle: &DocHandle) -> DocHandle {
 
 fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = SubscriptionMessage> + Send {
     futures::stream::unfold(handle, |doc_handle| async {
-        let heads_before = doc_handle.with_doc(|d| d.get_heads());
+        // let heads_before = doc_handle.with_doc(|d| d.get_heads());
         let _ = doc_handle.changed().await;
-        let heads_after = doc_handle.with_doc(|d| d.get_heads());
-        let diff = doc_handle.with_doc(|d| {
-            get_automerge_doc_diff(d, &heads_before, &heads_after)
-        });
+        // let heads_after = doc_handle.with_doc(|d| d.get_heads());
+        // let diff = doc_handle.with_doc(|d| {
+        //     get_automerge_doc_diff(d, &heads_before, &heads_after)
+        // });
 
         Some((
             SubscriptionMessage::Changed {
                 doc_handle: doc_handle.clone(),
-                diff,
+                // diff,
             },
             doc_handle,
         ))
