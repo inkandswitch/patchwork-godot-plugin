@@ -1,7 +1,7 @@
 use crate::fs::file_utils::FileContent;
 use crate::interop::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
-use crate::project::godot_project_api::{BranchViewModel, GodotProjectViewModel};
-use crate::project::godot_project_impl::{GodotProjectImpl, GodotProjectSignal};
+use crate::project::project_api::{BranchViewModel, ProjectViewModel};
+use crate::project::project::{Project, GodotProjectSignal};
 use automerge::ChangeHash;
 use godot::classes::editor_plugin::DockSlot;
 use ::safer_ffi::prelude::*;
@@ -143,7 +143,7 @@ impl PendingEditorUpdate {
 #[class(base=Node)]
 pub struct GodotProject {
 	base: Base<Node>,
-	project: GodotProjectImpl,
+	project: Project,
 	pending_editor_update: PendingEditorUpdate,
 	reload_project_settings_callable: Option<Callable>
 }
@@ -415,7 +415,7 @@ impl GodotProject {
 		if !self.pending_editor_update.any_changes() {
 			return false;
 		}
-		if !GodotProjectImpl::safe_to_update_godot(false) {
+		if !Project::safe_to_update_godot(false) {
 			return false;
 		}
 		self.base_mut().set_process(false);
@@ -436,7 +436,7 @@ impl INode for GodotProject {
     fn init(_base: Base<Node>) -> Self {
         GodotProject {
 			base: _base,
-			project: GodotProjectImpl::new(ProjectSettings::singleton().globalize_path("res://").to_string()),
+			project: Project::new(ProjectSettings::singleton().globalize_path("res://").to_string()),
 			pending_editor_update: PendingEditorUpdate::default(),
 			reload_project_settings_callable: None
 		}

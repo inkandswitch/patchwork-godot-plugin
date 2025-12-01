@@ -1,4 +1,4 @@
-pub mod godot_project_api;
-mod godot_project_driver;
-pub mod godot_project_impl;
-pub mod godot_project_view_model_impl;
+pub mod project_api;
+mod project_driver;
+pub mod project;
+pub mod project_api_impl;

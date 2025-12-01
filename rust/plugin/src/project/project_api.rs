@@ -15,7 +15,7 @@ pub enum SyncStatus {
 }
 
 /// Defines the surface for the UI layer interacting with the GodotProject core logic.
-pub trait GodotProjectViewModel {
+pub trait ProjectViewModel {
 	/// Whether the user has set a username.
 	fn has_user_name(&self) -> bool;
 	/// Get the user's username.

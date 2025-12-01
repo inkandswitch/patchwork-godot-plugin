@@ -24,8 +24,8 @@ use crate::helpers::doc_utils::SimpleDocReader;
 use crate::helpers::utils::{CommitInfo, ToShortForm, get_automerge_doc_diff, get_changed_files_vec, summarize_changes};
 use crate::interop::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
 use crate::parser::godot_parser::{GodotScene, TypeOrInstance};
-use crate::project::godot_project_driver::{ConnectionThreadError, DocHandleType, GodotProjectDriver, InputEvent, OutputEvent};
-use crate::project::godot_project_api::{BranchViewModel, ChangeViewModel, GodotProjectViewModel};
+use crate::project::project_driver::{ConnectionThreadError, DocHandleType, ProjectDriver, InputEvent, OutputEvent};
+use crate::project::project_api::{BranchViewModel, ChangeViewModel, ProjectViewModel};
 use crate::interop::godot_helpers::ToDict;
 use crate::interop::godot_helpers::VariantTypeGetter;
 
@@ -95,7 +95,7 @@ fn match_path(path: &Vec<Prop>, patch: &Patch) -> Option<PathWithAction> {
 /// Manages the state and operations of a Patchwork project within Godot.
 /// Its API is exposed to GDScript via the GodotProject struct.
 #[derive(Debug)]
-pub struct GodotProjectImpl {
+pub struct Project {
     doc_handles: HashMap<DocumentId, DocHandle>,
     pub(super) branch_states: HashMap<DocumentId, BranchState>,
     pub(super) checked_out_branch_state: CheckedOutBranchState,
@@ -104,7 +104,7 @@ pub struct GodotProjectImpl {
 	should_update_godot: bool,
 	pub(super) just_checked_out_new_branch: bool,
 	last_synced: Option<(DocumentId, Vec<ChangeHash>)>,
-    driver: Option<GodotProjectDriver>,
+    driver: Option<ProjectDriver>,
     pub(super) driver_input_tx: UnboundedSender<InputEvent>,
     driver_output_rx: UnboundedReceiver<OutputEvent>,
     pub(super) sync_server_connection_info: Option<PeerConnectionInfo>,
@@ -120,7 +120,7 @@ pub struct GodotProjectImpl {
 	ingest_requested: bool
 }
 
-impl Default for GodotProjectImpl {
+impl Default for Project {
 	fn default() -> Self {
 		// TODO: Move driver input tx and output rx to the GodotProjectImpl struct, like in FileSystemDriver
 		let (driver_input_tx, _) = futures::channel::mpsc::unbounded();
@@ -160,7 +160,7 @@ pub enum GodotProjectSignal {
 	ChangesIngested
 }
 
-impl GodotProjectImpl {
+impl Project {
 	pub fn globalize_path(&self, path: &String) -> String {
 		// trim the project_dir from the front of the path
 		if path.starts_with("res://") {
@@ -1764,7 +1764,7 @@ impl GodotProjectImpl {
 			tracing::info!("Using project override for server url: {:?}", server_url);
 		}
 
-        let mut driver: GodotProjectDriver = GodotProjectDriver::create(storage_folder_path, server_url);
+        let mut driver: ProjectDriver = ProjectDriver::create(storage_folder_path, server_url);
         let maybe_user_name: String = PatchworkConfigAccessor::get_user_value("user_name", "");
         driver.spawn(
             driver_input_rx,

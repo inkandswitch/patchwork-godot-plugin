@@ -170,7 +170,7 @@ pub enum ConnectionThreadError {
 }
 
 #[derive(Debug)]
-pub struct GodotProjectDriver {
+pub struct ProjectDriver {
     runtime: Runtime,
     repo_handle: RepoHandle,
 	server_url: String,
@@ -180,7 +180,7 @@ pub struct GodotProjectDriver {
     spawned_thread: Option<JoinHandle<()>>,
 }
 
-impl GodotProjectDriver {
+impl ProjectDriver {
     pub fn create(storage_folder_path: String, server_url: String) -> Self {
         let runtime: Runtime = tokio::runtime::Builder::new_multi_thread()
 			.worker_threads(4)

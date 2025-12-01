@@ -8,7 +8,7 @@ use godot::{prelude::*, meta::ToGodot, meta::GodotConvert};
 // use godot::prelude::{GString, Variant, Dc};
 use crate::fs::file_utils::FileContent;
 use crate::parser::godot_parser::{GodotNode, TypeOrInstance};
-use crate::project::godot_project_api::{BranchViewModel, ChangeViewModel, DiffViewModel, SyncStatus};
+use crate::project::project_api::{BranchViewModel, ChangeViewModel, DiffViewModel, SyncStatus};
 use crate::helpers::utils::{ChangedFile};
 use crate::diff::differ::{DiffLine, DiffHunk, TextDiffFile};
 use godot::builtin::Variant;
