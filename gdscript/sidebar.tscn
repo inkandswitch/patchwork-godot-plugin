@@ -570,6 +570,3 @@ offset_bottom = 51.0
 unique_name_in_owner = true
 layout_mode = 2
 placeholder_text = "User Name..."
-
-[connection signal="pressed" from="VBoxContainer/HBoxContainer/CopyProjectIDButton" to="." method="_on_copy_project_id_button_pressed"]
-[connection signal="confirmed" from="UserNameDialog" to="." method="_on_user_name_confirmed"]

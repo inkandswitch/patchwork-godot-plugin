@@ -1,9 +1,11 @@
-use crate::file_utils::{FileContent};
+use crate::file_utils::FileContent;
 use crate::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
+use crate::godot_project_api::{BranchViewModel, GodotProjectViewModel};
 use crate::godot_project_impl::{GodotProjectImpl, GodotProjectSignal};
+use automerge::ChangeHash;
 use godot::classes::editor_plugin::DockSlot;
 use ::safer_ffi::prelude::*;
-use automerge_repo::{DocumentId, PeerConnectionInfo};
+use automerge_repo::{DocumentId};
 use godot::classes::resource_loader::CacheMode;
 use godot::classes::{ConfirmationDialog, Control};
 use godot::classes::EditorInterface;
@@ -17,7 +19,7 @@ use tracing::instrument;
 use std::collections::{HashSet};
 use std::path::PathBuf;
 use std::{collections::HashMap, str::FromStr};
-use crate::godot_helpers::{ToGodotExt, ToVariantExt, are_valid_heads, array_to_heads};
+use crate::godot_helpers::{ToGodotExt, branch_view_model_to_dict, change_view_model_to_dict, diff_view_model_to_dict};
 use crate::file_system_driver::{FileSystemEvent};
 
 // This is the worst thing I've ever done
@@ -143,81 +145,194 @@ pub struct GodotProject {
 	base: Base<Node>,
 	project: GodotProjectImpl,
 	pending_editor_update: PendingEditorUpdate,
-	reload_project_settings_callable: Option<Callable>,
-	last_server_change_signal: std::time::SystemTime,
-	pending_server_change_signal: Option<PeerConnectionInfo>
+	reload_project_settings_callable: Option<Callable>
 }
 
-/// Macro to check if the GodotProject is started, and log an error if not
-macro_rules! check_project_started {
-	($self:ident) => {
-		if !$self.project.is_started() {
-			tracing::error!("GodotProject is not started, skipping...");
-			// return the default value for the type
-			return;
-		}
-	};
-}
-
-/// Macro to check if the GodotProject is started, and log an error if not, returning a default value
-macro_rules! check_project_started_and_return_default {
-	($self:ident, $default:expr) => {
-		if !$self.project.is_started() {
-			tracing::error!("GodotProject is not started, returning default value");
-			return $default;
-		}
-	};
-}
-
+// new API
+/// This implementation binds as closely as possible to [GodotProjectViewModel].
 #[godot_api]
 impl GodotProject {
 	#[signal]
-	fn checked_out_branch(branch: Dictionary);
+	fn state_changed();
 
 	#[signal]
-	fn files_changed();
-
-	#[signal]
-	fn saved_changes();
-
-	#[signal]
-	fn branches_changed(branches: Array<Dictionary>);
-
-	#[signal]
-	fn sync_server_connection_info_changed(peer_connection_info: Dictionary);
-
-	#[signal]
-	fn connection_thread_failed();
+	fn checked_out_branch();
 
 	#[func]
-	fn revert_to_heads(&mut self, heads: PackedStringArray) {
-		check_project_started!(self);
-		self.project.revert_to_heads(array_to_heads(heads));
+	fn has_user_name(&self) -> bool {
+		self.project.has_user_name()
+	}
+
+	#[func]
+	fn get_user_name(&self) -> String {
+		self.project.get_user_name()
 	}
 
 	#[func]
 	fn set_user_name(&self, name: String) {
-		check_project_started!(self);
 		self.project.set_user_name(name);
 	}
 
 	#[func]
-	fn get_project_doc_id(&self) -> Variant {
-		check_project_started_and_return_default!(self, Variant::nil());
-		self.project.get_project_doc_id().to_variant()
+	fn clear_project(&mut self) {
+		self.project.clear_project();
 	}
 
 	#[func]
-	fn get_heads(&self) -> PackedStringArray /* String[] */ {
-		check_project_started_and_return_default!(self, PackedStringArray::new());
-		self.project.get_heads().to_godot()
+	fn has_project(&self) -> bool {
+		self.project.has_project()
 	}
 
+	#[func]
+	fn get_project_id(&self) -> String {
+		if let Some(id) = self.project.get_project_id() {
+			return id.to_string();
+		}
+		"".to_string()
+	}
 
 	#[func]
-	fn get_files(&self) -> PackedStringArray {
-		check_project_started_and_return_default!(self, PackedStringArray::new());
-		self.project.get_files().to_godot()
+	fn new_project(&mut self) {
+		self.project.new_project()
+	}
+
+	#[func]
+	fn load_project(&mut self, id: String) {
+		if let Ok(id) = DocumentId::from_str(&id) {
+			self.project.load_project(&id);
+		}
+	}
+
+	#[func]
+    fn get_sync_status(&self) -> Dictionary {
+		self.project.get_sync_status().to_godot()
+	}
+
+	#[func]
+    fn print_sync_debug(&self) {
+		self.project.print_sync_debug();
+	}
+
+	fn branch_to_variant(&self, branch: Option<impl BranchViewModel>) -> Variant{
+		let Some(branch) = branch else {
+			return Variant::nil();
+		};
+		Variant::from(branch_view_model_to_dict(&branch))
+	}
+
+	#[func]
+	fn get_branch(&self, id: String) -> Variant {
+		let Ok(id) = DocumentId::from_str(&id) else {
+			return Variant::nil();
+		};
+		self.branch_to_variant(self.project.get_branch(&id))
+	}
+
+	#[func]
+	fn get_main_branch(&self) -> Variant {
+		self.branch_to_variant(self.project.get_main_branch())
+	}
+
+	#[func]
+	fn get_checked_out_branch(&self) -> Variant {
+		self.branch_to_variant(self.project.get_checked_out_branch())
+	}
+
+	#[func]
+	fn create_branch(&mut self, name: String) {
+		self.project.create_branch(name);
+	}
+
+	#[func]
+	fn checkout_branch(&mut self, id: String) {
+		if let Ok(id) = DocumentId::from_str(&id) {
+		self.project.checkout_branch(id);
+		};
+	}
+
+	#[func]
+	fn can_create_merge_preview_branch(&self) -> bool {
+		self.project.can_create_merge_preview_branch()
+	}
+
+	#[func]
+	fn create_merge_preview_branch(&mut self) {
+		self.project.create_merge_preview_branch();
+	}
+
+	#[func]
+	fn can_create_revert_preview_branch(&self, head: String) -> bool {
+		if let Ok(hash) = ChangeHash::from_str(&head) {
+			return self.project.can_create_revert_preview_branch(hash);
+		}
+		false
+	}
+
+	#[func]
+	fn create_revert_preview_branch(&mut self, head: String) {
+		if let Ok(hash) = ChangeHash::from_str(&head) {
+			self.project.create_revert_preview_branch(hash);
+		}
+	}
+
+	#[func]
+	fn is_revert_preview_branch_active(&self) -> bool {
+		self.project.is_revert_preview_branch_active()
+	}
+
+	#[func]
+	fn is_merge_preview_branch_active(&self) -> bool {
+		self.project.is_merge_preview_branch_active()
+	}
+
+	#[func]
+	fn is_safe_to_merge(&self) -> bool {
+		self.project.is_safe_to_merge()
+	}
+
+	#[func]
+	fn confirm_preview_branch(&mut self) {
+		self.project.confirm_preview_branch();
+	}
+
+	#[func]
+	fn discard_preview_branch(&mut self) {
+		self.project.discard_preview_branch();
+	}
+
+	#[func]
+	fn get_branch_history(&self) -> PackedStringArray {
+		self.project.get_branch_history().to_godot()
+	}
+
+	#[func]
+	fn get_change(&self, hash: String) -> Variant {
+		let Ok(hash) = ChangeHash::from_str(&hash) else {
+			return Variant::nil();
+		};
+		let Some(change) = self.project.get_change(hash) else {
+			return Variant::nil();
+		};
+		Variant::from(change_view_model_to_dict(change))
+	}
+
+	#[func]
+	fn get_diff(&self, selected_hash: String) -> Variant {
+		let Ok(hash) = ChangeHash::from_str(&selected_hash) else {
+			return Variant::nil();
+		};
+		let Some(diff) = self.project.get_diff(hash) else {
+			return Variant::nil();
+		};
+		Variant::from(diff_view_model_to_dict(&diff))
+	}
+
+	#[func]
+	fn get_default_diff(&self) -> Variant {
+		let Some(diff) = self.project.get_default_diff() else {
+			return Variant::nil();
+		};
+		Variant::from(diff_view_model_to_dict(&diff))
 	}
 
     #[func]
@@ -226,110 +341,6 @@ impl GodotProject {
             .get_singleton(&StringName::from("GodotProject"))
             .unwrap()
             .cast::<Self>()
-    }
-
-    #[func]
-    fn get_changes(&self) -> Array<Dictionary> /* String[]  */ {
-		check_project_started_and_return_default!(self, Array::new());
-		let changes = self.project.get_changes();
-		changes.iter().map(|c| c.to_godot()).collect::<Array<Dictionary>>()
-	}
-
-    #[func]
-    fn get_main_branch(&self) -> Variant /* Branch? */ {
-		check_project_started_and_return_default!(self, Variant::nil());
-		self.project.get_main_branch().to_variant()
-	}
-
-    #[func]
-    fn get_branch_by_id(&self, branch_id: String) -> Variant /* Branch? */ {
-		check_project_started_and_return_default!(self, Variant::nil());
-		self.project.get_branch_by_id(&branch_id).to_variant()
-	}
-    #[func]
-    fn merge_branch(&mut self, source_branch_doc_id: String, target_branch_doc_id: String) {
-		check_project_started!(self);
-		self.project.merge_branch(DocumentId::from_str(&source_branch_doc_id).unwrap(), DocumentId::from_str(&target_branch_doc_id).unwrap());
-	}
-
-    #[func]
-    fn create_branch(&mut self, name: String) {
-		check_project_started!(self);
-		self.project.create_branch(name);
-	}
-
-    #[func]
-    fn create_merge_preview_branch(
-        &mut self,
-        source_branch_doc_id: String,
-        target_branch_doc_id: String,
-    ) {
-		check_project_started!(self);
-		let source_branch_doc_id = DocumentId::from_str(&source_branch_doc_id).unwrap();
-        let target_branch_doc_id = DocumentId::from_str(&target_branch_doc_id).unwrap();
-		self.project.create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id);
-	}
-
-	#[func]
-    fn create_revert_preview_branch(
-        &mut self,
-        branch_doc_id: String,
-        revert_to: PackedStringArray,
-    ) {
-		check_project_started!(self);
-		self.project.create_revert_preview_branch(DocumentId::from_str(&branch_doc_id).unwrap(), array_to_heads(revert_to));
-	}
-
-    #[func]
-    fn delete_branch(&mut self, branch_doc_id: String) {
-		check_project_started!(self);
-		self.project.delete_branch(DocumentId::from_str(&branch_doc_id).unwrap());
-	}
-
-    #[func]
-    fn checkout_branch(&mut self, branch_doc_id: String) {
-		check_project_started!(self);
-		self.project.checkout_branch(DocumentId::from_str(&branch_doc_id).unwrap());
-	}
-
-    // filters out merge preview branches
-    #[func]
-    fn get_branches(&self) -> Array<Dictionary> /* { name: String, id: String }[] */ {
-		check_project_started_and_return_default!(self, Array::new());
-		self.project.get_branches().iter().map(|b| b.to_godot()).collect::<Array<Dictionary>>()
-	}
-
-    #[func]
-    fn get_checked_out_branch(&self) -> Variant /* {name: String, id: String, is_main: bool}? */ {
-		check_project_started_and_return_default!(self, Variant::nil());
-		self.project.get_checked_out_branch_state().map(|b|b.to_godot().to_variant()).unwrap_or_default()
-	}
-
-    #[func]
-    fn get_sync_server_connection_info(&self) -> Variant {
-		check_project_started_and_return_default!(self, Variant::nil());
-        match self.project.get_sync_server_connection_info() {
-            Some(peer_connection_info) => {
-                peer_connection_info.to_variant()
-            }
-            None => Variant::nil(),
-        }
-    }
-
-    #[func]
-    fn get_all_changes_between(
-        &self,
-        old_heads: PackedStringArray,
-        curr_heads: PackedStringArray,
-    ) -> Dictionary {
-		check_project_started_and_return_default!(self, Dictionary::new());
-		if !are_valid_heads(&old_heads) || !are_valid_heads(&curr_heads) {
-			tracing::error!("invalid heads: {:?}, {:?}", old_heads, curr_heads);
-			return Dictionary::new();
-		}
-        let old_heads = array_to_heads(old_heads);
-        let new_heads = array_to_heads(curr_heads);
-        self.project.get_changes_between(old_heads, new_heads)
     }
 
 	fn process_godot_updates(&self, events: Vec<FileSystemEvent>) -> PendingEditorUpdate {
@@ -417,27 +428,6 @@ impl GodotProject {
 		self.base_mut().set_process(true);
 		return true;
 	}
-
-	#[func]
-	fn start(&mut self) {
-		if !self.project.is_started() {
-			self.project.start();
-		} else {
-			tracing::info!("GodotProject is already started, skipping...");
-		}
-	}
-
-	#[func]
-	fn is_started(&self) -> bool {
-		self.project.is_started()
-	}
-
-	#[func]
-	fn stop(&mut self) {
-		if self.project.is_started() {
-			self.project.stop();
-		}
-	}
 }
 
 
@@ -448,9 +438,7 @@ impl INode for GodotProject {
 			base: _base,
 			project: GodotProjectImpl::new(ProjectSettings::singleton().globalize_path("res://").to_string()),
 			pending_editor_update: PendingEditorUpdate::default(),
-			reload_project_settings_callable: None,
-			pending_server_change_signal: None,
-			last_server_change_signal: std::time::SystemTime::UNIX_EPOCH
+			reload_project_settings_callable: None
 		}
     }
 
@@ -498,41 +486,17 @@ impl INode for GodotProject {
 					if refreshed {
 						EditorFilesystemAccessor::clear_inspector_item();
 					}
-					let branch = self.project.get_checked_out_branch_state().unwrap().to_godot();
-					self.signals().checked_out_branch().emit(&branch);
+					self.signals().checked_out_branch().emit();
 				}
-				GodotProjectSignal::FilesChanged => {
-					self.signals().files_changed().emit();
+				GodotProjectSignal::ChangesIngested => {
+					self.signals().state_changed().emit();
 				}
-				GodotProjectSignal::SavedChanges => {
-					self.signals().saved_changes().emit();
-				}
-				GodotProjectSignal::BranchesChanged => {
-					let branches = self.get_branches();
-					self.signals().branches_changed().emit(&branches);
-				}
-				GodotProjectSignal::SyncServerConnectionInfoChanged(peer_connection_info) => {
-					// This signal causes slowdown on the UI layer -- refactor for a better solution, but for now, debounce.
-					self.pending_server_change_signal = Some(peer_connection_info);
-				}
-				GodotProjectSignal::ConnectionThreadFailed => {
-					self.signals().connection_thread_failed().emit();
-				}
-			}
-
-			// Only allow 1 SyncServerConnectionInfoChanged per second
-			let now = std::time::SystemTime::now();
-			let diff = now.duration_since(self.last_server_change_signal);
-			if self.pending_server_change_signal.is_some() && diff.unwrap_or_default().as_secs() >= 1u64 {
-				self.last_server_change_signal = now;
-				let moved = self.pending_server_change_signal.take().unwrap();
-				self.signals().sync_server_connection_info_changed().emit(&moved.to_godot());
 			}
 		}
     }
 }
 
-/// An EditorPlugin to manage the GodotProject singleton and its UI. 
+/// An EditorPlugin to manage the GodotProject singleton and its UI.
 #[derive(GodotClass)]
 #[class(init, base=EditorPlugin, tool)]
 pub struct GodotProjectPlugin {

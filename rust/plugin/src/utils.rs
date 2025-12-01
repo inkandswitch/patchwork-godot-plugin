@@ -1,8 +1,5 @@
 use std::{
-    collections::HashMap,
-    str::FromStr,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-    fmt
+    collections::HashMap, fmt, path::Path, str::FromStr, time::{Duration, SystemTime, UNIX_EPOCH}
 };
 
 use crate::{doc_utils::SimpleDocReader, branch::BranchState};
@@ -10,6 +7,8 @@ use automerge::{
     Automerge, Change, ChangeHash, Patch, PatchLog, ROOT, ReadDoc, transaction::{CommitOptions, Transaction}
 };
 use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
+use chrono::{DateTime, Local, NaiveDateTime, Utc};
+use godot::builtin::Dictionary;
 use serde::{Deserialize, Serialize};
 
 // These functions are for compatibilities sake, and they will be removed in the future
@@ -108,12 +107,12 @@ pub(crate) fn print_doc(message: &str, doc_handle: &DocHandle) {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct MergeMetadata {
-    pub merged_branch_id: String,
+    pub merged_branch_id: DocumentId,
     pub merged_at_heads: Vec<ChangeHash>,
     pub forked_at_heads: Vec<ChangeHash>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum ChangeType {
 	Added,
 	Removed,
@@ -139,11 +138,13 @@ pub struct ChangedFile {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CommitMetadata {
     pub username: Option<String>,
-    pub branch_id: Option<String>,
+    pub branch_id: Option<DocumentId>,
     pub merge_metadata: Option<MergeMetadata>,
 	pub reverted_to: Option<Vec<String>>,
     /// Changed files in this commit. Only valid for commits to branch documents.
-    pub changed_files: Option<Vec<ChangedFile>>
+    pub changed_files: Option<Vec<ChangedFile>>,
+	/// Whether this change was created to initialize the repository.
+	pub is_setup: Option<bool>
 }
 
 pub(crate) fn commit_with_attribution_and_timestamp(tx: Transaction, metadata: &CommitMetadata) {
@@ -199,29 +200,46 @@ pub(crate) fn strategic_waiting(loc: &str) {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CommitInfo {
-	pub hash: String,
+	pub hash: ChangeHash,
+	pub prev_change: Option<ChangeHash>,
 	pub timestamp: i64,
 	pub metadata: Option<CommitMetadata>,
+    pub synced: bool,
+	pub summary: String
 }
 
 impl From<&&Change> for CommitInfo {
 	fn from(change: &&Change) -> Self {
-		CommitInfo {
-			hash: change.hash().to_string(),
-			timestamp: change.timestamp(),
-			metadata: change.message().and_then(|m| serde_json::from_str::<CommitMetadata>(&m).ok()),
-		}
+		CommitInfo::from(*change)
 	}
 }
 
 impl From<&Change> for CommitInfo {
 	fn from(change: &Change) -> Self {
 		CommitInfo {
-			hash: change.hash().to_string(),
+			hash: change.hash(),
 			timestamp: change.timestamp(),
 			metadata: change.message().and_then(|m| serde_json::from_str::<CommitMetadata>(&m).ok()),
+
+			// set during ingestion
+			synced: false,
+			summary: "".to_string(),
+			prev_change: None
 		}
 	}
+}
+
+#[derive(Debug)]
+pub struct BranchWrapper {
+	pub state: BranchState,
+	pub children: Vec<DocumentId>
+}
+
+#[derive(Debug)]
+pub struct DiffWrapper {
+	// todo: convert to rust
+	pub dict: Dictionary,
+	pub title: String
 }
 
 pub(crate) fn heads_to_vec_string(heads: Vec<ChangeHash>) -> Vec<String> {
@@ -273,4 +291,87 @@ impl ToShortForm for Option<&Vec<ChangeHash>> {
             None => "<NONE>".to_string(),
         }
     }
+}
+
+pub fn summarize_changes(author: &str, changes: &Vec<ChangedFile>) -> String {
+    let added = get_summary_text(&changes, ChangeType::Added, None);
+    let removed = get_summary_text(&changes, ChangeType::Removed, None);
+    let modified = get_summary_text(&changes, ChangeType::Modified, Some("edited"));
+
+    let strings: Vec<String> = [added, removed, modified]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    match strings.len() {
+        3 | 0 => format!("{author} made some changes"),
+        2 => format!("{author} {} and {}", strings[0], strings[1]),
+        1 => format!("{author} {}", strings[0]),
+        _ => unreachable!(),
+    }
+}
+
+fn get_summary_text(
+    changes: &Vec<ChangedFile>,
+    operation: ChangeType,
+    display_operation: Option<&str>,
+) -> String {
+    let display = display_operation.unwrap_or(match operation {
+        ChangeType::Added => "added",
+        ChangeType::Removed => "removed",
+        ChangeType::Modified => "modified",
+    });
+
+    let filtered: Vec<&ChangedFile> = changes
+        .iter()
+        .filter(|c| c.change_type == operation)
+        .collect();
+
+    if filtered.is_empty() {
+        return String::new();
+    }
+
+    if filtered.len() == 1 {
+        // Extract filename via std::path
+        let filename = Path::new(&filtered[0].path)
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or(&filtered[0].path);
+
+        return format!("{} {}", display, filename);
+    }
+
+    format!("{} {} files", display, filtered.len())
+}
+
+pub fn human_readable_timestamp(timestamp: i64) -> String {
+    // Current time in ms
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+
+    // Difference in seconds
+    let diff = (now - timestamp) / 1000;
+
+	fn pluralize(num: i64, s: &str) -> String {
+		if num == 1 {format!("{num} {}", s.to_string())}
+		else {format!("{num} {}s", s.to_string())}
+	}
+
+    return match diff {
+        s if s < 60 => pluralize(s, "second"),
+        s if s < 3600 => pluralize(s / 60, "minute"),
+        s if s < 86400 => pluralize(s / 3600, "hour"),
+        s if s < 604800 => pluralize(s / 86400, "day"),
+        s if s < 2_592_000 => pluralize(s / 604_800, "week"),
+        s if s < 31_536_000 => pluralize(s / 2_592_000, "month"),
+        s => pluralize(s / 31_536_000, "year"),
+    } + " ago";
+}
+
+pub fn exact_human_readable_timestamp(timestamp: i64) -> String {
+    let dt = DateTime::from_timestamp(timestamp / 1000, 0);
+    let datetime : DateTime<Local> = DateTime::from(dt.unwrap());
+    return datetime.format("%Y-%m-%d %H:%M:%S").to_string();
 }
