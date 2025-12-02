@@ -4,7 +4,7 @@ use godot::prelude::*;
 use godot::builtin::{Variant};
 
 #[derive(GodotClass)]
-#[class(no_init, base=Object)]
+#[class(base=Object)]
 pub struct PatchworkConfig {
     #[base]
     base: Base<Object>,
