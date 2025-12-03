@@ -5,9 +5,9 @@ authors = [
   "Orion Henry <orion.henry@gmail.com>",
   "Jason Kankiewicz <jason.kankiewicz@gmail.com>",
 ]
-edition = "2021"
+edition = "2024"
 license = "MIT"
-rust-version = "1.57.0"
+rust-version = "1.91.1"
 
 [lib]
 name = "patchwork_rust_core"

@@ -955,7 +955,7 @@ impl Project {
 		change_type: &str,
 		imported_diff: &ImportedDiff,
 	) -> Dictionary {
-        let mut result = dict! {
+        let mut result = vdict! {
             "path" : path.to_variant(),
             "diff_type" : "resource_changed".to_variant(),
             "change_type" : change_type.to_variant(),
@@ -1051,7 +1051,7 @@ impl Project {
             &empty_string
         };
         let text_diff = TextDiffFile::create(path.clone(), path.clone(), old_text, new_text);
-        let result = dict! {
+        let result = vdict! {
             "path" : path.to_variant(),
             "change_type" : change_type.to_variant(),
             "old_content" : old_content.unwrap_or(&FileContent::Deleted).to_variant(),
@@ -1074,7 +1074,7 @@ impl Project {
         let old_content_type = old_content.unwrap_or(&FileContent::Deleted).get_variant_type();
         let new_content_type = new_content.unwrap_or(&FileContent::Deleted).get_variant_type();
         if change_type == "unchanged" {
-            return dict! {
+            return vdict! {
                 "path" : path.to_variant(),
                 "diff_type" : "file_unchanged".to_variant(),
                 "change_type" : change_type.to_variant(),
@@ -1096,7 +1096,7 @@ impl Project {
         {
             return self.get_text_file_diff(&path, &change_type, old_content, new_content);
         } else {
-            return dict! {
+            return vdict! {
                 "path" : path.to_variant(),
                 "diff_type" : "file_changed".to_variant(),
                 "change_type" : change_type.to_variant(),
@@ -1488,20 +1488,20 @@ impl Project {
 					// HACK: prevent loading script files during the diff and creating issues for the editor
 					if prop == "script" {
 						if old_value.is_some() && new_value.is_some() {
-							return Some(dict! {
+							return Some(vdict! {
 								"name": prop.clone(),
 								"change_type": "modified",
 								"old_value": "<script_changed>",
 								"new_value":"<script_changed>"
 							});
 						} else if old_value.is_some() {
-							return Some(dict! {
+							return Some(vdict! {
 								"name": prop.clone(),
 								"change_type": "deleted",
 								"old_value": "<script_deleted>"
 							});
 						} else if new_value.is_some() {
-							return Some(dict! {
+							return Some(vdict! {
 								"name": prop.clone(),
 								"change_type": "added",
 								"new_value": "<script_added>"
@@ -1560,7 +1560,7 @@ impl Project {
 							}
 						}
 						if changed {
-							return Some(dict! {
+							return Some(vdict! {
 								"name": prop.clone(),
 								"change_type": "modified",
 								"old_value": fn_get_prop_value(old_value.unwrap(), &old_scene, true),
@@ -1571,13 +1571,13 @@ impl Project {
                     return None;
 
 				} else if old_value.is_some() {
-					return Some(dict! {
+					return Some(vdict! {
 						"name": prop.clone(),
 						"change_type": "deleted",
 						"old_value": fn_get_prop_value(old_value.unwrap(), &old_scene, true)
 					});
 				} else if new_value.is_some() {
-					return Some(dict! {
+					return Some(vdict! {
 						"name": prop.clone(),
 						"change_type": "added",
 						"new_value": fn_get_prop_value(new_value.unwrap(), &new_scene, false)
