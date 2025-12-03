@@ -2,6 +2,7 @@ use godot::classes::{ConfigFile, DirAccess, Engine, FileAccess, Os};
 use godot::global::Error;
 use godot::prelude::*;
 use godot::builtin::{Variant};
+use godot::obj::Singleton;
 
 #[derive(GodotClass)]
 #[class(base=Object)]

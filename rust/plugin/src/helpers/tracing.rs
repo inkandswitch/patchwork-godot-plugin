@@ -2,6 +2,7 @@ use std::fmt;
 use std::io::Write;
 
 use godot::classes::ProjectSettings;
+use godot::obj::Singleton;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{EnvFilter, Layer, fmt::{format::Writer, time::FormatTime}, layer::SubscriberExt, util::SubscriberInitExt};
 

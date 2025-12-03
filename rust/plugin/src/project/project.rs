@@ -15,6 +15,7 @@ use std::{cell::RefCell, collections::HashSet};
 use std::path::{PathBuf};
 use std::time::SystemTime;
 use std::{collections::HashMap, str::FromStr};
+use godot::obj::Singleton;
 
 use crate::diff::differ::{ImportedDiff, TextDiffFile};
 use crate::fs::file_system_driver::{FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
@@ -926,7 +927,7 @@ impl Project {
             }
         }
         let resource = ResourceLoader::singleton()
-            .load_ex(&GString::from(temp_path))
+            .load_ex(&GString::from(&temp_path))
             .cache_mode(CacheMode::IGNORE_DEEP)
             .done();
         if let Some(resource) = resource {

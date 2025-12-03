@@ -13,6 +13,7 @@ use godot::classes::ProjectSettings;
 use godot::classes::ResourceLoader;
 use godot::classes::{EditorPlugin, Engine, IEditorPlugin};
 use godot::classes::{DirAccess};
+use godot::obj::Singleton;
 use godot::prelude::*;
 use godot::prelude::Dictionary;
 use tracing::instrument;

@@ -2,7 +2,7 @@ use godot::{
     builtin::{GString, PackedStringArray, Variant},
     classes::{ClassDb, EditorInterface, Object},
     meta::ToGodot,
-    obj::Gd,
+    obj::{Gd, Singleton},
 };
 
 use crate::interop::{godot_helpers::ToGodotExt, patchwork_config::PatchworkConfig};
@@ -168,7 +168,7 @@ impl EditorFilesystemAccessor {
     pub fn reimport_files(files: &Vec<String>) {
         let files_packed = files
             .iter()
-            .map(|f| GString::from(f.clone()))
+            .map(|f| GString::from(f))
             .collect::<PackedStringArray>();
         EditorInterface::singleton()
             .get_resource_filesystem()

@@ -1,4 +1,4 @@
-use godot::{classes::Engine, init::{EditorRunBehavior, ExtensionLibrary, InitLevel, gdextension}, obj::NewAlloc};
+use godot::{classes::Engine, init::{EditorRunBehavior, ExtensionLibrary, InitLevel, gdextension}, obj::NewAlloc, obj::Singleton};
 
 use crate::{helpers::tracing::initialize_tracing, interop::{godot_project::GodotProject, patchwork_config::PatchworkConfig}};
 

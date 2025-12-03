@@ -3,7 +3,7 @@ use std::{fmt::Display};
 
 use automerge::{ChangeHash};
 use automerge_repo::{DocumentId};
-use godot::meta::GodotType;
+use godot::meta::{ByValue, GodotType};
 use godot::{prelude::*, meta::ToGodot, meta::GodotConvert};
 // use godot::prelude::{GString, Variant, Dc};
 use crate::fs::file_utils::FileContent;
@@ -65,7 +65,7 @@ impl GodotConvertExt for DocumentId {
 impl ToGodotExt for DocumentId {
 	type ToVia < 'v > = GString;
 	fn _to_godot(&self) -> Self::ToVia < '_ > {
-		GString::from(self.to_string())
+		GString::from(&self.to_string())
 	}
 	fn _to_variant(&self) -> Variant {
 		self._to_godot().to_variant()
@@ -88,7 +88,7 @@ impl GodotConvertExt for ChangeHash {
 impl ToGodotExt for ChangeHash {
 	type ToVia < 'v > = GString;
 	fn _to_godot(&self) -> Self::ToVia < '_ > {
-		GString::from(self.to_string())
+		GString::from(&self.to_string())
 	}
 	fn _to_variant(&self) -> Variant {
 		self._to_godot().to_variant()
@@ -111,10 +111,10 @@ impl<D: Display> GodotConvertExt for Vec<D> {
 impl<D: Display> ToGodotExt for Vec<D> {
 	type ToVia<'v> = PackedStringArray where D: 'v;
 	fn _to_godot(&self) -> Self::ToVia<'_> {
-		self.iter().map(|s| GString::from(s.to_string())).collect()
+		self.iter().map(|s| GString::from(&s.to_string())).collect()
 	}
 	fn _to_variant(&self) -> Variant {
-		let thingy = self.iter().map(|s| GString::from(s.to_string())).collect::<PackedStringArray>();
+		let thingy = self.iter().map(|s| GString::from(&s.to_string())).collect::<PackedStringArray>();
 		thingy.to_variant()
 	}
 }
@@ -126,7 +126,7 @@ impl GodotConvertExt for PathBuf {
 impl ToGodotExt for PathBuf {
 	type ToVia<'v> = GString where Self: 'v;
 	fn _to_godot(&self) -> Self::ToVia<'_> {
-		GString::from(self.display().to_string())
+		GString::from(&self.display().to_string())
 	}
 	fn _to_variant(&self) -> Variant {
 		self._to_godot().to_variant()
@@ -153,7 +153,7 @@ pub(crate) fn branch_view_model_to_dict(branch: &impl BranchViewModel) -> Dictio
 
 pub(crate) fn diff_view_model_to_dict(diff: &impl DiffViewModel) -> Dictionary {
 	vdict! {
-		"dict": diff.get_dict().to_godot(),
+		"dict": diff.get_dict().to_variant(),
 		"title": diff.get_title().to_godot()
 	}
 }
@@ -177,7 +177,7 @@ impl GodotConvert for SyncStatus {
 }
 
 impl ToGodot for SyncStatus {
-	type ToVia<'v> = Dictionary;
+	type Pass = ByValue;
 
 	fn to_godot(&self) -> Dictionary {
 		vdict! {
@@ -200,8 +200,8 @@ impl GodotConvert for FileContent {
 }
 
 impl ToGodot for FileContent {
-	type ToVia < 'v > = Variant;
-	fn to_godot(&self) -> Self::ToVia < '_ > {
+	type Pass = ByValue;
+	fn to_godot(&self) -> Variant {
 		// < Self as crate::obj::EngineBitfield > ::ord(* self)
 		self.to_variant()
 	}
@@ -292,8 +292,8 @@ impl GodotConvert for DiffLine {
 }
 
 impl ToGodot for DiffLine {
-	type ToVia<'v> = Dictionary where Self: 'v;
-	fn to_godot(&self) -> Self::ToVia<'_> {
+	type Pass = ByValue;
+	fn to_godot(&self) -> Dictionary {
 		vdict! {
 			"new_line_no": self.new_line_no,
 			"old_line_no": self.old_line_no,
@@ -311,8 +311,8 @@ impl GodotConvert for DiffHunk {
 }
 
 impl ToGodot for DiffHunk {
-	type ToVia<'v> = Dictionary where Self: 'v;
-	fn to_godot(&self) -> Self::ToVia<'_> {
+	type Pass = ByValue;
+	fn to_godot(&self) -> Dictionary {
 		vdict! {
 			"new_start": self.new_start,
 			"old_start": self.old_start,
@@ -331,8 +331,8 @@ impl GodotConvert for TextDiffFile {
 }
 
 impl ToGodot for TextDiffFile {
-	type ToVia<'v> = Dictionary where Self: 'v;
-	fn to_godot(&self) -> Self::ToVia<'_> {
+	type Pass = ByValue;
+	fn to_godot(&self) -> Dictionary {
 		vdict! {
 			"new_file": self.new_file.to_godot(),
 			"old_file": self.old_file.to_godot(),
