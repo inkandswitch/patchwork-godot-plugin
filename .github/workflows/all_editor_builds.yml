@@ -92,6 +92,19 @@ jobs:
       - name: Setup python and scons
         uses: ./.github/actions/godot-deps
 
+      - name: Download Direct3D 12 SDK components
+        shell: sh
+        id: d3d12-sdk
+        if: matrix.platform == 'windows'
+        run: |
+          if python ./misc/scripts/install_d3d12_sdk_windows.py; then
+            echo "D3D12_ENABLED=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Windows: Direct3D 12 SDK installation failed, building without Direct3D 12 support."
+            echo "D3D12_ENABLED=no" >> "$GITHUB_OUTPUT"
+          fi
+        continue-on-error: true
+
       - name: Setup Vulkan SDK
         if: matrix.platform == 'macos'
         run: |
