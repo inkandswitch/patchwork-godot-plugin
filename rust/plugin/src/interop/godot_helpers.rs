@@ -10,7 +10,7 @@ use crate::fs::file_utils::FileContent;
 use crate::parser::godot_parser::{GodotNode, TypeOrInstance};
 use crate::project::project_api::{BranchViewModel, ChangeViewModel, DiffViewModel, SyncStatus};
 use crate::helpers::utils::{ChangedFile};
-use crate::diff::differ::{DiffLine, DiffHunk, TextDiffFile};
+use crate::diff::differ::{TextDiffLine, TextDiffHunk, TextDiff};
 use godot::builtin::Variant;
 
 pub trait VariantTypeGetter {
@@ -287,11 +287,11 @@ impl ToGodotExt for Vec<ChangedFile> {
 	}
 }
 
-impl GodotConvert for DiffLine {
+impl GodotConvert for TextDiffLine {
 	type Via = Dictionary;
 }
 
-impl ToGodot for DiffLine {
+impl ToGodot for TextDiffLine {
 	type ToVia<'v> = Dictionary where Self: 'v;
 	fn to_godot(&self) -> Self::ToVia<'_> {
 		vdict! {
@@ -306,11 +306,11 @@ impl ToGodot for DiffLine {
 	}
 }
 
-impl GodotConvert for DiffHunk {
+impl GodotConvert for TextDiffHunk {
 	type Via = Dictionary;
 }
 
-impl ToGodot for DiffHunk {
+impl ToGodot for TextDiffHunk {
 	type ToVia<'v> = Dictionary where Self: 'v;
 	fn to_godot(&self) -> Self::ToVia<'_> {
 		vdict! {
@@ -326,11 +326,11 @@ impl ToGodot for DiffHunk {
 	}
 }
 
-impl GodotConvert for TextDiffFile {
+impl GodotConvert for TextDiff {
 	type Via = Dictionary;
 }
 
-impl ToGodot for TextDiffFile {
+impl ToGodot for TextDiff {
 	type ToVia<'v> = Dictionary where Self: 'v;
 	fn to_godot(&self) -> Self::ToVia<'_> {
 		vdict! {
