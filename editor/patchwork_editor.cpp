@@ -554,6 +554,10 @@ void PatchworkEditor::refresh_after_source_change() {
 		}
 		EditorInterface::get_singleton()->reload_scene_from_path(scene);
 	}
+	if (is_changing_scene()) {
+		OS::get_singleton()->delay_usec(10000);
+		Main::iteration();
+	}
 }
 
 Callable PatchworkEditor::steal_close_current_script_tab_file_callback() {

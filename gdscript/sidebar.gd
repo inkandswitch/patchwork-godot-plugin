@@ -71,10 +71,14 @@ var history_saved_selection = null # hash string
 const CREATE_BRANCH_IDX = 1
 const MERGE_BRANCH_IDX = 2
 
+var loading_patchwork = false
+
 signal reload_ui();
 signal user_name_dialog_closed();
 
 func _update_ui_on_state_change():
+	if loading_patchwork:
+		return
 	print("Patchwork: Updating UI due to state change...")
 	update_ui()
 
@@ -90,9 +94,11 @@ func _on_reload_ui_button_pressed():
 # an existing project from the project.
 func wait_for_checked_out_branch():
 	if not GodotProject.get_checked_out_branch():
+		loading_patchwork = true
 		task_modal.start_task("Loading Patchwork")
 		await GodotProject.checked_out_branch
 		task_modal.end_task("Loading Patchwork")
+		loading_patchwork = false
 	init()
 
 # Asks the user for their username, if there is none stored.

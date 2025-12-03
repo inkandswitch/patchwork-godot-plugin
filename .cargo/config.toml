@@ -5,3 +5,5 @@ b = "post build"
 linker = "arm-linux-gnueabihf-gcc"
 [target.aarch64-unknown-linux-gnu]
 linker = "aarch64-linux-gnu-gcc"
+[env]
+GODOT4_BIN = { value = "../../bin/godot.macos.editor.arm64", relative = true, force = true }
