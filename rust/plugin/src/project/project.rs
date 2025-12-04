@@ -15,8 +15,8 @@ use std::{cell::RefCell, collections::HashSet};
 use std::path::{PathBuf};
 use std::time::SystemTime;
 use std::{collections::HashMap, str::FromStr};
-
-use crate::diff::differ::{ResourceDiff, TextDiff};
+use crate::diff::differ::{Diff, Differ, ProjectDiff};
+use crate::diff::scene_differ::SceneDiff;
 use crate::fs::file_system_driver::{FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
 use crate::fs::file_utils::FileContent;
 use crate::helpers::branch::BranchState;
@@ -28,8 +28,6 @@ use crate::project::project_driver::{ConnectionThreadError, DocHandleType, Proje
 use crate::project::project_api::{BranchViewModel, ChangeViewModel, ProjectViewModel};
 // use crate::interop::godot_helpers::ToDict;
 // use crate::interop::godot_helpers::VariantTypeGetter;
-
-mod project_diff;
 
 /// Represents the state of the currently checked out branch.
 #[derive(Debug, Clone)]
@@ -65,7 +63,7 @@ pub struct Project {
     pub(super) history: Vec<ChangeHash>,
     pub(super) changes: HashMap<ChangeHash, CommitInfo>,
 	// use RefCell for interior cache mutability
-	pub(super) diff_cache: RefCell<HashMap<(Vec<ChangeHash>, Vec<ChangeHash>), Dictionary>>,
+	pub(super) diff_cache: RefCell<HashMap<(Vec<ChangeHash>, Vec<ChangeHash>), ProjectDiff>>,
 	last_ingest: (SystemTime, i32),
 	ingest_requested: bool
 }
@@ -372,7 +370,7 @@ impl Project {
 	/// Gets the current file content on the current branch @ the current synced heads that changed
 	/// between the previous branch @ the previous heads and the current branch @ the current heads
 	#[instrument(skip_all, level = tracing::Level::DEBUG)]
-	fn get_changed_file_content_between(
+	pub(crate) fn get_changed_file_content_between(
 		&self,
 		previous_branch_id: Option<DocumentId>,
 		current_doc_id: DocumentId,
@@ -581,7 +579,7 @@ impl Project {
     }
 
 
-    fn get_files_at(&self, heads: Option<&Vec<ChangeHash>>, filters: Option<&HashSet<String>>) -> HashMap<String, FileContent> {
+    pub(crate) fn get_files_at(&self, heads: Option<&Vec<ChangeHash>>, filters: Option<&HashSet<String>>) -> HashMap<String, FileContent> {
 		match &self.checked_out_branch_state {
 			CheckedOutBranchState::CheckedOut(branch_doc_id, _) => {
 				let branch_state = match self.branch_states.get(&branch_doc_id) {
@@ -615,7 +613,7 @@ impl Project {
 	}
 
 	#[instrument(skip_all, level = tracing::Level::DEBUG)]
-	fn get_files_on_branch_at(&self, branch_state: &BranchState, heads: Option<&Vec<ChangeHash>>, filters: Option<&HashSet<String>>) -> HashMap<String, FileContent> {
+	pub(crate) fn get_files_on_branch_at(&self, branch_state: &BranchState, heads: Option<&Vec<ChangeHash>>, filters: Option<&HashSet<String>>) -> HashMap<String, FileContent> {
 
         let mut files = HashMap::new();
 
@@ -780,6 +778,26 @@ impl Project {
     //     }
     //     file.close();
     // }
+
+	pub fn get_cached_diff(
+		&self,
+		heads_before: Vec<ChangeHash>,
+		heads_after: Vec<ChangeHash>
+	) -> ProjectDiff {
+		(*self.diff_cache.borrow_mut())
+			.entry((heads_before.clone(), heads_after.clone()))
+			.or_insert_with(||
+				self.get_diff(heads_before, heads_after))
+			.clone()
+	}
+
+	pub fn get_diff(&self, heads_before: Vec<ChangeHash>, heads_after: Vec<ChangeHash>) -> ProjectDiff {
+		let Some(branch_state) = self.get_checked_out_branch_state() else {
+			return ProjectDiff::default();
+		};
+		let differ = Differ::new(self, heads_after, heads_before, branch_state);
+		differ.get_diff()
+	}
 
     fn start_driver(&mut self) {
         if self.driver.is_some() {

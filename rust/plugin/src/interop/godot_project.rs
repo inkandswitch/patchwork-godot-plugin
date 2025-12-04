@@ -321,7 +321,7 @@ impl GodotProject {
 		let Ok(hash) = ChangeHash::from_str(&selected_hash) else {
 			return Variant::nil();
 		};
-		let Some(diff) = self.project.get_diff(hash) else {
+		let Some(diff) = ProjectViewModel::get_diff(&self.project, hash) else {
 			return Variant::nil();
 		};
 		Variant::from(diff_view_model_to_dict(&diff))

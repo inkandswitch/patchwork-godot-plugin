@@ -5,12 +5,12 @@ use automerge::{ChangeHash};
 use automerge_repo::{DocumentId};
 use godot::meta::GodotType;
 use godot::{prelude::*, meta::ToGodot, meta::GodotConvert};
+use crate::diff::text_differ::{TextDiff, TextDiffHunk, TextDiffLine};
 // use godot::prelude::{GString, Variant, Dc};
 use crate::fs::file_utils::FileContent;
 use crate::parser::godot_parser::{GodotNode, TypeOrInstance};
 use crate::project::project_api::{BranchViewModel, ChangeViewModel, DiffViewModel, SyncStatus};
 use crate::helpers::utils::{ChangedFile};
-use crate::diff::differ::{TextDiffLine, TextDiffHunk, TextDiff};
 use godot::builtin::Variant;
 
 pub trait VariantTypeGetter {
@@ -153,7 +153,7 @@ pub(crate) fn branch_view_model_to_dict(branch: &impl BranchViewModel) -> Dictio
 
 pub(crate) fn diff_view_model_to_dict(diff: &impl DiffViewModel) -> Dictionary {
 	vdict! {
-		"dict": diff.get_dict().to_godot(),
+		"dict": diff.get_diff().to_godot(),
 		"title": diff.get_title().to_godot()
 	}
 }
@@ -284,62 +284,5 @@ impl ToGodotExt for Vec<ChangedFile> {
 	}
 	fn _to_variant(&self) -> Variant {
         self._to_godot().to_variant()
-	}
-}
-
-impl GodotConvert for TextDiffLine {
-	type Via = Dictionary;
-}
-
-impl ToGodot for TextDiffLine {
-	type ToVia<'v> = Dictionary where Self: 'v;
-	fn to_godot(&self) -> Self::ToVia<'_> {
-		vdict! {
-			"new_line_no": self.new_line_no,
-			"old_line_no": self.old_line_no,
-			"content": self.content.to_godot(),
-			"status": self.status.to_godot(),
-		}
-	}
-	fn to_variant(&self) -> Variant {
-		self.to_godot().to_variant()
-	}
-}
-
-impl GodotConvert for TextDiffHunk {
-	type Via = Dictionary;
-}
-
-impl ToGodot for TextDiffHunk {
-	type ToVia<'v> = Dictionary where Self: 'v;
-	fn to_godot(&self) -> Self::ToVia<'_> {
-		vdict! {
-			"new_start": self.new_start,
-			"old_start": self.old_start,
-			"new_lines": self.new_lines,
-			"old_lines": self.old_lines,
-			"diff_lines": self.diff_lines.iter().map(|line| line.to_godot()).collect::<Array<Dictionary>>(),
-		}
-	}
-	fn to_variant(&self) -> Variant {
-		self.to_godot().to_variant()
-	}
-}
-
-impl GodotConvert for TextDiff {
-	type Via = Dictionary;
-}
-
-impl ToGodot for TextDiff {
-	type ToVia<'v> = Dictionary where Self: 'v;
-	fn to_godot(&self) -> Self::ToVia<'_> {
-		vdict! {
-			"new_file": self.new_file.to_godot(),
-			"old_file": self.old_file.to_godot(),
-			"diff_hunks": self.diff_hunks.iter().map(|hunk| hunk.to_godot()).collect::<Array<Dictionary>>(),
-		}
-	}
-	fn to_variant(&self) -> Variant {
-		self.to_godot().to_variant()
 	}
 }

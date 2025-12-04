@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, HashSet}, fmt, path::Path, str::FromStr, time::{SystemTime, UNIX_EPOCH}
 };
 
-use crate::{helpers::doc_utils::SimpleDocReader, helpers::branch::BranchState};
+use crate::{diff::differ::ProjectDiff, helpers::{branch::BranchState, doc_utils::SimpleDocReader}};
 use automerge::{
     Automerge, Change, ChangeHash, Patch, PatchLog, ROOT, ReadDoc, transaction::{CommitOptions, Transaction}
 };
@@ -271,8 +271,7 @@ pub struct BranchWrapper {
 
 #[derive(Debug)]
 pub struct DiffWrapper {
-	// todo: convert to rust
-	pub dict: Dictionary,
+	pub diff: ProjectDiff,
 	pub title: String
 }
 

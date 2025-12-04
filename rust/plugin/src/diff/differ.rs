@@ -1,238 +1,300 @@
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+};
 
-use std::collections::{HashMap, HashSet};
+use automerge::{ChangeHash, Patch};
+use godot::{
+    builtin::{GString, Variant, VariantType},
+    classes::{ResourceLoader, resource_loader::CacheMode},
+    meta::ToGodot,
+};
+use tracing::instrument;
 
-use automerge::ChangeHash;
-use godot::builtin::Variant;
+use crate::{
+    diff::{
+        resource_differ::ResourceDiff, scene_differ::SceneDiff,
+        text_differ::TextDiff,
+    },
+    fs::{file_system_driver::FileSystemEvent, file_utils::FileContent},
+    helpers::{
+        branch::BranchState,
+        utils::{ToShortForm, get_automerge_doc_diff},
+    },
+    interop::{godot_accessors::PatchworkEditorAccessor, godot_helpers::VariantTypeGetter},
+    project::project::Project,
+};
 
-use crate::fs::file_utils::FileContent;
-
-
-pub struct TextDiffLine {
-	pub new_line_no: i64,
-	pub old_line_no: i64,
-	pub content: String,
-	pub status: String,
-}
-
-pub struct TextDiffHunk {
-    pub new_start: i64,
-    pub old_start: i64,
-    pub new_lines: i64,
-    pub old_lines: i64,
-    pub diff_lines: Vec<TextDiffLine>,
-}
-
-pub struct TextDiff {
-	pub path: String,
-	pub diff_hunks: Vec<TextDiffHunk>,
-	pub change_type: ChangeType
-}
-
-
-impl TextDiff {
-	pub fn create(
-		path: &String,
-		old_text: &String,
-		new_text: &String,
-		change_type: ChangeType
-	) -> TextDiff {
-		let diff = similar::TextDiff::from_lines(old_text, new_text);
-		let mut unified = diff.unified_diff();
-		unified.header(path, path);
-
-		fn get_range(ops: &[similar::DiffOp]) -> (usize, usize, usize, usize) {
-			let first = ops[0];
-			let last = ops[ops.len() - 1];
-			let old_start = first.old_range().start;
-			let new_start = first.new_range().start;
-			let old_end = last.old_range().end;
-			let new_end = last.new_range().end;
-			(
-				old_start + 1,
-				new_start + 1,
-				old_end - old_start,
-				new_end - new_start,
-			)
-		}
-		let mut diff_file = TextDiff {
-			path: path.clone(),
-			diff_hunks: Vec::new(),
-			change_type
-		};
-		for (_i, hunk) in unified.iter_hunks().enumerate() {
-			let (old_start, new_start, old_lines, new_lines) = get_range(&hunk.ops());
-			let mut diff_hunk = TextDiffHunk {
-				old_start: old_start as i64,
-				new_start: new_start as i64,
-				old_lines: old_lines as i64,
-				new_lines: new_lines as i64,
-				diff_lines: Vec::new(),
-			};
-			for (_idx, change) in hunk.iter_changes().enumerate() {
-				let diff_line = TextDiffLine {
-					new_line_no: if let Some(new_index) = change.new_index() {
-						new_index as i64 + 1
-					} else {
-						-1
-					},
-					old_line_no: if let Some(old_index) = change.old_index() {
-						old_index as i64 + 1
-					} else {
-						-1
-					},
-					content: change.as_str().unwrap().to_string(),
-					status: match change.tag() {
-						similar::ChangeTag::Equal => " ",
-						similar::ChangeTag::Delete => "-",
-						similar::ChangeTag::Insert => "+",
-					}.to_string()
-				};
-				diff_hunk.diff_lines.push(diff_line);
-			}
-			diff_file.diff_hunks.push(diff_hunk);
-		}
-		diff_file
-	}
-}
-
-
-pub struct ResourceDiff {
-	pub change_type: ChangeType,
-	pub old_heads: Vec<ChangeHash>,
-	pub new_heads: Vec<ChangeHash>,
-	pub old_content: Option<FileContent>,
-    pub new_content: Option<FileContent>,
-    pub old_import_info: Option<FileContent>,
-    pub new_import_info: Option<FileContent>,
-}
-		// need this for interop
-        // if let Some(old_content) = imported_diff.old_content.as_ref() {
-        //     if let Some(old_resource) = self.create_temp_resource_from_content(
-        //         &path,
-        //         old_content,
-        //         &imported_diff.old_heads,
-        //         imported_diff.old_import_info.as_ref(),
-        //     ) {
-        //         let _ = result.insert("old_resource", old_resource);
-        //     }
-        // }
-        // if let Some(new_content) = imported_diff.new_content.as_ref() {
-        //     if let Some(new_resource) = self.create_temp_resource_from_content(
-        //         &path,
-        //         new_content,
-        //         &imported_diff.new_heads,
-        //         imported_diff.new_import_info.as_ref(),
-        //     ) {
-        //         let _ = result.insert("new_resource", new_resource);
-        //     }
-        // }
-impl ResourceDiff {
-	pub fn new(
-		change_type: ChangeType,
-		old_heads: Vec<ChangeHash>,
-		new_heads: Vec<ChangeHash>,
-		old_content: Option<FileContent>,
-		new_content: Option<FileContent>,
-		old_import_info: Option<FileContent>,
-		new_import_info: Option<FileContent>,
-	) -> ResourceDiff {
-		ResourceDiff {
-			change_type,
-			old_heads,
-			new_heads,
-			old_content,
-			new_content,
-			old_import_info,
-			new_import_info,
-		}
-	}
-}
-
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ChangeType {
     Added,
     Modified,
     Deleted,
 }
 
-#[derive(Clone)]
-pub struct PropertyDiff {
-    name: String,
-    change_type: ChangeType,
-    old_value: Option<Variant>,
-    new_value: Option<Variant>,
-}
-
-impl PropertyDiff {
-    pub fn new(
-        name: String,
-        change_type: ChangeType,
-        old_value: Option<Variant>,
-        new_value: Option<Variant>,
-    ) -> Self {
-        PropertyDiff {
-            name,
-            change_type,
-            old_value,
-            new_value,
-        }
-    }
-}
-
-pub struct NodeDiff {
-	change_type: ChangeType,
-	node_path: String,
-	node_type: String,
-	changed_properties: HashMap<String, PropertyDiff>
-}
-
-impl NodeDiff {
-	pub fn new(change_type: ChangeType, node_path: String, node_type: String, changed_properties: HashMap<String, PropertyDiff>) -> NodeDiff {
-		NodeDiff {
-			change_type,
-			node_path,
-			node_type,
-			changed_properties
-		}
-	}
-}
-
-pub struct SceneDiff {
-	path: String,
-	changed_nodes: Vec<NodeDiff>,
-}
-impl SceneDiff {
-	pub fn new(path: String, changed_nodes: Vec<NodeDiff>) -> SceneDiff {
-		SceneDiff {
-			path,
-			changed_nodes,
-		}
-	}
-
-}
-
-pub struct FileDiff {
-	pub path: String,
-	pub change_type: ChangeType
-}
-
-impl FileDiff {
-	pub fn new(path: &String, change_type: ChangeType) -> FileDiff {
-		FileDiff {
-			path: path.clone(),
-			change_type
-		}
-	}
-}
-
+#[derive(Clone, Debug)]
 pub enum Diff {
-	File(FileDiff),
-	Scene(SceneDiff),
-	Resource(ResourceDiff),
-	Text(TextDiff)
+    Scene(SceneDiff),
+    Resource(ResourceDiff),
+    Text(TextDiff),
 }
 
-#[derive(Default)]
+#[derive(Clone, Default, Debug)]
 pub struct ProjectDiff {
-	pub file_diffs: Vec<Diff>
+    pub file_diffs: Vec<Diff>,
+}
+
+pub struct Differ<'a> {
+    pub(super) project: &'a Project,
+
+    /// The heads we're currently diffing between.
+    pub(super) curr_heads: Vec<ChangeHash>,
+    pub(super) prev_heads: Vec<ChangeHash>,
+
+    /// Cache that stores our loaded ExtResources so far.
+    loaded_ext_resources: RefCell<HashMap<String, Variant>>,
+
+    // The branch we're currently diffing on
+    pub(super) branch_state: &'a BranchState,
+}
+
+impl<'a> Differ<'a> {
+	pub fn new(
+		project: &'a Project,
+		curr_heads: Vec<ChangeHash>,
+		prev_heads: Vec<ChangeHash>,
+		branch_state: &'a BranchState,
+	) -> Self {
+
+        let curr_heads = if curr_heads.len() == 0 {
+            branch_state.synced_heads.clone()
+        } else {
+            curr_heads
+        };
+
+		Self {
+			project,
+			curr_heads,
+			prev_heads,
+			loaded_ext_resources: RefCell::new(HashMap::new()),
+			branch_state,
+		}
+	}
+
+    fn get_resource_at(
+        &self,
+        path: &String,
+        file_content: &FileContent,
+        heads: &Vec<ChangeHash>,
+    ) -> Option<Variant> {
+        let import_path = format!("{}.import", path);
+        let mut import_file_content = self.get_file_at(&import_path, Some(heads));
+        if import_file_content.is_none() {
+            // try at current heads
+            import_file_content = self.get_file_at(&import_path, None);
+        }
+        return self.create_temp_resource_from_content(
+            &path,
+            &file_content,
+            &heads,
+            import_file_content.as_ref(),
+        );
+    }
+
+    pub(super) fn create_temp_resource_from_content(
+        &self,
+        path: &str,
+        content: &FileContent,
+        heads: &Vec<ChangeHash>,
+        import_file_content: Option<&FileContent>,
+    ) -> Option<Variant> {
+        let temp_dir = format!("res://.patchwork/temp_{}/", heads.first().to_short_form());
+        let temp_path = path.replace("res://", &temp_dir);
+        if let Err(e) = FileContent::write_file_content(
+            &PathBuf::from(self.project.globalize_path(&temp_path)),
+            content,
+        ) {
+            tracing::error!("error writing file to temp path: {:?}", e);
+            return None;
+        }
+
+        if let Some(import_file_content) = import_file_content {
+            if let FileContent::String(import_file_content) = import_file_content {
+                let import_file_content = import_file_content.replace("res://", &temp_dir);
+                // regex to replace uid=uid://<...> and uid=uid://<invalid> with uid=uid://<...> and uid=uid://<invalid>
+                let import_file_content =
+                    import_file_content.replace(r#"uid=uid://[^\n]+"#, "uid=uid://<invalid>");
+                // write the import file content to the temp path
+                let import_file_path: String = format!("{}.import", temp_path);
+                let _ = FileContent::write_file_content(
+                    &PathBuf::from(self.project.globalize_path(&import_file_path)),
+                    &FileContent::String(import_file_content),
+                );
+
+                let res = PatchworkEditorAccessor::import_and_load_resource(&temp_path);
+                if res.is_nil() {
+                    tracing::error!("error importing resource: {:?}", temp_path);
+                    return None;
+                }
+                return Some(res);
+            }
+        }
+        let resource = ResourceLoader::singleton()
+            .load_ex(&GString::from(temp_path))
+            .cache_mode(CacheMode::IGNORE_DEEP)
+            .done();
+        if let Some(resource) = resource {
+            return Some(resource.to_variant());
+        }
+        None
+    }
+
+    pub(super) fn get_file_at(
+        &self,
+        path: &String,
+        heads: Option<&Vec<ChangeHash>>,
+    ) -> Option<FileContent> {
+        let mut ret: Option<FileContent> = None;
+        {
+            let files = self
+                .project
+                .get_files_at(heads, Some(&HashSet::from_iter(vec![path.clone()])));
+            for file in files.into_iter() {
+                if file.0 == *path {
+                    ret = Some(file.1);
+                    break;
+                } else {
+                    panic!(
+                        "Returned a file that didn't match the path!?!??!?!?!?!?!?!!? {:?} != {:?}",
+                        file.0, path
+                    );
+                }
+            }
+        }
+        ret
+    }
+
+    /// Loads an ExtResource given a path, using a cache.
+    pub(super) fn load_ext_resource(
+        &self,
+        path: &String,
+        heads: &Vec<ChangeHash>,
+    ) -> Option<Variant> {
+        if let Some(resource) = self.loaded_ext_resources.borrow().get(path) {
+            return Some(resource.clone());
+        }
+
+        let resource_content = self.get_file_at(path, Some(heads));
+        let Some(resource_content) = resource_content else {
+            return None;
+        };
+
+        let Some(resource) = self.get_resource_at(path, &resource_content, heads) else {
+            return None;
+        };
+
+        return self
+            .loaded_ext_resources
+            .borrow_mut()
+            .insert(path.clone(), resource);
+    }
+
+    #[instrument(skip_all, level = tracing::Level::DEBUG)]
+    pub fn get_diff(&self) -> ProjectDiff {
+        tracing::debug!(
+            "branch {:?}, getting changes between {} and {}",
+            self.branch_state.name,
+            self.prev_heads.to_short_form(),
+            self.curr_heads.to_short_form()
+        );
+
+        if self.prev_heads == self.curr_heads {
+            tracing::debug!("no changes");
+            return ProjectDiff::default();
+        }
+
+        let patches: Vec<Patch> = self.branch_state
+            .doc_handle
+            .with_doc(|d| get_automerge_doc_diff(d, &self.prev_heads, &self.curr_heads));
+
+        let mut diffs: Vec<Diff> = vec![];
+        // Get old and new content
+        let new_file_contents = self.project.get_changed_file_content_between(
+            None,
+            self.branch_state.doc_handle.document_id().clone(),
+            self.prev_heads.clone(),
+            self.curr_heads.clone(),
+            false,
+        );
+        let changed_files_set: HashSet<String> = new_file_contents
+            .iter()
+            .map(|event| match event {
+                FileSystemEvent::FileCreated(path, _) => path.to_string_lossy().to_string(),
+                FileSystemEvent::FileModified(path, _) => path.to_string_lossy().to_string(),
+                FileSystemEvent::FileDeleted(path) => path.to_string_lossy().to_string(),
+            })
+            .collect::<HashSet<String>>();
+        let old_file_contents = self.project.get_files_on_branch_at(
+            self.branch_state,
+            Some(&self.prev_heads),
+            Some(&changed_files_set),
+        );
+
+        for event in &new_file_contents {
+            let (path, new_file_content, change_type) = match event {
+                FileSystemEvent::FileCreated(path, content) => (path, content, ChangeType::Added),
+                FileSystemEvent::FileModified(path, content) => {
+                    (path, content, ChangeType::Modified)
+                }
+                FileSystemEvent::FileDeleted(path) => {
+                    (path, &FileContent::Deleted, ChangeType::Deleted)
+                }
+            };
+            let path = path.to_string_lossy().to_string();
+            let old_file_content = old_file_contents
+                .get(&path)
+                .unwrap_or(&FileContent::Deleted);
+            let old_content_type = old_file_content.get_variant_type();
+            let new_content_type = new_file_content.get_variant_type();
+            let old_content = match old_content_type {
+                VariantType::NIL => None,
+                _ => Some(old_file_content),
+            };
+            let new_content = match new_content_type {
+                VariantType::NIL => None,
+                _ => Some(new_file_content),
+            };
+
+            if old_content_type == VariantType::OBJECT || new_content_type == VariantType::OBJECT {
+                // This is a scene file, so use a scene diff
+                diffs.push(Diff::Scene(self.get_scene_diff(&path, &patches)));
+            } else if old_content_type != VariantType::STRING
+                && new_content_type != VariantType::STRING
+            {
+                // This is a binary file, so use a resource diff
+                diffs.push(Diff::Resource(self.get_resource_diff(
+                    &path,
+                    change_type,
+                    old_content,
+                    new_content
+                )));
+            } else if old_content_type != VariantType::PACKED_BYTE_ARRAY
+                && new_content_type != VariantType::PACKED_BYTE_ARRAY
+            {
+                // This is a text file, so do a text diff.
+                diffs.push(Diff::Text(self.get_text_diff(
+                    &path,
+                    change_type,
+                    old_content,
+                    new_content,
+                )));
+            } else {
+                // We have no idea what type of file this is, so skip it
+				continue;
+            }
+        }
+
+        ProjectDiff { file_diffs: diffs }
+    }
 }

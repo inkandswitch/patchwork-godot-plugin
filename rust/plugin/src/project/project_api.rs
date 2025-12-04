@@ -2,6 +2,8 @@ use automerge::ChangeHash;
 use automerge_repo::DocumentId;
 use godot::builtin::Dictionary;
 
+use crate::{diff::differ::ProjectDiff, helpers::utils::DiffWrapper};
+
 /// Represents synchronization status for a project.
 pub enum SyncStatus {
     /// The server is disconnected, but we have no idea if we have extra changes.
@@ -127,9 +129,8 @@ pub trait BranchViewModel {
 
 /// API surface for a Diff exposed to the UI.
 pub trait DiffViewModel {
-	// TODO: Change this to Rust API not Godot
-	/// Get the [Dictionary] containing the diff data.
-	fn get_dict(&self) -> &Dictionary;
+	/// Get the [DiffWrapper] containing the diff data.
+	fn get_diff(&self) -> &ProjectDiff;
 	/// Get the display title of the diff.
 	fn get_title(&self) -> &String;
 }

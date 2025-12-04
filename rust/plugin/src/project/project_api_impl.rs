@@ -5,7 +5,7 @@ use automerge_repo::DocumentId;
 use godot::builtin::Dictionary;
 use tracing::instrument;
 
-use crate::{helpers::utils::{BranchWrapper, CommitInfo, DiffWrapper, exact_human_readable_timestamp, human_readable_timestamp}, interop::godot_accessors::PatchworkConfigAccessor, project::{project_api::{BranchViewModel, ChangeViewModel, DiffViewModel, ProjectViewModel, SyncStatus}, project_driver::InputEvent, project::{CheckedOutBranchState, Project}}};
+use crate::{diff::differ::ProjectDiff, helpers::utils::{BranchWrapper, CommitInfo, DiffWrapper, exact_human_readable_timestamp, human_readable_timestamp}, interop::godot_accessors::PatchworkConfigAccessor, project::{project::{CheckedOutBranchState, Project}, project_api::{BranchViewModel, ChangeViewModel, DiffViewModel, ProjectViewModel, SyncStatus}, project_driver::InputEvent}};
 
 impl ProjectViewModel for Project {
 	fn has_project(&self) -> bool {
@@ -397,7 +397,7 @@ impl ProjectViewModel for Project {
 		}
 
 		Some(DiffWrapper {
-			dict: self.get_cached_diff(heads_before, heads_after),
+			diff: self.get_cached_diff(heads_before, heads_after),
 			title
 		})
 	}
@@ -417,7 +417,7 @@ impl ProjectViewModel for Project {
 		}
 
 		Some(DiffWrapper {
-			dict: self.get_cached_diff(heads_before, heads_after),
+			diff: self.get_cached_diff(heads_before, heads_after),
 			title: format!("Showing changes from {} - {}",
 				change.get_summary(), change.get_human_timestamp())
 		})
@@ -513,8 +513,8 @@ impl BranchViewModel for BranchWrapper {
 }
 
 impl DiffViewModel for DiffWrapper {
-	fn get_dict(&self) -> &Dictionary {
-		&self.dict
+	fn get_diff(&self) -> &ProjectDiff {
+		&self.diff
 	}
 
 	fn get_title(&self) -> &String {
