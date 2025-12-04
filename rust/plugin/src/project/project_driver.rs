@@ -1280,7 +1280,7 @@ fn clone_doc(repo_handle: &RepoHandle, doc_handle: &DocHandle) -> DocHandle {
 
 fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = SubscriptionMessage> + Send {
     futures::stream::unfold(handle, |doc_handle| async {
-        // let heads_before = doc_handle.with_doc(|d| d.get_heads());
+        let _/*heads_before */ = doc_handle.with_doc(|d| d.get_heads());
         let _ = doc_handle.changed().await;
         // let heads_after = doc_handle.with_doc(|d| d.get_heads());
         // let diff = doc_handle.with_doc(|d| {
