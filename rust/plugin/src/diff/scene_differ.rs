@@ -559,7 +559,7 @@ impl Differ<'_> {
             || prop_value.starts_with("SubResource(")
             || prop_value.starts_with("ExtResource(")
         {
-            let id = prop_value
+            let mut id = prop_value
                 .split("(\"")
                 .nth(1)
                 .unwrap()
@@ -573,7 +573,12 @@ impl Differ<'_> {
             } else if prop_value.contains("ExtResource(") {
                 return VariantStrValue::ExtResourceID(id);
             } else {
-                // Resource()
+                // 4.5 and above started writing `Resource(uid, path)` instead of `Resource(path)`, so we need to handle that here.
+                // if this is a Resource() with the format "Resource(uid, path)", we need to extract the path
+                if id.contains("\", \"") {
+                    // discard the uid
+					id = id.split("\", \"").nth(1).unwrap().trim().to_string();
+				}
                 return VariantStrValue::ResourcePath(id);
             }
         }
