@@ -784,11 +784,15 @@ impl Project {
 		heads_before: Vec<ChangeHash>,
 		heads_after: Vec<ChangeHash>
 	) -> ProjectDiff {
-		(*self.diff_cache.borrow_mut())
+		self.diff_cache.borrow_mut()
 			.entry((heads_before.clone(), heads_after.clone()))
 			.or_insert_with(||
 				self.get_diff(heads_before, heads_after))
 			.clone()
+	}
+
+	pub fn clear_diff_cache(&self) {
+		self.diff_cache.borrow_mut().clear();
 	}
 
 	pub fn get_diff(&self, heads_before: Vec<ChangeHash>, heads_after: Vec<ChangeHash>) -> ProjectDiff {

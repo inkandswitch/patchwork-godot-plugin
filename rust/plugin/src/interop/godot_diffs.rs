@@ -71,11 +71,16 @@ impl ToGodot for TextDiff {
         Self: 'v;
     fn to_godot(&self) -> Self::ToVia<'_> {
         vdict! {
-            // In the future, if we track renames, we should use the different paths here. Currently we don't, though.
-            "new_file": self.path.to_godot(),
-            "old_file": self.path.to_godot(),
-            "diff_hunks": self.diff_hunks.iter().map(|hunk| hunk.to_godot()).collect::<Array<Dictionary>>(),
-        }
+			"path": self.path.to_godot(),
+			"diff_type": "text_changed",
+			"change_type": self.change_type.to_godot(),
+			"text_diff": vdict! {
+				// In the future, if we track renames, we should use the different paths here. Currently we don't, though.
+				"new_file": self.path.to_godot(),
+				"old_file": self.path.to_godot(),
+				"diff_hunks": self.diff_hunks.iter().map(|hunk| hunk.to_godot()).collect::<Array<Dictionary>>(),
+			}
+		}
     }
     fn to_variant(&self) -> Variant {
         self.to_godot().to_variant()
@@ -96,7 +101,7 @@ impl ToGodot for ChangeType {
         match self {
             ChangeType::Added => "added",
             ChangeType::Modified => "modified",
-            ChangeType::Deleted => "deleted",
+            ChangeType::Removed => "removed",
         }
         .into()
     }
@@ -161,7 +166,8 @@ impl ToGodot for SceneDiff {
     fn to_godot(&self) -> Self::ToVia<'_> {
         vdict! {
             "change_type": self.change_type.to_godot(),
-            "changed_nodes": self.changed_nodes.to_godot()
+            "changed_nodes": self.changed_nodes.to_godot(),
+			"diff_type": "scene_changed"
         }
     }
 }
@@ -253,6 +259,7 @@ impl ToGodot for ResourceDiff {
             "change_type": self.change_type.to_godot(),
             "new_resource": self.new_resource.clone().unwrap_or(Variant::nil()),
             "old_resource": self.old_resource.clone().unwrap_or(Variant::nil()),
+			"diff_type": "resource_changed"
         }
     }
 }

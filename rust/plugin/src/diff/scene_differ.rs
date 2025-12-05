@@ -1,16 +1,17 @@
 use std::collections::{HashMap, HashSet};
 
-use automerge::{Automerge, Patch, Prop};
+use automerge::{Automerge, Prop};
 use godot::{
     builtin::{StringName, Variant},
     classes::ClassDb,
-    global::str_to_var,
     meta::ToGodot,
 };
 
 use crate::{
     diff::differ::{ChangeType, Differ},
-    parser::godot_parser::{GodotNode, GodotScene, TypeOrInstance},
+    parser::godot_parser::{
+        ExternalResourceNode, GodotNode, GodotScene, SubResourceNode, TypeOrInstance,
+    },
 };
 
 /// Represents a diff of a scene, with a scene path and a list of changed nodes.
@@ -93,6 +94,7 @@ impl PropertyDiff {
 }
 
 /// The different types of Godot-recognized string values that can be stored in a Variant.
+#[derive(PartialEq, Debug)]
 enum VariantStrValue {
     /// A normal string that doesn't refer to a resource.
     Variant(String),
@@ -136,21 +138,8 @@ fn relative_path(path: &Vec<Prop>, other: &Vec<Prop>) -> Option<Vec<Prop>> {
 
 /// Implement scene-related functions on the Differ
 impl Differ<'_> {
-    /// Generate a [SceneDiff] between the previous and current heads, given a set of patches.
-    pub(super) fn get_scene_diff(&self, path: &String, patches: &Vec<Patch>) -> SceneDiff {
-        // TODO: Remove patch parsing!
-        // Get changed ext/sub/node IDs from the patches
-        let mut changed_ext_resource_ids: HashSet<String> = HashSet::new();
-        let mut changed_sub_resource_ids: HashSet<String> = HashSet::new();
-        let mut changed_node_ids: HashSet<i32> = HashSet::new();
-        Self::get_changed_ids_from_patches(
-            path,
-            patches,
-            &mut changed_node_ids,
-            &mut changed_ext_resource_ids,
-            &mut changed_sub_resource_ids,
-        );
-
+    /// Generate a [SceneDiff] between the previous and current heads.
+    pub(super) fn get_scene_diff(&self, path: &String) -> SceneDiff {
         // Get old and new scenes for content comparison
         let old_scene = match self
             .branch_state
@@ -192,56 +181,21 @@ impl Differ<'_> {
             );
         }
 
-        // For both ext resources and sub resources, track them if they've been added or removed.
-        for ext_id in ext_resource_ids.iter() {
-            let old_has = old_scene
-                .as_ref()
-                .map(|scene| scene.ext_resources.contains_key(ext_id))
-                .unwrap_or(false);
-            let new_has = new_scene
-                .as_ref()
-                .map(|scene| scene.ext_resources.contains_key(ext_id))
-                .unwrap_or(false);
-
-            if (old_has && !new_has) || (!old_has && new_has) {
-                changed_ext_resource_ids.insert(ext_id.clone());
-            }
-        }
-        for sub_resource_id in sub_resource_ids.iter() {
-            let old_has = old_scene
-                .as_ref()
-                .map(|scene| scene.sub_resources.contains_key(sub_resource_id))
-                .unwrap_or(false);
-            let new_has = new_scene
-                .as_ref()
-                .map(|scene| scene.sub_resources.contains_key(sub_resource_id))
-                .unwrap_or(false);
-
-            if (old_has && !new_has) || (!old_has && new_has) {
-                changed_sub_resource_ids.insert(sub_resource_id.clone());
-            }
-        }
-
         let mut node_diffs = Vec::new();
 
         // Diff each node
         for node_id in &node_ids {
-            // TODO: Currently, we track node diffs by patch.
-            // When we remove patch tracking, we'll need to actually compare the contents in get_node_diff
-            // and return None if they're the same.
-            if !changed_node_ids.contains(node_id) {
-                continue;
-            }
+            let old_node = old_scene.as_ref().and_then(|s| s.get_node(*node_id));
+            let new_node = new_scene.as_ref().and_then(|s| s.get_node(*node_id));
 
             let Some(diff) = self.get_node_diff(
                 *node_id,
-                old_scene.as_ref().and_then(|s| s.get_node(*node_id)),
-                new_scene.as_ref().and_then(|s| s.get_node(*node_id)),
+                old_node,
+                new_node,
                 old_scene.as_ref(),
                 new_scene.as_ref(),
-                &changed_ext_resource_ids,
-                &changed_sub_resource_ids,
             ) else {
+                // If the node has no changes or is otherwise invalid, just skip this one.
                 continue;
             };
 
@@ -252,7 +206,7 @@ impl Differ<'_> {
             path.clone(),
             match (old_scene, new_scene) {
                 (None, Some(_)) => ChangeType::Added,
-                (Some(_), None) => ChangeType::Deleted,
+                (Some(_), None) => ChangeType::Removed,
                 (_, _) => ChangeType::Modified,
             },
             node_diffs,
@@ -267,8 +221,6 @@ impl Differ<'_> {
         new_node: Option<&GodotNode>,
         old_scene: Option<&GodotScene>,
         new_scene: Option<&GodotScene>,
-        changed_ext_resource_ids: &HashSet<String>,
-        changed_sub_resource_ids: &HashSet<String>,
     ) -> Option<NodeDiff> {
         if old_node.is_none() && new_node.is_none() {
             return None;
@@ -278,18 +230,6 @@ impl Differ<'_> {
         let new_class_name = new_node.map(|n| Self::get_class_name(&n.type_or_instance, new_scene));
 
         let mut changed_properties = HashMap::new();
-
-        // Return early if we changed types; don't diff the props
-        // Is this correct?
-        if old_class_name != new_class_name {
-            return Some(NodeDiff::new(
-                ChangeType::Modified,
-                // require that one of old_scene or new_scene is valid
-                new_scene.or(old_scene)?.get_node_path(node_id),
-                new_class_name.or(old_class_name)?,
-                changed_properties,
-            ));
-        }
 
         // Collect all properties from new and old scenes
         let mut props: HashSet<String> = HashSet::new();
@@ -306,26 +246,34 @@ impl Differ<'_> {
 
         // Iterate through the props
         for prop in &props {
-            if let Some(prop_diff) = self.get_property_diff(
-                prop,
-                old_node,
-                new_node,
-                old_scene,
-                new_scene,
-                changed_ext_resource_ids,
-                changed_sub_resource_ids,
-            ) {
+            if let Some(prop_diff) =
+                self.get_property_diff(prop, old_node, new_node, old_scene, new_scene)
+            {
                 changed_properties.insert(prop.clone(), prop_diff);
             }
+        }
+
+        // If there wasn't any real changes, there's no actual difference!
+        if old_node.is_some()
+            && new_node.is_some()
+            && changed_properties.is_empty()
+            && old_class_name == new_class_name
+        {
+            return None;
         }
 
         Some(NodeDiff::new(
             match (old_node, new_node) {
                 (None, Some(_)) => ChangeType::Added,
-                (Some(_), None) => ChangeType::Deleted,
+                (Some(_), None) => ChangeType::Removed,
                 (_, _) => ChangeType::Modified,
             },
-            new_scene.or(old_scene)?.get_node_path(node_id),
+            // have to do something like this, because get_node_path panics if the node doesn't exist in the scene
+            match (old_node, new_node) {
+                (None, Some(_)) => new_scene?.get_node_path(node_id),
+                (Some(_), None) => old_scene?.get_node_path(node_id),
+                (_, _) => new_scene?.get_node_path(node_id),
+            },
             new_class_name.or(old_class_name)?,
             changed_properties,
         ))
@@ -353,7 +301,7 @@ impl Differ<'_> {
     /// Returns the [VariantStrValue] of a property on a node, or the default value if the property doesn't
     /// exist on the node.
     /// If the node itself doesn't exist, returns [None].
-    fn get_value_or_default(prop: &String, node: Option<&GodotNode>) -> Option<VariantStrValue> {
+    fn get_varstr_or_default(prop: &String, node: Option<&GodotNode>) -> Option<VariantStrValue> {
         // If this node never existed, don't provide a value.
         let Some(node) = node else {
             return None;
@@ -388,19 +336,22 @@ impl Differ<'_> {
         new_node: Option<&GodotNode>,
         old_scene: Option<&GodotScene>,
         new_scene: Option<&GodotScene>,
-        changed_ext_resource_ids: &HashSet<String>,
-        changed_sub_resource_ids: &HashSet<String>,
     ) -> Option<PropertyDiff> {
         // If neither node is valid, there's no valid property diff.
         if new_node.is_none() && old_node.is_none() {
             return None;
         };
 
-        // It's possible that the prop didn't exist on the old node, but does now, or vice versa.
-        // We handle this case just by substituting with the default.
-        let old_value = Self::get_value_or_default(prop, old_node);
-        let new_value = Self::get_value_or_default(prop, new_node);
+        // Slightly weird hack: Diff against the default instead of the normal property.
+        let old_value = Self::get_varstr_or_default(prop, old_node);
+        let new_value = Self::get_varstr_or_default(prop, new_node);
 
+        // Skip in case of no changes
+        if !self.did_prop_change(old_value.as_ref(), new_value.as_ref(), old_scene, new_scene) {
+            return None;
+        }
+
+        // Expensive: Load any ext resources and turn them into Variants
         let old = old_value
             .as_ref()
             .map(|v| self.get_prop_value(&v, old_scene, true, prop == "script"));
@@ -408,56 +359,147 @@ impl Differ<'_> {
             .as_ref()
             .map(|v| self.get_prop_value(&v, new_scene, false, prop == "script"));
 
-        // If we added or removed the node itself, exit early. This happens if one of the nodes is None.
-        let Some(new_value) = new_value else {
-            return Some(PropertyDiff::new(
-                prop.clone(),
-                ChangeType::Deleted,
-                old,
-                new,
-            ));
-        };
-        let Some(old_value) = old_value else {
-            return Some(PropertyDiff::new(prop.clone(), ChangeType::Added, old, new));
-        };
-
-        // If the same type, and no resource change, there's no real change.
-        if let VariantStrValue::SubResourceID(ref old_value) = old_value
-            && let VariantStrValue::SubResourceID(ref new_value) = new_value
-        {
-            if !changed_sub_resource_ids.contains(old_value)
-                && !changed_sub_resource_ids.contains(new_value)
-            {
-                return None;
-            }
-        } else if let VariantStrValue::ExtResourceID(ref old_value) = old_value
-            && let VariantStrValue::ExtResourceID(ref new_value) = new_value
-        {
-            if old_value == new_value
-                && !changed_ext_resource_ids.contains(old_value)
-                && !changed_ext_resource_ids.contains(new_value)
-            {
-                return None;
-            }
-        } else if let VariantStrValue::ResourcePath(ref old_value) = old_value
-            && let VariantStrValue::ResourcePath(ref new_value) = new_value
-        {
-            if old_value == new_value {
-                return None;
-            }
-        }
-
         return Some(PropertyDiff::new(
             prop.clone(),
-            ChangeType::Modified,
+            // We check for node add or remove intentionally, here, because otherwise we're just diffing a Modified prop against
+            // the default value retrieved earlier.
+            match (old_node, new_node) {
+                (None, Some(_)) => ChangeType::Added,
+                (Some(_), None) => ChangeType::Removed,
+                (_, _) => ChangeType::Modified,
+            },
             old,
             new,
         ));
     }
 
-    /// Returns the diff value of a given prop, within a given scene.
+    /// Check deeply to see if a subresource has changed.
+    fn did_sub_resource_change(
+        &self,
+        old_resource: Option<&SubResourceNode>,
+        new_resource: Option<&SubResourceNode>,
+        old_scene: &GodotScene,
+        new_scene: &GodotScene,
+    ) -> bool {
+        let (old_resource, new_resource) = match (old_resource, new_resource) {
+            (None, None) => return false,         // subresource never existed
+            (None, Some(_)) => return true,       // subresource added
+            (Some(_), None) => return true,       // subresource removed
+            (Some(old), Some(new)) => (old, new), // keep looking
+        };
+
+        // If ID or type has changed, subresource has definitely changed.
+        if old_resource.id != new_resource.id
+            || old_resource.resource_type != new_resource.resource_type
+        {
+            return true;
+        }
+
+        for (path, _) in &old_resource.properties {
+            if !new_resource.properties.contains_key(path) {
+                // prop removed
+                return true;
+            }
+        }
+
+        for (path, new_prop) in &new_resource.properties {
+            let Some(old_prop) = old_resource.properties.get(path) else {
+                // prop added
+                return false;
+            };
+
+            let old_prop = Self::get_varstr_value(old_prop.get_value());
+            let new_prop = Self::get_varstr_value(new_prop.get_value());
+            if self.did_prop_change(
+                Some(&old_prop),
+                Some(&new_prop),
+                Some(old_scene),
+                Some(new_scene),
+            ) {
+                // prop changed
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Check shallowly to see if an ext resource changed. Returns true if the path, type, etc has changed, but not
+    /// the contents itself.
+    fn did_ext_resource_reference_change(
+        &self,
+        old_resource: Option<&ExternalResourceNode>,
+        new_resource: Option<&ExternalResourceNode>,
+    ) -> bool {
+        let (old_resource, new_resource) = match (old_resource, new_resource) {
+            (None, None) => return false,         // resource never existed
+            (None, Some(_)) => return true,       // resource added
+            (Some(_), None) => return true,       // resource removed
+            (Some(old), Some(new)) => (old, new), // keep looking
+        };
+
+        old_resource.id != new_resource.id
+            || old_resource.resource_type != new_resource.resource_type
+            || old_resource.path != new_resource.path
+            || old_resource.uid != new_resource.uid
+    }
+
+    /// Check to see if a property has changed, including deep lookups of subresources and shallow lookup of extresources.
+    fn did_prop_change(
+        &self,
+        old_value: Option<&VariantStrValue>,
+        new_value: Option<&VariantStrValue>,
+        old_scene: Option<&GodotScene>,
+        new_scene: Option<&GodotScene>,
+    ) -> bool {
+        // If either are null, or both are none, easy exit
+        let (old_value, new_value) = match (old_value, new_value) {
+            (None, None) => return false,         // resource never existed
+            (None, Some(_)) => return true,       // resource added
+            (Some(_), None) => return true,       // resource removed
+            (Some(old), Some(new)) => (old, new), // keep looking
+        };
+
+        // If the value itself has changed, easy exit
+        if old_value != new_value {
+            return true;
+        }
+        // if either scene is null, we did change.
+        let Some(old_scene) = old_scene else {
+            return true;
+        };
+        let Some(new_scene) = new_scene else {
+            return true;
+        };
+        match (old_value, new_value) {
+            // Deeply lookup subresources
+            (
+                VariantStrValue::SubResourceID(old_value),
+                VariantStrValue::SubResourceID(new_value),
+            ) => self.did_sub_resource_change(
+                old_scene.sub_resources.get(old_value),
+                new_scene.sub_resources.get(new_value),
+                old_scene,
+                new_scene,
+            ),
+            // Shallowly lookup extresource references
+            (
+                VariantStrValue::ExtResourceID(old_value),
+                VariantStrValue::ExtResourceID(new_value),
+            ) => self.did_ext_resource_reference_change(
+                old_scene.ext_resources.get(old_value),
+                new_scene.ext_resources.get(new_value),
+            ),
+            // No special lookup needed for regular Variants (definitely) or ResourcePaths (I think?)
+            (VariantStrValue::ResourcePath(_), VariantStrValue::ResourcePath(_)) => false,
+            (VariantStrValue::Variant(_), VariantStrValue::Variant(_)) => false,
+            // If the types are different, we've for sure changed
+            _ => true,
+        }
+    }
+
+    /// Returns the value of a given prop, within a given scene.
     /// Normally, it's a String. If it's a (non-script) ExtResource or ResourcePath,
-    /// it displays the resource content.
+    /// it loads and returns the resource content as a Variant.
     fn get_prop_value(
         &self,
         prop_value: &VariantStrValue,
@@ -467,14 +509,15 @@ impl Differ<'_> {
     ) -> Variant {
         // Prevent loading script files during the diff and creating issues for the editor
         if is_script {
-            return str_to_var("<Script changed>");
+            return "<Script changed>".to_variant();
         }
         let path;
         match prop_value {
             VariantStrValue::Variant(variant) => {
-                return str_to_var(variant);
+                return variant.to_variant();
             }
             VariantStrValue::SubResourceID(sub_resource_id) => {
+                // We currently don't support displaying deep subresource diffs, so just inform of a change.
                 return format!("<SubResource {} changed>", sub_resource_id).to_variant();
             }
             VariantStrValue::ResourcePath(resource_path) => {
@@ -488,9 +531,9 @@ impl Differ<'_> {
                         .map(|ext_resource| &ext_resource.path)
                 });
                 let Some(p) = p else {
-                    return str_to_var("<ExtResource not found>");
+                    return "<ExtResource not found>".to_variant();
                 };
-                path = &p;
+                path = p;
             }
         }
 
@@ -502,7 +545,7 @@ impl Differ<'_> {
                 &self.curr_heads
             },
         ) else {
-            return str_to_var("<ExtResource not found>");
+            return "<ExtResource load failed>".to_variant();
         };
 
         return resource;
@@ -527,6 +570,8 @@ impl Differ<'_> {
         }
     }
 
+    /// Parse a prop_value string into a [VariantStrValue] enum.
+    // Ideally, the parser would do this for us... but for now, we're doing it ourselves.
     fn get_varstr_value(prop_value: String) -> VariantStrValue {
         if prop_value.starts_with("Resource(")
             || prop_value.starts_with("SubResource(")
@@ -552,92 +597,5 @@ impl Differ<'_> {
         }
         // normal variant string
         return VariantStrValue::Variant(prop_value);
-    }
-
-    /// Get the changed node IDs, ext resource IDs, and sub resource IDs from a patches array.
-    fn get_changed_ids_from_patches(
-        path: &String,
-        patches: &Vec<Patch>,
-        node_ids: &mut HashSet<i32>,
-        ext_resource_ids: &mut HashSet<String>,
-        sub_resource_ids: &mut HashSet<String>,
-    ) {
-        let nodes_path = Vec::from([
-            Prop::Map(String::from("files")),
-            Prop::Map(String::from(path.clone())),
-            Prop::Map(String::from("structured_content")),
-            Prop::Map(String::from("nodes")),
-        ]);
-
-        let ext_resources_path = Vec::from([
-            Prop::Map(String::from("files")),
-            Prop::Map(String::from(path.clone())),
-            Prop::Map(String::from("structured_content")),
-            Prop::Map(String::from("ext_resources")),
-        ]);
-
-        let sub_resources_path = Vec::from([
-            Prop::Map(String::from("files")),
-            Prop::Map(String::from(path.clone())),
-            Prop::Map(String::from("structured_content")),
-            Prop::Map(String::from("sub_resources")),
-        ]);
-
-        for patch in patches.iter() {
-            let this_path = patch.path.iter().map(|(_, v)| v.clone()).collect();
-
-            // Look for changed nodes
-            if let Some(path) = relative_path(&nodes_path, &this_path) {
-                if let Some(Prop::Map(node_id)) = path.first() {
-                    // hack: only consider nodes where properties changed as changed
-                    // this filters out all the parent nodes that don't really change only the child_node_ids change
-                    // get second to last instead of last
-                    if path.len() > 2 {
-                        if let Some(Prop::Map(key)) = path.get(path.len() - 2) {
-                            if key == "properties" {
-                                node_ids.insert(node_id.parse::<i32>().unwrap());
-                                continue;
-                            }
-                        }
-                    }
-                    if let Some(Prop::Map(key)) = path.last() {
-                        if key != "child_node_ids" {
-                            node_ids.insert(node_id.parse::<i32>().unwrap());
-                        }
-                    }
-                };
-            }
-            // Look for changed ext resources
-            else if let Some(path) = relative_path(&ext_resources_path, &this_path) {
-                if let Some(Prop::Map(ext_id)) = path.first() {
-                    if let Some(Prop::Map(key)) = path.last() {
-                        if key != "idx" {
-                            // ignore idx changes
-                            ext_resource_ids.insert(ext_id.clone());
-                        }
-                    }
-                }
-            }
-            // Look for changed sub resources
-            else if let Some(path) = relative_path(&sub_resources_path, &this_path) {
-                if let Some(Prop::Map(sub_id)) = path.first() {
-                    if path.len() > 2 {
-                        if let Some(Prop::Map(key)) = path.get(path.len() - 2) {
-                            if key == "properties" {
-                                sub_resource_ids.insert(sub_id.clone());
-                                continue;
-                            }
-                        }
-                    }
-
-                    if let Some(Prop::Map(key)) = path.last() {
-                        if key != "idx" {
-                            // ignore idx changes
-                            sub_resource_ids.insert(sub_id.clone());
-                        }
-                    }
-                }
-            }
-        }
     }
 }

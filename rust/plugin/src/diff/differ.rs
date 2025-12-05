@@ -4,7 +4,7 @@ use std::{
     path::PathBuf,
 };
 
-use automerge::{ChangeHash, Patch};
+use automerge::{ChangeHash};
 use godot::{
     builtin::{GString, Variant, VariantType},
     classes::{ResourceLoader, resource_loader::CacheMode},
@@ -20,7 +20,7 @@ use crate::{
     fs::{file_system_driver::FileSystemEvent, file_utils::FileContent},
     helpers::{
         branch::BranchState,
-        utils::{ToShortForm, get_automerge_doc_diff},
+        utils::{ToShortForm},
     },
     interop::{godot_accessors::PatchworkEditorAccessor, godot_helpers::VariantTypeGetter},
     project::project::Project,
@@ -30,7 +30,7 @@ use crate::{
 pub enum ChangeType {
     Added,
     Modified,
-    Deleted,
+    Removed,
 }
 
 #[derive(Clone, Debug)]
@@ -137,6 +137,7 @@ impl<'a> Differ<'a> {
                     tracing::error!("error importing resource: {:?}", temp_path);
                     return None;
                 }
+                tracing::debug!("successfully imported resource: {:?}", temp_path);
                 return Some(res);
             }
         }
@@ -194,10 +195,11 @@ impl<'a> Differ<'a> {
             return None;
         };
 
-        return self
+        self
             .loaded_ext_resources
             .borrow_mut()
-            .insert(path.clone(), resource);
+            .insert(path.clone(), resource.clone());
+		Some(resource)
     }
 
     #[instrument(skip_all, level = tracing::Level::DEBUG)]
@@ -213,10 +215,6 @@ impl<'a> Differ<'a> {
             tracing::debug!("no changes");
             return ProjectDiff::default();
         }
-
-        let patches: Vec<Patch> = self.branch_state
-            .doc_handle
-            .with_doc(|d| get_automerge_doc_diff(d, &self.prev_heads, &self.curr_heads));
 
         let mut diffs: Vec<Diff> = vec![];
         // Get old and new content
@@ -248,7 +246,7 @@ impl<'a> Differ<'a> {
                     (path, content, ChangeType::Modified)
                 }
                 FileSystemEvent::FileDeleted(path) => {
-                    (path, &FileContent::Deleted, ChangeType::Deleted)
+                    (path, &FileContent::Deleted, ChangeType::Removed)
                 }
             };
             let path = path.to_string_lossy().to_string();
@@ -268,7 +266,7 @@ impl<'a> Differ<'a> {
 
             if old_content_type == VariantType::OBJECT || new_content_type == VariantType::OBJECT {
                 // This is a scene file, so use a scene diff
-                diffs.push(Diff::Scene(self.get_scene_diff(&path, &patches)));
+                diffs.push(Diff::Scene(self.get_scene_diff(&path)));
             } else if old_content_type != VariantType::STRING
                 && new_content_type != VariantType::STRING
             {
