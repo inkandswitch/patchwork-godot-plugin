@@ -238,14 +238,6 @@ impl GodotScene {
         }
     }
 
-    // fn get_ext_resource_path(&self, ext_resource_id: &str) -> Option<String> {
-    //     let ext_resource = self.ext_resources.get(ext_resource_id);
-    //     if let Some(ext_resource) = ext_resource {
-    //         return Some(ext_resource.path.clone());
-    //     }
-    //     None
-    // }
-
 	pub fn hydrate_at(
         doc: &Automerge,
         path: &str,

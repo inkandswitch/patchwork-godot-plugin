@@ -26,8 +26,6 @@ use crate::interop::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigA
 use crate::parser::godot_parser::{GodotScene, TypeOrInstance};
 use crate::project::project_driver::{ConnectionThreadError, DocHandleType, ProjectDriver, InputEvent, OutputEvent};
 use crate::project::project_api::{BranchViewModel, ChangeViewModel, ProjectViewModel};
-// use crate::interop::godot_helpers::ToDict;
-// use crate::interop::godot_helpers::VariantTypeGetter;
 
 /// Represents the state of the currently checked out branch.
 #[derive(Debug, Clone)]
@@ -745,39 +743,6 @@ impl Project {
             _ => None
         }
     }
-
-    // fn write_variant_to_file(&self, path: &String, variant: &Variant) {
-    //     // mkdir -p everything
-    //     let dir = PathBuf::from(path)
-    //         .parent()
-    //         .unwrap()
-    //         .to_str()
-    //         .unwrap()
-    //         .to_string();
-    //     // do the mkdir
-    //     // get the first part "e.g. res:// or user://"
-    //     let root = path.split("//").nth(0).unwrap_or("").to_string() + "//";
-    //     let dir_access = DirAccess::open(&root);
-    //     if let Some(mut dir_access) = dir_access {
-    //         let _ = dir_access.make_dir_recursive(&GString::from(dir));
-    //     }
-
-    //     let file = FileAccess::open(path, ModeFlags::WRITE);
-    //     if let None = file {
-    //         tracing::error!("error opening file: {}", path);
-    //         return;
-    //     }
-    //     let mut file = file.unwrap();
-    //     // if it's a packedbytearray, write the bytes
-    //     if let Ok(packed_byte_array) = variant.try_to::<PackedByteArray>() {
-    //         file.store_buffer(&packed_byte_array);
-    //     } else if let Ok(string) = variant.try_to::<String>() {
-    //         file.store_line(&GString::from(string));
-    //     } else {
-    //         tracing::error!("unsupported variant type!! {:?}", variant.type_id());
-    //     }
-    //     file.close();
-    // }
 
 	pub fn get_cached_diff(
 		&self,
