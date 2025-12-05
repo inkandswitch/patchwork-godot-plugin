@@ -26,30 +26,44 @@ use crate::{
     project::project::Project,
 };
 
+/// The type of change that occurred in a diff.
 #[derive(Clone, Debug)]
 pub enum ChangeType {
+	/// The element was added.
     Added,
+	/// The element was modified.
     Modified,
+	/// The element was removed.
     Removed,
 }
 
+/// A diff for a single file.
 #[derive(Clone, Debug)]
 pub enum Diff {
+	/// A scene file diff.
     Scene(SceneDiff),
+	/// A resource file diff.
     Resource(ResourceDiff),
+	/// A text file diff.
     Text(TextDiff),
 }
 
+/// A diff for an entire project.
 #[derive(Clone, Default, Debug)]
 pub struct ProjectDiff {
+	/// The file diffs in the project diff.
     pub file_diffs: Vec<Diff>,
 }
 
+/// Computes diffs between two sets of heads in a project.
 pub struct Differ<'a> {
+	/// The project we're diffing.
     pub(super) project: &'a Project,
 
-    /// The heads we're currently diffing between.
+    /// The current heads we're diffing between.
     pub(super) curr_heads: Vec<ChangeHash>,
+
+	/// The previous heads we're diffing between.
     pub(super) prev_heads: Vec<ChangeHash>,
 
     /// Cache that stores our loaded ExtResources so far.
@@ -60,6 +74,7 @@ pub struct Differ<'a> {
 }
 
 impl<'a> Differ<'a> {
+	/// Creates a new [Differ].
 	pub fn new(
 		project: &'a Project,
 		curr_heads: Vec<ChangeHash>,
@@ -82,6 +97,7 @@ impl<'a> Differ<'a> {
 		}
 	}
 
+	/// Saves and imports a temp resource at a given path for the specified heads.
     fn get_resource_at(
         &self,
         path: &String,
@@ -102,6 +118,7 @@ impl<'a> Differ<'a> {
         );
     }
 
+	/// Creates a temporary resource from file content at a given path.
     pub(super) fn create_temp_resource_from_content(
         &self,
         path: &str,
@@ -151,6 +168,7 @@ impl<'a> Differ<'a> {
         None
     }
 
+	/// Gets the file content at a given path for the specified heads.
     pub(super) fn get_file_at(
         &self,
         path: &String,
@@ -202,6 +220,7 @@ impl<'a> Differ<'a> {
 		Some(resource)
     }
 
+	/// Computes the diff between the two sets of heads.
     #[instrument(skip_all, level = tracing::Level::DEBUG)]
     pub fn get_diff(&self) -> ProjectDiff {
         tracing::debug!(
