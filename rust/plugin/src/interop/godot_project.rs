@@ -321,7 +321,7 @@ impl GodotProject {
 		let Ok(hash) = ChangeHash::from_str(&selected_hash) else {
 			return Variant::nil();
 		};
-		let Some(diff) = self.project.get_diff(hash) else {
+		let Some(diff) = ProjectViewModel::get_diff(&self.project, hash) else {
 			return Variant::nil();
 		};
 		Variant::from(diff_view_model_to_dict(&diff))
@@ -428,6 +428,11 @@ impl GodotProject {
 		self.base_mut().set_process(true);
 		return true;
 	}
+
+	// bit of a hack to clear the diff cache when UI is loaded, to facilitate debugging
+	fn clear_diff_cache(&self) {
+		self.project.clear_diff_cache();
+	}
 }
 
 
@@ -512,6 +517,9 @@ impl GodotProjectPlugin {
 	#[func]
 	fn _on_reload_ui(&mut self) {
 		self.ui_needs_update = true;
+		let proj = GodotProject::get_singleton();
+		let b = proj.bind();
+		b.clear_diff_cache();
 	}
 
 	fn add_sidebar(&mut self) {

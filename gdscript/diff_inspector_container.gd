@@ -604,8 +604,6 @@ func add_diff(diff: Dictionary) -> void:
 	var size = diff_result.size()
 	# print("Diff size: ", size)
 	for file in diff_result.keys():
-		if (file.to_lower().ends_with(".import")):
-			continue
 		# print("Adding file diff result for ", file)
 		add_FileDiffResult(file, diff_result[file])
 
