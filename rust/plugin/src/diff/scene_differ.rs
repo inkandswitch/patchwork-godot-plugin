@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use automerge::Automerge;
 use godot::{
     builtin::{StringName, Variant},
     classes::ClassDb,
@@ -121,32 +120,18 @@ impl std::fmt::Display for VariantStrValue {
 /// Implement scene-related functions on the Differ
 impl Differ<'_> {
     /// Generate a [SceneDiff] between the previous and current heads.
-    pub(super) fn get_scene_diff(&self, path: &String) -> SceneDiff {
-        // Get old and new scenes for content comparison
-        let old_scene = match self
-            .branch_state
-            .doc_handle
-            .with_doc(|d: &Automerge| GodotScene::hydrate_at(d, &path, &self.prev_heads))
-        {
-            Ok(scene) => Some(scene),
-            Err(_) => None,
-        };
-
-        let new_scene = match self
-            .branch_state
-            .doc_handle
-            .with_doc(|d: &Automerge| GodotScene::hydrate_at(d, &path, &self.curr_heads))
-        {
-            Ok(scene) => Some(scene),
-            Err(_) => None,
-        };
-
+    pub(super) fn get_scene_diff(
+        &self,
+        path: &String,
+        new_scene: Option<&GodotScene>,
+        old_scene: Option<&GodotScene>,
+    ) -> SceneDiff {
         let mut node_ids = HashSet::new();
         let mut sub_resource_ids = HashSet::new();
         let mut ext_resource_ids = HashSet::new();
 
         // Collect all the relevant node IDs, sub resource IDs, and ext resource IDs from both scenes.
-        if let Some(ref old_scene) = old_scene {
+        if let Some(old_scene) = old_scene {
             Self::get_ids_from_scene(
                 old_scene,
                 &mut node_ids,
@@ -154,7 +139,7 @@ impl Differ<'_> {
                 &mut sub_resource_ids,
             );
         }
-        if let Some(ref new_scene) = new_scene {
+        if let Some(new_scene) = new_scene {
             Self::get_ids_from_scene(
                 new_scene,
                 &mut node_ids,
@@ -170,13 +155,8 @@ impl Differ<'_> {
             let old_node = old_scene.as_ref().and_then(|s| s.get_node(*node_id));
             let new_node = new_scene.as_ref().and_then(|s| s.get_node(*node_id));
 
-            let Some(diff) = self.get_node_diff(
-                *node_id,
-                old_node,
-                new_node,
-                old_scene.as_ref(),
-                new_scene.as_ref(),
-            ) else {
+            let Some(diff) = self.get_node_diff(*node_id, old_node, new_node, old_scene, new_scene)
+            else {
                 // If the node has no changes or is otherwise invalid, just skip this one.
                 continue;
             };

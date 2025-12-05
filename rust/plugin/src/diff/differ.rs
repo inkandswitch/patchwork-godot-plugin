@@ -6,7 +6,7 @@ use std::{
 
 use automerge::ChangeHash;
 use godot::{
-    builtin::{GString, Variant, VariantType},
+    builtin::{GString, Variant},
     classes::{ResourceLoader, resource_loader::CacheMode},
     meta::ToGodot,
 };
@@ -16,7 +16,7 @@ use crate::{
     diff::{resource_differ::ResourceDiff, scene_differ::SceneDiff, text_differ::TextDiff},
     fs::{file_system_driver::FileSystemEvent, file_utils::FileContent},
     helpers::{branch::BranchState, utils::ToShortForm},
-    interop::{godot_accessors::PatchworkEditorAccessor, godot_helpers::VariantTypeGetter},
+    interop::{godot_accessors::PatchworkEditorAccessor},
     project::project::Project,
 };
 
@@ -268,8 +268,18 @@ impl<'a> Differ<'a> {
             if matches!(old_file_content, FileContent::Scene(_))
                 || matches!(new_file_content, FileContent::Scene(_))
             {
+                let old_scene = match old_file_content {
+                    FileContent::Scene(s) => Some(s),
+                    _ => None,
+                };
+                let new_scene = match new_file_content {
+                    FileContent::Scene(s) => Some(s),
+                    _ => None,
+                };
                 // This is a scene file, so use a scene diff
-                diffs.push(Diff::Scene(self.get_scene_diff(&path)));
+                diffs.push(Diff::Scene(
+                    self.get_scene_diff(&path, old_scene, new_scene),
+                ));
             } else if matches!(old_file_content, FileContent::Binary(_))
                 || matches!(new_file_content, FileContent::Binary(_))
             {

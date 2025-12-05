@@ -9,10 +9,6 @@ use crate::project::project_api::{BranchViewModel, ChangeViewModel, DiffViewMode
 use crate::helpers::utils::{ChangedFile};
 use godot::builtin::Variant;
 
-pub trait VariantTypeGetter {
-	fn get_variant_type(&self) -> VariantType;
-}
-
 pub trait GodotConvertExt {
     /// The type through which `Self` is represented in Godot.
     type Via: GodotType;
