@@ -4,7 +4,7 @@ use std::{
     path::PathBuf,
 };
 
-use automerge::{ChangeHash};
+use automerge::ChangeHash;
 use godot::{
     builtin::{GString, Variant, VariantType},
     classes::{ResourceLoader, resource_loader::CacheMode},
@@ -13,15 +13,9 @@ use godot::{
 use tracing::instrument;
 
 use crate::{
-    diff::{
-        resource_differ::ResourceDiff, scene_differ::SceneDiff,
-        text_differ::TextDiff,
-    },
+    diff::{resource_differ::ResourceDiff, scene_differ::SceneDiff, text_differ::TextDiff},
     fs::{file_system_driver::FileSystemEvent, file_utils::FileContent},
-    helpers::{
-        branch::BranchState,
-        utils::{ToShortForm},
-    },
+    helpers::{branch::BranchState, utils::ToShortForm},
     interop::{godot_accessors::PatchworkEditorAccessor, godot_helpers::VariantTypeGetter},
     project::project::Project,
 };
@@ -29,41 +23,41 @@ use crate::{
 /// The type of change that occurred in a diff.
 #[derive(Clone, Debug)]
 pub enum ChangeType {
-	/// The element was added.
+    /// The element was added.
     Added,
-	/// The element was modified.
+    /// The element was modified.
     Modified,
-	/// The element was removed.
+    /// The element was removed.
     Removed,
 }
 
 /// A diff for a single file.
 #[derive(Clone, Debug)]
 pub enum Diff {
-	/// A scene file diff.
+    /// A scene file diff.
     Scene(SceneDiff),
-	/// A resource file diff.
+    /// A resource file diff.
     Resource(ResourceDiff),
-	/// A text file diff.
+    /// A text file diff.
     Text(TextDiff),
 }
 
 /// A diff for an entire project.
 #[derive(Clone, Default, Debug)]
 pub struct ProjectDiff {
-	/// The file diffs in the project diff.
+    /// The file diffs in the project diff.
     pub file_diffs: Vec<Diff>,
 }
 
 /// Computes diffs between two sets of heads in a project.
 pub struct Differ<'a> {
-	/// The project we're diffing.
+    /// The project we're diffing.
     pub(super) project: &'a Project,
 
     /// The current heads we're diffing between.
     pub(super) curr_heads: Vec<ChangeHash>,
 
-	/// The previous heads we're diffing between.
+    /// The previous heads we're diffing between.
     pub(super) prev_heads: Vec<ChangeHash>,
 
     /// Cache that stores our loaded ExtResources so far.
@@ -74,30 +68,29 @@ pub struct Differ<'a> {
 }
 
 impl<'a> Differ<'a> {
-	/// Creates a new [Differ].
-	pub fn new(
-		project: &'a Project,
-		curr_heads: Vec<ChangeHash>,
-		prev_heads: Vec<ChangeHash>,
-		branch_state: &'a BranchState,
-	) -> Self {
-
+    /// Creates a new [Differ].
+    pub fn new(
+        project: &'a Project,
+        curr_heads: Vec<ChangeHash>,
+        prev_heads: Vec<ChangeHash>,
+        branch_state: &'a BranchState,
+    ) -> Self {
         let curr_heads = if curr_heads.len() == 0 {
             branch_state.synced_heads.clone()
         } else {
             curr_heads
         };
 
-		Self {
-			project,
-			curr_heads,
-			prev_heads,
-			loaded_ext_resources: RefCell::new(HashMap::new()),
-			branch_state,
-		}
-	}
+        Self {
+            project,
+            curr_heads,
+            prev_heads,
+            loaded_ext_resources: RefCell::new(HashMap::new()),
+            branch_state,
+        }
+    }
 
-	/// Saves and imports a temp resource at a given path for the specified heads.
+    /// Saves and imports a temp resource at a given path for the specified heads.
     fn get_resource_at(
         &self,
         path: &String,
@@ -118,7 +111,7 @@ impl<'a> Differ<'a> {
         );
     }
 
-	/// Creates a temporary resource from file content at a given path.
+    /// Creates a temporary resource from file content at a given path.
     pub(super) fn create_temp_resource_from_content(
         &self,
         path: &str,
@@ -168,7 +161,7 @@ impl<'a> Differ<'a> {
         None
     }
 
-	/// Gets the file content at a given path for the specified heads.
+    /// Gets the file content at a given path for the specified heads.
     pub(super) fn get_file_at(
         &self,
         path: &String,
@@ -213,14 +206,13 @@ impl<'a> Differ<'a> {
             return None;
         };
 
-        self
-            .loaded_ext_resources
+        self.loaded_ext_resources
             .borrow_mut()
             .insert(path.clone(), resource.clone());
-		Some(resource)
+        Some(resource)
     }
 
-	/// Computes the diff between the two sets of heads.
+    /// Computes the diff between the two sets of heads.
     #[instrument(skip_all, level = tracing::Level::DEBUG)]
     pub fn get_diff(&self) -> ProjectDiff {
         tracing::debug!(
@@ -272,43 +264,35 @@ impl<'a> Differ<'a> {
             let old_file_content = old_file_contents
                 .get(&path)
                 .unwrap_or(&FileContent::Deleted);
-            let old_content_type = old_file_content.get_variant_type();
-            let new_content_type = new_file_content.get_variant_type();
-            let old_content = match old_content_type {
-                VariantType::NIL => None,
-                _ => Some(old_file_content),
-            };
-            let new_content = match new_content_type {
-                VariantType::NIL => None,
-                _ => Some(new_file_content),
-            };
 
-            if old_content_type == VariantType::OBJECT || new_content_type == VariantType::OBJECT {
+            if matches!(old_file_content, FileContent::Scene(_))
+                || matches!(new_file_content, FileContent::Scene(_))
+            {
                 // This is a scene file, so use a scene diff
                 diffs.push(Diff::Scene(self.get_scene_diff(&path)));
-            } else if old_content_type != VariantType::STRING
-                && new_content_type != VariantType::STRING
+            } else if matches!(old_file_content, FileContent::Binary(_))
+                || matches!(new_file_content, FileContent::Binary(_))
             {
                 // This is a binary file, so use a resource diff
                 diffs.push(Diff::Resource(self.get_resource_diff(
                     &path,
                     change_type,
-                    old_content,
-                    new_content
+                    old_file_content,
+                    new_file_content,
                 )));
-            } else if old_content_type != VariantType::PACKED_BYTE_ARRAY
-                && new_content_type != VariantType::PACKED_BYTE_ARRAY
+            } else if matches!(old_file_content, FileContent::String(_))
+                || matches!(new_file_content, FileContent::String(_))
             {
                 // This is a text file, so do a text diff.
                 diffs.push(Diff::Text(self.get_text_diff(
                     &path,
                     change_type,
-                    old_content,
-                    new_content,
+                    old_file_content,
+                    new_file_content,
                 )));
             } else {
                 // We have no idea what type of file this is, so skip it
-				continue;
+                continue;
             }
         }
 

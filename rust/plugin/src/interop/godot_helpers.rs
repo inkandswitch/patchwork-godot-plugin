@@ -211,17 +211,6 @@ impl ToGodot for FileContent {
 	}
 }
 
-impl VariantTypeGetter for FileContent {
-	fn get_variant_type(&self) -> VariantType {
-		match self {
-			FileContent::String(_) => VariantType::STRING,
-			FileContent::Binary(_) => VariantType::PACKED_BYTE_ARRAY,
-			FileContent::Scene(_) => VariantType::OBJECT,
-			FileContent::Deleted => VariantType::NIL,
-		}
-	}
-}
-
 impl GodotConvertExt for Vec<ChangedFile> {
 	type Via = Array<PackedStringArray>;
 }
