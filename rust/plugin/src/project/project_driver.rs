@@ -119,7 +119,6 @@ pub enum OutputEvent {
 enum SubscriptionMessage {
     Changed {
         doc_handle: DocHandle,
-        // diff: Vec<automerge::Patch>,
     },
     Added {
         doc_handle: DocHandle,
@@ -420,7 +419,7 @@ impl ProjectDriver {
 
                     message = state.all_doc_changes.select_next_some() => {
                        let doc_handle = match message {
-                            SubscriptionMessage::Changed { doc_handle /*, diff: _*/ } => {
+                            SubscriptionMessage::Changed { doc_handle } => {
                                 doc_handle
                             },
                             SubscriptionMessage::Added { doc_handle } => {
@@ -1130,14 +1129,14 @@ impl DriverState {
                         },
                         is_main: branch_doc_handle.document_id()
                             == self.main_branch_doc_handle.document_id(),
-						// created_by: branch.created_by.clone(),
-						// merged_into: match branch.merged_into {
-						// 	Some(merged_into) => match DocumentId::from_str(&merged_into) {
-						// 		Ok(merged_into) => Some(merged_into),
-						// 		Err(_) => None,
-						// 	},
-						// 	None => None,
-						// },
+						created_by: branch.created_by.clone(),
+						merged_into: match branch.merged_into {
+							Some(merged_into) => match DocumentId::from_str(&merged_into) {
+								Ok(merged_into) => Some(merged_into),
+								Err(_) => None,
+							},
+							None => None,
+						},
 						revert_info: match branch.reverted_to {
 							Some(reverted_to) => Some(BranchStateRevertInfo {
 								reverted_to: reverted_to.iter().map(|h| ChangeHash::from_str(h).unwrap()).collect(),
@@ -1202,7 +1201,6 @@ impl DriverState {
             binary_doc_handle.document_id().clone(),
             BinaryDocState {
                 doc_handle: Some(binary_doc_handle.clone()),
-                // path: path.clone(),
             },
         );
 
@@ -1280,12 +1278,12 @@ fn clone_doc(repo_handle: &RepoHandle, doc_handle: &DocHandle) -> DocHandle {
 
 fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = SubscriptionMessage> + Send {
     futures::stream::unfold(handle, |doc_handle| async {
-        let _/*heads_before */ = doc_handle.with_doc(|d| d.get_heads());
+		// There's currently a bug where removing this line causes changed() to not resolve the future (despite this line not actually doing anything).
+		// So, it'll spam with Changed events.
+        let _ = doc_handle.with_doc(|d| d.get_heads());
+		// TODO: this will probably break on upgrading automerge_repo because changed() is currently greedy, but will eventually check
+		// to see if there's an actual change before resolving the future. We rely on the greedy behavior here.
         let _ = doc_handle.changed().await;
-        // let heads_after = doc_handle.with_doc(|d| d.get_heads());
-        // let diff = doc_handle.with_doc(|d| {
-        //     get_automerge_doc_diff(d, &heads_before, &heads_after)
-        // });
 
         Some((
             SubscriptionMessage::Changed {

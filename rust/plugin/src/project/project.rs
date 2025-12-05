@@ -816,39 +816,6 @@ impl Project {
         }
     }
 
-    // fn write_variant_to_file(&self, path: &String, variant: &Variant) {
-    //     // mkdir -p everything
-    //     let dir = PathBuf::from(path)
-    //         .parent()
-    //         .unwrap()
-    //         .to_str()
-    //         .unwrap()
-    //         .to_string();
-    //     // do the mkdir
-    //     // get the first part "e.g. res:// or user://"
-    //     let root = path.split("//").nth(0).unwrap_or("").to_string() + "//";
-    //     let dir_access = DirAccess::open(&root);
-    //     if let Some(mut dir_access) = dir_access {
-    //         let _ = dir_access.make_dir_recursive(&GString::from(dir));
-    //     }
-
-    //     let file = FileAccess::open(path, ModeFlags::WRITE);
-    //     if let None = file {
-    //         tracing::error!("error opening file: {}", path);
-    //         return;
-    //     }
-    //     let mut file = file.unwrap();
-    //     // if it's a packedbytearray, write the bytes
-    //     if let Ok(packed_byte_array) = variant.try_to::<PackedByteArray>() {
-    //         file.store_buffer(&packed_byte_array);
-    //     } else if let Ok(string) = variant.try_to::<String>() {
-    //         file.store_line(&GString::from(string));
-    //     } else {
-    //         tracing::error!("unsupported variant type!! {:?}", variant.type_id());
-    //     }
-    //     file.close();
-    // }
-
     fn get_varstr_value(&self, prop_value: String) -> VariantStrValue {
         if prop_value.starts_with("Resource(") || prop_value.starts_with("SubResource(") || prop_value.starts_with("ExtResource(") {
             let id = prop_value
