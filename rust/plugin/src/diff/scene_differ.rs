@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use automerge::{Automerge};
+use automerge::Automerge;
 use godot::{
     builtin::{StringName, Variant},
     classes::ClassDb,
@@ -370,10 +370,8 @@ impl Differ<'_> {
             (Some(old), Some(new)) => (old, new), // keep looking
         };
 
-        // If ID or type has changed, subresource has definitely changed.
-        if old_resource.id != new_resource.id
-            || old_resource.resource_type != new_resource.resource_type
-        {
+        // If type has changed, subresource has definitely changed.
+        if old_resource.resource_type != new_resource.resource_type {
             return true;
         }
 
@@ -419,8 +417,7 @@ impl Differ<'_> {
             (Some(old), Some(new)) => (old, new), // keep looking
         };
 
-        old_resource.id != new_resource.id
-            || old_resource.resource_type != new_resource.resource_type
+        old_resource.resource_type != new_resource.resource_type
             || old_resource.path != new_resource.path
             || old_resource.uid != new_resource.uid
     }
@@ -441,10 +438,6 @@ impl Differ<'_> {
             (Some(old), Some(new)) => (old, new), // keep looking
         };
 
-        // If the value itself has changed, easy exit
-        if old_value != new_value {
-            return true;
-        }
         // if either scene is null, we did change.
         let Some(old_scene) = old_scene else {
             return true;
@@ -472,8 +465,13 @@ impl Differ<'_> {
                 new_scene.ext_resources.get(new_value),
             ),
             // No special lookup needed for regular Variants (definitely) or ResourcePaths (I think?)
-            (VariantStrValue::ResourcePath(_), VariantStrValue::ResourcePath(_)) => false,
-            (VariantStrValue::Variant(_), VariantStrValue::Variant(_)) => false,
+            (
+                VariantStrValue::ResourcePath(old_value),
+                VariantStrValue::ResourcePath(new_value),
+            ) => old_value != new_value,
+            (VariantStrValue::Variant(old_value), VariantStrValue::Variant(new_value)) => {
+                old_value != new_value
+            }
             // If the types are different, we've for sure changed
             _ => true,
         }
@@ -577,8 +575,8 @@ impl Differ<'_> {
                 // if this is a Resource() with the format "Resource(uid, path)", we need to extract the path
                 if id.contains("\", \"") {
                     // discard the uid
-					id = id.split("\", \"").nth(1).unwrap().trim().to_string();
-				}
+                    id = id.split("\", \"").nth(1).unwrap().trim().to_string();
+                }
                 return VariantStrValue::ResourcePath(id);
             }
         }
