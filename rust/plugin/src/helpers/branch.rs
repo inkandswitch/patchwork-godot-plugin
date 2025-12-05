@@ -3,12 +3,6 @@ use automerge_repo::{DocHandle, DocumentId};
 use autosurgeon::{Hydrate, Reconcile};
 use std::collections::{HashMap, HashSet};
 
-
-#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
-struct BinaryFile {
-    content: Vec<u8>,
-}
-
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
 pub struct FileEntry {
     pub content: Option<String>,
@@ -55,7 +49,6 @@ pub struct Branch {
 #[derive(Debug, Clone)]
 pub struct BinaryDocState {
     pub doc_handle: Option<DocHandle>, // is null if the binary doc is being requested but not loaded yet
-    pub path: String,
 }
 
 #[derive(Debug, Clone)]
@@ -85,6 +78,9 @@ pub struct BranchState {
     pub merge_info: Option<BranchStateMergeInfo>,
 	pub revert_info: Option<BranchStateRevertInfo>,
     pub is_main: bool,
+	// These are currently not used by anything, but we want to keep them for later use.
+	#[allow(dead_code)]
 	pub created_by: Option<String>,
+	#[allow(dead_code)]
 	pub merged_into: Option<DocumentId>,
 }

@@ -18,6 +18,10 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Update Rust
+      shell: sh
+      run: |
+        rustup update
     - name: Show targets
       shell: sh
       run: |

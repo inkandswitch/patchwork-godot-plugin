@@ -6,11 +6,11 @@ use automerge_repo::{DocumentId};
 use godot::meta::GodotType;
 use godot::{prelude::*, meta::ToGodot, meta::GodotConvert};
 // use godot::prelude::{GString, Variant, Dc};
-use crate::file_utils::FileContent;
-use crate::godot_parser::{GodotNode, TypeOrInstance};
-use crate::godot_project_api::{BranchViewModel, ChangeViewModel, DiffViewModel, SyncStatus};
-use crate::utils::{ChangedFile};
-use crate::differ::{DiffLine, DiffHunk, TextDiffFile};
+use crate::fs::file_utils::FileContent;
+use crate::parser::godot_parser::{GodotNode, TypeOrInstance};
+use crate::project::project_api::{BranchViewModel, ChangeViewModel, DiffViewModel, SyncStatus};
+use crate::helpers::utils::{ChangedFile};
+use crate::diff::differ::{DiffLine, DiffHunk, TextDiffFile};
 use godot::builtin::Variant;
 
 pub trait VariantTypeGetter {
@@ -138,7 +138,7 @@ impl ToGodotExt for PathBuf {
 pub(crate) fn branch_view_model_to_dict(branch: &impl BranchViewModel) -> Dictionary {
 	let merge_into = branch.get_merge_into();
 	let var = merge_into.to_variant();
-	dict! {
+	vdict! {
 		"id": branch.get_id().to_godot(),
 		"name": branch.get_name(),
 		"parent": branch.get_parent().to_variant(),
@@ -152,14 +152,14 @@ pub(crate) fn branch_view_model_to_dict(branch: &impl BranchViewModel) -> Dictio
 }
 
 pub(crate) fn diff_view_model_to_dict(diff: &impl DiffViewModel) -> Dictionary {
-	dict! {
+	vdict! {
 		"dict": diff.get_dict().to_godot(),
 		"title": diff.get_title().to_godot()
 	}
 }
 
 pub(crate) fn change_view_model_to_dict(change: &impl ChangeViewModel) -> Dictionary {
-	dict! {
+	vdict! {
 		"hash": change.get_hash().to_string(),
 		"username": change.get_username(),
 		"is_synced": change.is_synced(),
@@ -180,7 +180,7 @@ impl ToGodot for SyncStatus {
 	type ToVia<'v> = Dictionary;
 
 	fn to_godot(&self) -> Dictionary {
-		dict! {
+		vdict! {
 			"state": match self {
 				SyncStatus::Unknown => "unknown",
 				SyncStatus::Disconnected(_) => "disconnected",
@@ -294,7 +294,7 @@ impl GodotConvert for DiffLine {
 impl ToGodot for DiffLine {
 	type ToVia<'v> = Dictionary where Self: 'v;
 	fn to_godot(&self) -> Self::ToVia<'_> {
-		dict! {
+		vdict! {
 			"new_line_no": self.new_line_no,
 			"old_line_no": self.old_line_no,
 			"content": self.content.to_godot(),
@@ -313,7 +313,7 @@ impl GodotConvert for DiffHunk {
 impl ToGodot for DiffHunk {
 	type ToVia<'v> = Dictionary where Self: 'v;
 	fn to_godot(&self) -> Self::ToVia<'_> {
-		dict! {
+		vdict! {
 			"new_start": self.new_start,
 			"old_start": self.old_start,
 			"new_lines": self.new_lines,
@@ -333,7 +333,7 @@ impl GodotConvert for TextDiffFile {
 impl ToGodot for TextDiffFile {
 	type ToVia<'v> = Dictionary where Self: 'v;
 	fn to_godot(&self) -> Self::ToVia<'_> {
-		dict! {
+		vdict! {
 			"new_file": self.new_file.to_godot(),
 			"old_file": self.old_file.to_godot(),
 			"diff_hunks": self.diff_hunks.iter().map(|hunk| hunk.to_godot()).collect::<Array<Dictionary>>(),

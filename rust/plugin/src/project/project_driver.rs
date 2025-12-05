@@ -8,31 +8,30 @@ use std::pin::Pin;
 use std::{collections::HashMap, str::FromStr};
 use tokio::task::JoinHandle;
 
-use crate::branch::{BinaryDocState, BranchState, BranchStateForkInfo, BranchStateMergeInfo, BranchStateRevertInfo};
-use crate::file_utils::FileContent;
-use crate::godot_parser::GodotScene;
-use crate::utils::{
-    ChangeType, ChangedFile, CommitMetadata, MergeMetadata, ToShortForm, commit_with_attribution_and_timestamp, get_automerge_doc_diff, get_default_patch_log, heads_to_vec_string, print_branch_state
+use crate::helpers::branch::{BinaryDocState, BranchState, BranchStateForkInfo, BranchStateMergeInfo, BranchStateRevertInfo};
+use crate::fs::file_utils::FileContent;
+use crate::parser::godot_parser::GodotScene;
+use crate::helpers::doc_utils::SimpleDocReader;
+use crate::helpers::utils::ToShortForm;
+use crate::helpers::utils::{
+    ChangeType, ChangedFile, CommitMetadata, MergeMetadata, commit_with_attribution_and_timestamp, get_default_patch_log, heads_to_vec_string, print_branch_state
 };
 use crate::{
-    branch::{BranchesMetadataDoc, GodotProjectDoc, ForkInfo, MergeInfo, Branch},
-    utils::get_linked_docs_of_branch,
+    helpers::branch::{BranchesMetadataDoc, GodotProjectDoc, ForkInfo, MergeInfo, Branch},
+    helpers::utils::get_linked_docs_of_branch,
 };
 use automerge::{
-    transaction::Transactable, ChangeHash, ObjType, PatchLog, ReadDoc,
+    transaction::Transactable, ChangeHash, ObjType, ReadDoc,
     ROOT,
 };
 use automerge_repo::{tokio::FsStorage, ConnDirection, DocHandle, DocumentId, RepoHandle};
-use autosurgeon::{Reconcile, Reconciler, hydrate, reconcile };
+use autosurgeon::{hydrate, reconcile };
 use futures::{
     channel::mpsc::{UnboundedReceiver, UnboundedSender},
     StreamExt,
 };
 
 use tokio::{net::TcpStream, runtime::Runtime};
-
-use crate::{doc_utils::SimpleDocReader};
-
 
 const SERVER_REPO_ID: &str = "sync-server";
 
@@ -120,7 +119,6 @@ pub enum OutputEvent {
 enum SubscriptionMessage {
     Changed {
         doc_handle: DocHandle,
-        diff: Vec<automerge::Patch>,
     },
     Added {
         doc_handle: DocHandle,
@@ -171,7 +169,7 @@ pub enum ConnectionThreadError {
 }
 
 #[derive(Debug)]
-pub struct GodotProjectDriver {
+pub struct ProjectDriver {
     runtime: Runtime,
     repo_handle: RepoHandle,
 	server_url: String,
@@ -181,7 +179,7 @@ pub struct GodotProjectDriver {
     spawned_thread: Option<JoinHandle<()>>,
 }
 
-impl GodotProjectDriver {
+impl ProjectDriver {
     pub fn create(storage_folder_path: String, server_url: String) -> Self {
         let runtime: Runtime = tokio::runtime::Builder::new_multi_thread()
 			.worker_threads(4)
@@ -380,8 +378,6 @@ impl GodotProjectDriver {
             let mut sync_server_conn_info_changes = repo_handle.peer_conn_info_changes(RepoId::from(SERVER_REPO_ID)).fuse();
 
             loop {
-                let repo_handle_clone = repo_handle.clone();
-
                 futures::select! {
 
                     next = sync_server_conn_info_changes.next() => {
@@ -423,7 +419,7 @@ impl GodotProjectDriver {
 
                     message = state.all_doc_changes.select_next_some() => {
                        let doc_handle = match message {
-                            SubscriptionMessage::Changed { doc_handle, diff: _ } => {
+                            SubscriptionMessage::Changed { doc_handle } => {
                                 doc_handle
                             },
                             SubscriptionMessage::Added { doc_handle } => {
@@ -1200,12 +1196,11 @@ impl DriverState {
         }
     }
 
-    fn add_binary_doc_handle(&mut self, path: &String, binary_doc_handle: &DocHandle) {
+    fn add_binary_doc_handle(&mut self, _path: &String, binary_doc_handle: &DocHandle) {
         self.binary_doc_states.insert(
             binary_doc_handle.document_id().clone(),
             BinaryDocState {
                 doc_handle: Some(binary_doc_handle.clone()),
-                path: path.clone(),
             },
         );
 
@@ -1283,17 +1278,17 @@ fn clone_doc(repo_handle: &RepoHandle, doc_handle: &DocHandle) -> DocHandle {
 
 fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = SubscriptionMessage> + Send {
     futures::stream::unfold(handle, |doc_handle| async {
-        let heads_before = doc_handle.with_doc(|d| d.get_heads());
+		// There's currently a bug where removing this line causes changed() to not resolve the future (despite this line not actually doing anything).
+		// So, it'll spam with Changed events.
+        let _ = doc_handle.with_doc(|d| d.get_heads());
+		// TODO: this will probably break on upgrading automerge_repo because changed() is currently greedy, but will eventually check
+		// to see if there's an actual change before resolving the future. We rely on the greedy behavior here.
         let _ = doc_handle.changed().await;
-        let heads_after = doc_handle.with_doc(|d| d.get_heads());
-        let diff = doc_handle.with_doc(|d| {
-            get_automerge_doc_diff(d, &heads_before, &heads_after)
-        });
 
         Some((
             SubscriptionMessage::Changed {
                 doc_handle: doc_handle.clone(),
-                diff,
+                // diff,
             },
             doc_handle,
         ))

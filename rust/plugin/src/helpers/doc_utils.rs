@@ -1,5 +1,6 @@
 use automerge::{transaction::Transaction, Automerge, ChangeHash, ObjId, Prop, ReadDoc, Value};
 
+#[allow(dead_code)]
 pub trait SimpleDocReader {
     fn get_bytes<O: AsRef<ObjId>, P: Into<Prop>>(&self, obj: O, prop: P) -> Option<Vec<u8>>;
 

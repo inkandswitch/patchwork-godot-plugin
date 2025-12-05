@@ -1,10 +1,11 @@
-use crate::{godot_helpers::ToGodotExt, patchwork_config::PatchworkConfig};
 use godot::{
     builtin::{GString, PackedStringArray, Variant},
     classes::{ClassDb, EditorInterface, Object},
     meta::ToGodot,
     obj::Gd,
 };
+
+use crate::interop::{godot_helpers::ToGodotExt, patchwork_config::PatchworkConfig};
 
 /// Allows Rust code to easily get and set Patchwork configuration values via Godot's config system.
 pub struct PatchworkConfigAccessor {}

@@ -1,8 +1,3 @@
-use crate::branch::BranchState;
-use crate::differ::{ImportedDiff, TextDiffFile};
-use crate::file_utils::{FileContent};
-use crate::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
-use crate::godot_project_api::{BranchViewModel, ChangeViewModel, GodotProjectViewModel};
 use ::safer_ffi::prelude::*;
 use automerge::{
     ChangeHash, ObjId, ObjType, ROOT, ReadDoc
@@ -10,30 +5,29 @@ use automerge::{
 use automerge::{Automerge, Patch, PatchAction, Prop};
 use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
-use godot::classes::file_access::ModeFlags;
 use godot::classes::resource_loader::CacheMode;
 use godot::classes::{ClassDb, ResourceLoader};
 use godot::global::str_to_var;
-use godot::classes::{DirAccess, FileAccess};
 use godot::prelude::*;
 use godot::prelude::Dictionary;
 use tracing::instrument;
-use std::any::Any;
-use std::cell::RefCell;
-use std::collections::{HashSet};
+use std::{cell::RefCell, collections::HashSet};
 use std::path::{PathBuf};
 use std::time::SystemTime;
 use std::{collections::HashMap, str::FromStr};
-use crate::godot_helpers::{ToDict, VariantTypeGetter};
-use crate::file_system_driver::{FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
-use crate::godot_parser::{self, GodotScene, TypeOrInstance};
-use crate::godot_project_driver::{ConnectionThreadError, DocHandleType};
-use crate::patches::{get_changed_files_vec};
-use crate::utils::{CommitInfo, ToShortForm, get_automerge_doc_diff, summarize_changes};
-use crate::{
-    doc_utils::SimpleDocReader,
-    godot_project_driver::{GodotProjectDriver, InputEvent, OutputEvent},
-};
+
+use crate::diff::differ::{ImportedDiff, TextDiffFile};
+use crate::fs::file_system_driver::{FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
+use crate::fs::file_utils::FileContent;
+use crate::helpers::branch::BranchState;
+use crate::helpers::doc_utils::SimpleDocReader;
+use crate::helpers::utils::{CommitInfo, ToShortForm, get_automerge_doc_diff, get_changed_files_vec, summarize_changes};
+use crate::interop::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
+use crate::parser::godot_parser::{GodotScene, TypeOrInstance};
+use crate::project::project_driver::{ConnectionThreadError, DocHandleType, ProjectDriver, InputEvent, OutputEvent};
+use crate::project::project_api::{BranchViewModel, ChangeViewModel, ProjectViewModel};
+use crate::interop::godot_helpers::ToDict;
+use crate::interop::godot_helpers::VariantTypeGetter;
 
 /// Represents the state of the currently checked out branch.
 #[derive(Debug, Clone)]
@@ -101,7 +95,7 @@ fn match_path(path: &Vec<Prop>, patch: &Patch) -> Option<PathWithAction> {
 /// Manages the state and operations of a Patchwork project within Godot.
 /// Its API is exposed to GDScript via the GodotProject struct.
 #[derive(Debug)]
-pub struct GodotProjectImpl {
+pub struct Project {
     doc_handles: HashMap<DocumentId, DocHandle>,
     pub(super) branch_states: HashMap<DocumentId, BranchState>,
     pub(super) checked_out_branch_state: CheckedOutBranchState,
@@ -110,7 +104,7 @@ pub struct GodotProjectImpl {
 	should_update_godot: bool,
 	pub(super) just_checked_out_new_branch: bool,
 	last_synced: Option<(DocumentId, Vec<ChangeHash>)>,
-    driver: Option<GodotProjectDriver>,
+    driver: Option<ProjectDriver>,
     pub(super) driver_input_tx: UnboundedSender<InputEvent>,
     driver_output_rx: UnboundedReceiver<OutputEvent>,
     pub(super) sync_server_connection_info: Option<PeerConnectionInfo>,
@@ -126,7 +120,7 @@ pub struct GodotProjectImpl {
 	ingest_requested: bool
 }
 
-impl Default for GodotProjectImpl {
+impl Default for Project {
 	fn default() -> Self {
 		// TODO: Move driver input tx and output rx to the GodotProjectImpl struct, like in FileSystemDriver
 		let (driver_input_tx, _) = futures::channel::mpsc::unbounded();
@@ -166,7 +160,7 @@ pub enum GodotProjectSignal {
 	ChangesIngested
 }
 
-impl GodotProjectImpl {
+impl Project {
 	pub fn globalize_path(&self, path: &String) -> String {
 		// trim the project_dir from the front of the path
 		if path.starts_with("res://") {
@@ -822,39 +816,6 @@ impl GodotProjectImpl {
         }
     }
 
-    fn write_variant_to_file(&self, path: &String, variant: &Variant) {
-        // mkdir -p everything
-        let dir = PathBuf::from(path)
-            .parent()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string();
-        // do the mkdir
-        // get the first part "e.g. res:// or user://"
-        let root = path.split("//").nth(0).unwrap_or("").to_string() + "//";
-        let dir_access = DirAccess::open(&root);
-        if let Some(mut dir_access) = dir_access {
-            let _ = dir_access.make_dir_recursive(&GString::from(dir));
-        }
-
-        let file = FileAccess::open(path, ModeFlags::WRITE);
-        if let None = file {
-            tracing::error!("error opening file: {}", path);
-            return;
-        }
-        let mut file = file.unwrap();
-        // if it's a packedbytearray, write the bytes
-        if let Ok(packed_byte_array) = variant.try_to::<PackedByteArray>() {
-            file.store_buffer(&packed_byte_array);
-        } else if let Ok(string) = variant.try_to::<String>() {
-            file.store_line(&GString::from(string));
-        } else {
-            tracing::error!("unsupported variant type!! {:?}", variant.type_id());
-        }
-        file.close();
-    }
-
     fn get_varstr_value(&self, prop_value: String) -> VariantStrValue {
         if prop_value.starts_with("Resource(") || prop_value.starts_with("SubResource(") || prop_value.starts_with("ExtResource(") {
             let id = prop_value
@@ -961,7 +922,7 @@ impl GodotProjectImpl {
 		change_type: &str,
 		imported_diff: &ImportedDiff,
 	) -> Dictionary {
-        let mut result = dict! {
+        let mut result = vdict! {
             "path" : path.to_variant(),
             "diff_type" : "resource_changed".to_variant(),
             "change_type" : change_type.to_variant(),
@@ -1057,7 +1018,7 @@ impl GodotProjectImpl {
             &empty_string
         };
         let text_diff = TextDiffFile::create(path.clone(), path.clone(), old_text, new_text);
-        let result = dict! {
+        let result = vdict! {
             "path" : path.to_variant(),
             "change_type" : change_type.to_variant(),
             "old_content" : old_content.unwrap_or(&FileContent::Deleted).to_variant(),
@@ -1080,7 +1041,7 @@ impl GodotProjectImpl {
         let old_content_type = old_content.unwrap_or(&FileContent::Deleted).get_variant_type();
         let new_content_type = new_content.unwrap_or(&FileContent::Deleted).get_variant_type();
         if change_type == "unchanged" {
-            return dict! {
+            return vdict! {
                 "path" : path.to_variant(),
                 "diff_type" : "file_unchanged".to_variant(),
                 "change_type" : change_type.to_variant(),
@@ -1102,7 +1063,7 @@ impl GodotProjectImpl {
         {
             return self.get_text_file_diff(&path, &change_type, old_content, new_content);
         } else {
-            return dict! {
+            return vdict! {
                 "path" : path.to_variant(),
                 "diff_type" : "file_changed".to_variant(),
                 "change_type" : change_type.to_variant(),
@@ -1213,7 +1174,7 @@ impl GodotProjectImpl {
             let old_scene = match checked_out_branch_state
                 .doc_handle
                 .with_doc(|d: &Automerge| {
-                    godot_parser::GodotScene::hydrate_at(d, &path, &old_heads)
+                    GodotScene::hydrate_at(d, &path, &old_heads)
                 }) {
                 Ok(scene) => Some(scene),
                 Err(_) => None,
@@ -1222,7 +1183,7 @@ impl GodotProjectImpl {
             let new_scene = match checked_out_branch_state
                 .doc_handle
                 .with_doc(|d: &Automerge| {
-                    godot_parser::GodotScene::hydrate_at(d, &path, &curr_heads)
+                    GodotScene::hydrate_at(d, &path, &curr_heads)
                 }) {
                 Ok(scene) => Some(scene),
                 Err(_) => None,
@@ -1494,20 +1455,20 @@ impl GodotProjectImpl {
 					// HACK: prevent loading script files during the diff and creating issues for the editor
 					if prop == "script" {
 						if old_value.is_some() && new_value.is_some() {
-							return Some(dict! {
+							return Some(vdict! {
 								"name": prop.clone(),
 								"change_type": "modified",
 								"old_value": "<script_changed>",
 								"new_value":"<script_changed>"
 							});
 						} else if old_value.is_some() {
-							return Some(dict! {
+							return Some(vdict! {
 								"name": prop.clone(),
 								"change_type": "deleted",
 								"old_value": "<script_deleted>"
 							});
 						} else if new_value.is_some() {
-							return Some(dict! {
+							return Some(vdict! {
 								"name": prop.clone(),
 								"change_type": "added",
 								"new_value": "<script_added>"
@@ -1566,7 +1527,7 @@ impl GodotProjectImpl {
 							}
 						}
 						if changed {
-							return Some(dict! {
+							return Some(vdict! {
 								"name": prop.clone(),
 								"change_type": "modified",
 								"old_value": fn_get_prop_value(old_value.unwrap(), &old_scene, true),
@@ -1577,13 +1538,13 @@ impl GodotProjectImpl {
                     return None;
 
 				} else if old_value.is_some() {
-					return Some(dict! {
+					return Some(vdict! {
 						"name": prop.clone(),
 						"change_type": "deleted",
 						"old_value": fn_get_prop_value(old_value.unwrap(), &old_scene, true)
 					});
 				} else if new_value.is_some() {
-					return Some(dict! {
+					return Some(vdict! {
 						"name": prop.clone(),
 						"change_type": "added",
 						"new_value": fn_get_prop_value(new_value.unwrap(), &new_scene, false)
@@ -1770,7 +1731,7 @@ impl GodotProjectImpl {
 			tracing::info!("Using project override for server url: {:?}", server_url);
 		}
 
-        let mut driver: GodotProjectDriver = GodotProjectDriver::create(storage_folder_path, server_url);
+        let mut driver: ProjectDriver = ProjectDriver::create(storage_folder_path, server_url);
         let maybe_user_name: String = PatchworkConfigAccessor::get_user_value("user_name", "");
         driver.spawn(
             driver_input_rx,
@@ -1997,7 +1958,6 @@ impl GodotProjectImpl {
                     ).collect::<Vec<(String, FileContent)>>();
 					if new_project {
 						// Hack to prevent long reloads when opening a new project; we just resave all the scenes that need it
-						let mut driver_updates: Vec<FileSystemUpdateEvent> = Vec::new();
 						let before_size: usize = files.len();
 						files = files.into_iter().filter_map(
 						|(path, content)|{
@@ -2007,7 +1967,7 @@ impl GodotProjectImpl {
 							Some((path, content))
 						}
 						).collect::<Vec<_>>();
-						let events: Vec<FileSystemEvent> = driver.batch_update_blocking(driver_updates);
+						let events: Vec<FileSystemEvent> = driver.batch_update_blocking(Vec::new());
 						if before_size - files.len() != events.len() {
 							tracing::error!("**** THIS SHOULD NOT HAPPEN: resaved {} files, but expected {} files back", before_size - files.len(), events.len());
 							files = driver.get_all_files_blocking().into_iter().map(

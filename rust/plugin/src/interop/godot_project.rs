@@ -1,7 +1,7 @@
-use crate::file_utils::FileContent;
-use crate::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
-use crate::godot_project_api::{BranchViewModel, GodotProjectViewModel};
-use crate::godot_project_impl::{GodotProjectImpl, GodotProjectSignal};
+use crate::fs::file_utils::FileContent;
+use crate::interop::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
+use crate::project::project_api::{BranchViewModel, ProjectViewModel};
+use crate::project::project::{Project, GodotProjectSignal};
 use automerge::ChangeHash;
 use godot::classes::editor_plugin::DockSlot;
 use ::safer_ffi::prelude::*;
@@ -19,8 +19,8 @@ use tracing::instrument;
 use std::collections::{HashSet};
 use std::path::PathBuf;
 use std::{collections::HashMap, str::FromStr};
-use crate::godot_helpers::{ToGodotExt, branch_view_model_to_dict, change_view_model_to_dict, diff_view_model_to_dict};
-use crate::file_system_driver::{FileSystemEvent};
+use crate::interop::godot_helpers::{ToGodotExt, branch_view_model_to_dict, change_view_model_to_dict, diff_view_model_to_dict};
+use crate::fs::file_system_driver::{FileSystemEvent};
 
 // This is the worst thing I've ever done
 // Get the file system
@@ -143,7 +143,7 @@ impl PendingEditorUpdate {
 #[class(base=Node)]
 pub struct GodotProject {
 	base: Base<Node>,
-	project: GodotProjectImpl,
+	project: Project,
 	pending_editor_update: PendingEditorUpdate,
 	reload_project_settings_callable: Option<Callable>
 }
@@ -415,7 +415,7 @@ impl GodotProject {
 		if !self.pending_editor_update.any_changes() {
 			return false;
 		}
-		if !GodotProjectImpl::safe_to_update_godot(false) {
+		if !Project::safe_to_update_godot(false) {
 			return false;
 		}
 		self.base_mut().set_process(false);
@@ -436,7 +436,7 @@ impl INode for GodotProject {
     fn init(_base: Base<Node>) -> Self {
         GodotProject {
 			base: _base,
-			project: GodotProjectImpl::new(ProjectSettings::singleton().globalize_path("res://").to_string()),
+			project: Project::new(ProjectSettings::singleton().globalize_path("res://").to_string()),
 			pending_editor_update: PendingEditorUpdate::default(),
 			reload_project_settings_callable: None
 		}

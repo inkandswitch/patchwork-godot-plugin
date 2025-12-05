@@ -1,7 +1,7 @@
 
 use automerge::ChangeHash;
-use crate::file_utils::FileContent;
 
+use crate::fs::file_utils::FileContent;
 
 
 pub struct DiffLine {
@@ -60,7 +60,6 @@ impl TextDiffFile {
 			diff_hunks: Vec::new(),
 		};
 		for (_i, hunk) in unified.iter_hunks().enumerate() {
-			let header = hunk.header();
 			let (old_start, new_start, old_lines, new_lines) = get_range(&hunk.ops());
 			let mut diff_hunk = DiffHunk {
 				old_start: old_start as i64,

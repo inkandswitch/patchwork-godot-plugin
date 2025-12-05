@@ -1,13 +1,13 @@
 use std::{
-    collections::HashMap, fmt, path::Path, str::FromStr, time::{Duration, SystemTime, UNIX_EPOCH}
+    collections::{HashMap, HashSet}, fmt, path::Path, str::FromStr, time::{SystemTime, UNIX_EPOCH}
 };
 
-use crate::{doc_utils::SimpleDocReader, branch::BranchState};
+use crate::{helpers::doc_utils::SimpleDocReader, helpers::branch::BranchState};
 use automerge::{
     Automerge, Change, ChangeHash, Patch, PatchLog, ROOT, ReadDoc, transaction::{CommitOptions, Transaction}
 };
-use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
-use chrono::{DateTime, Local, NaiveDateTime, Utc};
+use automerge_repo::{DocHandle, DocumentId};
+use chrono::{DateTime, Local};
 use godot::builtin::Dictionary;
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +35,40 @@ pub(crate) fn get_automerge_doc_diff(doc: &Automerge, old_heads: &[ChangeHash], 
 		doc.diff(old_heads, new_heads, automerge::patches::TextRepresentation::String(automerge::TextEncoding::Utf8CodeUnit))
 	}
 }
+
+
+pub(crate) fn get_changed_files_vec(patches: &Vec<automerge::Patch>) -> Vec<String> {
+    let mut changed_files = HashSet::new();
+
+    // log all patches
+    for patch in patches.iter() {
+        let first_key = match patch.path.get(0) {
+            Some((_, prop)) => match prop {
+                automerge::Prop::Map(string) => string,
+                _ => continue,
+            },
+            _ => continue,
+        };
+
+        // get second key
+        let second_key = match patch.path.get(1) {
+            Some((_, prop)) => match prop {
+                automerge::Prop::Map(string) => string,
+                _ => continue,
+            },
+            _ => continue,
+        };
+
+        if first_key == "files" {
+            changed_files.insert(second_key.to_string());
+        }
+
+        // tracing::debug!("changed files: {:?}", changed_files);
+    }
+
+    return changed_files.iter().cloned().collect::<Vec<String>>();
+}
+
 
 pub(crate) fn get_linked_docs_of_branch(
     branch_doc_handle: &DocHandle,
@@ -83,26 +117,6 @@ pub(crate) fn parse_automerge_url(url: &str) -> Option<DocumentId> {
 
     let hash = &url[PREFIX.len()..];
     DocumentId::from_str(hash).ok()
-}
-
-pub(crate) fn print_branch_doc(message: &str, doc_handle: &DocHandle) {
-    doc_handle.with_doc(|d| {
-        let files = d.get_obj_id(ROOT, "files").unwrap();
-
-        let keys = d.keys(files).into_iter().collect::<Vec<_>>();
-
-        tracing::debug!("{:?}: {:?}", message, doc_handle.document_id());
-
-        for key in keys {
-            tracing::debug!(" - {:?}", key);
-        }
-    });
-}
-
-pub(crate) fn print_doc(message: &str, doc_handle: &DocHandle) {
-    let checked_out_doc_json =
-        doc_handle.with_doc(|d| serde_json::to_string(&automerge::AutoSerde::from(d)).unwrap());
-    tracing::debug!("{:?}: {:?}", message, checked_out_doc_json);
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -171,31 +185,6 @@ pub(crate) fn print_branch_state(message: &str, branch_state: &BranchState) {
 	tracing::debug!("branch id: {:?}", branch_state.doc_handle.document_id());
 	tracing::trace!("linked doc ids: {:?}", branch_state.linked_doc_ids);
 	tracing::trace!("synced heads: {:?}", branch_state.synced_heads);
-}
-
-
-pub(crate) fn vec_string_to_heads(heads: Vec<String>) -> Result<Vec<ChangeHash>, String> {
-	let mut result = Vec::new();
-	for head in heads {
-		let change_hash = ChangeHash::from_str(head.as_str());
-		if change_hash.is_err() {
-			return Err(change_hash.unwrap_err().to_string());
-		}
-		result.push(change_hash.unwrap());
-	}
-    Ok(result)
-}
-
-
-
-pub(crate) fn strategic_waiting(loc: &str) {
-	tracing::debug!("pointelssly waiting for about 1 second @ {}", loc);
-	let mut count: i32 = 1000;
-	while count > 0 {
-		std::thread::sleep(Duration::from_millis(100));
-		count -= 100;
-	}
-	tracing::debug!("Done waiting");
 }
 
 #[derive(Debug, Serialize, Deserialize)]

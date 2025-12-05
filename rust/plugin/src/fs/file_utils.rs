@@ -1,16 +1,16 @@
 use std::fs::File;
 use std::io;
-use std::io::{Read, Write};
+use std::io::{Write};
 use std::path::{PathBuf};
 use std::str;
 use automerge::{Automerge, ChangeHash, ObjType, ReadDoc};
 use automerge::ObjId;
 use automerge_repo::{DocumentId};
 use ya_md5::{Md5Hasher};
+use crate::helpers::doc_utils::SimpleDocReader;
+use crate::helpers::utils::{ToShortForm, parse_automerge_url};
 
-use crate::doc_utils::SimpleDocReader;
-use crate::godot_parser::{GodotScene, recognize_scene, parse_scene};
-use crate::utils::{parse_automerge_url, ToShortForm};
+use crate::parser::godot_parser::{GodotScene, parse_scene, recognize_scene};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FileContent {
@@ -214,24 +214,6 @@ pub fn get_buffer_and_hash(path: &PathBuf) -> Result<(Vec<u8>, String), io::Erro
 	let hash = Md5Hasher::hash_slice(&buf);
 	let hash_str = format!("{}", hash);
 	Ok((buf, hash_str))
-}
-
-pub fn is_file_binary(path: &PathBuf) -> bool {
-	if !path.is_file() {
-		return false;
-	}
-
-	let mut file = match File::open(path) {
-		Ok(file) => file,
-		Err(_) => return false,
-	};
-
-	// check the first 8000 bytes for a null byte
-	let mut buffer = [0; 8000];
-	if file.read(&mut buffer).is_err() {
-		return false;
-	}
-	return is_buf_binary(&buffer);
 }
 
 pub fn is_buf_binary(buf: &[u8]) -> bool {
