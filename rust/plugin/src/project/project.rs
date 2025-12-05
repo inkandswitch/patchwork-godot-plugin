@@ -2,28 +2,20 @@ use ::safer_ffi::prelude::*;
 use automerge::{
     ChangeHash, ObjId, ObjType, ROOT, ReadDoc
 };
-use automerge::{Automerge, Patch, PatchAction, Prop};
 use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
-use godot::classes::resource_loader::CacheMode;
-use godot::classes::{ClassDb, ResourceLoader};
-use godot::global::str_to_var;
-use godot::prelude::*;
-use godot::prelude::Dictionary;
 use tracing::instrument;
 use std::{cell::RefCell, collections::HashSet};
 use std::path::{PathBuf};
 use std::time::SystemTime;
 use std::{collections::HashMap, str::FromStr};
-use crate::diff::differ::{Diff, Differ, ProjectDiff};
-use crate::diff::scene_differ::SceneDiff;
+use crate::diff::differ::{Differ, ProjectDiff};
 use crate::fs::file_system_driver::{FileSystemDriver, FileSystemEvent, FileSystemUpdateEvent};
 use crate::fs::file_utils::FileContent;
 use crate::helpers::branch::BranchState;
 use crate::helpers::doc_utils::SimpleDocReader;
 use crate::helpers::utils::{CommitInfo, ToShortForm, get_automerge_doc_diff, get_changed_files_vec, summarize_changes};
 use crate::interop::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
-use crate::parser::godot_parser::{GodotScene, TypeOrInstance};
 use crate::project::project_driver::{ConnectionThreadError, DocHandleType, ProjectDriver, InputEvent, OutputEvent};
 use crate::project::project_api::{BranchViewModel, ChangeViewModel, ProjectViewModel};
 

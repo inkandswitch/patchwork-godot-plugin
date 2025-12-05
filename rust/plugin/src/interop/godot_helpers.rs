@@ -1,14 +1,10 @@
 use std::path::PathBuf;
 use std::{fmt::Display};
-
 use automerge::{ChangeHash};
 use automerge_repo::{DocumentId};
 use godot::meta::GodotType;
 use godot::{prelude::*, meta::ToGodot, meta::GodotConvert};
-use crate::diff::text_differ::{TextDiff, TextDiffHunk, TextDiffLine};
-// use godot::prelude::{GString, Variant, Dc};
 use crate::fs::file_utils::FileContent;
-use crate::parser::godot_parser::{GodotNode, TypeOrInstance};
 use crate::project::project_api::{BranchViewModel, ChangeViewModel, DiffViewModel, SyncStatus};
 use crate::helpers::utils::{ChangedFile};
 use godot::builtin::Variant;
@@ -223,48 +219,6 @@ impl VariantTypeGetter for FileContent {
 			FileContent::Scene(_) => VariantType::OBJECT,
 			FileContent::Deleted => VariantType::NIL,
 		}
-	}
-}
-
-pub trait ToDict {
-	fn to_dict(&self) -> Dictionary;
-}
-
-impl ToDict for GodotNode {
-	fn to_dict(&self) -> Dictionary {
-		let mut content = Dictionary::new();
-        // Add basic node properties
-        let _ = content.insert("name", self.name.clone());
-
-        // Add type or instance
-        match &self.type_or_instance {
-            TypeOrInstance::Type(type_name) => {
-                let _ = content.insert("type", type_name.clone());
-            }
-            TypeOrInstance::Instance(instance_id) => {
-                let _ = content.insert("instance", instance_id.clone());
-            }
-        }
-
-        // Add optional properties
-        if let Some(owner) = &self.owner {
-            let _ = content.insert("owner", owner.clone());
-        }
-        if let Some(index) = self.index {
-            let _ = content.insert("index", index);
-        }
-        if let Some(groups) = &self.groups {
-            let _ = content.insert("groups", groups.clone());
-        }
-
-        // Add node properties as a nested dictionary
-        let mut properties = Dictionary::new();
-        for (key, property) in &self.properties {
-            let _ = properties.insert(key.clone(), property.value.clone());
-        }
-        let _ = content.insert("properties", properties);
-
-        content
 	}
 }
 

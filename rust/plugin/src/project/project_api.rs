@@ -1,8 +1,7 @@
 use automerge::ChangeHash;
 use automerge_repo::DocumentId;
-use godot::builtin::Dictionary;
 
-use crate::{diff::differ::ProjectDiff, helpers::utils::DiffWrapper};
+use crate::{diff::differ::ProjectDiff};
 
 /// Represents synchronization status for a project.
 pub enum SyncStatus {

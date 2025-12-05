@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use automerge::{Automerge, Prop};
+use automerge::{Automerge};
 use godot::{
     builtin::{StringName, Variant},
     classes::ClassDb,
@@ -116,24 +116,6 @@ impl std::fmt::Display for VariantStrValue {
             VariantStrValue::ExtResourceID(s) => write!(f, "ExtResource({})", s),
         }
     }
-}
-
-/// Returns the relative object path from path to other.
-/// If other doesn't exist inside path, returns None.
-fn relative_path(path: &Vec<Prop>, other: &Vec<Prop>) -> Option<Vec<Prop>> {
-    let mut remaining_path = other.clone();
-
-    for prop in path.iter() {
-        if remaining_path.len() == 0 {
-            return None;
-        }
-
-        if remaining_path.remove(0) != *prop {
-            return None;
-        }
-    }
-
-    Some(remaining_path)
 }
 
 /// Implement scene-related functions on the Differ

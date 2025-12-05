@@ -8,7 +8,6 @@ use automerge::{
 };
 use automerge_repo::{DocHandle, DocumentId};
 use chrono::{DateTime, Local};
-use godot::builtin::Dictionary;
 use serde::{Deserialize, Serialize};
 
 // These functions are for compatibilities sake, and they will be removed in the future

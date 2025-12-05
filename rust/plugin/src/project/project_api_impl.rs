@@ -2,7 +2,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use automerge::ChangeHash;
 use automerge_repo::DocumentId;
-use godot::builtin::Dictionary;
 use tracing::instrument;
 
 use crate::{diff::differ::ProjectDiff, helpers::utils::{BranchWrapper, CommitInfo, DiffWrapper, exact_human_readable_timestamp, human_readable_timestamp}, interop::godot_accessors::PatchworkConfigAccessor, project::{project::{CheckedOutBranchState, Project}, project_api::{BranchViewModel, ChangeViewModel, DiffViewModel, ProjectViewModel, SyncStatus}, project_driver::InputEvent}};
