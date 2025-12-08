@@ -8,7 +8,7 @@ use automerge::ChangeHash;
 use godot::{
     builtin::{GString, Variant},
     classes::{ResourceLoader, resource_loader::CacheMode},
-    meta::ToGodot,
+    meta::ToGodot, obj::Singleton,
 };
 use tracing::instrument;
 
@@ -152,7 +152,7 @@ impl<'a> Differ<'a> {
             }
         }
         let resource = ResourceLoader::singleton()
-            .load_ex(&GString::from(temp_path))
+            .load_ex(&GString::from(&temp_path))
             .cache_mode(CacheMode::IGNORE_DEEP)
             .done();
         if let Some(resource) = resource {

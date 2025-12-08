@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::{fmt::Display};
 use automerge::{ChangeHash};
 use automerge_repo::{DocumentId};
-use godot::meta::GodotType;
+use godot::meta::{ArgPassing, ByValue, GodotType, ToArg};
 use godot::{prelude::*, meta::ToGodot, meta::GodotConvert};
 use crate::fs::file_utils::FileContent;
 use crate::project::project_api::{BranchViewModel, ChangeViewModel, DiffViewModel, SyncStatus};
@@ -22,14 +22,12 @@ pub trait ToGodotExt: Sized + GodotConvertExt {
     /// This may change in future versions.
     ///
     /// See also [`AsArg<T>`](crate::meta::AsArg) used as the "front-end" in Godot API parameters.
-    type ToVia<'v>: GodotType
-    where
-        Self: 'v;
+    type Pass: ArgPassing;
 
     /// Converts this type to the Godot type by reference, usually by cloning.
-    fn _to_godot(&self) -> Self::ToVia<'_>;
+    fn _to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass>;
 
-	fn to_godot(&self) -> Self::ToVia<'_> {
+	fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
 		self._to_godot()
 	}
 
@@ -55,9 +53,9 @@ impl GodotConvertExt for DocumentId {
 }
 
 impl ToGodotExt for DocumentId {
-	type ToVia < 'v > = GString;
-	fn _to_godot(&self) -> Self::ToVia < '_ > {
-		GString::from(self.to_string())
+	type Pass = ByValue;
+	fn _to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
+		GString::from(&self.to_string())
 	}
 	fn _to_variant(&self) -> Variant {
 		self._to_godot().to_variant()
@@ -78,9 +76,9 @@ impl GodotConvertExt for ChangeHash {
 }
 
 impl ToGodotExt for ChangeHash {
-	type ToVia < 'v > = GString;
-	fn _to_godot(&self) -> Self::ToVia < '_ > {
-		GString::from(self.to_string())
+	type Pass = ByValue;
+	fn _to_godot(&self) -> GString {
+		GString::from(&self.to_string())
 	}
 	fn _to_variant(&self) -> Variant {
 		self._to_godot().to_variant()
@@ -101,12 +99,12 @@ impl<D: Display> GodotConvertExt for Vec<D> {
 }
 
 impl<D: Display> ToGodotExt for Vec<D> {
-	type ToVia<'v> = PackedStringArray where D: 'v;
-	fn _to_godot(&self) -> Self::ToVia<'_> {
-		self.iter().map(|s| GString::from(s.to_string())).collect()
+	type Pass = ByValue;
+	fn _to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
+		self.iter().map(|s| GString::from(&s.to_string())).collect()
 	}
 	fn _to_variant(&self) -> Variant {
-		let thingy = self.iter().map(|s| GString::from(s.to_string())).collect::<PackedStringArray>();
+		let thingy = self.iter().map(|s| GString::from(&s.to_string())).collect::<PackedStringArray>();
 		thingy.to_variant()
 	}
 }
@@ -116,9 +114,9 @@ impl GodotConvertExt for PathBuf {
 }
 
 impl ToGodotExt for PathBuf {
-	type ToVia<'v> = GString where Self: 'v;
-	fn _to_godot(&self) -> Self::ToVia<'_> {
-		GString::from(self.display().to_string())
+	type Pass = ByValue;
+	fn _to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
+		GString::from(&self.display().to_string())
 	}
 	fn _to_variant(&self) -> Variant {
 		self._to_godot().to_variant()
@@ -127,7 +125,7 @@ impl ToGodotExt for PathBuf {
 
 // I couldn't figure out how to use GodotConvert with impls, so just use methods for these.
 
-pub(crate) fn branch_view_model_to_dict(branch: &impl BranchViewModel) -> Dictionary {
+pub(crate) fn branch_view_model_to_dict(branch: &impl BranchViewModel) -> VarDictionary {
 	let merge_into = branch.get_merge_into();
 	let var = merge_into.to_variant();
 	vdict! {
@@ -143,14 +141,14 @@ pub(crate) fn branch_view_model_to_dict(branch: &impl BranchViewModel) -> Dictio
 	}
 }
 
-pub(crate) fn diff_view_model_to_dict(diff: &impl DiffViewModel) -> Dictionary {
+pub(crate) fn diff_view_model_to_dict(diff: &impl DiffViewModel) -> VarDictionary {
 	vdict! {
 		"dict": diff.get_diff().to_godot(),
 		"title": diff.get_title().to_godot()
 	}
 }
 
-pub(crate) fn change_view_model_to_dict(change: &impl ChangeViewModel) -> Dictionary {
+pub(crate) fn change_view_model_to_dict(change: &impl ChangeViewModel) -> VarDictionary {
 	vdict! {
 		"hash": change.get_hash().to_string(),
 		"username": change.get_username(),
@@ -165,13 +163,13 @@ pub(crate) fn change_view_model_to_dict(change: &impl ChangeViewModel) -> Dictio
 }
 
 impl GodotConvert for SyncStatus {
-	type Via = Dictionary;
+	type Via = VarDictionary;
 }
 
 impl ToGodot for SyncStatus {
-	type ToVia<'v> = Dictionary;
+	type Pass = ByValue;
 
-	fn to_godot(&self) -> Dictionary {
+	fn to_godot(&self) -> VarDictionary {
 		vdict! {
 			"state": match self {
 				SyncStatus::Unknown => "unknown",
@@ -192,8 +190,8 @@ impl GodotConvert for FileContent {
 }
 
 impl ToGodot for FileContent {
-	type ToVia < 'v > = Variant;
-	fn to_godot(&self) -> Self::ToVia < '_ > {
+	type Pass = ByValue;
+	fn to_godot(&self) -> Variant {
 		// < Self as crate::obj::EngineBitfield > ::ord(* self)
 		self.to_variant()
 	}
@@ -212,7 +210,7 @@ impl GodotConvertExt for Vec<ChangedFile> {
 }
 
 impl ToGodotExt for Vec<ChangedFile> {
-	type ToVia<'v> = Array<PackedStringArray>;
+	type Pass = ByValue;
 	fn _to_godot(&self) -> Array<PackedStringArray> {
         self.iter().map(|s| {
             let mut inner_array = PackedStringArray::new();
