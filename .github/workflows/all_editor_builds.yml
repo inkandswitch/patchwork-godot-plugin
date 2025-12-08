@@ -8,7 +8,7 @@ env:
   GODOT_REPOSITORY: nikitalita/godot
   GODOT_BASE_BRANCH: master
   # Change the README too
-  GODOT_MAIN_SYNC_REF: patchwork-4.6
+  GODOT_MAIN_SYNC_REF: patchwork-update-4.6
   SCONSFLAGS: verbose=yes warnings=all werror=no module_text_server_fb_enabled=yes minizip=yes deprecated=yes module_patchwork_editor_enabled=yes
   SCONSFLAGS_TEMPLATE: no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no
   SCONS_CACHE_MSVC_CONFIG: true
@@ -91,6 +91,19 @@ jobs:
 
       - name: Setup python and scons
         uses: ./.github/actions/godot-deps
+
+      - name: Download Direct3D 12 SDK components
+        shell: sh
+        id: d3d12-sdk
+        if: matrix.platform == 'windows'
+        run: |
+          if python ./misc/scripts/install_d3d12_sdk_windows.py; then
+            echo "D3D12_ENABLED=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Windows: Direct3D 12 SDK installation failed, building without Direct3D 12 support."
+            echo "D3D12_ENABLED=no" >> "$GITHUB_OUTPUT"
+          fi
+        continue-on-error: true
 
       - name: Setup Vulkan SDK
         if: matrix.platform == 'macos'

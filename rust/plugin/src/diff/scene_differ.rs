@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use godot::{
     builtin::{StringName, Variant},
     classes::ClassDb,
-    meta::ToGodot,
+    meta::ToGodot, obj::Singleton,
 };
 
 use crate::{

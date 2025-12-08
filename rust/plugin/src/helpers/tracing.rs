@@ -4,6 +4,7 @@ use std::io::Write;
 use godot::classes::ProjectSettings;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{EnvFilter, Layer, fmt::{format::Writer, time::FormatTime}, layer::SubscriberExt, util::SubscriberInitExt};
+use godot::obj::Singleton;
 
 fn get_user_dir() -> String {
     let user_dir = ProjectSettings::singleton()

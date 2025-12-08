@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
 use godot::{
-    builtin::{Array, Dictionary, GString, Variant, vdict},
-    meta::{GodotConvert, ToGodot},
+    builtin::{Array, GString, VarDictionary, Variant, vdict},
+    meta::{ByValue, GodotConvert, ToArg, ToGodot},
 };
+use godot::obj::Singleton;
 
 use crate::{
     diff::{
@@ -16,15 +17,12 @@ use crate::{
 };
 
 impl GodotConvert for TextDiffLine {
-    type Via = Dictionary;
+    type Via = VarDictionary;
 }
 
 impl ToGodot for TextDiffLine {
-    type ToVia<'v>
-        = Dictionary
-    where
-        Self: 'v;
-    fn to_godot(&self) -> Self::ToVia<'_> {
+    type Pass = ByValue;
+    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
         vdict! {
             "new_line_no": self.new_line_no,
             "old_line_no": self.old_line_no,
@@ -38,21 +36,18 @@ impl ToGodot for TextDiffLine {
 }
 
 impl GodotConvert for TextDiffHunk {
-    type Via = Dictionary;
+    type Via = VarDictionary;
 }
 
 impl ToGodot for TextDiffHunk {
-    type ToVia<'v>
-        = Dictionary
-    where
-        Self: 'v;
-    fn to_godot(&self) -> Self::ToVia<'_> {
+    type Pass = ByValue;
+    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
         vdict! {
             "new_start": self.new_start,
             "old_start": self.old_start,
             "new_lines": self.new_lines,
             "old_lines": self.old_lines,
-            "diff_lines": self.diff_lines.iter().map(|line| line.to_godot()).collect::<Array<Dictionary>>(),
+            "diff_lines": self.diff_lines.iter().map(|line| line.to_godot()).collect::<Array<VarDictionary>>(),
         }
     }
     fn to_variant(&self) -> Variant {
@@ -61,15 +56,12 @@ impl ToGodot for TextDiffHunk {
 }
 
 impl GodotConvert for TextDiff {
-    type Via = Dictionary;
+    type Via = VarDictionary;
 }
 
 impl ToGodot for TextDiff {
-    type ToVia<'v>
-        = Dictionary
-    where
-        Self: 'v;
-    fn to_godot(&self) -> Self::ToVia<'_> {
+    type Pass = ByValue;
+    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
         vdict! {
 			"path": self.path.to_godot(),
 			"diff_type": "text_changed",
@@ -78,7 +70,7 @@ impl ToGodot for TextDiff {
 				// In the future, if we track renames, we should use the different paths here. Currently we don't, though.
 				"new_file": self.path.to_godot(),
 				"old_file": self.path.to_godot(),
-				"diff_hunks": self.diff_hunks.iter().map(|hunk| hunk.to_godot()).collect::<Array<Dictionary>>(),
+				"diff_hunks": self.diff_hunks.iter().map(|hunk| hunk.to_godot()).collect::<Array<VarDictionary>>(),
 			}
 		}
     }
@@ -92,12 +84,8 @@ impl GodotConvert for ChangeType {
 }
 
 impl ToGodot for ChangeType {
-    type ToVia<'v>
-        = GString
-    where
-        Self: 'v;
-
-    fn to_godot(&self) -> Self::ToVia<'_> {
+    type Pass = ByValue;
+    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
         match self {
             ChangeType::Added => "added",
             ChangeType::Modified => "modified",
@@ -108,16 +96,12 @@ impl ToGodot for ChangeType {
 }
 
 impl GodotConvert for Diff {
-    type Via = Dictionary;
+    type Via = VarDictionary;
 }
 
 impl ToGodot for Diff {
-    type ToVia<'v>
-        = Dictionary
-    where
-        Self: 'v;
-
-    fn to_godot(&self) -> Self::ToVia<'_> {
+    type Pass = ByValue;
+    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
         match self {
             Diff::Scene(diff) => diff.to_godot(),
             Diff::Resource(diff) => diff.to_godot(),
@@ -127,16 +111,12 @@ impl ToGodot for Diff {
 }
 
 impl GodotConvert for ProjectDiff {
-    type Via = Dictionary;
+    type Via = VarDictionary;
 }
 
 impl ToGodot for ProjectDiff {
-    type ToVia<'v>
-        = Dictionary
-    where
-        Self: 'v;
-
-    fn to_godot(&self) -> Self::ToVia<'_> {
+    type Pass = ByValue;
+    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
         let mut dict = vdict! {};
         for diff in &self.file_diffs {
             dict.set(
@@ -154,16 +134,12 @@ impl ToGodot for ProjectDiff {
 }
 
 impl GodotConvert for SceneDiff {
-    type Via = Dictionary;
+    type Via = VarDictionary;
 }
 
 impl ToGodot for SceneDiff {
-    type ToVia<'v>
-        = Dictionary
-    where
-        Self: 'v;
-
-    fn to_godot(&self) -> Self::ToVia<'_> {
+    type Pass = ByValue;
+    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
         vdict! {
             "change_type": self.change_type.to_godot(),
             "changed_nodes": self.changed_nodes.to_godot(),
@@ -173,15 +149,15 @@ impl ToGodot for SceneDiff {
 }
 
 impl GodotConvertExt for Vec<NodeDiff> {
-    type Via = Array<Dictionary>;
+    type Via = Array<VarDictionary>;
 }
 
 impl ToGodotExt for Vec<NodeDiff> {
-    type ToVia<'v> = Array<Dictionary>;
-    fn _to_godot(&self) -> Array<Dictionary> {
+    type Pass = ByValue;
+    fn _to_godot(&self) -> Array<VarDictionary> {
         self.iter()
             .map(|s| s.to_godot())
-            .collect::<Array<Dictionary>>()
+            .collect::<Array<VarDictionary>>()
     }
     fn _to_variant(&self) -> Variant {
         self._to_godot().to_variant()
@@ -189,15 +165,12 @@ impl ToGodotExt for Vec<NodeDiff> {
 }
 
 impl GodotConvert for NodeDiff {
-    type Via = Dictionary;
+    type Via = VarDictionary;
 }
 
 impl ToGodot for NodeDiff {
-    type ToVia<'v>
-        = Dictionary
-    where
-        Self: 'v;
-    fn to_godot(&self) -> Self::ToVia<'_> {
+    type Pass = ByValue;
+    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
         vdict! {
             "change_type": self.change_type.to_godot(),
             "changed_props": self.changed_properties.to_godot(),
@@ -208,12 +181,12 @@ impl ToGodot for NodeDiff {
 }
 
 impl GodotConvertExt for HashMap<String, PropertyDiff> {
-    type Via = Dictionary;
+    type Via = VarDictionary;
 }
 
 impl ToGodotExt for HashMap<String, PropertyDiff> {
-    type ToVia<'v> = Dictionary;
-    fn _to_godot(&self) -> Dictionary {
+    type Pass = ByValue;
+    fn _to_godot(&self) -> VarDictionary {
         let mut dict = vdict! {};
         for (name, diff) in self {
             dict.set(name.clone(), diff.to_godot());
@@ -226,15 +199,12 @@ impl ToGodotExt for HashMap<String, PropertyDiff> {
 }
 
 impl GodotConvert for PropertyDiff {
-    type Via = Dictionary;
+    type Via = VarDictionary;
 }
 
 impl ToGodot for PropertyDiff {
-    type ToVia<'v>
-        = Dictionary
-    where
-        Self: 'v;
-    fn to_godot(&self) -> Self::ToVia<'_> {
+    type Pass = ByValue;
+    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
         vdict! {
             "change_type": self.change_type.to_godot(),
             "name": self.name.to_godot(),
@@ -245,16 +215,12 @@ impl ToGodot for PropertyDiff {
 }
 
 impl GodotConvert for ResourceDiff {
-    type Via = Dictionary;
+    type Via = VarDictionary;
 }
 
 impl ToGodot for ResourceDiff {
-    type ToVia<'v>
-        = Dictionary
-    where
-        Self: 'v;
-
-    fn to_godot(&self) -> Self::ToVia<'_> {
+    type Pass = ByValue;
+    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
         vdict! {
             "change_type": self.change_type.to_godot(),
             "new_resource": self.new_resource.clone().unwrap_or(Variant::nil()),
