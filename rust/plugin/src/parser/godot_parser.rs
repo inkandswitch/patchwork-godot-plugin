@@ -174,6 +174,16 @@ impl<'c> ReadDoc for AutomergeDocAtHeads<'c> {
 		automerge::ReadDoc::object_type(self.doc, obj).ok()
 	}
 
+	#[cfg(not(feature = "automerge_0_6"))]
+	fn map_range<'a, O, R>(&'a self, obj: O, range: R) -> automerge::iter::MapRange<'a>
+	where
+		R: core::ops::RangeBounds<String> + 'a,
+		O: AsRef<automerge::ObjId>,
+		R: core::ops::RangeBounds<String>,
+	{
+		self.doc.map_range_at(obj, range, self.heads)
+	}
+	#[cfg(feature = "automerge_0_6")]
 	fn map_range<'a, O, R>(&'a self, obj: O, range: R) -> automerge::iter::MapRange<'a, R>
 	where
 		R: core::ops::RangeBounds<String> + 'a,
@@ -183,6 +193,16 @@ impl<'c> ReadDoc for AutomergeDocAtHeads<'c> {
 		self.doc.map_range_at(obj, range, self.heads)
 	}
 
+	#[cfg(not(feature = "automerge_0_6"))]
+	fn list_range<O: AsRef<automerge::ObjId>, R: core::ops::RangeBounds<usize>>(
+		&self,
+		obj: O,
+		range: R,
+	) -> automerge::iter::ListRange<'_> {
+		self.doc.list_range_at(obj, range, self.heads)
+	}
+
+	#[cfg(feature = "automerge_0_6")]
 	fn list_range<O: AsRef<automerge::ObjId>, R: core::ops::RangeBounds<usize>>(
 		&self,
 		obj: O,
