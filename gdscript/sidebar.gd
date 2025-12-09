@@ -409,6 +409,10 @@ func create_revert_preview_branch(head):
 
 func cancel_revert_preview():
 	if !GodotProject.is_revert_preview_branch_active(): return
+
+	if create_unsaved_files_dialog("You have unsaved files open. You need to save them before cancelling your revert."):
+		return
+
 	task_modal.do_task("Cancel revert preview", func():
 		GodotProject.discard_preview_branch()
 		await GodotProject.checked_out_branch
@@ -430,6 +434,10 @@ func confirm_revert_preview():
 
 func cancel_merge_preview():
 	if !GodotProject.is_merge_preview_branch_active(): return
+
+	if create_unsaved_files_dialog("You have unsaved files open. You need to save them before cancelling your merge."):
+		return
+
 	task_modal.do_task("Cancel merge preview", func():
 		GodotProject.discard_preview_branch()
 		await GodotProject.checked_out_branch
