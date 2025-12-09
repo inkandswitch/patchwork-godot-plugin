@@ -16,15 +16,15 @@ bench = false
 doc = false
 
 [features]
-default = ["automerge_0_6"]
+# default = ["automerge_0_6"]
 automerge_0_6 = []
 
 [dependencies]
-automerge = "0.6.0"
-automerge_repo = { git = "https://github.com/automerge/automerge-repo-rs", branch = "fix-stuck-sync", features = [
+automerge = "0.7.2"
+automerge_repo = { version = "0.3.0", features = [
   "tokio",
 ] }
-autosurgeon = "0.8.7"
+autosurgeon = "0.10.1"
 futures = "0.3.31"
 godot = "0.4.3"
 tokio = { version = "1.41.1", features = ["full"] }

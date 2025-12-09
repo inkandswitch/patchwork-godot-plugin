@@ -4,3 +4,17 @@ members = [
     "rust/plugin",
 ]
 
+
+# create profile release_debug
+[profile.release_debug]
+inherits = "release"
+opt-level = 0
+debug = true
+lto = false
+panic = "abort"
+codegen-units = 1
+panic-strategy = "abort"
+#config flag "release_debug"
+
+# set release_debug as default profile
+default = ["release_debug"]
