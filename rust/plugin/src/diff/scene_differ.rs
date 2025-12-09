@@ -123,8 +123,8 @@ impl Differ<'_> {
     pub(super) fn get_scene_diff(
         &self,
         path: &String,
-        new_scene: Option<&GodotScene>,
         old_scene: Option<&GodotScene>,
+        new_scene: Option<&GodotScene>,
     ) -> SceneDiff {
         let mut node_ids = HashSet::new();
         let mut sub_resource_ids = HashSet::new();
