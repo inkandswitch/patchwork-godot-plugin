@@ -542,7 +542,7 @@ func update_history_tree():
 
 	# restore saved selection
 	if selection != null:
-		history_tree.set_selected(selection, 0)
+		history_tree.set_selected(selection, HistoryColumns.TEXT)
 	# otherwise, ensure any invalid saved selection is reset
 	else:
 		history_saved_selection = null
