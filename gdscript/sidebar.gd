@@ -588,7 +588,7 @@ func update_merge_preview():
 	merge_preview_target_label.text = target_branch.name
 	merge_preview_title.text = "Preview of \"" + target_branch.name + "\""
 
-	if GodotProject.is_safe_to_merge():
+	if !GodotProject.is_safe_to_merge():
 		merge_preview_message_label.text = "\"" + target_branch.name + "\" has changed since \"" + source_branch.name + "\" was created.\nBe careful and review your changes before merging."
 		merge_preview_message_icon.texture = load("res://addons/patchwork/icons/warning-circle.svg")
 	else:
