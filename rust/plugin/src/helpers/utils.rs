@@ -189,7 +189,6 @@ pub(crate) fn print_branch_state(message: &str, branch_state: &BranchState) {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CommitInfo {
 	pub hash: ChangeHash,
-	pub prev_change: Option<ChangeHash>,
 	pub timestamp: i64,
 	pub metadata: Option<CommitMetadata>,
     pub synced: bool,
@@ -211,8 +210,7 @@ impl From<&Change> for CommitInfo {
 
 			// set during ingestion
 			synced: false,
-			summary: "".to_string(),
-			prev_change: None
+			summary: "".to_string()
 		}
 	}
 }

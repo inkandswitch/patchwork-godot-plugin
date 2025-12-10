@@ -408,8 +408,18 @@ impl ProjectViewModel for Project {
 		}
 		let heads_before;
 		let heads_after = vec!(change.hash);
-		if let Some(prev_change) = change.prev_change {
-			heads_before = vec!(prev_change);
+
+		let history = self.get_branch_history();
+		let mut prev_hash = None;
+		for (i, el) in history.iter().enumerate() {
+			if *el == selected_hash {
+				prev_hash = history.get(i - 1).copied();
+				break;
+			}
+		}
+
+		if let Some(prev_hash) = prev_hash {
+			heads_before = vec!(prev_hash);
 		}
 		else {
 			heads_before = self.get_checked_out_branch_state()?.fork_info.as_ref()?.forked_at.clone();
