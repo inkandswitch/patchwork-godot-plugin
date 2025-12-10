@@ -517,8 +517,11 @@ func update_history_tree():
 
 		if change.is_merge:
 			var merged_branch = GodotProject.get_branch(change.merge_id)
-			item.add_button(HistoryColumns.TEXT, load("res://addons/patchwork/icons/branch-icon-history.svg"), 0,
-				false, "Checkout branch " + merged_branch.name)
+			# Sometimes this is null while starting up, before the branch has loaded in.
+			# If so the button will just appear later when we update UI.
+			if merged_branch:
+				item.add_button(HistoryColumns.TEXT, load("res://addons/patchwork/icons/branch-icon-history.svg"), 0,
+					false, "Checkout branch " + merged_branch.name)
 
 		item.set_text(HistoryColumns.TEXT, change.summary)
 
