@@ -89,11 +89,15 @@ jobs:
           ls -la ws/addons/patchwork/rust/plugin/linux || echo "No linux artifacts"
           ls -la ws/addons/patchwork/rust/plugin/macos/libpatchwork_rust_core.macos.framework || echo "No macos artifacts"
           ls -la ws/addons/patchwork/rust/plugin/windows || echo "No windows artifacts"
+      - name: Create artifacts/
+        run: mkdir artifacts
       # add the entire "addons" folder to the artifacts
+      - name: Copy addons to artifacts/
+        run: cp -R ws/addons artifacts/patchwork-godot-plugin
       - name: Upload patchwork-godot-plugin
         uses: actions/upload-artifact@v4
         with:
-          path: ws/addons
+          path: artifacts/patchwork-godot-plugin
           name: patchwork-godot-plugin
       - uses: actions/checkout@v4
         with:
@@ -106,10 +110,12 @@ jobs:
         run: |
           mkdir -p moddable-platformer/addons
           cp -R ws/addons/patchwork moddable-platformer/addons
-      - name: Upload
+      - name: Copy moddable-platformer to artifacts/
+        run: cp -R moddable-platformer artifacts/moddable-platformer-with-patchwork
+      - name: Upload moddable-platformer
         uses: actions/upload-artifact@v4
         with:
-          path: moddable-platformer
+          path: artifacts/moddable-platformer-with-patchwork
           name: moddable-platformer-with-patchwork
       - uses: actions/checkout@v4
         with:
@@ -122,16 +128,18 @@ jobs:
       - name: Copy addons to threadbare
         run: |
           cp -R ws/addons/patchwork threadbare/addons
-      - name: Upload
+      - name: Copy threadbare to artifacts/
+        run: cp -R threadbare artifacts/threadbare-with-patchwork
+      - name: Upload threadbare
         uses: actions/upload-artifact@v4
         with:
-          path: threadbare
+          path: artifacts/threadbare-with-patchwork
           name: threadbare-with-patchwork
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: nikitalita/action-gh-release@v1.0
         with:
           files: |
-            ws/patchwork-godot-plugin.zip
-            moddable-platformer-with-patchwork.zip
-            threadbare-with-patchwork.zip
+            artifacts/patchwork-godot-plugin
+            artifacts/moddable-platformer-with-patchwork
+            artifacts/threadbare-with-patchwork
