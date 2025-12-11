@@ -28,7 +28,8 @@ If any are missing, see [Detailed Setup](#detailed-setup) below.
 
 ```bash
 # Clone custom Godot fork
-git clone -b patchwork-4.6 https://github.com/nikitalita/godot
+git clone -b master https://github.com/godotengine/godot
+git checkout bb92a4c8e27e30cdec05ab6d540d724b9b3cfb72
 cd godot
 
 # Clone plugin into modules/
