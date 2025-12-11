@@ -89,15 +89,11 @@ jobs:
           ls -la ws/addons/patchwork/rust/plugin/linux || echo "No linux artifacts"
           ls -la ws/addons/patchwork/rust/plugin/macos/libpatchwork_rust_core.macos.framework || echo "No macos artifacts"
           ls -la ws/addons/patchwork/rust/plugin/windows || echo "No windows artifacts"
-      - name: zip
       # add the entire "addons" folder to the artifacts
-        run: |
-          cd ws
-          zip -r9 patchwork-godot-plugin.zip addons
-      - name: Upload
+      - name: Upload patchwork-godot-plugin
         uses: actions/upload-artifact@v4
         with:
-          path: ws/patchwork-godot-plugin.zip
+          path: ws/addons
           name: patchwork-godot-plugin
       - uses: actions/checkout@v4
         with:
@@ -110,13 +106,10 @@ jobs:
         run: |
           mkdir -p moddable-platformer/addons
           cp -R ws/addons/patchwork moddable-platformer/addons
-      - name: Zip moddable-platformer
-        run: |
-          zip -r9 moddable-platformer-with-patchwork.zip moddable-platformer
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          path: moddable-platformer-with-patchwork.zip
+          path: moddable-platformer
           name: moddable-platformer-with-patchwork
       - uses: actions/checkout@v4
         with:
@@ -129,13 +122,10 @@ jobs:
       - name: Copy addons to threadbare
         run: |
           cp -R ws/addons/patchwork threadbare/addons
-      - name: Zip threadbare
-        run: |
-          zip -r9 threadbare-with-patchwork.zip threadbare
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          path: threadbare-with-patchwork.zip
+          path: threadbare
           name: threadbare-with-patchwork
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
