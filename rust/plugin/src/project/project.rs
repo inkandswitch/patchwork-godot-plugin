@@ -169,14 +169,11 @@ impl Project {
 		}
 
 		// Consume changes into self.changes
-		let mut prev_change = None;
 		for (i, mut change) in changes.into_iter().enumerate() {
             self.history.push(change.hash);
 			// If we're after the most recent ingested commit, we're not synced!
 			change.synced = (i as i32) <= synced_until_index;
 			change.summary = self.get_change_summary(&change);
-			change.prev_change = prev_change;
-			prev_change = Some(change.hash);
             self.changes.insert(change.hash, change);
         }
     }
