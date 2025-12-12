@@ -703,124 +703,125 @@ impl DiffInspectorSection {
 
         let mut available = self.base().get_size().x - (margin_start + margin_end);
 
-        // Draw revertable count (if folded)
-        let folded = self.foldable && !self.unfolded;
-		let child_count = self.base().get_child_count() - 1; // -1 for the vertical seperator
-        if folded && child_count > 0 {
-            let font = self
-                .base()
-                .get_theme_font_ex(&StringName::from("bold"))
-                .theme_type(&StringName::from("EditorFonts"))
-                .done();
-            let font_size = self
-                .base()
-                .get_theme_font_size_ex(&StringName::from("bold_size"))
-                .theme_type(&StringName::from("EditorFonts"))
-                .done();
+		// TODO: Currently not able to use this due to the way that we construct the child controls.
+        // Draw count (if folded)
+        // let folded = self.foldable && !self.unfolded;
+		// let child_count = self.base().get_child_count() - 1; // -1 for the vertical seperator
+        // if folded && child_count > 0 {
+        //     let font = self
+        //         .base()
+        //         .get_theme_font_ex(&StringName::from("bold"))
+        //         .theme_type(&StringName::from("EditorFonts"))
+        //         .done();
+        //     let font_size = self
+        //         .base()
+        //         .get_theme_font_size_ex(&StringName::from("bold_size"))
+        //         .theme_type(&StringName::from("EditorFonts"))
+        //         .done();
 
-            if let Some(ref font) = font {
-                // Use KASHIDA and CONSTRAIN_ELLIPSIS for label width calculation (matching C++)
-                let label_width = font
-                    .get_string_size_ex(&self.label)
-                    .alignment(HorizontalAlignment::LEFT)
-                    .width(available)
-                    .font_size(font_size)
-                    .justification_flags(
-                        JustificationFlag::KASHIDA | JustificationFlag::CONSTRAIN_ELLIPSIS,
-                    )
-                    .done()
-                    .x;
+        //     if let Some(ref font) = font {
+        //         // Use KASHIDA and CONSTRAIN_ELLIPSIS for label width calculation (matching C++)
+        //         let label_width = font
+        //             .get_string_size_ex(&self.label)
+        //             .alignment(HorizontalAlignment::LEFT)
+        //             .width(available)
+        //             .font_size(font_size)
+        //             .justification_flags(
+        //                 JustificationFlag::KASHIDA | JustificationFlag::CONSTRAIN_ELLIPSIS,
+        //             )
+        //             .done()
+        //             .x;
 
-                let light_font = self
-                    .base()
-                    .get_theme_font_ex(&StringName::from("main"))
-                    .theme_type(&StringName::from("EditorFonts"))
-                    .done();
-                let light_font_size = self
-                    .base()
-                    .get_theme_font_size_ex(&StringName::from("main_size"))
-                    .theme_type(&StringName::from("EditorFonts"))
-                    .done();
-                let light_font_color = self
-                    .base()
-                    .get_theme_color_ex(&StringName::from("font_disabled_color"))
-                    .theme_type(&StringName::from("Editor"))
-                    .done();
+        //         let light_font = self
+        //             .base()
+        //             .get_theme_font_ex(&StringName::from("main"))
+        //             .theme_type(&StringName::from("EditorFonts"))
+        //             .done();
+        //         let light_font_size = self
+        //             .base()
+        //             .get_theme_font_size_ex(&StringName::from("main_size"))
+        //             .theme_type(&StringName::from("EditorFonts"))
+        //             .done();
+        //         let light_font_color = self
+        //             .base()
+        //             .get_theme_color_ex(&StringName::from("font_disabled_color"))
+        //             .theme_type(&StringName::from("Editor"))
+        //             .done();
 
-                if let Some(ref light_font) = light_font {
-                    let count = child_count;
-                    let num_revertable_str = if count == 1 {
-                        format!("({} change)", count)
-                    } else {
-                        format!("({} changes)", count)
-                    };
-                    let mut num_revertable_width = light_font
-                        .get_string_size_ex(&GString::from(&num_revertable_str))
-                        .alignment(HorizontalAlignment::LEFT)
-                        .width(-1.0)
-                        .font_size(light_font_size)
-                        .done()
-                        .x;
+        //         if let Some(ref light_font) = light_font {
+        //             let count = child_count;
+        //             let num_revertable_str = if count == 1 {
+        //                 format!("({} change)", count)
+        //             } else {
+        //                 format!("({} changes)", count)
+        //             };
+        //             let mut num_revertable_width = light_font
+        //                 .get_string_size_ex(&GString::from(&num_revertable_str))
+        //                 .alignment(HorizontalAlignment::LEFT)
+        //                 .width(-1.0)
+        //                 .font_size(light_font_size)
+        //                 .done()
+        //                 .x;
 
-                    if label_width + outer_margin + num_revertable_width > available {
-                        let short_str = format!("({})", count);
-                        num_revertable_width = light_font
-                            .get_string_size_ex(&GString::from(&short_str))
-                            .alignment(HorizontalAlignment::LEFT)
-                            .width(-1.0)
-                            .font_size(light_font_size)
-                            .done()
-                            .x;
+        //             if label_width + outer_margin + num_revertable_width > available {
+        //                 let short_str = format!("({})", count);
+        //                 num_revertable_width = light_font
+        //                     .get_string_size_ex(&GString::from(&short_str))
+        //                     .alignment(HorizontalAlignment::LEFT)
+        //                     .width(-1.0)
+        //                     .font_size(light_font_size)
+        //                     .done()
+        //                     .x;
 
-                        let text_offset_y =
-                            light_font.get_ascent_ex().font_size(light_font_size).done()
-                                + (header_height
-                                    - light_font.get_height_ex().font_size(light_font_size).done())
-                                    / 2.0;
-                        let mut text_offset = Vector2::new(margin_end, text_offset_y).round();
-                        if !rtl {
-                            text_offset.x =
-                                self.base().get_size().x - (text_offset.x + num_revertable_width);
-                        }
-                        self.base_mut()
-                            .draw_string_ex(light_font, text_offset, &GString::from(&short_str))
-                            .modulate(light_font_color)
-                            .alignment(HorizontalAlignment::LEFT)
-                            .width(-1.0)
-                            .font_size(light_font_size)
-                            .justification_flags(JustificationFlag::NONE)
-                            .done();
-                        margin_end += (num_revertable_width + outer_margin) as f32;
-                    } else {
-                        let text_offset_y =
-                            light_font.get_ascent_ex().font_size(light_font_size).done()
-                                + (header_height
-                                    - light_font.get_height_ex().font_size(light_font_size).done())
-                                    / 2.0;
-                        let mut text_offset = Vector2::new(margin_end, text_offset_y).round();
-                        if !rtl {
-                            text_offset.x =
-                                self.base().get_size().x - (text_offset.x + num_revertable_width);
-                        }
-                        self.base_mut()
-                            .draw_string_ex(
-                                light_font,
-                                text_offset,
-                                &GString::from(&num_revertable_str),
-                            )
-                            .modulate(light_font_color)
-                            .alignment(HorizontalAlignment::LEFT)
-                            .width(-1.0)
-                            .font_size(light_font_size)
-                            .justification_flags(JustificationFlag::NONE)
-                            .done();
-                        margin_end += (num_revertable_width + outer_margin) as f32;
-                    }
-                    // Update available width (matching C++ line 231)
-                    available -= num_revertable_width + outer_margin;
-                }
-            }
-        }
+        //                 let text_offset_y =
+        //                     light_font.get_ascent_ex().font_size(light_font_size).done()
+        //                         + (header_height
+        //                             - light_font.get_height_ex().font_size(light_font_size).done())
+        //                             / 2.0;
+        //                 let mut text_offset = Vector2::new(margin_end, text_offset_y).round();
+        //                 if !rtl {
+        //                     text_offset.x =
+        //                         self.base().get_size().x - (text_offset.x + num_revertable_width);
+        //                 }
+        //                 self.base_mut()
+        //                     .draw_string_ex(light_font, text_offset, &GString::from(&short_str))
+        //                     .modulate(light_font_color)
+        //                     .alignment(HorizontalAlignment::LEFT)
+        //                     .width(-1.0)
+        //                     .font_size(light_font_size)
+        //                     .justification_flags(JustificationFlag::NONE)
+        //                     .done();
+        //                 margin_end += (num_revertable_width + outer_margin) as f32;
+        //             } else {
+        //                 let text_offset_y =
+        //                     light_font.get_ascent_ex().font_size(light_font_size).done()
+        //                         + (header_height
+        //                             - light_font.get_height_ex().font_size(light_font_size).done())
+        //                             / 2.0;
+        //                 let mut text_offset = Vector2::new(margin_end, text_offset_y).round();
+        //                 if !rtl {
+        //                     text_offset.x =
+        //                         self.base().get_size().x - (text_offset.x + num_revertable_width);
+        //                 }
+        //                 self.base_mut()
+        //                     .draw_string_ex(
+        //                         light_font,
+        //                         text_offset,
+        //                         &GString::from(&num_revertable_str),
+        //                     )
+        //                     .modulate(light_font_color)
+        //                     .alignment(HorizontalAlignment::LEFT)
+        //                     .width(-1.0)
+        //                     .font_size(light_font_size)
+        //                     .justification_flags(JustificationFlag::NONE)
+        //                     .done();
+        //                 margin_end += (num_revertable_width + outer_margin) as f32;
+        //             }
+        //             // Update available width (matching C++ line 231)
+        //             available -= num_revertable_width + outer_margin;
+        //         }
+        //     }
+        // }
 
         // Draw label
         let font = self
