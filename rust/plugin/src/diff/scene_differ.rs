@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use godot::{
     builtin::{StringName, Variant},
-    classes::ClassDb,
+    classes::{ClassDb},
+	global::str_to_var,
     meta::ToGodot, obj::Singleton,
 };
 
@@ -474,7 +475,7 @@ impl Differ<'_> {
         let path;
         match prop_value {
             VariantStrValue::Variant(variant) => {
-                return variant.to_variant();
+                return str_to_var(variant);
             }
             VariantStrValue::SubResourceID(sub_resource_id) => {
                 // We currently don't support displaying deep subresource diffs, so just inform of a change.
