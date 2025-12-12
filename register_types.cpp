@@ -3,7 +3,6 @@
 /*************************************************************************/
 
 #include "register_types.h"
-#include "editor/diff_inspector.h"
 #include "editor/editor_node.h"
 #include "editor/patchwork_editor.h"
 
@@ -17,7 +16,6 @@ void initialize_patchwork_editor_module(ModuleInitializationLevel p_level) {
 		EditorNode::add_init_callback(&patchwork_editor_init_callback);
 	}
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
-		ClassDB::register_class<DiffInspector>();
 		ClassDB::register_class<PatchworkEditor>();
 		// register the editor inspector section
 	}

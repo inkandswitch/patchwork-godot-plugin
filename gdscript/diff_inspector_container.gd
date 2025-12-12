@@ -1,6 +1,6 @@
 @tool
 class_name DiffInspectorContainer
-extends DiffInspector
+extends EditorInspector
 
 @export var added_icon: Texture2D
 @export var removed_icon: Texture2D
