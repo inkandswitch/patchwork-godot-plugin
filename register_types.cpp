@@ -19,10 +19,9 @@ void initialize_patchwork_editor_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
 		ClassDB::register_class<DiffInspector>();
 		ClassDB::register_class<PatchworkEditor>();
-		ClassDB::register_class<DiffInspectorProperty>();
 		// register the editor inspector section
 		ClassDB::register_class<EditorInspectorSection>();
-		ClassDB::register_class<DiffInspectorSection>();
+		// ClassDB::register_class<DiffInspectorSection>();
 	}
 }
 
