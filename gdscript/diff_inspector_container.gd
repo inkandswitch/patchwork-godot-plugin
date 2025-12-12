@@ -420,7 +420,7 @@ func add_resource_diff(inspector_section: DiffInspectorSection, change_type: Str
 
 func add_text_diff(inspector_section: DiffInspectorSection, unified_diff: Dictionary) -> void:
 	# print("adding text diff")
-	var text_diff = TextDiffer.get_text_diff(unified_diff, false)
+	var text_diff = TextDifferView.get_text_diff_view(unified_diff, false)
 	text_diff.custom_minimum_size = Vector2(100, 500)
 	inspector_section.get_vbox().add_child(text_diff)
 
