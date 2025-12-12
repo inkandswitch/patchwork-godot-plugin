@@ -2,10 +2,9 @@ use godot::builtin::{Color, GString, Rect2, StringName, Variant, Vector2};
 use godot::classes::notify::ContainerNotification;
 use godot::classes::text_server::JustificationFlag;
 use godot::classes::{
-    Container, Control, IContainer, Input, InputEvent, InputEventMouseButton,
-    InputEventMouseMotion, Object, StyleBoxFlat, Texture2D, Timer, VBoxContainer,
+    Container, Control, EditorInspector, EditorProperty, IContainer, Input, InputEvent, InputEventMouseButton, InputEventMouseMotion, Object, StyleBoxFlat, Texture2D, Timer, VBoxContainer
 };
-use godot::global::{HorizontalAlignment, MouseButton};
+use godot::global::{HorizontalAlignment, MouseButton, PropertyHint};
 use godot::prelude::*;
 use std::collections::HashSet;
 
@@ -47,6 +46,31 @@ impl DiffInspectorSection {
     pub fn section_mouse_exited(section: GString);
     #[signal]
     pub fn box_clicked(section: GString);
+
+	#[func]
+	pub fn instance_property_diff(object: Gd<Object>, path: String, wide: bool) -> Option<Gd<EditorProperty>> {
+
+		let list = object.get_property_list();
+		for property in list.iter_shared() {
+			let name = property.get("name");
+			if name.is_some() && name.unwrap().to::<String>() == path {
+				let property_type = VariantType::from_ord(property.get("type")?.to::<i64>() as i32);
+				let property_hint= PropertyHint::from_ord(property.get("hint")?.to::<i64>() as i32);
+				let property_hint_string = property.get("hint_string")?.to::<GString>();
+				let property_usage = property.get("usage")?.to::<i64>() as u32;
+				return EditorInspector::instantiate_property_editor_ex(
+					&object,
+					property_type,
+					&path,
+					property_hint,
+					&property_hint_string,
+					property_usage)
+					.wide(wide).done();
+			}
+		}
+		None
+	}
+
 
     #[func]
     pub fn setup(

@@ -54,26 +54,7 @@ bool DiffInspector::can_property_revert(Object *p_object, const StringName &p_pr
 	return EditorPropertyRevert::can_property_revert(p_object, p_property, cur_value);
 }
 
-EditorProperty *DiffInspector::instance_property_diff(Object *p_object, const String &p_path, bool p_wide) {
-	List<PropertyInfo> list;
-	p_object->get_property_list(&list, false);
-	PropertyInfo p_info;
-	for (auto &E : list) {
-		if (E.name == p_path) {
-			p_info = E;
-			break;
-		}
-	}
-	auto ret = EditorInspector::instantiate_property_editor(p_object, p_info.type, p_path, p_info.hint, p_info.hint_string, p_info.usage, p_wide);
-	if (!ret) {
-		// iterate through all the special plugins and find one that parses
-	}
-	ERR_FAIL_COND_V_MSG(!ret, nullptr, vformat("Failed to instantiate property editor for %s", p_path));
-	return ret;
-}
-
 void DiffInspector::_bind_methods() {
-	ClassDB::bind_static_method("DiffInspector", D_METHOD("instance_property_diff", "object", "path", "wide"), &DiffInspector::instance_property_diff, DEFVAL(false));
 	ClassDB::bind_static_method("DiffInspector", D_METHOD("get_property_revert_value", "object", "property"), &DiffInspector::get_property_revert_value);
 	ClassDB::bind_static_method("DiffInspector", D_METHOD("can_property_revert", "object", "property", "has_current_value", "custom_current_value"), &DiffInspector::can_property_revert);
 }

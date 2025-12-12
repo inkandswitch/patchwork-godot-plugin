@@ -48,9 +48,9 @@ protected:
 	static void _bind_methods();
 
 public:
+	// TODO: remove this and PR the revert stuff
 	static Variant get_property_revert_value(Object *p_object, const StringName &p_property);
 	static bool can_property_revert(Object *p_object, const StringName &p_property, bool has_current_value, Variant p_custom_current_value);
-	static EditorProperty *instance_property_diff(Object *p_object, const String &p_path, bool p_wide = false);
 };
 
 #endif // DIFF_INSPECTOR_H
