@@ -86,7 +86,6 @@ func update_property_editor(editor_property) -> void:
 	editor_property.set_read_only(true)
 	editor_property.update_property()
 	editor_property._update_editor_property_status()
-	# editor_property.update_cache()
 
 func getDeletedNodes() -> Array:
 	return deleted_nodes

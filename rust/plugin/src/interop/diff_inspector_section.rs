@@ -1,10 +1,12 @@
+use godot::builtin::{Color, GString, Rect2, StringName, Variant, Vector2};
 use godot::classes::notify::ContainerNotification;
 use godot::classes::text_server::JustificationFlag;
+use godot::classes::{
+    Container, Control, IContainer, Input, InputEvent, InputEventMouseButton,
+    InputEventMouseMotion, Object, StyleBoxFlat, Texture2D, Timer, VBoxContainer,
+};
 use godot::global::{HorizontalAlignment, MouseButton};
 use godot::prelude::*;
-use godot::classes::{Container, Control, IContainer, Input, InputEvent, InputEventMouseButton, InputEventMouseMotion, Object, StyleBoxFlat, Texture2D, Timer, VBoxContainer};
-use godot::builtin::{GString, Color, Vector2, Rect2, StringName, Variant};
-// use godot::engine::Control;
 use std::collections::HashSet;
 
 #[derive(GodotClass)]
@@ -39,13 +41,12 @@ pub struct DiffInspectorSection {
 
 #[godot_api]
 impl DiffInspectorSection {
-
-	#[signal]
-	pub fn section_mouse_entered(section: GString);
-	#[signal]
-	pub fn section_mouse_exited(section: GString);
-	#[signal]
-	pub fn box_clicked(section: GString);
+    #[signal]
+    pub fn section_mouse_entered(section: GString);
+    #[signal]
+    pub fn section_mouse_exited(section: GString);
+    #[signal]
+    pub fn box_clicked(section: GString);
 
     #[func]
     pub fn setup(
@@ -67,19 +68,19 @@ impl DiffInspectorSection {
         self.level = p_level;
 
         if !self.foldable && !self.vbox_added {
-			let vbox = self.vbox.clone();
-			self.base_mut().add_child(&vbox);
-			self.base_mut().move_child(&vbox, 0);
-			self.vbox_added = true;
+            let vbox = self.vbox.clone();
+            self.base_mut().add_child(&vbox);
+            self.base_mut().move_child(&vbox, 0);
+            self.vbox_added = true;
         }
 
         if self.foldable {
-            self._test_unfold();
-                if self.unfolded {
-                    self.vbox.show();
-                } else {
-                    self.vbox.hide();
-                }
+            self.test_unfold();
+            if self.unfolded {
+                self.vbox.show();
+            } else {
+                self.vbox.hide();
+            }
         }
     }
 
@@ -94,7 +95,7 @@ impl DiffInspectorSection {
             return;
         }
 
-        self._test_unfold();
+        self.test_unfold();
 
         self.unfolded = true;
         self.vbox.show();
@@ -182,9 +183,10 @@ impl DiffInspectorSection {
         }
     }
 
-    #[func]
-    pub fn get_header_rect(&self) -> Rect2 {
-        let section_indent_size = self.base().get_theme_constant_ex(&StringName::from("indent_size"))
+    fn get_header_rect(&self) -> Rect2 {
+        let section_indent_size = self
+            .base()
+            .get_theme_constant_ex(&StringName::from("indent_size"))
             .theme_type(&StringName::from("DiffInspectorSection"))
             .done();
         let mut section_indent = 0;
@@ -193,11 +195,17 @@ impl DiffInspectorSection {
             section_indent = self.indent_depth * section_indent_size;
         }
 
-        let section_indent_style = self.base().get_theme_stylebox_ex(&StringName::from("indent_box")).theme_type(&StringName::from("DiffInspectorSection")).done();
+        let section_indent_style = self
+            .base()
+            .get_theme_stylebox_ex(&StringName::from("indent_box"))
+            .theme_type(&StringName::from("DiffInspectorSection"))
+            .done();
         if self.indent_depth > 0 {
             if let Some(ref style) = section_indent_style {
                 if let Ok(style_flat) = style.clone().try_cast::<StyleBoxFlat>() {
-                    section_indent += (style_flat.get_margin(Side::LEFT) + style_flat.get_margin(Side::RIGHT)) as i32; // LEFT + RIGHT
+                    section_indent += (style_flat.get_margin(Side::LEFT)
+                        + style_flat.get_margin(Side::RIGHT))
+                        as i32; // LEFT + RIGHT
                 }
             }
         }
@@ -209,17 +217,16 @@ impl DiffInspectorSection {
             header_offset_x += section_indent as f32;
         }
 
-        let header_height = self._get_header_height();
+        let header_height = self.get_header_height();
         Rect2::new(
             Vector2::new(header_offset_x, 0.0),
-            Vector2::new(header_width, header_height)
+            Vector2::new(header_width, header_height),
         )
     }
 
     // Private helper methods
-    fn _test_unfold(&mut self) {
+    fn test_unfold(&mut self) {
         if !self.vbox_added {
-
             let vbox = self.vbox.clone();
             self.base_mut().add_child(&vbox);
             self.base_mut().move_child(&vbox, 0);
@@ -227,9 +234,17 @@ impl DiffInspectorSection {
         }
     }
 
-    fn _get_header_height(&self) -> f32 {
-        let font = self.base().get_theme_font_ex(&StringName::from("bold")).theme_type(&StringName::from("EditorFonts")).done();
-        let font_size = self.base().get_theme_font_size_ex(&StringName::from("bold_size")).theme_type(&StringName::from("EditorFonts")).done();
+    fn get_header_height(&self) -> f32 {
+        let font = self
+            .base()
+            .get_theme_font_ex(&StringName::from("bold"))
+            .theme_type(&StringName::from("EditorFonts"))
+            .done();
+        let font_size = self
+            .base()
+            .get_theme_font_size_ex(&StringName::from("bold_size"))
+            .theme_type(&StringName::from("EditorFonts"))
+            .done();
 
         let mut header_height = if let Some(ref font) = font {
             font.get_height_ex().font_size(font_size).done()
@@ -237,35 +252,47 @@ impl DiffInspectorSection {
             0.0
         };
 
-        if let Some(arrow) = self._get_arrow() {
+        if let Some(arrow) = self.get_arrow() {
             header_height = header_height.max(arrow.get_height() as f32);
         }
 
-        let v_separation = self.base().get_theme_constant_ex(&StringName::from("v_separation")).theme_type(&StringName::from("Tree")).done();
+        let v_separation = self
+            .base()
+            .get_theme_constant_ex(&StringName::from("v_separation"))
+            .theme_type(&StringName::from("Tree"))
+            .done();
         header_height += v_separation as f32;
 
         header_height
     }
 
-    fn _get_arrow(&self) -> Option<Gd<Texture2D>> {
+    fn get_arrow(&self) -> Option<Gd<Texture2D>> {
         if !self.foldable {
             return None;
         }
 
         if self.unfolded {
-            self.base().get_theme_icon_ex(&StringName::from("arrow")).theme_type(&StringName::from("Tree")).done()
+            self.base()
+                .get_theme_icon_ex(&StringName::from("arrow"))
+                .theme_type(&StringName::from("Tree"))
+                .done()
         } else {
             let rtl = self.base().is_layout_rtl();
             if rtl {
-                self.base().get_theme_icon_ex(&StringName::from("arrow_collapsed_mirrored")).theme_type(&StringName::from("Tree")).done()
+                self.base()
+                    .get_theme_icon_ex(&StringName::from("arrow_collapsed_mirrored"))
+                    .theme_type(&StringName::from("Tree"))
+                    .done()
             } else {
-                self.base().get_theme_icon_ex(&StringName::from("arrow_collapsed")).theme_type(&StringName::from("Tree")).done()
+                self.base()
+                    .get_theme_icon_ex(&StringName::from("arrow_collapsed"))
+                    .theme_type(&StringName::from("Tree"))
+                    .done()
             }
         }
     }
 
     fn update_bg_color(&mut self) {
-
         let color_name = if self.type_name == "modified" {
             "prop_subsection_modified"
         } else if self.type_name == "added" {
@@ -276,35 +303,38 @@ impl DiffInspectorSection {
             "prop_subsection"
         };
 
-        self.bg_color = self.base().get_theme_color_ex(color_name).theme_type(&StringName::from("Editor")).done();
+        self.bg_color = self
+            .base()
+            .get_theme_color_ex(color_name)
+            .theme_type(&StringName::from("Editor"))
+            .done();
     }
 
-
-	fn _add_timer(&mut self) {
+    fn add_timer(&mut self) {
         let callable = Callable::from_object_method(&self.to_gd(), "unfold");
 
         // Add timer as child (matching C++ implementation)
-		let timer = self.dropping_unfold_timer.clone();
+        let timer = self.dropping_unfold_timer.clone();
         self.base_mut().add_child(&timer);
 
         // Connect timer timeout to unfold
         self.dropping_unfold_timer.connect("timeout", &callable);
-	}
+    }
 
-	fn _accept_and_emit_box_clicked(&mut self) {
-		self.base_mut().accept_event();
-		let section = self.section.clone();
-		self.signals().box_clicked().emit(&section);
-	}
+    fn accept_and_emit_box_clicked(&mut self) {
+        self.base_mut().accept_event();
+        let section = self.section.clone();
+        self.signals().box_clicked().emit(&section);
+    }
 
-	fn _as_sortable_control(node: Option<Gd<Node>>) -> Option<Gd<Control>> {
-		if let Some(Ok(control)) = node.map(|n| n.try_cast::<Control>()) {
-			if !control.is_set_as_top_level() && control.is_visible_in_tree() {
-				return Some(control);
-			}
-		}
-		None
-	}
+    fn as_sortable_control(node: Option<Gd<Node>>) -> Option<Gd<Control>> {
+        if let Some(Ok(control)) = node.map(|n| n.try_cast::<Control>()) {
+            if !control.is_set_as_top_level() && control.is_visible_in_tree() {
+                return Some(control);
+            }
+        }
+        None
+    }
 }
 
 #[godot_api]
@@ -337,50 +367,65 @@ impl IContainer for DiffInspectorSection {
         }
     }
 
-
     fn enter_tree(&mut self) {
-		// self._add_timer();
-		self._add_timer();
+        self.add_timer();
     }
 
     fn get_minimum_size(&self) -> Vector2 {
         let mut ms = Vector2::ZERO;
         let child_count = self.base().get_child_count();
         for i in 0..child_count {
-            if let Some(child) = Self::_as_sortable_control(self.base().get_child(i)) {
-				let minsize = child.get_combined_minimum_size();
-				ms.x = ms.x.max(minsize.x);
-				ms.y = ms.y.max(minsize.y);
+            if let Some(child) = Self::as_sortable_control(self.base().get_child(i)) {
+                let minsize = child.get_combined_minimum_size();
+                ms.x = ms.x.max(minsize.x);
+                ms.y = ms.y.max(minsize.y);
             }
         }
 
-		let font = self.base().get_theme_font_ex(&StringName::from("font")).theme_type(&StringName::from("Tree")).done();
-		let font_size = self.base().get_theme_font_size_ex(&StringName::from("font_size")).theme_type(&StringName::from("Tree")).done();
-		if let Some(ref font) = font {
-			ms.y += font.get_height_ex().font_size(font_size).done() +
-				self.base().get_theme_constant_ex(&StringName::from("v_separation"))
-					.theme_type(&StringName::from("Tree"))
-					.done() as f32;
-		}
+        let font = self
+            .base()
+            .get_theme_font_ex(&StringName::from("font"))
+            .theme_type(&StringName::from("Tree"))
+            .done();
+        let font_size = self
+            .base()
+            .get_theme_font_size_ex(&StringName::from("font_size"))
+            .theme_type(&StringName::from("Tree"))
+            .done();
+        if let Some(ref font) = font {
+            ms.y += font.get_height_ex().font_size(font_size).done()
+                + self
+                    .base()
+                    .get_theme_constant_ex(&StringName::from("v_separation"))
+                    .theme_type(&StringName::from("Tree"))
+                    .done() as f32;
+        }
 
-        ms.x += self.base().get_theme_constant_ex(&StringName::from("inspector_margin"))
+        ms.x += self
+            .base()
+            .get_theme_constant_ex(&StringName::from("inspector_margin"))
             .theme_type(&StringName::from("Editor"))
             .done() as f32;
 
-        let section_indent_size = self.base().get_theme_constant_ex(&StringName::from("indent_size"))
+        let section_indent_size = self
+            .base()
+            .get_theme_constant_ex(&StringName::from("indent_size"))
             .theme_type(&StringName::from("DiffInspectorSection"))
             .done();
         if self.indent_depth > 0 && section_indent_size > 0 {
             ms.x += (self.indent_depth * section_indent_size) as f32;
         }
 
-        let section_indent_style = self.base().get_theme_stylebox_ex(&StringName::from("indent_box"))
+        let section_indent_style = self
+            .base()
+            .get_theme_stylebox_ex(&StringName::from("indent_box"))
             .theme_type(&StringName::from("DiffInspectorSection"))
             .done();
         if self.indent_depth > 0 {
             if let Some(ref style) = section_indent_style {
                 if let Ok(style_flat) = style.clone().try_cast::<StyleBoxFlat>() {
-                    ms.x += (style_flat.get_margin(Side::LEFT) + style_flat.get_margin(Side::RIGHT)) as f32;
+                    ms.x += (style_flat.get_margin(Side::LEFT) + style_flat.get_margin(Side::RIGHT))
+                        as f32;
                 }
             }
         }
@@ -388,19 +433,24 @@ impl IContainer for DiffInspectorSection {
         ms
     }
 
-	fn gui_input(&mut self, event: Gd<InputEvent>) {
+    fn gui_input(&mut self, event: Gd<InputEvent>) {
         if let Ok(mb) = event.clone().try_cast::<InputEventMouseButton>() {
-            if mb.is_pressed() && mb.get_button_index() == MouseButton::LEFT { // MouseButton::LEFT
+            if mb.is_pressed() && mb.get_button_index() == MouseButton::LEFT {
+                // MouseButton::LEFT
                 // Check the position of the arrow texture
-                if self.foldable && let Some(arrow) = self._get_arrow() {
+                if self.foldable
+                    && let Some(arrow) = self.get_arrow()
+                {
                     const FUDGE_FACTOR: f32 = 10.0;
-                    let bounding_width = arrow.get_width() as f32 + self.arrow_position.x + FUDGE_FACTOR;
+                    let bounding_width =
+                        arrow.get_width() as f32 + self.arrow_position.x + FUDGE_FACTOR;
                     let bounding_height = self.base().get_size().y;
-                    let bounding_box = Rect2::new(Vector2::ZERO, Vector2::new(bounding_width, bounding_height));
+                    let bounding_box =
+                        Rect2::new(Vector2::ZERO, Vector2::new(bounding_width, bounding_height));
 
                     if bounding_box.contains_point(mb.get_position()) {
                         if self.unfolded {
-                            let header_height = self._get_header_height();
+                            let header_height = self.get_header_height();
                             if mb.get_position().y >= header_height {
                                 return;
                             }
@@ -416,11 +466,11 @@ impl IContainer for DiffInspectorSection {
                         }
                         return;
                     } else {
-                        self._accept_and_emit_box_clicked();
+                        self.accept_and_emit_box_clicked();
                         return;
                     }
                 } else {
-					self._accept_and_emit_box_clicked();
+                    self.accept_and_emit_box_clicked();
                     return;
                 }
             } else if !mb.is_pressed() {
@@ -443,7 +493,6 @@ impl IContainer for DiffInspectorSection {
         }
     }
 
-
     fn on_notification(&mut self, what: ContainerNotification) {
         match what {
             // NOTIFICATION_THEME_CHANGED
@@ -458,40 +507,59 @@ impl IContainer for DiffInspectorSection {
                     return;
                 }
 
-                let inspector_margin = self.base().get_theme_constant_ex(&StringName::from("inspector_margin")).theme_type(&StringName::from("Editor")).done();
+                let inspector_margin = self
+                    .base()
+                    .get_theme_constant_ex(&StringName::from("inspector_margin"))
+                    .theme_type(&StringName::from("Editor"))
+                    .done();
                 let mut inspector_margin_val = inspector_margin as f32;
 
-                let section_indent_size = self.base().get_theme_constant_ex(&StringName::from("indent_size")).theme_type(&StringName::from("DiffInspectorSection")).done();
+                let section_indent_size = self
+                    .base()
+                    .get_theme_constant_ex(&StringName::from("indent_size"))
+                    .theme_type(&StringName::from("DiffInspectorSection"))
+                    .done();
                 if self.indent_depth > 0 && section_indent_size > 0 {
                     inspector_margin_val += (self.indent_depth * section_indent_size) as f32;
                 }
 
-                let section_indent_style = self.base().get_theme_stylebox_ex(&StringName::from("indent_box")).theme_type(&StringName::from("DiffInspectorSection")).done();
+                let section_indent_style = self
+                    .base()
+                    .get_theme_stylebox_ex(&StringName::from("indent_box"))
+                    .theme_type(&StringName::from("DiffInspectorSection"))
+                    .done();
                 if self.indent_depth > 0 {
                     if let Some(ref style) = section_indent_style {
                         if let Ok(style_flat) = style.clone().try_cast::<StyleBoxFlat>() {
-                            inspector_margin_val += (style_flat.get_margin(Side::LEFT) + style_flat.get_margin(Side::RIGHT)) as f32; // LEFT + RIGHT
+                            inspector_margin_val += (style_flat.get_margin(Side::LEFT)
+                                + style_flat.get_margin(Side::RIGHT))
+                                as f32; // LEFT + RIGHT
                         }
                     }
                 }
 
                 let size = self.base().get_size() - Vector2::new(inspector_margin_val, 0.0);
-                let header_height = self._get_header_height();
+                let header_height = self.get_header_height();
                 let offset = Vector2::new(
-                    if self.base().is_layout_rtl() { 0.0 } else { inspector_margin_val },
-                    header_height
+                    if self.base().is_layout_rtl() {
+                        0.0
+                    } else {
+                        inspector_margin_val
+                    },
+                    header_height,
                 );
 
                 let child_count = self.base().get_child_count();
                 for i in 0..child_count {
-                    if let Some(child) = Self::_as_sortable_control(self.base().get_child(i)) {
-                        self.base_mut().fit_child_in_rect(&child, Rect2::new(offset, size));
+                    if let Some(child) = Self::as_sortable_control(self.base().get_child(i)) {
+                        self.base_mut()
+                            .fit_child_in_rect(&child, Rect2::new(offset, size));
                     }
                 }
             }
             // NOTIFICATION_DRAW
             ContainerNotification::DRAW => {
-                self._draw();
+                self.draw();
             }
             // NOTIFICATION_DRAG_BEGIN
             ContainerNotification::DRAG_BEGIN => {
@@ -521,19 +589,29 @@ impl IContainer for DiffInspectorSection {
 }
 
 impl DiffInspectorSection {
-    fn _draw(&mut self) {
-        let section_indent_size = self.base().get_theme_constant_ex(&StringName::from("indent_size")).theme_type(&StringName::from("DiffInspectorSection")).done();
+    fn draw(&mut self) {
+        let section_indent_size = self
+            .base()
+            .get_theme_constant_ex(&StringName::from("indent_size"))
+            .theme_type(&StringName::from("DiffInspectorSection"))
+            .done();
         let mut section_indent = 0;
 
         if self.indent_depth > 0 && section_indent_size > 0 {
             section_indent = self.indent_depth * section_indent_size;
         }
 
-        let section_indent_style = self.base().get_theme_stylebox_ex(&StringName::from("indent_box")).theme_type(&StringName::from("DiffInspectorSection")).done();
+        let section_indent_style = self
+            .base()
+            .get_theme_stylebox_ex(&StringName::from("indent_box"))
+            .theme_type(&StringName::from("DiffInspectorSection"))
+            .done();
         if self.indent_depth > 0 {
             if let Some(ref style) = section_indent_style {
                 if let Ok(style_flat) = style.clone().try_cast::<StyleBoxFlat>() {
-                    section_indent += (style_flat.get_margin(Side::LEFT) + style_flat.get_margin(Side::RIGHT)) as i32; // LEFT + RIGHT
+                    section_indent += (style_flat.get_margin(Side::LEFT)
+                        + style_flat.get_margin(Side::RIGHT))
+                        as i32; // LEFT + RIGHT
                 }
             }
         }
@@ -545,10 +623,10 @@ impl DiffInspectorSection {
             header_offset_x += section_indent as f32;
         }
 
-        let header_height = self._get_header_height();
+        let header_height = self.get_header_height();
         let header_rect = Rect2::new(
             Vector2::new(header_offset_x, 0.0),
-            Vector2::new(header_width, header_height)
+            Vector2::new(header_width, header_height),
         );
 
         // Draw header background
@@ -557,7 +635,8 @@ impl DiffInspectorSection {
 
         let mouse_pos = self.base().get_local_mouse_position();
         if self.foldable && header_rect.contains_point(mouse_pos) {
-            if Input::singleton().is_mouse_button_pressed(MouseButton::LEFT) { // MouseButton::LEFT
+            if Input::singleton().is_mouse_button_pressed(MouseButton::LEFT) {
+                // MouseButton::LEFT
                 c = c.lightened(-0.05);
             } else {
                 c = c.lightened(0.2);
@@ -566,13 +645,25 @@ impl DiffInspectorSection {
             if !self.entered {
                 self.entered = true;
                 let section = self.section.clone();
-                self.base_mut().call_deferred("emit_signal", &[Variant::from("section_mouse_entered"), Variant::from(section)]);
+                self.base_mut().call_deferred(
+                    "emit_signal",
+                    &[
+                        Variant::from("section_mouse_entered"),
+                        Variant::from(section),
+                    ],
+                );
             }
         } else {
             if self.entered {
                 self.entered = false;
                 let section = self.section.clone();
-                self.base_mut().call_deferred("emit_signal", &[Variant::from("section_mouse_exited"), Variant::from(section)]);
+                self.base_mut().call_deferred(
+                    "emit_signal",
+                    &[
+                        Variant::from("section_mouse_exited"),
+                        Variant::from(section),
+                    ],
+                );
             }
         }
 
@@ -580,22 +671,29 @@ impl DiffInspectorSection {
 
         // Draw header content (arrow, label, revertable count)
         let outer_margin = (2.0 * self.base().get_theme_default_base_scale()).round();
-        let separation = self.base().get_theme_constant_ex(&StringName::from("h_separation")).theme_type(&StringName::from("DiffInspectorSection")).done();
+        let separation = self
+            .base()
+            .get_theme_constant_ex(&StringName::from("h_separation"))
+            .theme_type(&StringName::from("DiffInspectorSection"))
+            .done();
         let separation_val = separation as f32;
 
         let mut margin_start = section_indent as f32 + outer_margin as f32;
         let mut margin_end = outer_margin as f32;
 
         // Draw arrow
-        if let Some(arrow) = self._get_arrow() {
+        if let Some(arrow) = self.get_arrow() {
             if rtl {
-                self.arrow_position.x = self.base().get_size().x - ((margin_start as f32 + arrow.get_width() as f32) as f32);
+                self.arrow_position.x = self.base().get_size().x
+                    - ((margin_start as f32 + arrow.get_width() as f32) as f32);
             } else {
                 self.arrow_position.x = margin_start as f32;
             }
             self.arrow_position.y = (header_height as f32 - arrow.get_height() as f32) / 2.0;
-			let arrow_position = self.arrow_position.clone();
-            self.base_mut().draw_texture_ex(&arrow, arrow_position).done();
+            let arrow_position = self.arrow_position.clone();
+            self.base_mut()
+                .draw_texture_ex(&arrow, arrow_position)
+                .done();
             margin_start += (arrow.get_width() as f32 + separation_val) as f32;
         }
 
@@ -604,21 +702,45 @@ impl DiffInspectorSection {
         // Draw revertable count (if folded)
         let folded = self.foldable && !self.unfolded;
         if folded && !self.revertable_properties.is_empty() {
-            let font = self.base().get_theme_font_ex(&StringName::from("bold")).theme_type(&StringName::from("EditorFonts")).done();
-            let font_size = self.base().get_theme_font_size_ex(&StringName::from("bold_size")).theme_type(&StringName::from("EditorFonts")).done();
+            let font = self
+                .base()
+                .get_theme_font_ex(&StringName::from("bold"))
+                .theme_type(&StringName::from("EditorFonts"))
+                .done();
+            let font_size = self
+                .base()
+                .get_theme_font_size_ex(&StringName::from("bold_size"))
+                .theme_type(&StringName::from("EditorFonts"))
+                .done();
 
             if let Some(ref font) = font {
                 // Use KASHIDA and CONSTRAIN_ELLIPSIS for label width calculation (matching C++)
-                let label_width = font.get_string_size_ex(&self.label)
+                let label_width = font
+                    .get_string_size_ex(&self.label)
                     .alignment(HorizontalAlignment::LEFT)
                     .width(available)
                     .font_size(font_size)
-                    .justification_flags(JustificationFlag::KASHIDA | JustificationFlag::CONSTRAIN_ELLIPSIS)
-                    .done().x;
+                    .justification_flags(
+                        JustificationFlag::KASHIDA | JustificationFlag::CONSTRAIN_ELLIPSIS,
+                    )
+                    .done()
+                    .x;
 
-                let light_font = self.base().get_theme_font_ex(&StringName::from("main")).theme_type(&StringName::from("EditorFonts")).done();
-                let light_font_size = self.base().get_theme_font_size_ex(&StringName::from("main_size")).theme_type(&StringName::from("EditorFonts")).done();
-                let light_font_color = self.base().get_theme_color_ex(&StringName::from("font_disabled_color")).theme_type(&StringName::from("Editor")).done();
+                let light_font = self
+                    .base()
+                    .get_theme_font_ex(&StringName::from("main"))
+                    .theme_type(&StringName::from("EditorFonts"))
+                    .done();
+                let light_font_size = self
+                    .base()
+                    .get_theme_font_size_ex(&StringName::from("main_size"))
+                    .theme_type(&StringName::from("EditorFonts"))
+                    .done();
+                let light_font_color = self
+                    .base()
+                    .get_theme_color_ex(&StringName::from("font_disabled_color"))
+                    .theme_type(&StringName::from("Editor"))
+                    .done();
 
                 if let Some(ref light_font) = light_font {
                     let count = self.revertable_properties.len();
@@ -627,22 +749,36 @@ impl DiffInspectorSection {
                     } else {
                         format!("({} changes)", count)
                     };
-                    let mut num_revertable_width = light_font.get_string_size_ex(
-						&GString::from(&num_revertable_str)
-					).alignment(HorizontalAlignment::LEFT).width(-1.0).font_size(light_font_size).done().x;
+                    let mut num_revertable_width = light_font
+                        .get_string_size_ex(&GString::from(&num_revertable_str))
+                        .alignment(HorizontalAlignment::LEFT)
+                        .width(-1.0)
+                        .font_size(light_font_size)
+                        .done()
+                        .x;
 
                     if label_width + outer_margin + num_revertable_width > available {
                         let short_str = format!("({})", count);
-                        num_revertable_width = light_font.get_string_size_ex(
-							&GString::from(&short_str)
-						).alignment(HorizontalAlignment::LEFT).width(-1.0).font_size(light_font_size).done().x;
+                        num_revertable_width = light_font
+                            .get_string_size_ex(&GString::from(&short_str))
+                            .alignment(HorizontalAlignment::LEFT)
+                            .width(-1.0)
+                            .font_size(light_font_size)
+                            .done()
+                            .x;
 
-                        let text_offset_y = light_font.get_ascent_ex().font_size(light_font_size).done() + (header_height - light_font.get_height_ex().font_size(light_font_size).done()) / 2.0;
+                        let text_offset_y =
+                            light_font.get_ascent_ex().font_size(light_font_size).done()
+                                + (header_height
+                                    - light_font.get_height_ex().font_size(light_font_size).done())
+                                    / 2.0;
                         let mut text_offset = Vector2::new(margin_end, text_offset_y).round();
                         if !rtl {
-                            text_offset.x = self.base().get_size().x - (text_offset.x + num_revertable_width);
+                            text_offset.x =
+                                self.base().get_size().x - (text_offset.x + num_revertable_width);
                         }
-                        self.base_mut().draw_string_ex(light_font, text_offset, &GString::from(&short_str))
+                        self.base_mut()
+                            .draw_string_ex(light_font, text_offset, &GString::from(&short_str))
                             .modulate(light_font_color)
                             .alignment(HorizontalAlignment::LEFT)
                             .width(-1.0)
@@ -651,12 +787,22 @@ impl DiffInspectorSection {
                             .done();
                         margin_end += (num_revertable_width + outer_margin) as f32;
                     } else {
-                        let text_offset_y = light_font.get_ascent_ex().font_size(light_font_size).done() + (header_height - light_font.get_height_ex().font_size(light_font_size).done()) / 2.0;
+                        let text_offset_y =
+                            light_font.get_ascent_ex().font_size(light_font_size).done()
+                                + (header_height
+                                    - light_font.get_height_ex().font_size(light_font_size).done())
+                                    / 2.0;
                         let mut text_offset = Vector2::new(margin_end, text_offset_y).round();
                         if !rtl {
-                            text_offset.x = self.base().get_size().x - (text_offset.x + num_revertable_width);
+                            text_offset.x =
+                                self.base().get_size().x - (text_offset.x + num_revertable_width);
                         }
-                        self.base_mut().draw_string_ex(light_font, text_offset, &GString::from(&num_revertable_str))
+                        self.base_mut()
+                            .draw_string_ex(
+                                light_font,
+                                text_offset,
+                                &GString::from(&num_revertable_str),
+                            )
                             .modulate(light_font_color)
                             .alignment(HorizontalAlignment::LEFT)
                             .width(-1.0)
@@ -672,33 +818,60 @@ impl DiffInspectorSection {
         }
 
         // Draw label
-        let font = self.base().get_theme_font_ex(&StringName::from("bold")).theme_type(&StringName::from("EditorFonts")).done();
-        let font_size = self.base().get_theme_font_size_ex(&StringName::from("bold_size")).theme_type(&StringName::from("EditorFonts")).done();
-        let font_color = self.base().get_theme_color_ex(&StringName::from("font_color")).theme_type(&StringName::from("Editor")).done();
+        let font = self
+            .base()
+            .get_theme_font_ex(&StringName::from("bold"))
+            .theme_type(&StringName::from("EditorFonts"))
+            .done();
+        let font_size = self
+            .base()
+            .get_theme_font_size_ex(&StringName::from("bold_size"))
+            .theme_type(&StringName::from("EditorFonts"))
+            .done();
+        let font_color = self
+            .base()
+            .get_theme_color_ex(&StringName::from("font_color"))
+            .theme_type(&StringName::from("Editor"))
+            .done();
 
-		if let Some(ref font) = font {
-			let text_offset_y = font.get_ascent_ex().font_size(font_size).done() + (header_height - font.get_height_ex().font_size(font_size).done()) / 2.0;
-			let mut text_offset = Vector2::new(margin_start, text_offset_y).round();
-			if rtl {
-				text_offset.x = margin_end;
-			}
-			let text_align = if rtl { HorizontalAlignment::RIGHT } else { HorizontalAlignment::LEFT };
-			let label = self.label.clone();
-			// Use KASHIDA and CONSTRAIN_ELLIPSIS for label (matching C++ line 241)
-			self.base_mut().draw_string_ex(font, text_offset, &label)
-				.modulate(font_color)
-				.alignment(text_align)
-				.width(available)
-				.font_size(font_size)
-				.justification_flags(JustificationFlag::KASHIDA | JustificationFlag::CONSTRAIN_ELLIPSIS)
-				.done();
-		}
+        if let Some(ref font) = font {
+            let text_offset_y = font.get_ascent_ex().font_size(font_size).done()
+                + (header_height - font.get_height_ex().font_size(font_size).done()) / 2.0;
+            let mut text_offset = Vector2::new(margin_start, text_offset_y).round();
+            if rtl {
+                text_offset.x = margin_end;
+            }
+            let text_align = if rtl {
+                HorizontalAlignment::RIGHT
+            } else {
+                HorizontalAlignment::LEFT
+            };
+            let label = self.label.clone();
+            // Use KASHIDA and CONSTRAIN_ELLIPSIS for label (matching C++ line 241)
+            self.base_mut()
+                .draw_string_ex(font, text_offset, &label)
+                .modulate(font_color)
+                .alignment(text_align)
+                .width(available)
+                .font_size(font_size)
+                .justification_flags(
+                    JustificationFlag::KASHIDA | JustificationFlag::CONSTRAIN_ELLIPSIS,
+                )
+                .done();
+        }
 
         // Draw dropping highlight
         if self.dropping && !self.vbox.is_visible_in_tree() {
-            let accent_color = self.base().get_theme_color_ex(&StringName::from("accent_color")).theme_type(&StringName::from("Editor")).done();
-			let size = self.base().get_size();
-            self.base_mut().draw_rect_ex(Rect2::new(Vector2::ZERO, size), accent_color).filled(false).done();
+            let accent_color = self
+                .base()
+                .get_theme_color_ex(&StringName::from("accent_color"))
+                .theme_type(&StringName::from("Editor"))
+                .done();
+            let size = self.base().get_size();
+            self.base_mut()
+                .draw_rect_ex(Rect2::new(Vector2::ZERO, size), accent_color)
+                .filled(false)
+                .done();
         }
 
         // Draw section indentation
@@ -706,20 +879,24 @@ impl DiffInspectorSection {
             if section_indent > 0 {
                 let indent_rect = Rect2::new(
                     Vector2::ZERO,
-                    Vector2::new(self.indent_depth as f32 * section_indent_size as f32, self.base().get_size().y)
+                    Vector2::new(
+                        self.indent_depth as f32 * section_indent_size as f32,
+                        self.base().get_size().y,
+                    ),
                 );
                 let mut indent_pos = indent_rect.position;
                 if let Ok(style_flat) = section_indent_style.clone().try_cast::<StyleBoxFlat>() {
                     if rtl {
-                        indent_pos.x = self.base().get_size().x - (section_indent as f32 + style_flat.get_margin(Side::RIGHT) as f32); // RIGHT
+                        indent_pos.x = self.base().get_size().x
+                            - (section_indent as f32 + style_flat.get_margin(Side::RIGHT) as f32); // RIGHT
                     } else {
                         indent_pos.x = style_flat.get_margin(Side::LEFT) as f32; // LEFT
                     }
                 }
                 let final_rect = Rect2::new(indent_pos, indent_rect.size);
-                self.base_mut().draw_style_box(section_indent_style, final_rect);
+                self.base_mut()
+                    .draw_style_box(section_indent_style, final_rect);
             }
         }
     }
 }
-
