@@ -29,7 +29,6 @@ pub struct DiffInspectorSection {
     object: Option<Gd<Object>>,
 
     // State tracking
-    revertable_properties: HashSet<GString>,
     arrow_position: Vector2,
     entered: bool,
     dropping_unfold_timer: Gd<Timer>,
@@ -187,24 +186,6 @@ impl DiffInspectorSection {
     #[func]
     pub fn get_section(&self) -> GString {
         self.section.clone()
-    }
-
-    #[func]
-    pub fn has_revertable_properties(&self) -> bool {
-        !self.revertable_properties.is_empty()
-    }
-
-    #[func]
-    pub fn property_can_revert_changed(&mut self, p_path: GString, p_can_revert: bool) {
-        let had_revertable = self.has_revertable_properties();
-        if p_can_revert {
-            self.revertable_properties.insert(p_path);
-        } else {
-            self.revertable_properties.remove(&p_path);
-        }
-        if self.has_revertable_properties() != had_revertable {
-            self.base_mut().queue_redraw();
-        }
     }
 
     fn get_header_rect(&self) -> Rect2 {
@@ -381,7 +362,6 @@ impl IContainer for DiffInspectorSection {
             unfolded: true,
             vbox: vbox,
             object: None,
-            revertable_properties: HashSet::new(),
             arrow_position: Vector2::ZERO,
             entered: false,
             dropping_unfold_timer: dropping_unfold_timer,
@@ -725,7 +705,8 @@ impl DiffInspectorSection {
 
         // Draw revertable count (if folded)
         let folded = self.foldable && !self.unfolded;
-        if folded && !self.revertable_properties.is_empty() {
+		let child_count = self.base().get_child_count() - 1; // -1 for the vertical seperator
+        if folded && child_count > 0 {
             let font = self
                 .base()
                 .get_theme_font_ex(&StringName::from("bold"))
@@ -767,7 +748,7 @@ impl DiffInspectorSection {
                     .done();
 
                 if let Some(ref light_font) = light_font {
-                    let count = self.revertable_properties.len();
+                    let count = child_count;
                     let num_revertable_str = if count == 1 {
                         format!("({} change)", count)
                     } else {
