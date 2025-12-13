@@ -188,7 +188,7 @@ Patchwork is a **hybrid Godot Engine C++ module + GDExtension**, not a tradition
 
 - **Godot Engine C++ Module** (`modules/patchwork_editor/`) - Built INTO your custom Godot editor
   - Automatically active when you launch the custom editor
-  - Registers core classes (`PatchworkEditor`, `DiffInspector`, etc.)
+  - Registers core classes (`PatchworkEditor`, etc.)
   - Primarily here to provide editor functionality that is not currently exposed to GDExtensions
     - Will eventually be removed once this functionality is upstreamed to Godot
 

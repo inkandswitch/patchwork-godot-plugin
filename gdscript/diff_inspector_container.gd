@@ -1,6 +1,6 @@
 @tool
 class_name DiffInspectorContainer
-extends DiffInspector
+extends EditorInspector
 
 @export var added_icon: Texture2D
 @export var removed_icon: Texture2D
@@ -86,7 +86,6 @@ func update_property_editor(editor_property) -> void:
 	editor_property.set_read_only(true)
 	editor_property.update_property()
 	editor_property._update_editor_property_status()
-	editor_property.update_cache()
 
 func getDeletedNodes() -> Array:
 	return deleted_nodes
@@ -157,7 +156,7 @@ func get_prop_editor(fake_object: MissingResource, prop_name: String, prop_value
 	# print("!!! fake_object prop value: ", fake_object.get(prop_name))
 	if prop_label == null:
 		prop_label = snake_case_to_human_readable(prop_name)
-	var editor_property: DiffInspectorProperty = DiffInspector.instance_property_diff(fake_object, prop_name, false)
+	var editor_property: EditorProperty = DiffInspectorSection.instance_property_diff(fake_object, prop_name, false)
 	editor_property.set_object_and_property(fake_object, prop_name)
 	update_property_editor(editor_property)
 	var panel_container: PanelContainer = PanelContainer.new()
@@ -420,7 +419,7 @@ func add_resource_diff(inspector_section: DiffInspectorSection, change_type: Str
 
 func add_text_diff(inspector_section: DiffInspectorSection, unified_diff: Dictionary) -> void:
 	# print("adding text diff")
-	var text_diff = TextDiffer.get_text_diff(unified_diff, false)
+	var text_diff = TextDifferView.get_text_diff_view(unified_diff, false)
 	text_diff.custom_minimum_size = Vector2(100, 500)
 	inspector_section.get_vbox().add_child(text_diff)
 
@@ -465,7 +464,7 @@ func pop_node_sections(name: String, map: Dictionary, parent_section: DiffInspec
 		if sec == null:
 			var fake_node: MissingResource = MissingResource.new()
 			sec = DiffInspectorSection.new()
-			sec.setup(name, override_label, fake_node, modified_color, true)
+			sec.setup(name, override_label, fake_node, modified_color, true, 0, 1)
 			sec.set_type("modified")
 			sec.get_vbox().add_child(HSeparator.new())
 			changed_nodes.append(fake_node)
@@ -564,7 +563,7 @@ func add_FileDiffResult(file_path: String, file_diff: Dictionary) -> void:
 	var fake_node: MissingResource = MissingResource.new()
 	changed_files.append(fake_node)
 	var inspector_section: DiffInspectorSection = DiffInspectorSection.new()
-	inspector_section.setup(file_path, label, fake_node, color, true)
+	inspector_section.setup(file_path, label, fake_node, color, true, 0, 1)
 	inspector_section.set_type(change_type)
 	var vbox = inspector_section.get_vbox()
 	if type == "added_or_removed":

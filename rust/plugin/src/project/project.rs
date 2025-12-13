@@ -1078,7 +1078,7 @@ impl Project {
 		// Impose an arbitrary cap on requests within a time period.
 		// This is so that immediate syncs -- such as those from a local server -- don't have to wait before getting synced.
 		// But it also prevents spam of like a hundred slowing down the ingestion.
-		if last_diff.as_millis() < 1 {
+		if last_diff.as_millis() < 100 {
 			if self.last_ingest.1 >= 3 {
 				return false;
 			}
