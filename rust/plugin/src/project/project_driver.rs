@@ -1,6 +1,6 @@
 use automerge::Automerge;
 use ::safer_ffi::prelude::*;
-use samod::{ConnDirection, ConnFinishedReason, ConnectionInfo, DocHandle, DocumentId, Repo};
+use samod::{ConnDirection, ConnFinishedReason, ConnectionInfo, DocHandle, DocumentId, Repo, Stopped};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, Stream};
 use std::collections::HashSet;
@@ -112,7 +112,7 @@ pub enum OutputEvent {
     },
 
     PeerConnectionInfoChanged {
-        peer_connection_info: ConnectionInfo,
+        peer_connection_info: Option<ConnectionInfo>,
     },
 }
 
@@ -128,7 +128,7 @@ enum SubscriptionMessage {
 
 impl BranchState {
     pub fn is_synced(&self) -> bool {
-        self.synced_heads == self.doc_handle.with_doc(|d| d.get_heads())
+        self.synced_heads == self.doc_handle.with_document(|d| d.get_heads())
     }
 }
 
@@ -149,10 +149,10 @@ struct DriverState {
 
 	// TODO (Samod): No request_document!
     requesting_binary_docs: FuturesUnordered<
-        Pin<Box<dyn Future<Output = (String, Result<DocHandle, RepoError>)> + Send>>,
+        Pin<Box<dyn Future<Output = (String, Result<Option<DocHandle>, Stopped>)> + Send>>,
     >,
     requesting_branch_docs: FuturesUnordered<
-        Pin<Box<dyn Future<Output = (String, Result<DocHandle, RepoError>)> + Send>>,
+        Pin<Box<dyn Future<Output = (String, Result<Option<DocHandle>, Stopped>)> + Send>>,
     >,
 
     subscribed_doc_ids: HashSet<DocumentId>,
@@ -162,6 +162,9 @@ struct DriverState {
 
     // heads that the frontend has for each branch doc
     heads_in_frontend: HashMap<DocumentId, Vec<ChangeHash>>,
+
+	// TODO (Samod): Remove this hack
+	peer: Option<ConnectionInfo>
 }
 
 pub enum ConnectionThreadError {
@@ -344,7 +347,7 @@ impl ProjectDriver {
             // destructure project doc handles
             let ProjectDocHandles { branches_metadata_doc_handle, main_branch_doc_handle } = init_project_doc_handles(&repo_handle, &branches_metadata_doc_id, &user_name).await;
 
-            tx.unbounded_send(OutputEvent::Initialized { project_doc_id: *branches_metadata_doc_handle.document_id() }).unwrap();
+            tx.unbounded_send(OutputEvent::Initialized { project_doc_id: branches_metadata_doc_handle.document_id().clone() }).unwrap();
 
             let mut state = DriverState {
                 tx: tx.clone(),
@@ -361,6 +364,7 @@ impl ProjectDriver {
                 subscribed_doc_ids: HashSet::new(),
                 all_doc_changes: futures::stream::SelectAll::new(),
                 heads_in_frontend: HashMap::new(),
+				peer: None
             };
 
             state.update_branch_doc_state(state.main_branch_doc_handle.clone());
@@ -372,23 +376,24 @@ impl ProjectDriver {
 			// AFAIK there's no equivalent in samod. We need to track repo_handle.connected_peers()
 			// and dispatch an event when there's a difference.
             loop {
+				// TODO (Samod): Remove this hack once Alex makes his PR in samod
+				let peers = repo_handle.connected_peers().await;
+				let first = peers.first();
+				if first != state.peer.as_ref() {
+					tx.unbounded_send(OutputEvent::PeerConnectionInfoChanged { peer_connection_info: first.cloned() }).unwrap();
+					state.peer = first.cloned();
+				}
+
                 futures::select! {
-
-                    // next = sync_server_conn_info_changes.next() => {
-                    //     if let Some(info) = next {
-                    //         // TODO: do we need to update the synced_heads here?
-                    //         tx.unbounded_send(OutputEvent::PeerConnectionInfoChanged { peer_connection_info: info.clone() }).unwrap();
-                    //     };
-                    // },
-
                     next = state.requesting_binary_docs.next() => {
                         if let Some((path, result)) = next {
                             match result {
-                                Ok(doc_handle) => {
+                                Ok(Some(doc_handle)) => {
                                     state.add_binary_doc_handle(&path, &doc_handle);
                                 },
-                                Err(e) => {
-                                    tracing::error!("error requesting binary doc: {:?}", e);
+								Ok(None) => tracing::error!("binary doc not found"),
+                                Err(_) => {
+                                    tracing::error!("error requesting binary doc: repo stopped");
                                 }
                             }
                         }
@@ -397,15 +402,16 @@ impl ProjectDriver {
                     next = state.requesting_branch_docs.next() => {
                         if let Some((branch_name, result)) = next {
                             match result {
-                                Ok(doc_handle) => {
+                                Ok(Some(doc_handle)) => {
                                     state.pending_branch_doc_ids.remove(&doc_handle.document_id());
                                     state.update_branch_doc_state(doc_handle.clone());
                                     state.subscribe_to_doc_handle(doc_handle.clone());
                                     tracing::debug!("added branch doc: {:?}", branch_name);
 
                                 }
-                                Err(e) => {
-                                    tracing::error!("error requesting branch doc: {:?}", e);
+								Ok(None) => tracing::error!("branch doc not found"),
+                                Err(_) => {
+                                    tracing::error!("error requesting branch doc: repo stopped");
                                 }
                             }
                         }
@@ -436,8 +442,7 @@ impl ProjectDriver {
                                 if !state.branch_states.contains_key(&branch_id) && !state.pending_branch_doc_ids.contains(&branch_id) {
                                     state.pending_branch_doc_ids.insert(branch_id.clone());
 
-									// TODO (Samod): No request_document!
-                                    state.requesting_branch_docs.push(repo_handle.request_document(branch_id.clone()).map(|doc_handle| {
+                                    state.requesting_branch_docs.push(repo_handle.find(branch_id.clone()).map(|doc_handle| {
                                         (branch_name, doc_handle)
                                     }).boxed());
                                 }
@@ -454,15 +459,15 @@ impl ProjectDriver {
 
                         match message {
                             InputEvent::CreateBranch { name, source_branch_doc_id } => {
-                                state.create_branch(name.clone(), source_branch_doc_id.clone());
+                                state.create_branch(name.clone(), source_branch_doc_id.clone()).await;
                             },
 
 							InputEvent::CreateRevertPreviewBranch { branch_doc_id, files, revert_to } => {
-								state.create_revert_preview_branch(branch_doc_id, files, revert_to);
+								state.create_revert_preview_branch(branch_doc_id, files, revert_to).await;
 							},
 
                             InputEvent::CreateMergePreviewBranch { source_branch_doc_id, target_branch_doc_id } => {
-                                state.create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id);
+                                state.create_merge_preview_branch(source_branch_doc_id, target_branch_doc_id).await;
                             },
 
                             InputEvent::DeleteBranch { branch_doc_id } => {
@@ -474,15 +479,15 @@ impl ProjectDriver {
                             },
 
                             InputEvent::SaveFiles { branch_doc_handle, files, heads } => {
-                                state.save_files(branch_doc_handle, files, heads, false, None);
+                                state.save_files(branch_doc_handle, files, heads, false, None).await;
                             },
 
 							InputEvent::InitialCheckin { branch_doc_handle, files, heads } => {
-                                state.save_files(branch_doc_handle, files, heads, true, None);
+                                state.save_files(branch_doc_handle, files, heads, true, None).await;
                             },
 
 							InputEvent::RevertTo { branch_doc_handle, files, heads, revert_to } => {
-                                state.save_files(branch_doc_handle, files, heads, false, Some(revert_to));
+                                state.save_files(branch_doc_handle, files, heads, false, Some(revert_to)).await;
                             },
 
                             InputEvent::SetUserName { name } => {
@@ -513,26 +518,32 @@ async fn init_project_doc_handles(
 
             let branches_metadata_doc_handle = repo_handle
 				// TODO (Samod): No request_document!
-                .request_document(doc_id.clone())
+                .find(doc_id.clone())
                 .await
                 .unwrap_or_else(|e| {
                     panic!("failed init, can't load branches metadata doc: {:?}", e);
+                }).unwrap_or_else(|| {
+					// TODO (Samod): Can we panic here or do we have to fail gracefully?
+                    panic!("failed init, no branches metadata doc");
                 });
 
             let branches_metadata: BranchesMetadataDoc =
-                branches_metadata_doc_handle.with_doc(|d| {
+                branches_metadata_doc_handle.with_document(|d| {
                     hydrate(d).unwrap_or_else(|_| {
                         panic!("failed init, can't hydrate metadata doc");
                     })
                 });
 
-            let main_branch_doc_handle: DocHandle = repo_handle
-				// TODO (Samod): No request_document!
-                .request_document(DocumentId::from_str(&branches_metadata.main_doc_id).unwrap())
+            let main_branch_doc_handle = repo_handle
+                .find(DocumentId::from_str(&branches_metadata.main_doc_id).unwrap())
                 .await
                 .unwrap_or_else(|_| {
                     panic!("failed init, can't load main branchs doc");
+                }).unwrap_or_else(|| {
+					// TODO (Samod): Can we panic here or do we have to fail gracefully?
+                    panic!("failed init, no branches metadata doc");
                 });
+
 
             return ProjectDocHandles {
                 branches_metadata_doc_handle: branches_metadata_doc_handle.clone(),
@@ -559,7 +570,7 @@ async fn init_project_doc_handles(
                     tx,
                     &CommitMetadata {
                         username: user_name.clone(),
-                        branch_id: Some(main_branch_doc_handle.document_id()),
+                        branch_id: Some(main_branch_doc_handle.document_id().clone()),
                         merge_metadata: None,
 						reverted_to: None,
                         changed_files: None,
@@ -633,7 +644,7 @@ impl DriverState {
             fork_info: Some(ForkInfo {
                 forked_from: source_branch_doc_id.to_string(),
                 forked_at: source_branch_doc_handle
-                    .with_doc(|d| d.get_heads())
+                    .with_document(|d| d.get_heads())
                     .iter()
                     .map(|h| h.to_string())
                     .collect(),
@@ -646,7 +657,7 @@ impl DriverState {
 
         self.tx
             .unbounded_send(OutputEvent::CompletedCreateBranch {
-                branch_doc_id: *new_branch_handle.document_id(),
+                branch_doc_id: new_branch_handle.document_id().clone(),
             })
             .unwrap();
 
@@ -679,7 +690,7 @@ impl DriverState {
 		tracing::debug!("driver: create revert preview branch");
 		let branch_state = self.branch_states.get(&branch_doc_id).unwrap();
 		let current_doc_id = branch_state.doc_handle.document_id();
-		let current_heads = branch_state.doc_handle.with_doc(|d| d.get_heads());
+		let current_heads = branch_state.doc_handle.with_document(|d| d.get_heads());
 		// create a new branch doc, merge the original branch doc into it, and then commit the changes
         let revert_preview_branch_doc_handle = clone_doc(&self.repo_handle, &branch_state.doc_handle).await;
 		let revert_preview_doc_id = revert_preview_branch_doc_handle.document_id();
@@ -717,11 +728,11 @@ impl DriverState {
             );
         });
 
-		self.save_files(revert_preview_branch_doc_handle, files, Some(current_heads), false, Some(revert_to));
+		self.save_files(revert_preview_branch_doc_handle.clone(), files, Some(current_heads), false, Some(revert_to)).await;
 
 		self.tx
 			.unbounded_send(OutputEvent::CompletedCreateBranch {
-				branch_doc_id: *revert_preview_doc_id,
+				branch_doc_id: revert_preview_doc_id.clone(),
 			})
 			.unwrap();
 
@@ -741,7 +752,7 @@ impl DriverState {
 
         source_branch_state
             .doc_handle
-            .with_doc_mut(|source_branch_doc| {
+            .with_document(|source_branch_doc| {
                 merge_preview_branch_doc_handle.with_document(|merge_preview_branch_doc| {
                     let _ = merge_preview_branch_doc.merge(source_branch_doc);
                 });
@@ -749,7 +760,7 @@ impl DriverState {
 
         target_branch_state
             .doc_handle
-            .with_doc_mut(|target_branch_doc| {
+            .with_document(|target_branch_doc| {
                 merge_preview_branch_doc_handle.with_document(|merge_preview_branch_doc| {
                     let _ = merge_preview_branch_doc.merge(target_branch_doc);
                 });
@@ -802,7 +813,7 @@ impl DriverState {
 
         self.tx
             .unbounded_send(OutputEvent::CompletedCreateBranch {
-                branch_doc_id: *merge_preview_branch_doc_handle.document_id(),
+                branch_doc_id: merge_preview_branch_doc_handle.document_id().clone(),
             })
             .unwrap();
     }
@@ -978,7 +989,7 @@ impl DriverState {
                 tx,
                 &CommitMetadata {
                     username: self.user_name.clone(),
-                    branch_id: Some(branch_doc_handle.document_id()),
+                    branch_id: Some(branch_doc_handle.document_id().clone()),
                     merge_metadata: None,
 					reverted_to: match revert {
 						Some(revert) => Some(heads_to_vec_string(revert)),
@@ -993,7 +1004,7 @@ impl DriverState {
         // update heads in frontend
 		if !new_project && !is_revert {
 			self.heads_in_frontend.insert(
-				*branch_doc_handle.document_id(),
+				branch_doc_handle.document_id().clone(),
 				branch_doc_handle.with_document(|d| d.get_heads()),
 			);
 		}
@@ -1007,10 +1018,10 @@ impl DriverState {
 
         source_branch_state
             .doc_handle
-            .with_doc_mut(|source_branch_doc| {
+            .with_document(|source_branch_doc| {
                 target_branch_state
                     .doc_handle
-                    .with_doc_mut(|target_branch_doc| {
+                    .with_document(|target_branch_doc| {
                         let _ = target_branch_doc.merge(source_branch_doc);
                     });
             });
@@ -1026,7 +1037,7 @@ impl DriverState {
 			original_branch_id = Some(original_branch_state.doc_handle.document_id().to_string());
 
             Some(MergeMetadata {
-                merged_branch_id: original_branch_state.doc_handle.document_id(),
+                merged_branch_id: original_branch_state.doc_handle.document_id().clone(),
                 merged_at_heads: original_branch_state.synced_heads.clone(),
                 forked_at_heads: original_branch_state
                     .fork_info
@@ -1041,7 +1052,7 @@ impl DriverState {
         };
 
         if let Some(merge_metadata) = merge_metadata {
-            target_branch_state.doc_handle.with_doc_mut(|d| {
+            target_branch_state.doc_handle.with_document(|d| {
                 let mut tx = d.transaction();
 
                 // do a dummy change that we can attach some metadata to
@@ -1164,8 +1175,7 @@ impl DriverState {
             let path = path.clone();
             self.requesting_binary_docs.push(
                 self.repo_handle
-					// TODO (samod): No request document!
-                    .request_document(doc_id.clone())
+                    .find(doc_id.clone())
                     .map(|doc_handle| (path, doc_handle))
                     .boxed(),
             );
@@ -1224,7 +1234,7 @@ impl DriverState {
 
                 // check if all linked docs have been loaded
                 if missing_binary_doc_ids.is_empty() {
-                    branch_state.synced_heads = branch_state.doc_handle.with_doc(|d| d.get_heads());
+                    branch_state.synced_heads = branch_state.doc_handle.with_document(|d| d.get_heads());
                     self.tx
                         .unbounded_send(OutputEvent::BranchStateChanged {
                             branch_state: branch_state.clone(),
@@ -1311,7 +1321,7 @@ fn get_missing_binary_doc_ids(
                     binary_doc_state
                         .doc_handle
                         .as_ref()
-                        .map_or(true, |handle| handle.with_doc(|d| d.get_heads().is_empty()))
+                        .map_or(true, |handle| handle.with_document(|d| d.get_heads().is_empty()))
                 })
         })
         .cloned()

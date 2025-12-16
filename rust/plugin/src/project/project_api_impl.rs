@@ -220,16 +220,16 @@ impl ProjectViewModel for Project {
         };
         let is_connected = info.last_received.is_some();
 
-        fn time(t: Option<SystemTime>) -> String {
-            let Some(t) = t else {
-                return "-".to_string()
-            };
-            human_readable_timestamp(t
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis()
-                .try_into().unwrap())
-        }
+        // fn time(t: Option<SystemTime>) -> String {
+        //     let Some(t) = t else {
+        //         return "-".to_string()
+        //     };
+        //     human_readable_timestamp(t
+        //         .duration_since(UNIX_EPOCH)
+        //         .unwrap()
+        //         .as_millis()
+        //         .try_into().unwrap())
+        // }
 
         tracing::debug!("Sync info ===========================");
         tracing::debug!("is connected: {is_connected}");

@@ -874,7 +874,8 @@ impl Project {
             self.checked_out_branch_state
         );
 
-        self.start_driver();
+		// TODO (Samod): This seems like a very bad idea; probably set this up on a different thread
+        futures::executor::block_on(self.start_driver());
         self.start_file_system_driver();
         self.is_started = true;
         // get the project path
@@ -1214,6 +1215,10 @@ impl Project {
                 OutputEvent::PeerConnectionInfoChanged {
                     peer_connection_info,
                 } => {
+					// TODO(Samod): Remove this hack
+					let Some(peer_connection_info) = peer_connection_info else {
+						continue;
+					};
                     let _info = match self
                         .sync_server_connection_info
                         .as_mut()
