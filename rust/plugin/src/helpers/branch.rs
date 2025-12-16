@@ -46,7 +46,7 @@ pub struct Branch {
 	pub reverted_to: Option<Vec<String>>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct BinaryDocState {
     pub doc_handle: Option<DocHandle>, // is null if the binary doc is being requested but not loaded yet
 }
@@ -68,7 +68,7 @@ pub struct BranchStateRevertInfo {
     pub reverted_to: Vec<ChangeHash>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct BranchState {
     pub name: String,
     pub doc_handle: DocHandle,

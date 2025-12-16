@@ -139,7 +139,7 @@ impl PendingEditorUpdate {
 /// GodotProject is the main interface between Godot's API and the Patchwork Rust core.
 /// It is intended to be a gdscript-visible lightweight wrapper around the GodotProjectImpl, which contains the actual logic.
 /// It also handles signals and communication with Godot.
-#[derive(GodotClass)]
+#[derive(GodotClass, Debug)]
 #[class(base=Node)]
 pub struct GodotProject {
 	base: Base<Node>,

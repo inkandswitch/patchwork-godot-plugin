@@ -35,7 +35,7 @@ use tokio::{net::TcpStream, runtime::Runtime};
 
 const SERVER_REPO_ID: &str = "sync-server";
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum InputEvent {
     CreateBranch {
         name: String,
@@ -92,7 +92,7 @@ pub enum DocHandleType {
     Unknown,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum OutputEvent {
     Initialized {
         project_doc_id: DocumentId,
@@ -172,6 +172,7 @@ pub enum ConnectionThreadError {
 	ConnectionThreadError(String),
 }
 
+#[derive(Debug)]
 pub struct ProjectDriver {
     runtime: Runtime,
     repo_handle: Repo,

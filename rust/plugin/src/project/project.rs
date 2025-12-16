@@ -32,6 +32,7 @@ pub(super) enum CheckedOutBranchState {
 
 /// Manages the state and operations of a Patchwork project within Godot.
 /// Its API is exposed to GDScript via the GodotProject struct.
+#[derive(Debug)]
 pub struct Project {
     doc_handles: HashMap<DocumentId, DocHandle>,
     pub(super) branch_states: HashMap<DocumentId, BranchState>,

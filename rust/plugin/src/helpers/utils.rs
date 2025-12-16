@@ -215,6 +215,8 @@ impl From<&Change> for CommitInfo {
 	}
 }
 
+
+#[derive(Debug)]
 pub struct BranchWrapper {
 	pub state: BranchState,
 	pub children: Vec<DocumentId>
