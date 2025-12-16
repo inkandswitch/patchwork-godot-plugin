@@ -382,6 +382,7 @@ impl ProjectDriver {
 				if first != state.peer.as_ref() {
 					tx.unbounded_send(OutputEvent::PeerConnectionInfoChanged { peer_connection_info: first.cloned() }).unwrap();
 					state.peer = first.cloned();
+					continue;
 				}
 
                 futures::select! {
