@@ -5,7 +5,7 @@ use crate::project::project::{Project, GodotProjectSignal};
 use automerge::ChangeHash;
 use godot::classes::editor_plugin::DockSlot;
 use ::safer_ffi::prelude::*;
-use automerge_repo::{DocumentId};
+use samod::{DocumentId};
 use godot::classes::resource_loader::CacheMode;
 use godot::classes::{ConfirmationDialog, Control};
 use godot::classes::EditorInterface;
@@ -139,7 +139,7 @@ impl PendingEditorUpdate {
 /// GodotProject is the main interface between Godot's API and the Patchwork Rust core.
 /// It is intended to be a gdscript-visible lightweight wrapper around the GodotProjectImpl, which contains the actual logic.
 /// It also handles signals and communication with Godot.
-#[derive(GodotClass, Debug)]
+#[derive(GodotClass)]
 #[class(base=Node)]
 pub struct GodotProject {
 	base: Base<Node>,

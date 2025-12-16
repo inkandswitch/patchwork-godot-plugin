@@ -1,5 +1,6 @@
+use automerge::Automerge;
 use ::safer_ffi::prelude::*;
-use automerge_repo::{PeerConnectionInfo, Repo, RepoError, RepoId};
+use samod::{ConnDirection, ConnFinishedReason, ConnectionInfo, DocHandle, DocumentId, Repo};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, Stream};
 use std::collections::HashSet;
@@ -24,7 +25,6 @@ use automerge::{
     transaction::Transactable, ChangeHash, ObjType, ReadDoc,
     ROOT,
 };
-use automerge_repo::{tokio::FsStorage, ConnDirection, DocHandle, DocumentId, RepoHandle};
 use autosurgeon::{hydrate, reconcile };
 use futures::{
     channel::mpsc::{UnboundedReceiver, UnboundedSender},
@@ -35,7 +35,7 @@ use tokio::{net::TcpStream, runtime::Runtime};
 
 const SERVER_REPO_ID: &str = "sync-server";
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum InputEvent {
     CreateBranch {
         name: String,
@@ -92,7 +92,7 @@ pub enum DocHandleType {
     Unknown,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum OutputEvent {
     Initialized {
         project_doc_id: DocumentId,
@@ -112,7 +112,7 @@ pub enum OutputEvent {
     },
 
     PeerConnectionInfoChanged {
-        peer_connection_info: PeerConnectionInfo,
+        peer_connection_info: ConnectionInfo,
     },
 }
 
@@ -134,7 +134,7 @@ impl BranchState {
 
 struct DriverState {
     tx: UnboundedSender<OutputEvent>,
-    repo_handle: RepoHandle,
+    repo_handle: Repo,
 
     user_name: Option<String>,
 
@@ -147,6 +147,7 @@ struct DriverState {
     pending_branch_doc_ids: HashSet<DocumentId>,
     pending_binary_doc_ids: HashSet<DocumentId>,
 
+	// TODO (Samod): No request_document!
     requesting_binary_docs: FuturesUnordered<
         Pin<Box<dyn Future<Output = (String, Result<DocHandle, RepoError>)> + Send>>,
     >,
@@ -168,10 +169,9 @@ pub enum ConnectionThreadError {
 	ConnectionThreadError(String),
 }
 
-#[derive(Debug)]
 pub struct ProjectDriver {
     runtime: Runtime,
-    repo_handle: RepoHandle,
+    repo_handle: Repo,
 	server_url: String,
 	connection_thread_output_rx: Option<UnboundedReceiver<String>>,
 	retries: u32,
@@ -180,7 +180,7 @@ pub struct ProjectDriver {
 }
 
 impl ProjectDriver {
-    pub fn create(storage_folder_path: String, server_url: String) -> Self {
+    pub async fn create(storage_folder_path: String, server_url: String) -> Self {
         let runtime: Runtime = tokio::runtime::Builder::new_multi_thread()
 			.worker_threads(1)
             .enable_all()
@@ -190,10 +190,17 @@ impl ProjectDriver {
 
         let _guard = runtime.enter();
 
-        let storage = FsStorage::open(storage_folder_path).unwrap();
+        // let storage = FsStorage::open(storage_folder_path).unwrap();
 
-        let repo = Repo::new(None, Box::new(storage));
-        let repo_handle = repo.run();
+        // let repo = Repo::new(None, Box::new(storage));
+        // let repo_handle = repo.run();
+
+		let storage = samod::storage::TokioFilesystemStorage::new(storage_folder_path);
+
+		let repo_handle = Repo::build_tokio()
+			.with_storage(storage)
+			.load()
+			.await;
 
         return Self {
             runtime,
@@ -303,26 +310,11 @@ impl ProjectDriver {
                 };
                 tracing::info!("Connected successfully!");
 
-                match repo_handle_clone
-                    .connect_tokio_io(server_url.clone(), stream, ConnDirection::Outgoing)
-                    .await
-                {
-                    Ok(completed) => {
-                        let error = completed.await;
-                        tracing::error!("connection terminated because of: {:?}", error);
-                        connection_thread_tx.unbounded_send(error.to_string()).unwrap();
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to connect: {:?}", e);
-                        connection_thread_tx.unbounded_send(e.to_string()).unwrap();
-
-                        // sleep for 5 seconds
-                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-
-                        continue;
-                    }
-                }
-
+				let connection = repo_handle_clone
+                    .connect_tokio_io(stream, ConnDirection::Outgoing).unwrap();
+                let completed = connection.finished().await;
+				tracing::error!("connection terminated because of: {:?}", completed);
+            	connection_thread_tx.unbounded_send(format!("{:?}", completed)).unwrap();
             }
         });
     }
@@ -352,7 +344,7 @@ impl ProjectDriver {
             // destructure project doc handles
             let ProjectDocHandles { branches_metadata_doc_handle, main_branch_doc_handle } = init_project_doc_handles(&repo_handle, &branches_metadata_doc_id, &user_name).await;
 
-            tx.unbounded_send(OutputEvent::Initialized { project_doc_id: branches_metadata_doc_handle.document_id() }).unwrap();
+            tx.unbounded_send(OutputEvent::Initialized { project_doc_id: *branches_metadata_doc_handle.document_id() }).unwrap();
 
             let mut state = DriverState {
                 tx: tx.clone(),
@@ -375,17 +367,19 @@ impl ProjectDriver {
             state.subscribe_to_doc_handle(state.branches_metadata_doc_handle.clone());
             state.subscribe_to_doc_handle(state.main_branch_doc_handle.clone());
 
-            let mut sync_server_conn_info_changes = repo_handle.peer_conn_info_changes(RepoId::from(SERVER_REPO_ID)).fuse();
-
+			// TODO (Samod): We need to find an alternative to this line:
+            //     let mut sync_server_conn_info_changes = repo_handle.peer_conn_info_changes(RepoId::from(SERVER_REPO_ID)).fuse();
+			// AFAIK there's no equivalent in samod. We need to track repo_handle.connected_peers()
+			// and dispatch an event when there's a difference.
             loop {
                 futures::select! {
 
-                    next = sync_server_conn_info_changes.next() => {
-                        if let Some(info) = next {
-                            // TODO: do we need to update the synced_heads here?
-                            tx.unbounded_send(OutputEvent::PeerConnectionInfoChanged { peer_connection_info: info.clone() }).unwrap();
-                        };
-                    },
+                    // next = sync_server_conn_info_changes.next() => {
+                    //     if let Some(info) = next {
+                    //         // TODO: do we need to update the synced_heads here?
+                    //         tx.unbounded_send(OutputEvent::PeerConnectionInfoChanged { peer_connection_info: info.clone() }).unwrap();
+                    //     };
+                    // },
 
                     next = state.requesting_binary_docs.next() => {
                         if let Some((path, result)) = next {
@@ -441,6 +435,8 @@ impl ProjectDriver {
 
                                 if !state.branch_states.contains_key(&branch_id) && !state.pending_branch_doc_ids.contains(&branch_id) {
                                     state.pending_branch_doc_ids.insert(branch_id.clone());
+
+									// TODO (Samod): No request_document!
                                     state.requesting_branch_docs.push(repo_handle.request_document(branch_id.clone()).map(|doc_handle| {
                                         (branch_name, doc_handle)
                                     }).boxed());
@@ -506,7 +502,7 @@ struct ProjectDocHandles {
 }
 
 async fn init_project_doc_handles(
-    repo_handle: &RepoHandle,
+    repo_handle: &Repo,
     branches_metadata_doc_id: &Option<DocumentId>,
     user_name: &Option<String>,
 ) -> ProjectDocHandles {
@@ -516,6 +512,7 @@ async fn init_project_doc_handles(
             tracing::debug!("loading existing project: {:?}", doc_id);
 
             let branches_metadata_doc_handle = repo_handle
+				// TODO (Samod): No request_document!
                 .request_document(doc_id.clone())
                 .await
                 .unwrap_or_else(|e| {
@@ -530,6 +527,7 @@ async fn init_project_doc_handles(
                 });
 
             let main_branch_doc_handle: DocHandle = repo_handle
+				// TODO (Samod): No request_document!
                 .request_document(DocumentId::from_str(&branches_metadata.main_doc_id).unwrap())
                 .await
                 .unwrap_or_else(|_| {
@@ -547,8 +545,8 @@ async fn init_project_doc_handles(
             tracing::debug!("creating new project");
 
             // Create new main branch doc
-            let main_branch_doc_handle = repo_handle.new_document();
-            main_branch_doc_handle.with_doc_mut(|d| {
+            let main_branch_doc_handle = repo_handle.create(Automerge::new()).await.unwrap();
+            main_branch_doc_handle.with_document(|d| {
                 let mut tx = d.transaction();
                 let _ = reconcile(
                     &mut tx,
@@ -587,8 +585,8 @@ async fn init_project_doc_handles(
             let branches_clone = branches.clone();
 
             // create new branches metadata doc
-            let branches_metadata_doc_handle = repo_handle.new_document();
-            branches_metadata_doc_handle.with_doc_mut(|d| {
+            let branches_metadata_doc_handle = repo_handle.create(Automerge::new()).await.unwrap();
+            branches_metadata_doc_handle.with_document(|d| {
                 let mut tx = d.transaction();
                 let _ = reconcile(
                     &mut tx,
@@ -619,7 +617,7 @@ async fn init_project_doc_handles(
 }
 
 impl DriverState {
-    fn create_branch(&mut self, name: String, source_branch_doc_id: DocumentId) {
+    async fn create_branch(&mut self, name: String, source_branch_doc_id: DocumentId) {
         let source_branch_doc_handle = self
             .branch_states
             .get(&source_branch_doc_id)
@@ -627,7 +625,7 @@ impl DriverState {
             .doc_handle
             .clone();
 
-        let new_branch_handle = clone_doc(&self.repo_handle, &source_branch_doc_handle);
+        let new_branch_handle = clone_doc(&self.repo_handle, &source_branch_doc_handle).await;
 
         let branch = Branch {
             name: name.clone(),
@@ -648,11 +646,11 @@ impl DriverState {
 
         self.tx
             .unbounded_send(OutputEvent::CompletedCreateBranch {
-                branch_doc_id: new_branch_handle.document_id(),
+                branch_doc_id: *new_branch_handle.document_id(),
             })
             .unwrap();
 
-        self.branches_metadata_doc_handle.with_doc_mut(|d| {
+        self.branches_metadata_doc_handle.with_document(|d| {
             let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
             let mut tx = d.transaction();
             branches_metadata.branches.insert(branch.id.clone(), branch);
@@ -672,7 +670,7 @@ impl DriverState {
 		tracing::debug!("driver: created new branch: {:?}", new_branch_handle.document_id());
     }
 
-	fn create_revert_preview_branch(
+	async fn create_revert_preview_branch(
 		&mut self,
 		branch_doc_id: DocumentId,
 		files: Vec<(String, FileContent)>,
@@ -683,7 +681,7 @@ impl DriverState {
 		let current_doc_id = branch_state.doc_handle.document_id();
 		let current_heads = branch_state.doc_handle.with_doc(|d| d.get_heads());
 		// create a new branch doc, merge the original branch doc into it, and then commit the changes
-        let revert_preview_branch_doc_handle = clone_doc(&self.repo_handle, &branch_state.doc_handle);
+        let revert_preview_branch_doc_handle = clone_doc(&self.repo_handle, &branch_state.doc_handle).await;
 		let revert_preview_doc_id = revert_preview_branch_doc_handle.document_id();
 
         let branch = Branch {
@@ -701,7 +699,7 @@ impl DriverState {
 			merged_into: None,
 			reverted_to: Some(revert_to.iter().map(|h| h.to_string()).collect()),
         };
-        self.branches_metadata_doc_handle.with_doc_mut(|d| {
+        self.branches_metadata_doc_handle.with_document(|d| {
             let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
             let mut tx = d.transaction();
             branches_metadata.branches.insert(branch.id.clone(), branch);
@@ -723,13 +721,13 @@ impl DriverState {
 
 		self.tx
 			.unbounded_send(OutputEvent::CompletedCreateBranch {
-				branch_doc_id: revert_preview_doc_id,
+				branch_doc_id: *revert_preview_doc_id,
 			})
 			.unwrap();
 
 	}
 
-    fn create_merge_preview_branch(
+    async fn create_merge_preview_branch(
         &mut self,
         source_branch_doc_id: DocumentId,
         target_branch_doc_id: DocumentId,
@@ -739,12 +737,12 @@ impl DriverState {
         let source_branch_state = self.branch_states.get(&source_branch_doc_id).unwrap();
         let target_branch_state = self.branch_states.get(&target_branch_doc_id).unwrap();
 
-        let merge_preview_branch_doc_handle = self.repo_handle.new_document();
+        let merge_preview_branch_doc_handle = self.repo_handle.create(Automerge::new()).await.unwrap();
 
         source_branch_state
             .doc_handle
             .with_doc_mut(|source_branch_doc| {
-                merge_preview_branch_doc_handle.with_doc_mut(|merge_preview_branch_doc| {
+                merge_preview_branch_doc_handle.with_document(|merge_preview_branch_doc| {
                     let _ = merge_preview_branch_doc.merge(source_branch_doc);
                 });
             });
@@ -752,7 +750,7 @@ impl DriverState {
         target_branch_state
             .doc_handle
             .with_doc_mut(|target_branch_doc| {
-                merge_preview_branch_doc_handle.with_doc_mut(|merge_preview_branch_doc| {
+                merge_preview_branch_doc_handle.with_document(|merge_preview_branch_doc| {
                     let _ = merge_preview_branch_doc.merge(target_branch_doc);
                 });
             });
@@ -784,7 +782,7 @@ impl DriverState {
 			reverted_to: None,
         };
 
-        self.branches_metadata_doc_handle.with_doc_mut(|d| {
+        self.branches_metadata_doc_handle.with_document(|d| {
             let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
             let mut tx = d.transaction();
             branches_metadata.branches.insert(branch.id.clone(), branch);
@@ -804,7 +802,7 @@ impl DriverState {
 
         self.tx
             .unbounded_send(OutputEvent::CompletedCreateBranch {
-                branch_doc_id: merge_preview_branch_doc_handle.document_id(),
+                branch_doc_id: *merge_preview_branch_doc_handle.document_id(),
             })
             .unwrap();
     }
@@ -814,7 +812,7 @@ impl DriverState {
     fn delete_branch(&mut self, branch_doc_id: DocumentId) {
         tracing::debug!("driver: delete branch {:?}", branch_doc_id);
 
-        self.branches_metadata_doc_handle.with_doc_mut(|d| {
+        self.branches_metadata_doc_handle.with_document(|d| {
             let mut tx = d.transaction();
             let mut branches_metadata: BranchesMetadataDoc = hydrate(&mut tx).unwrap();
             branches_metadata
@@ -835,7 +833,7 @@ impl DriverState {
         });
     }
 
-    fn save_files(
+    async fn save_files(
         &mut self,
         branch_doc_handle: DocHandle,
         file_entries: Vec<(String, FileContent)>,
@@ -852,8 +850,8 @@ impl DriverState {
         for (path, content) in file_entries.iter() {
             match content {
                 FileContent::Binary(content) => {
-                    let binary_doc_handle = self.repo_handle.new_document();
-                    binary_doc_handle.with_doc_mut(|d| {
+                    let binary_doc_handle = self.repo_handle.create(Automerge::new()).await.unwrap();
+                    binary_doc_handle.with_document(|d| {
                         let mut tx = d.transaction();
                         let _ = tx.put(ROOT, "content", content.clone());
                         commit_with_attribution_and_timestamp(
@@ -883,7 +881,7 @@ impl DriverState {
                 }
             }
         }
-        branch_doc_handle.with_doc_mut(|d| {
+        branch_doc_handle.with_document(|d| {
             let mut tx = match heads {
                 Some(heads) => d.transaction_at(
                     get_default_patch_log(),
@@ -995,8 +993,8 @@ impl DriverState {
         // update heads in frontend
 		if !new_project && !is_revert {
 			self.heads_in_frontend.insert(
-				branch_doc_handle.document_id(),
-				branch_doc_handle.with_doc(|d| d.get_heads()),
+				*branch_doc_handle.document_id(),
+				branch_doc_handle.with_document(|d| d.get_heads()),
 			);
 		}
 
@@ -1066,7 +1064,7 @@ impl DriverState {
 			.branches
 			.get(&source_branch_state.doc_handle.document_id().to_string()).unwrap().clone();
 			branch.merged_into = original_branch_id;
-			self.branches_metadata_doc_handle.with_doc_mut(|d| {
+			self.branches_metadata_doc_handle.with_document(|d| {
 				let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
 				let mut tx = d.transaction();
 				branches_metadata.branches.insert(branch.id.clone(), branch);
@@ -1166,6 +1164,7 @@ impl DriverState {
             let path = path.clone();
             self.requesting_binary_docs.push(
                 self.repo_handle
+					// TODO (samod): No request document!
                     .request_document(doc_id.clone())
                     .map(|doc_handle| (path, doc_handle))
                     .boxed(),
@@ -1180,7 +1179,7 @@ impl DriverState {
 
         // check if all linked docs have been loaded
         if missing_binary_doc_ids.is_empty() {
-            branch_state.synced_heads = branch_doc_handle.with_doc(|d| d.get_heads());
+            branch_state.synced_heads = branch_doc_handle.with_document(|d| d.get_heads());
 
             print_branch_state("branch doc state immediately loaded", &branch_state);
 
@@ -1250,7 +1249,7 @@ impl DriverState {
             return;
         }
 
-        self.subscribed_doc_ids.insert(doc_handle.document_id());
+        self.subscribed_doc_ids.insert(doc_handle.document_id().clone());
         self.all_doc_changes
             .push(handle_changes(doc_handle.clone()).boxed());
         self.all_doc_changes.push(
@@ -1261,17 +1260,17 @@ impl DriverState {
     fn get_branches_metadata(&self) -> BranchesMetadataDoc {
         let branches_metadata: BranchesMetadataDoc = self
             .branches_metadata_doc_handle
-            .with_doc(|d| hydrate(d).unwrap());
+            .with_document(|d| hydrate(d).unwrap());
 
         return branches_metadata;
     }
 }
 
-fn clone_doc(repo_handle: &RepoHandle, doc_handle: &DocHandle) -> DocHandle {
-    let new_doc_handle = repo_handle.new_document();
+async fn clone_doc(repo_handle: &Repo, doc_handle: &DocHandle) -> DocHandle {
+    let new_doc_handle = repo_handle.create(Automerge::new()).await.unwrap();
 
     let _ =
-        doc_handle.with_doc_mut(|mut main_d| new_doc_handle.with_doc_mut(|d| d.merge(&mut main_d)));
+        doc_handle.with_document(|mut main_d| new_doc_handle.with_document(|d| d.merge(&mut main_d)));
 
     return new_doc_handle;
 }
@@ -1280,10 +1279,13 @@ fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = Subscription
     futures::stream::unfold(handle, |doc_handle| async {
 		// There's currently a bug where removing this line causes changed() to not resolve the future (despite this line not actually doing anything).
 		// So, it'll spam with Changed events.
-        let _ = doc_handle.with_doc(|d| d.get_heads());
+        let _ = doc_handle.with_document(|d| d.get_heads());
 		// TODO: this will probably break on upgrading automerge_repo because changed() is currently greedy, but will eventually check
 		// to see if there's an actual change before resolving the future. We rely on the greedy behavior here.
-        let _ = doc_handle.changed().await;
+        // let _ = doc_handle.changed().await;
+
+		// TODO (Samod): Does this even work???
+		doc_handle.changes().next().await;
 
         Some((
             SubscriptionMessage::Changed {

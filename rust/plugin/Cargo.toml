@@ -21,9 +21,6 @@ automerge_0_6 = []
 
 [dependencies]
 automerge = "0.7.2"
-automerge_repo = { version = "0.3.0", features = [
-  "tokio",
-] }
 autosurgeon = "0.10.1"
 futures = "0.3.31"
 godot = "0.4.3"
@@ -56,6 +53,7 @@ rlimit = "0.10.2"
 tracing = "0.1.40"
 tracing-appender = "0.2.2"
 chrono = "0.4.31"
+samod = { version = "0.6.1", features = ["tokio"] }
 
 [build-dependencies]
 cbindgen = "^0.27"

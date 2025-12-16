@@ -1,5 +1,5 @@
 use automerge::ChangeHash;
-use automerge_repo::{DocHandle, DocumentId};
+use samod::{DocHandle, DocumentId};
 use autosurgeon::{Hydrate, Reconcile};
 use std::collections::{HashMap, HashSet};
 
@@ -46,7 +46,7 @@ pub struct Branch {
 	pub reverted_to: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct BinaryDocState {
     pub doc_handle: Option<DocHandle>, // is null if the binary doc is being requested but not loaded yet
 }
@@ -68,7 +68,7 @@ pub struct BranchStateRevertInfo {
     pub reverted_to: Vec<ChangeHash>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct BranchState {
     pub name: String,
     pub doc_handle: DocHandle,

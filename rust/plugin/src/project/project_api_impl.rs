@@ -1,7 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use automerge::ChangeHash;
-use automerge_repo::DocumentId;
+use samod::DocumentId;
 use tracing::instrument;
 
 use crate::{diff::differ::ProjectDiff, helpers::utils::{BranchWrapper, CommitInfo, DiffWrapper, exact_human_readable_timestamp, human_readable_timestamp}, interop::godot_accessors::PatchworkConfigAccessor, project::{project::{CheckedOutBranchState, Project}, project_api::{BranchViewModel, ChangeViewModel, DiffViewModel, ProjectViewModel, SyncStatus}, project_driver::InputEvent}};
@@ -74,7 +74,7 @@ impl ProjectViewModel for Project {
 			return;
 		};
 		self.create_merge_preview_branch_between(
-			checked_out_branch.doc_handle.document_id(),
+			checked_out_branch.doc_handle.document_id().clone(),
 			fork_info.forked_from.clone());
 	}
 
@@ -90,7 +90,7 @@ impl ProjectViewModel for Project {
 			return;
 		};
 		self.create_revert_preview_branch_for(
-			checked_out_branch.doc_handle.document_id(),
+			checked_out_branch.doc_handle.document_id().clone(),
 			vec![head]);
 	}
 
@@ -143,12 +143,12 @@ impl ProjectViewModel for Project {
 			return;
 		};
 		if let Some(revert_info) = &branch_state.revert_info {
-			self.delete_branch(branch_state.doc_handle.document_id());
+			self.delete_branch(branch_state.doc_handle.document_id().clone());
 			self.checkout_branch(fork_info.forked_from.clone());
 			self.revert_to_heads(revert_info.reverted_to.clone());
 		}
 		else if let Some(merge_info) = branch_state.merge_info {
-			self.merge_branch(branch_state.doc_handle.document_id(), merge_info.merge_into)
+			self.merge_branch(branch_state.doc_handle.document_id().clone(), merge_info.merge_into)
 		}
 	}
     fn discard_preview_branch(&mut self) {
@@ -158,7 +158,7 @@ impl ProjectViewModel for Project {
 		let Some(fork_info) = &branch_state.fork_info else {
 			return;
 		};
-		self.delete_branch(branch_state.doc_handle.document_id());
+		self.delete_branch(branch_state.doc_handle.document_id().clone());
 		self.checkout_branch(fork_info.forked_from.clone());
 	}
 
@@ -171,7 +171,7 @@ impl ProjectViewModel for Project {
 				self.changes.get(item).is_some_and(|i|
 					i.metadata.as_ref().is_some_and(|m|
 						m.branch_id.as_ref().is_some_and(|id|
-							*id == branch_state.doc_handle.document_id()))))
+							id == branch_state.doc_handle.document_id()))))
 			.map(|hash| hash.clone())
 			.collect::<Vec<ChangeHash>>()
 	}
@@ -233,16 +233,16 @@ impl ProjectViewModel for Project {
 
         tracing::debug!("Sync info ===========================");
         tracing::debug!("is connected: {is_connected}");
-        tracing::debug!("last received: {}", time(info.last_received));
-        tracing::debug!("last sent: {}", time(info.last_sent));
+        tracing::debug!("last received: {:?}", info.last_received);
+        tracing::debug!("last sent: {:?}", info.last_sent);
 
         if let Some(branch) = self.get_checked_out_branch_state() {
             if let Some(status) = info.docs.get(&branch.doc_handle.document_id()) {
                 tracing::debug!("\t{}:", branch.name);
                 tracing::debug!("\tacked heads: {:?}", status.last_acked_heads);
                 tracing::debug!("\tsent heads: {:?}", status.last_sent_heads);
-                tracing::debug!("\tlast sent: {}", time(status.last_sent));
-                tracing::debug!("\tlast sent: {}", time(status.last_received));
+                tracing::debug!("\tlast sent: {:?}", status.last_sent);
+                tracing::debug!("\tlast sent: {:?}", status.last_received);
             }
         }
         tracing::debug!("=====================================");
@@ -258,7 +258,7 @@ impl ProjectViewModel for Project {
 			.filter(|b|
 				b.fork_info.as_ref().is_some_and(|i|
 					i.forked_from == id.clone()))
-			.map(|b| b.doc_handle.document_id())
+			.map(|b| b.doc_handle.document_id().clone())
 			.collect::<Vec<DocumentId>>();
 
 		children.sort_by(|a, b| {
@@ -312,7 +312,7 @@ impl ProjectViewModel for Project {
             .unwrap();
 
 		// TODO: do we want to set this? or let _process set it?
-        self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut(Some(source_branch_doc_id));
+        self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut(Some(source_branch_doc_id.clone()));
 		// self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut(None);
     }
 
@@ -336,7 +336,7 @@ impl ProjectViewModel for Project {
 		tracing::debug!("******** CHECKOUT: {:?}\n", target_branch_state.name);
 		println!("");
 
-        if target_branch_state.synced_heads == target_branch_state.doc_handle.with_doc(|d| d.get_heads()) {
+        if target_branch_state.synced_heads == target_branch_state.doc_handle.with_document(|d| d.get_heads()) {
             self.checked_out_branch_state =
                 CheckedOutBranchState::CheckedOut(
 					branch_doc_id.clone(),
@@ -486,7 +486,7 @@ impl ChangeViewModel for CommitInfo {
 
 impl BranchViewModel for BranchWrapper {
 	fn get_id(&self) -> DocumentId {
-		self.state.doc_handle.document_id()
+		self.state.doc_handle.document_id().clone()
 	}
 
 	fn get_name(&self) -> String {
@@ -509,7 +509,7 @@ impl BranchViewModel for BranchWrapper {
         // we shouldn't have branches that don't have any changes but sometimes
         // the branch docs are not synced correctly so this flag is used in the UI to
         // indicate that the branch is not loaded and prevent users from checking it out
-		!self.state.doc_handle.with_doc(|d| d.get_heads().len() == 0)
+		!self.state.doc_handle.with_document(|d| d.get_heads().len() == 0)
 	}
 
 	fn get_reverted_to(&self) -> Option<ChangeHash> {

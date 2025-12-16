@@ -1,5 +1,5 @@
 use automerge::ChangeHash;
-use automerge_repo::DocumentId;
+use samod::DocumentId;
 
 use crate::{diff::differ::ProjectDiff};
 
