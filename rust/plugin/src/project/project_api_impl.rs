@@ -191,7 +191,7 @@ impl ProjectViewModel for Project {
             return SyncStatus::Unknown;
         };
         let is_connected = info.last_received.is_some();
-        if status.last_acked_heads.as_ref().unwrap() == &branch.synced_heads {
+        if status.last_acked_heads.as_ref().is_some_and(|s| s == &branch.synced_heads) {
             if is_connected {
                 return SyncStatus::UpToDate;
             }
