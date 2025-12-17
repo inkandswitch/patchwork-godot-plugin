@@ -1,5 +1,4 @@
 use automerge::Automerge;
-use ::safer_ffi::prelude::*;
 use samod::{ConnDirection, ConnectionInfo, DocHandle, DocumentId, Repo, Stopped};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, Stream};
@@ -311,8 +310,8 @@ impl ProjectDriver {
 				let connection = repo_handle_clone
                     .connect_tokio_io(stream, ConnDirection::Outgoing).unwrap();
                 let completed = connection.finished().await;
-				tracing::error!("connection terminated because of: {:?}", completed);
-            	connection_thread_tx.unbounded_send(format!("{:?}", completed)).unwrap();
+				tracing::error!("connection terminated because of: {}", completed);
+            	connection_thread_tx.unbounded_send(format!("{}", completed)).unwrap();
             }
         });
     }
