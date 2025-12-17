@@ -1480,8 +1480,7 @@ dependencies = [
 [[package]]
 name = "samod"
 version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f07324aff6869bb76943ec7e2c272c82df5378446d8767cb98406a07fa798de"
+source = "git+https://github.com/alexjg/samod.git?branch=connected-peers-stream#1c8a6be62d577c7eb456544c28b6d610fcaf7451"
 dependencies = [
  "async-channel",
  "automerge",
@@ -1498,8 +1497,7 @@ dependencies = [
 [[package]]
 name = "samod-core"
 version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7301283b272c5491bbb486f5d2dcdabcc67fad13e5e88eb6186f2e0a7a46f38"
+source = "git+https://github.com/alexjg/samod.git?branch=connected-peers-stream#1c8a6be62d577c7eb456544c28b6d610fcaf7451"
 dependencies = [
  "automerge",
  "base64",

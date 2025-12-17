@@ -1,6 +1,6 @@
 use automerge::Automerge;
 use ::safer_ffi::prelude::*;
-use samod::{ConnDirection, ConnFinishedReason, ConnectionInfo, DocHandle, DocumentId, Repo, Stopped};
+use samod::{ConnDirection, ConnectionInfo, DocHandle, DocumentId, Repo, Stopped};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, Stream};
 use std::collections::HashSet;
@@ -32,8 +32,6 @@ use futures::{
 };
 
 use tokio::{net::TcpStream, runtime::Runtime};
-
-const SERVER_REPO_ID: &str = "sync-server";
 
 #[derive(Clone, Debug)]
 pub enum InputEvent {
@@ -147,7 +145,6 @@ struct DriverState {
     pending_branch_doc_ids: HashSet<DocumentId>,
     pending_binary_doc_ids: HashSet<DocumentId>,
 
-	// TODO (Samod): No request_document!
     requesting_binary_docs: FuturesUnordered<
         Pin<Box<dyn Future<Output = (String, Result<Option<DocHandle>, Stopped>)> + Send>>,
     >,
@@ -161,10 +158,7 @@ struct DriverState {
     >,
 
     // heads that the frontend has for each branch doc
-    heads_in_frontend: HashMap<DocumentId, Vec<ChangeHash>>,
-
-	// TODO (Samod): Remove this hack
-	peer: Option<ConnectionInfo>
+    heads_in_frontend: HashMap<DocumentId, Vec<ChangeHash>>
 }
 
 pub enum ConnectionThreadError {
@@ -365,28 +359,24 @@ impl ProjectDriver {
                 subscribed_doc_ids: HashSet::new(),
                 all_doc_changes: futures::stream::SelectAll::new(),
                 heads_in_frontend: HashMap::new(),
-				peer: None
             };
 
             state.update_branch_doc_state(state.main_branch_doc_handle.clone());
             state.subscribe_to_doc_handle(state.branches_metadata_doc_handle.clone());
             state.subscribe_to_doc_handle(state.main_branch_doc_handle.clone());
 
-			// TODO (Samod): We need to find an alternative to this line:
-            //     let mut sync_server_conn_info_changes = repo_handle.peer_conn_info_changes(RepoId::from(SERVER_REPO_ID)).fuse();
-			// AFAIK there's no equivalent in samod. We need to track repo_handle.connected_peers()
-			// and dispatch an event when there's a difference.
+			let (_, peer_stream) = repo_handle.connected_peers();
+			let mut peer_stream = peer_stream.fuse();
             loop {
-				// TODO (Samod): Remove this hack once Alex makes his PR in samod
-				let peers = repo_handle.connected_peers().await;
-				let first = peers.first();
-				if first != state.peer.as_ref() {
-					tx.unbounded_send(OutputEvent::PeerConnectionInfoChanged { peer_connection_info: first.cloned() }).unwrap();
-					state.peer = first.cloned();
-					continue;
-				}
-
                 futures::select! {
+        			next = peer_stream.next() => {
+                        if let Some(info) = next {
+                            // TODO: do we need to update the synced_heads here?
+							// TODO (Samod): We currently handle only the first of the vec; we maybe should iterate through
+                            tx.unbounded_send(OutputEvent::PeerConnectionInfoChanged { peer_connection_info: info.first().cloned() }).unwrap();
+                        };
+                    },
+
                     next = state.requesting_binary_docs.next() => {
                         if let Some((path, result)) = next {
                             match result {
@@ -519,7 +509,6 @@ async fn init_project_doc_handles(
             tracing::debug!("loading existing project: {:?}", doc_id);
 
             let branches_metadata_doc_handle = repo_handle
-				// TODO (Samod): No request_document!
                 .find(doc_id.clone())
                 .await
                 .unwrap_or_else(|e| {
@@ -1296,7 +1285,6 @@ fn handle_changes(handle: DocHandle) -> impl futures::Stream<Item = Subscription
 		// to see if there's an actual change before resolving the future. We rely on the greedy behavior here.
         // let _ = doc_handle.changed().await;
 
-		// TODO (Samod): Does this even work???
 		doc_handle.changes().next().await;
 
         Some((
