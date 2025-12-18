@@ -102,7 +102,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: endlessm/moddable-platformer
-          ref: main
+          ref: godot-4.6
           path: moddable-platformer
           fetch-depth: 0
           persist-credentials: false
@@ -120,7 +120,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: endlessm/threadbare
-          ref: main
+          ref: godot-4.6
           path: threadbare
           fetch-depth: 0
           lfs: true
