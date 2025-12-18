@@ -37,14 +37,16 @@ pub fn initialize_tracing() {
         .with_writer(CustomStdoutWriter::custom_stdout)
         .with_filter(EnvFilter::new("info")
         .add_directive("patchwork_rust_core=debug".parse().unwrap())
-        .add_directive("automerge_repo=info".parse().unwrap()));
+        .add_directive("samod=info".parse().unwrap())
+		.add_directive("samod_core=info".parse().unwrap()));
     let file_layer = tracing_subscriber::fmt::layer()
         .with_line_number(true)
 		.with_ansi(false)
         .with_writer(non_blocking_file_writer.clone())
         .with_filter(EnvFilter::new("info")
         .add_directive("patchwork_rust_core=trace".parse().unwrap())
-        .add_directive("automerge_repo=debug".parse().unwrap()));
+        .add_directive("samod=info".parse().unwrap())
+		.add_directive("samod_core=info".parse().unwrap()));
     if let Err(e) = tracing_subscriber::registry()
         // stdout writer
         .with(stdout_layer)
