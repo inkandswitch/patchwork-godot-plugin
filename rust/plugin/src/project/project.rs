@@ -1105,6 +1105,9 @@ impl Project {
 		if let Some(driver) = &mut self.driver {
 			if let Some(error) = driver.connection_thread_get_last_error() {
 				match error {
+					ConnectionThreadError::ConnectionMadeNoError => {
+						self.driver_input_tx.unbounded_send(InputEvent::ConnectionMadeNoError).unwrap();
+					}
 					ConnectionThreadError::ConnectionThreadDied(error) => {
 						tracing::error!("automerge repo driver connection thread died, respawning: {}", error);
 						if !driver.respawn_connection_thread() {

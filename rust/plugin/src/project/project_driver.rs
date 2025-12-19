@@ -5,6 +5,7 @@ use futures::{FutureExt, Stream};
 use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::AtomicBool;
 use std::{collections::HashMap, str::FromStr};
 use tokio::task::JoinHandle;
 
@@ -157,10 +158,13 @@ struct DriverState {
     >,
 
     // heads that the frontend has for each branch doc
-    heads_in_frontend: HashMap<DocumentId, Vec<ChangeHash>>
+    heads_in_frontend: HashMap<DocumentId, Vec<ChangeHash>>,
+
+	actually_connected: Box<AtomicBool>
 }
 
 pub enum ConnectionThreadError {
+	ConnectionMadeNoError,
 	ConnectionThreadDied(String),
 	ConnectionThreadError(String),
 }
@@ -174,6 +178,7 @@ pub struct ProjectDriver {
 	retries: u32,
     connection_thread: Option<JoinHandle<()>>,
     spawned_thread: Option<JoinHandle<()>>,
+	actually_connected: Box<AtomicBool>,
 }
 
 impl ProjectDriver {
@@ -207,6 +212,7 @@ impl ProjectDriver {
 			connection_thread_output_rx: None,
             connection_thread: None,
             spawned_thread: None,
+			actually_connected: Box::new(AtomicBool::new(false)),
         };
     }
 
@@ -284,6 +290,7 @@ impl ProjectDriver {
         let repo_handle_clone = self.repo_handle.clone();
 		let retries = self.retries;
 		let server_url = self.server_url.clone();
+		let actually_connected = self.actually_connected.clone();
         return self.runtime.spawn(async move {
             tracing::info!("start a client");
 			let backoff = 2_f64.powf(retries as f64) * 100.0;
@@ -336,9 +343,15 @@ impl ProjectDriver {
         // } else {
         //     tracing::info!("Tracing subscriber initialized");
         // }
+		let _actually_connected = self.actually_connected.clone();
 
         return self.runtime.spawn(async move {
+			// loop forever until we get a connection made no error
+			while !_actually_connected.load(Ordering::Relaxed) {
+				tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+			}
             // destructure project doc handles
+
             let ProjectDocHandles { branches_metadata_doc_handle, main_branch_doc_handle } = init_project_doc_handles(&repo_handle, &branches_metadata_doc_id, &user_name).await;
 
             tx.unbounded_send(OutputEvent::Initialized { project_doc_id: branches_metadata_doc_handle.document_id().clone() }).unwrap();
@@ -358,6 +371,7 @@ impl ProjectDriver {
                 subscribed_doc_ids: HashSet::new(),
                 all_doc_changes: futures::stream::SelectAll::new(),
                 heads_in_frontend: HashMap::new(),
+				actually_connected: _actually_connected,
             };
 
             state.update_branch_doc_state(state.main_branch_doc_handle.clone());
