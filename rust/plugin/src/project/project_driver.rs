@@ -5,6 +5,9 @@ use futures::{FutureExt, Stream};
 use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time;
 use std::{collections::HashMap, str::FromStr};
 use tokio::task::JoinHandle;
 
@@ -174,6 +177,7 @@ pub struct ProjectDriver {
 	retries: u32,
     connection_thread: Option<JoinHandle<()>>,
     spawned_thread: Option<JoinHandle<()>>,
+	server_connected: Arc<AtomicBool>
 }
 
 impl ProjectDriver {
@@ -207,6 +211,7 @@ impl ProjectDriver {
 			connection_thread_output_rx: None,
             connection_thread: None,
             spawned_thread: None,
+			server_connected: Arc::new(AtomicBool::new(false))
         };
     }
 
@@ -282,6 +287,7 @@ impl ProjectDriver {
 
     fn spawn_connection_task(&self, connection_thread_tx: UnboundedSender<String>) -> JoinHandle<()> {
         let repo_handle_clone = self.repo_handle.clone();
+		let server_connected = self.server_connected.clone();
 		let retries = self.retries;
 		let server_url = self.server_url.clone();
         return self.runtime.spawn(async move {
@@ -309,7 +315,17 @@ impl ProjectDriver {
 
 				let connection = repo_handle_clone
                     .connect_tokio_io(stream, ConnDirection::Outgoing).unwrap();
+
+				if let Err(e) = connection.handshake_complete().await {
+              			tracing::error!("Failed to connect: {}", e);
+            			connection_thread_tx.unbounded_send(format!("{}", e)).unwrap();
+                        // sleep for 5 seconds
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        continue;
+				}
+				server_connected.swap(true, Ordering::Relaxed);
                 let completed = connection.finished().await;
+				server_connected.swap(false, Ordering::Relaxed);
 				tracing::error!("connection terminated because of: {}", completed);
             	connection_thread_tx.unbounded_send(format!("{}", completed)).unwrap();
             }
@@ -325,6 +341,7 @@ impl ProjectDriver {
     ) -> JoinHandle<()> {
         let repo_handle = self.repo_handle.clone();
         let user_name = user_name.clone();
+		let server_connected = self.server_connected.clone();
 
         // let filter = EnvFilter::new("info").add_directive("automerge_repo=info".parse().unwrap());
         // if let Err(e) = tracing_subscriber::registry()
@@ -338,8 +355,31 @@ impl ProjectDriver {
         // }
 
         return self.runtime.spawn(async move {
-            // destructure project doc handles
-            let ProjectDocHandles { branches_metadata_doc_handle, main_branch_doc_handle } = init_project_doc_handles(&repo_handle, &branches_metadata_doc_id, &user_name).await;
+			let branches_metadata_doc_handle;
+			let main_branch_doc_handle;
+
+			// First, try the handle load locally. If we succeed, we're fine.
+			if let Ok(handles) = init_project_doc_handles(&repo_handle, branches_metadata_doc_id.as_ref(), user_name.as_ref()).await {
+				branches_metadata_doc_handle = handles.branches_metadata_doc_handle;
+				main_branch_doc_handle = handles.main_branch_doc_handle;
+			}
+
+			// TODO: Handle this better in the refactor.
+			// Here, we spin until the server's connected. If the server is never connected, this will spin forever!!!!!!!
+			// If the server becomes connected and we can't load the doc still, we panic.
+			else {
+				loop {
+					if server_connected.load(Ordering::Relaxed) {
+						if let Ok(handles) = init_project_doc_handles(&repo_handle, branches_metadata_doc_id.as_ref(), user_name.as_ref()).await {
+							branches_metadata_doc_handle = handles.branches_metadata_doc_handle;
+							main_branch_doc_handle = handles.main_branch_doc_handle;
+							break;
+						}
+						panic!("Could not load project document even while the server was connected. This probably means the server doesn't actually have the requested doc!");
+					}
+					tokio::time::sleep(time::Duration::from_millis(10)).await;
+				}
+			}
 
             tx.unbounded_send(OutputEvent::Initialized { project_doc_id: branches_metadata_doc_handle.document_id().clone() }).unwrap();
 
@@ -497,25 +537,30 @@ struct ProjectDocHandles {
     main_branch_doc_handle: DocHandle,
 }
 
+enum InitError {
+	ProjectDocumentNotFound,
+	MainBranchDocumentNotFound
+}
+
 async fn init_project_doc_handles(
     repo_handle: &Repo,
-    branches_metadata_doc_id: &Option<DocumentId>,
-    user_name: &Option<String>,
-) -> ProjectDocHandles {
+    branches_metadata_doc_id: Option<&DocumentId>,
+    user_name: Option<&String>,
+) -> Result<ProjectDocHandles, InitError> {
     match branches_metadata_doc_id {
         // load existing project
         Some(doc_id) => {
             tracing::debug!("loading existing project: {:?}", doc_id);
 
-            let branches_metadata_doc_handle = repo_handle
-                .find(doc_id.clone())
-                .await
-                .unwrap_or_else(|e| {
-                    panic!("failed init, can't load branches metadata doc: {:?}", e);
-                }).unwrap_or_else(|| {
-					// TODO (Samod): Can we panic here or do we have to fail gracefully?
-                    panic!("failed init, no branches metadata doc");
-                });
+            let Ok(branches_metadata_doc_handle) = repo_handle.find(doc_id.clone()).await else {
+				panic!("Failed init; repo stopped!");
+			};
+			// This happens if both us and the connected server do not know about this document.
+			// Also, it happens when we're not connected to the server at all.
+			let Some(branches_metadata_doc_handle) = branches_metadata_doc_handle else {
+            	tracing::debug!("existing project document not found");
+				return Err(InitError::ProjectDocumentNotFound);
+			};
 
             let branches_metadata: BranchesMetadataDoc =
                 branches_metadata_doc_handle.with_document(|d| {
@@ -524,21 +569,21 @@ async fn init_project_doc_handles(
                     })
                 });
 
-            let main_branch_doc_handle = repo_handle
+            let Ok(main_branch_doc_handle) = repo_handle
                 .find(DocumentId::from_str(&branches_metadata.main_doc_id).unwrap())
-                .await
-                .unwrap_or_else(|_| {
-                    panic!("failed init, can't load main branchs doc");
-                }).unwrap_or_else(|| {
-					// TODO (Samod): Can we panic here or do we have to fail gracefully?
-                    panic!("failed init, no branches metadata doc");
-                });
+                .await else
+			{
+				panic!("Failed init; repo stopped!")
+			};
+			let Some(main_branch_doc_handle) = main_branch_doc_handle else {
+				tracing::debug!("existing main branch document not found");
+				return Err(InitError::MainBranchDocumentNotFound);
+			};
 
-
-            return ProjectDocHandles {
+            return Ok(ProjectDocHandles {
                 branches_metadata_doc_handle: branches_metadata_doc_handle.clone(),
                 main_branch_doc_handle: main_branch_doc_handle.clone(),
-            };
+            });
         }
 
         // create new project
@@ -559,7 +604,7 @@ async fn init_project_doc_handles(
                 commit_with_attribution_and_timestamp(
                     tx,
                     &CommitMetadata {
-                        username: user_name.clone(),
+                        username: user_name.cloned(),
                         branch_id: Some(main_branch_doc_handle.document_id().clone()),
                         merge_metadata: None,
 						reverted_to: None,
@@ -578,7 +623,7 @@ async fn init_project_doc_handles(
                     id: main_branch_doc_handle.document_id().to_string(),
                     fork_info: None,
                     merge_info: None,
-					created_by: user_name.clone(),
+					created_by: user_name.cloned(),
 					merged_into: None,
 					reverted_to: None,
                 },
@@ -599,7 +644,7 @@ async fn init_project_doc_handles(
                 commit_with_attribution_and_timestamp(
                     tx,
                     &CommitMetadata {
-                        username: user_name.clone(),
+                        username: user_name.cloned(),
                         branch_id: None,
                         merge_metadata: None,
 						reverted_to: None,
@@ -609,10 +654,10 @@ async fn init_project_doc_handles(
                 );
             });
 
-            return ProjectDocHandles {
+            return Ok(ProjectDocHandles {
                 branches_metadata_doc_handle: branches_metadata_doc_handle.clone(),
                 main_branch_doc_handle: main_branch_doc_handle.clone(),
-            };
+            });
         }
     }
 }
