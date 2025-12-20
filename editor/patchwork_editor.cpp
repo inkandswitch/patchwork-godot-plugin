@@ -546,13 +546,25 @@ void PatchworkEditor::refresh_after_source_change() {
 		Main::iteration();
 	}
 
+	auto current_scene = EditorInterface::get_singleton()->get_edited_scene_root();
+
 	auto open_scenes = EditorInterface::get_singleton()->get_open_scenes();
 	for (auto &scene : open_scenes) {
+		if (current_scene != nullptr && scene == current_scene->get_scene_file_path()) {
+			continue;
+		}
 		while (is_changing_scene()) {
 			OS::get_singleton()->delay_usec(10000);
 			Main::iteration();
 		}
 		EditorInterface::get_singleton()->reload_scene_from_path(scene);
+	}
+	if (current_scene != nullptr) {
+		while (is_changing_scene()) {
+			OS::get_singleton()->delay_usec(10000);
+			Main::iteration();
+		}
+		EditorInterface::get_singleton()->reload_scene_from_path(current_scene->get_scene_file_path());
 	}
 }
 
