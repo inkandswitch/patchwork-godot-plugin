@@ -215,6 +215,5 @@ write_version_header()
 module_obj = []
 
 env_patchwork_editor.add_source_files(module_obj, "*.cpp")
-env_patchwork_editor.add_source_files(module_obj, "editor/*.cpp")
 # build_patchwork_rust(module_obj)
 env.modules_sources += module_obj
