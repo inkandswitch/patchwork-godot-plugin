@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://mr0rb0dbfyws"
-path="res://.godot/imported/edit-two-svgrepo-com.svg-a8adb7fc52b5766128a68cb0917eb3e2.ctex"
+path="res://.godot/imported/edit-two-svgrepo-com.svg-995d1c0f6ed2da764711bd8dc8a0d1cd.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://addons/patchwork/icons/edit-two-svgrepo-com.svg"
-dest_files=["res://.godot/imported/edit-two-svgrepo-com.svg-a8adb7fc52b5766128a68cb0917eb3e2.ctex"]
+source_file="res://addons/patchwork/public/icons/edit-two-svgrepo-com.svg"
+dest_files=["res://.godot/imported/edit-two-svgrepo-com.svg-995d1c0f6ed2da764711bd8dc8a0d1cd.ctex"]
 
 [params]
 

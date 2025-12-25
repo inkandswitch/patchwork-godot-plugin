@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://blu0iomxyyu3k"
-path="res://.godot/imported/collapsable-open.svg-f62d8ef9e568a11b26f84e2f50e48546.ctex"
+path="res://.godot/imported/collapsable-open.svg-ae16ea032e23aa154c4a89eb07f925cf.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://addons/patchwork/icons/collapsable-open.svg"
-dest_files=["res://.godot/imported/collapsable-open.svg-f62d8ef9e568a11b26f84e2f50e48546.ctex"]
+source_file="res://addons/patchwork/public/icons/collapsable-open.svg"
+dest_files=["res://.godot/imported/collapsable-open.svg-ae16ea032e23aa154c4a89eb07f925cf.ctex"]
 
 [params]
 

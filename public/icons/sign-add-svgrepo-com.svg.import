@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bu0h5oa7aoanu"
-path="res://.godot/imported/sign-add-svgrepo-com.svg-3c066eea04268b0ff031545522c94461.ctex"
+path="res://.godot/imported/sign-add-svgrepo-com.svg-dfbe377cf4cc684bbd3ffb07bfa62467.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://addons/patchwork/icons/sign-add-svgrepo-com.svg"
-dest_files=["res://.godot/imported/sign-add-svgrepo-com.svg-3c066eea04268b0ff031545522c94461.ctex"]
+source_file="res://addons/patchwork/public/icons/sign-add-svgrepo-com.svg"
+dest_files=["res://.godot/imported/sign-add-svgrepo-com.svg-dfbe377cf4cc684bbd3ffb07bfa62467.ctex"]
 
 [params]
 

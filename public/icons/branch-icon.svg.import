@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://crrc8r8dr3cbu"
-path="res://.godot/imported/branch-icon.svg-c91c720eae8869999e5dcc5a7734f859.ctex"
+path="res://.godot/imported/branch-icon.svg-0718c16fd57484242e92f10e7dbcbab7.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://addons/patchwork/icons/branch-icon.svg"
-dest_files=["res://.godot/imported/branch-icon.svg-c91c720eae8869999e5dcc5a7734f859.ctex"]
+source_file="res://addons/patchwork/public/icons/branch-icon.svg"
+dest_files=["res://.godot/imported/branch-icon.svg-0718c16fd57484242e92f10e7dbcbab7.ctex"]
 
 [params]
 

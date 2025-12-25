@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bugirug2evvpe"
-path="res://.godot/imported/thing.png-d95c84a70ef0adb70438796fa095e000.ctex"
+path="res://.godot/imported/thing.png-cc5fa0c05993da4e76dadc5452705502.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://addons/patchwork/gdscript/thing.png"
-dest_files=["res://.godot/imported/thing.png-d95c84a70ef0adb70438796fa095e000.ctex"]
+source_file="res://addons/patchwork/public/gdscript/thing.png"
+dest_files=["res://.godot/imported/thing.png-cc5fa0c05993da4e76dadc5452705502.ctex"]
 
 [params]
 

@@ -4,7 +4,7 @@ extends MarginContainer
 # Godot 3.x: something.connect("signal_name", self, "_on_signal_name")
 # Godot 4.x: something.connect("signal_name", self._on_signal_name)
 
-const diff_inspector_script = preload("res://addons/patchwork/gdscript/diff_inspector_container.gd")
+const diff_inspector_script = preload("res://addons/patchwork/public/gdscript/diff_inspector_container.gd")
 @onready var branch_picker: OptionButton = %BranchPicker
 @onready var history_tree: Tree = %HistoryTree
 @onready var history_list_popup: PopupMenu = %HistoryListPopup
@@ -464,20 +464,20 @@ func confirm_merge_preview():
 func toggle_section(section_header: Button, section_body: Control):
 	var parent_vbox = section_header.get_parent()
 	if section_body.visible:
-		section_header.icon = load("res://addons/patchwork/icons/collapsable-closed.svg")
+		section_header.icon = load("res://addons/patchwork/public/icons/collapsable-closed.svg")
 		section_body.visible = false
 		parent_vbox.set_v_size_flags(Control.SIZE_FILL)
 	else:
-		section_header.icon = load("res://addons/patchwork/icons/collapsable-open.svg")
+		section_header.icon = load("res://addons/patchwork/public/icons/collapsable-open.svg")
 		section_body.visible = true
 		parent_vbox.set_v_size_flags(Control.SIZE_EXPAND_FILL)
 
 func unfold_section(section_header: Button, section_body: Control):
-	section_header.icon = load("res://addons/patchwork/icons/collapsable-open.svg")
+	section_header.icon = load("res://addons/patchwork/public/icons/collapsable-open.svg")
 	section_body.visible = true
 
 func fold_section(section_header: Button, section_body: Control):
-	section_header.icon = load("res://addons/patchwork/icons/collapsable-closed.svg")
+	section_header.icon = load("res://addons/patchwork/public/icons/collapsable-closed.svg")
 	section_body.visible = false
 
 func update_history_tree():
@@ -520,7 +520,7 @@ func update_history_tree():
 			# Sometimes this is null while starting up, before the branch has loaded in.
 			# If so the button will just appear later when we update UI.
 			if merged_branch:
-				item.add_button(HistoryColumns.TEXT, load("res://addons/patchwork/icons/branch-icon-history.svg"), 0,
+				item.add_button(HistoryColumns.TEXT, load("res://addons/patchwork/public/icons/branch-icon-history.svg"), 0,
 					false, "Checkout branch " + merged_branch.name)
 
 		item.set_text(HistoryColumns.TEXT, change.summary)
@@ -593,10 +593,10 @@ func update_merge_preview():
 
 	if !GodotProject.is_safe_to_merge():
 		merge_preview_message_label.text = "\"" + target_branch.name + "\" has changed since \"" + source_branch.name + "\" was created.\nBe careful and review your changes before merging."
-		merge_preview_message_icon.texture = load("res://addons/patchwork/icons/warning-circle.svg")
+		merge_preview_message_icon.texture = load("res://addons/patchwork/public/icons/warning-circle.svg")
 	else:
 		merge_preview_message_label.text = "This branch is safe to merge.\n \"" + target_branch.name + "\" hasn't changed since \"" + source_branch.name + "\" was created."
-		merge_preview_message_icon.texture = load("res://addons/patchwork/icons/checkmark-circle.svg")
+		merge_preview_message_icon.texture = load("res://addons/patchwork/public/icons/checkmark-circle.svg")
 
 func update_revert_preview():
 	var active = GodotProject.is_revert_preview_branch_active()
@@ -639,19 +639,19 @@ func update_sync_status() -> void:
 	var sync_status = GodotProject.get_sync_status()
 
 	if sync_status.state == "unknown":
-		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
+		sync_status_icon.texture_normal = load("res://addons/patchwork/public/icons/circle-alert.svg")
 		sync_status_icon.tooltip_text = "Disconnected - might have unsynced changes"
 
 	elif sync_status.state == "syncing":
-		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-sync.svg")
+		sync_status_icon.texture_normal = load("res://addons/patchwork/public/icons/circle-sync.svg")
 		sync_status_icon.tooltip_text = "Syncing"
 
 	elif sync_status.state == "up_to_date":
-		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-check.svg")
+		sync_status_icon.texture_normal = load("res://addons/patchwork/public/icons/circle-check.svg")
 		sync_status_icon.tooltip_text = "Fully synced"
 
 	elif sync_status.state == "disconnected":
-		sync_status_icon.texture_normal = load("res://addons/patchwork/icons/circle-alert.svg")
+		sync_status_icon.texture_normal = load("res://addons/patchwork/public/icons/circle-alert.svg")
 		if sync_status.unsynced_changes == 0:
 			sync_status_icon.tooltip_text = "Disconnected - no unsynced local changes"
 		elif sync_status.unsynced_changes == 1:
@@ -689,7 +689,7 @@ func add_branch_to_picker(branch: Dictionary, selected_branch_id: String, indent
 
 	# this should not happen, but right now the sync is not working correctly so we need to surface this in the interface
 	if !branch.is_loaded:
-		branch_picker.set_item_icon(branch_index, load("res://addons/patchwork/icons/warning.svg"))
+		branch_picker.set_item_icon(branch_index, load("res://addons/patchwork/public/icons/warning.svg"))
 
 	branch_picker.set_item_metadata(branch_index, branch.id)
 
@@ -776,7 +776,7 @@ func setup_history_list_popup() -> void:
 	# TODO: adjust this when more items are added
 	history_list_popup.max_size.y = 48 * EditorInterface.get_editor_scale()
 	history_list_popup.id_pressed.connect(_on_history_list_popup_id_pressed)
-	history_list_popup.add_icon_item(load("res://addons/patchwork/icons/undo-redo.svg"), "Reset to here", HistoryListPopupItem.RESET_TO_COMMIT)
+	history_list_popup.add_icon_item(load("res://addons/patchwork/public/icons/undo-redo.svg"), "Reset to here", HistoryListPopupItem.RESET_TO_COMMIT)
 	# history_list_popup.add_item("Create remix from here", HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT)
 
 func _on_history_tree_mouse_selected(_at_position: Vector2, button_idx: int) -> void:

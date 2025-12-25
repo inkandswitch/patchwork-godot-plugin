@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://4obywo8ddx25"
-path="res://.godot/imported/arrow.svg-246d8d46ce07dd73a0530b66dcff2231.ctex"
+path="res://.godot/imported/arrow.svg-bcd9a836cfd3b85698c1696cd7bb9321.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://addons/patchwork/icons/arrow.svg"
-dest_files=["res://.godot/imported/arrow.svg-246d8d46ce07dd73a0530b66dcff2231.ctex"]
+source_file="res://addons/patchwork/public/icons/arrow.svg"
+dest_files=["res://.godot/imported/arrow.svg-bcd9a836cfd3b85698c1696cd7bb9321.ctex"]
 
 [params]
 

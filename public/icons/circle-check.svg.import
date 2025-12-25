@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ceyam02frwm6g"
-path="res://.godot/imported/circle-check.svg-d587d700b931cc253d8b3daf9d32b402.ctex"
+path="res://.godot/imported/circle-check.svg-256109375ec4697ce7ff2f4983a9cecc.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://addons/patchwork/icons/circle-check.svg"
-dest_files=["res://.godot/imported/circle-check.svg-d587d700b931cc253d8b3daf9d32b402.ctex"]
+source_file="res://addons/patchwork/public/icons/circle-check.svg"
+dest_files=["res://.godot/imported/circle-check.svg-256109375ec4697ce7ff2f4983a9cecc.ctex"]
 
 [params]
 

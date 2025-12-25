@@ -524,7 +524,7 @@ impl GodotProjectPlugin {
 
 	fn add_sidebar(&mut self) {
 		self.sidebar_scene = Self
-			::force_reload_resource("res://addons/patchwork/gdscript/sidebar.tscn")
+			::force_reload_resource("res://addons/patchwork/public/gdscript/sidebar.tscn")
 			.map(|scene| scene.try_cast::<PackedScene>().ok())
 			.flatten();
 		self.sidebar = if let Some(Some(sidebar)) = self.sidebar_scene.as_ref().map(|scene| scene.instantiate()) {

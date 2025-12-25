@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://3ji7pxd0i11g"
-path="res://.godot/imported/undo-redo.svg-124acb6d576e0eca414858a47d4a4dab.ctex"
+path="res://.godot/imported/undo-redo.svg-e70d887799d8adde83845aa17509abf3.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://addons/patchwork/icons/undo-redo.svg"
-dest_files=["res://.godot/imported/undo-redo.svg-124acb6d576e0eca414858a47d4a4dab.ctex"]
+source_file="res://addons/patchwork/public/icons/undo-redo.svg"
+dest_files=["res://.godot/imported/undo-redo.svg-e70d887799d8adde83845aa17509abf3.ctex"]
 
 [params]
 
