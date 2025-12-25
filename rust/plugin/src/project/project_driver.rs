@@ -411,7 +411,9 @@ impl ProjectDriver {
         			next = peer_stream.next() => {
                         if let Some(info) = next {
                             // TODO: do we need to update the synced_heads here?
-							// TODO (Samod): We currently handle only the first of the vec; we maybe should iterate through
+							// TODO: Currently, we only handle the very first peer connection here.
+							// We're making an explicit assumption that there's only ever 1 or 0 peers (the server.)
+							// Realistically this becomes a problem if there's other peers, but currently that's never the case.
                             tx.unbounded_send(OutputEvent::PeerConnectionInfoChanged { peer_connection_info: info.first().cloned() }).unwrap();
                         };
                     },

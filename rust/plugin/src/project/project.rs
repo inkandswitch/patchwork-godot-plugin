@@ -875,7 +875,7 @@ impl Project {
             self.checked_out_branch_state
         );
 
-		// TODO (Samod): This seems like a very bad idea; probably set this up on a different thread
+		// Bad practice; figure out a way to propogate this await to the UI instead
         futures::executor::block_on(self.start_driver());
         self.start_file_system_driver();
         self.is_started = true;
