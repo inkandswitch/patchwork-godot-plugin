@@ -1,7 +1,7 @@
-# workspace is in rust/plugin
+# workspace is in rust
 [workspace]
 members = [
-    "rust/plugin",
+    "rust",
 ]
 
 
