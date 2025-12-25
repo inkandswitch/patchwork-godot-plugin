@@ -1,132 +1,15 @@
 #!/usr/bin/env python
-
-import os
 import re
 import shutil
-from subprocess import Popen, PIPE, check_output
-import glob
+from subprocess import Popen, PIPE
 
 Import("env")
 Import("env_modules")
-
-
-MODULE_DIR = os.path.realpath(".")
-EXTERNAL_DIR = os.path.join(MODULE_DIR, "external")
-EXTERNAL_LIB_DIR = os.path.join(EXTERNAL_DIR, "lib")
-
 
 env_patchwork_editor = env_modules.Clone()
 env_patchwork_editor["disable_exceptions"] = False
 
 env_patchwork_editor.Append(CPPPATH=["."])
-
-
-# env_patchwork_editor.Append(CPPPATH=["external/include"])
-# env.Append(LIBPATH=[EXTERNAL_LIB_DIR])
-
-# icon stuff
-
-# env_patchwork_editor.Append(CPPPATH=["#thirdparty/thorsvg/"])
-
-# env_patchwork_editor["BUILDERS"]["MakeGDREIconsBuilder"] = Builder(
-#     action=env_patchwork_editor.Run(gdre_icon_builder.make_gdre_icons_action),
-#     suffix=".h",
-#     src_suffix=".svg",
-# )
-# icon_sources = Glob("icons/*.svg")
-
-# env_patchwork_editor.Alias(
-#     "gdre_icons",
-#     [env_patchwork_editor.MakeGDREIconsBuilder("editor/gdre_icons.gen.h", icon_sources)],
-# )
-
-
-# automerge stuff
-
-
-def get_sources(rel_path, filters=["*.h", "*.hpp", "*.cpp"]):
-    abs_path = os.path.join(MODULE_DIR, rel_path)
-    # check if abs_path exists
-    if not os.path.exists(abs_path):
-        raise Exception(
-            f"Path {abs_path} does not exist, please run `git submodule update --init --recursive` in the patchwork_editor directory"
-        )
-    sources = []
-    for suffix in filters:
-        globstr = os.path.join(abs_path, "**", suffix)
-        sources += glob.glob(globstr, recursive=True)
-    return [os.path.relpath(source, MODULE_DIR) for source in sources]
-
-
-def cmake_builder(external_dir, source_dir, build_dir, libs, config_options=None):
-    output = bytes()
-    # get dev_build from env
-    dev_build = env["dev_build"] if "dev_build" in env else False
-    build_variant = "Debug" if dev_build else "Release"
-    print("BUILD VARIANT", build_variant)
-    
-    Config_cmd = ["cmake", "-S", source_dir, "-B", build_dir , "-DCMAKE_BUILD_TYPE=" + build_variant]
-    if config_options:
-        Config_cmd += config_options
-    try:
-        if os.path.exists(build_dir):
-            shutil.rmtree(build_dir, ignore_errors=True)
-        output += check_output(["cmake", "-E", "make_directory", external_dir]) + b"\n"
-        output += check_output(["cmake", "-E", "make_directory", build_dir]) + b"\n"
-        output += check_output(Config_cmd) + b"\n"
-        output += check_output(["cmake", "--build", build_dir]) + b"\n"
-        # remove the old libs
-        for lib in libs:
-            lib_path = os.path.join(external_dir, lib)
-            if os.path.exists(lib_path):
-                os.remove(lib_path)
-        output += check_output(["cmake", "--install", build_dir, "--prefix", external_dir]) + b"\n"
-    except Exception as e:
-        # convert output to string
-        output = output.decode("utf-8")
-        print(f"Failed to build automerge-c: {e}")
-        print(f"Output: {output}")
-        exit(1)
-    # output = output.decode("utf-8")
-    # print(output)
-
-
-def add_libs_to_env(module_obj, libs, sources):
-    for lib in libs:
-        env_patchwork_editor.Depends(lib, sources)
-        # get the basename of the library minus the extension
-        lib_name = os.path.basename(lib).split(".")[0]
-        full_lib_path = os.path.join(MODULE_DIR, lib)
-        env.Append(LIBS=[lib_name])
-    env.Depends(module_obj, libs)
-
-
-PATCHWORK_RUST_PREFIX = "thirdparty/patchwork_rust"
-PATCHWORK_RUST_DIR = os.path.join(MODULE_DIR, PATCHWORK_RUST_PREFIX)
-PATCHWORK_RUST_BUILD_DIR = os.path.join(PATCHWORK_RUST_DIR, "build")
-PATCHWORK_LIBS = ["external/lib/libpatchwork_rust.a", "external/lib/libpatchwork_rust_core.a"]
-AUTOMERGE_CONFIG_OPTS = ["-DUTF32_INDEXING=true"]
-
-
-def patchwork_rust_builder(target, source, env):
-    cmake_builder(EXTERNAL_DIR, PATCHWORK_RUST_DIR, PATCHWORK_RUST_BUILD_DIR, PATCHWORK_LIBS, AUTOMERGE_CONFIG_OPTS)
-
-
-def build_patchwork_rust(module_obj):
-    SRC_SUFFIXES = ["*.h", "*.cpp", "*.rs", "*.txt"]
-    env_patchwork_editor["BUILDERS"]["PatchworkRustBuilder"] = Builder(
-        action=patchwork_rust_builder,
-        suffix=".a",
-        src_suffix=["*.h", "*.cpp", "*.rs", "*.txt"],
-    )
-
-    patchwork_rust_sources = get_sources(PATCHWORK_RUST_PREFIX, SRC_SUFFIXES)
-    env_patchwork_editor.Alias(
-        "patchworkrustlib",
-        [env_patchwork_editor.PatchworkRustBuilder(PATCHWORK_LIBS, patchwork_rust_sources)],
-    )
-    add_libs_to_env(module_obj, PATCHWORK_LIBS, patchwork_rust_sources)
-
 
 def doproc(cmd):
     # ensure that it doesn't print stderr to the terminal if print_err is False
@@ -139,7 +22,7 @@ def doproc(cmd):
 
 semver_regex = r"^[vV]?(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
 
-
+# TODO (Lilith): Do we still need to do this? What's the point of this?
 def write_version_header():
     git = shutil.which("git")
     version_info = "unknown"
@@ -200,7 +83,7 @@ def write_version_header():
             else:
                 version_info = res
 
-    f = open("editor/patchwork_version.gen.h", "w")
+    f = open("patchwork_version.gen.h", "w")
     # check if we're not on a tag
     process = Popen([git, "status", "--porcelain"], stdout=PIPE)
     # define GDRE_VERSION "dev-poc (for Godot 4.0)"

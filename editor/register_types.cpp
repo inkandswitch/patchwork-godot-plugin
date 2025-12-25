@@ -4,7 +4,7 @@
 
 #include "register_types.h"
 #include "editor/editor_node.h"
-#include "editor/patchwork_editor.h"
+#include "patchwork_editor.h"
 
 void patchwork_editor_init_callback() {
 	EditorNode *editor = EditorNode::get_singleton();
@@ -19,6 +19,9 @@ void initialize_patchwork_editor_module(ModuleInitializationLevel p_level) {
 		ClassDB::register_class<PatchworkEditor>();
 		// register the editor inspector section
 	}
+
+
+
 }
 
 void uninitialize_patchwork_editor_module(ModuleInitializationLevel p_level) {

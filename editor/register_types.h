@@ -12,3 +12,4 @@ void uninitialize_patchwork_editor_module(ModuleInitializationLevel p_level);
 void init_ver_regex();
 void free_ver_regex();
 #endif // PATCHWORK_EDITOR_REGISTER_TYPES_H
+
