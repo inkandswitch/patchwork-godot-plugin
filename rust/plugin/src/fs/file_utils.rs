@@ -5,7 +5,7 @@ use std::path::{PathBuf};
 use std::str;
 use automerge::{Automerge, ChangeHash, ObjType, ReadDoc};
 use automerge::ObjId;
-use automerge_repo::{DocumentId};
+use samod::{DocumentId};
 use ya_md5::{Md5Hasher};
 use crate::helpers::doc_utils::SimpleDocReader;
 use crate::helpers::utils::{ToShortForm, parse_automerge_url};
@@ -81,7 +81,10 @@ impl FileContent {
 			let scene = parse_scene(&string);
 			if scene.is_ok() {
 				return FileContent::Scene(scene.unwrap());
+			} else if let Err(e) = scene {
+				tracing::error!("Error parsing scene: {:?}", e);
 			}
+
 		}
 		FileContent::String(string)
 	}

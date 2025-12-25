@@ -1,5 +1,5 @@
 use automerge::ChangeHash;
-use automerge_repo::{DocHandle, DocumentId};
+use samod::{DocHandle, DocumentId};
 use autosurgeon::{Hydrate, Reconcile};
 use std::collections::{HashMap, HashSet};
 

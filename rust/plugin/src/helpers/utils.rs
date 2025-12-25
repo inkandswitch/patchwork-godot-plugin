@@ -6,7 +6,7 @@ use crate::{diff::differ::ProjectDiff, helpers::{branch::BranchState, doc_utils:
 use automerge::{
     Automerge, Change, ChangeHash, Patch, PatchLog, ROOT, ReadDoc, transaction::{CommitOptions, Transaction}
 };
-use automerge_repo::{DocHandle, DocumentId};
+use samod::{DocHandle, DocumentId};
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
@@ -73,7 +73,7 @@ pub(crate) fn get_linked_docs_of_branch(
     branch_doc_handle: &DocHandle,
 ) -> HashMap<String, DocumentId> {
     // Collect all linked doc IDs from this branch
-    branch_doc_handle.with_doc(|d| {
+    branch_doc_handle.with_document(|d| {
         let files = match d.get_obj_id(ROOT, "files") {
             Some(files) => files,
             None => {
@@ -214,6 +214,7 @@ impl From<&Change> for CommitInfo {
 		}
 	}
 }
+
 
 #[derive(Debug)]
 pub struct BranchWrapper {

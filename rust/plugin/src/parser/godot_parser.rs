@@ -715,7 +715,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                     // Check if node has a patchwork_id in metadata
                     let node_id_num = match heading.get("unique_id") {
                         Some(unique_id) => unique_id.parse::<i32>().unwrap_or(UNIQUE_SCENE_ID_UNASSIGNED),
-                        None => return Err("Missing required 'unique_id' attribute in node section".to_string())
+                        None => -1
                     };
 					parsed_node_ids.insert(node_id_num);
 

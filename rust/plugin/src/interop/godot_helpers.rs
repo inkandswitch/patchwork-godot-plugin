@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::{fmt::Display};
 use automerge::{ChangeHash};
-use automerge_repo::{DocumentId};
+use samod::{DocumentId};
 use godot::meta::{ArgPassing, ByValue, GodotType, ToArg};
 use godot::{prelude::*, meta::ToGodot, meta::GodotConvert};
 use crate::fs::file_utils::FileContent;
