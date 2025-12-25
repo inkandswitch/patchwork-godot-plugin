@@ -122,9 +122,9 @@ build-godot profile: _link-godot
     cd "{{build_dir}}/godot"
     # TODO: figure out a way to see if scons actually needs a run, since this takes forever even when built
     if [[ {{profile}} = "release" ]] ; then
-        scons dev_build=no debug_symbols=no target=editor deprecated=yes minizip=yes
+        scons dev_build=no debug_symbols=no target=editor deprecated=yes minizip=yes compiledb=yes
     elif [[ {{profile}} = "sani" ]] ; then
-        scons dev_build=yes target=editor compiledb=yes deprecated=yes minizip=yes tests=yes use_asan=yes
+        scons dev_build=yes target=editor compiledb=yes deprecated=yes minizip=yes tests=yes use_asan=yes 
     else
         scons dev_build=yes target=editor compiledb=yes deprecated=yes minizip=yes tests=yes 
     fi
