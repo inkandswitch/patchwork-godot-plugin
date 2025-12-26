@@ -3,6 +3,16 @@ on:
   workflow_call:
 
 jobs:
+  retrieve-env:
+    name: 🔍 Load Environment variables
+    runs-on: "ubuntu-latest"
+    strategy:
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aarcangeli/load-dotenv@v1
+        filenames: build.env
+
   compose-projects:
     runs-on: "ubuntu-latest"
     name: 🪡 Compose ${{ matrix.project.name }}
@@ -12,11 +22,11 @@ jobs:
         # TODO (Lilith): Input these values from a .env file in both justfile and here
         project:
           - name: threadbare
-            repo: endlessm/threadbare
-            ref: godot-4.6
+            repo: ${{env.THREADBARE_REPO }}
+            ref: ${{env.THREADBARE_REF }}
           - name: moddable-platformer
-            repo: endlessm/moddable-platformer
-            ref: godot-4.6
+            repo: ${{env.MODDABLE_PLATFORMER_REPO }}
+            ref: ${{env.MODDABLE_PLATFORMER_REF }}
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
