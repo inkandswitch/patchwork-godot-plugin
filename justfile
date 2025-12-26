@@ -71,7 +71,7 @@ _symlink src dest:
 # Clone a repository to a directory and check out a commit.
 _clone repo_url directory checkout:
     #!/usr/bin/env sh
-    set -euxo pipefail
+    # set -euxo pipefail
     if [[ ! -d "{{directory}}" ]]; then
         git clone "{{repo_url}}" "{{directory}}"
     else
@@ -95,7 +95,7 @@ _clone repo_url directory checkout:
 [arg('project', pattern='moddable-platformer|threadbare')]
 _acquire-project project: _make-build-dir
     #!/usr/bin/env sh
-    set -euxo pipefail
+    # set -euxo pipefail
     if [[ "{{project}}" = "moddable-platformer" ]]; then
         just _clone "{{moddable_platformer_repo}}" "{{build_dir}}/{{project}}" "{{moddable_platformer_checkout}}"
     else
@@ -128,7 +128,7 @@ _link-public: _make-plugin-dir
 [arg('profile', pattern='release|debug|sani')]
 build-godot profile: _link-godot
     #!/usr/bin/env sh
-    set -euxo pipefail
+    # set -euxo pipefail
     cd "{{build_dir}}/godot"
     # TODO: figure out a way to see if scons actually needs a run, since this takes forever even when built
     if [[ {{profile}} = "release" ]] ; then
@@ -155,7 +155,7 @@ _build-plugin-all-macos profile: (_build-plugin "aarch64-apple-darwin" profile) 
 [parallel]
 _build-plugin-single-arch architecture profile: (_build-plugin architecture profile) _make-plugin-dir
     #!/usr/bin/env sh
-    set -euo pipefail
+    # set -euo pipefail
     mkdir -p {{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}
 
     # Copy the entire macos directory to get the Resources framework directory
@@ -237,7 +237,7 @@ _configure-patchwork: _make-plugin-dir
 [arg('profile', pattern='release|debug')]
 build-patchwork profile architecture=(default_arch): _configure-patchwork _link-public
     #!/usr/bin/env sh
-    set -euxo pipefail
+    # set -euxo pipefail
     if [[ "{{architecture}}" = "all-apple-darwin" ]] ; then
         just _build-plugin-all-macos "{{profile}}"
         exit 0
@@ -253,13 +253,13 @@ build-patchwork profile architecture=(default_arch): _configure-patchwork _link-
 # Reset the Godot repository, removing the linked module and resetting the repo state.
 clean-godot:
     #!/usr/bin/env sh
-    set -euxo pipefail
+    # set -euxo pipefail
     if [[ ! -d "{{build_dir}}" ]]; then
         exit 0
     fi
     cd "{{build_dir}}"
     
-    set -euxo pipefail
+    # set -euxo pipefail
     if [[ ! -d "godot" ]]; then
         exit 0
     fi
@@ -270,7 +270,7 @@ clean-godot:
 # Remove any built Patchwork artifacts.
 clean-patchwork:
     #!/usr/bin/env sh
-    set -euxo pipefail
+    # set -euxo pipefail
     cargo clean
     if [[ ! -d "{{build_dir}}/{{plugin_dir}}" ]]; then
         exit 0
@@ -281,7 +281,7 @@ clean-patchwork:
 [arg('project', pattern='moddable-platformer|threadbare')]
 clean-project project:
     #!/usr/bin/env sh
-    set -euxo pipefail
+    # set -euxo pipefail
     if [[ "{{project}}" = "moddable-platformer" ]]; then
         checkout="{{moddable_platformer_checkout}}"
     else
@@ -359,7 +359,7 @@ prepare project="moddable-platformer" patchwork_profile="release" godot_profile=
 launch project="moddable-platformer" patchwork_profile="release" godot_profile="release" server_url="": \
         (prepare project patchwork_profile godot_profile server_url)
     #!/usr/bin/env sh
-    set -euxo pipefail
+    # set -euxo pipefail
     
     case "{{arch()}}" in
         "x86_64")
