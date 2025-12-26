@@ -43,6 +43,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: patchwork-build-macos-${{ matrix.arch }}
-          path: |
-            build/patchwork/*
+          path: ./build/patchwork/*
           if-no-files-found: error
