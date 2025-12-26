@@ -1,17 +1,16 @@
-name: 🏁 Windows Builds
+name: 🪟 Build Patchwork for Windows
 on:
   workflow_call:
 
 jobs:
   build-windows:
     runs-on: "windows-latest"
-    name: Windows ${{ matrix.arch }}
+    name: 📐 Build ${{ matrix.arch }}
     strategy:
       fail-fast: false
       matrix:
         # ARM32 Is not officially supported yet, you need to self build rust target.
         arch: ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"] #, , "i686-pc-windows-msvc", "aarch64-pc-windows-msvc", "thumbv7a-pc-windows-msvc"]
-        include-static-libs: [false]
     steps:
       - uses: actions/checkout@v4
       - name: Restore Cache
@@ -22,27 +21,11 @@ jobs:
         uses: ./.github/actions/build-plugin
         with:
           arch: ${{ matrix.arch }}
-          # features: ${{ matrix.features.feature }},${{ matrix.precision }}-${{ matrix.dimensions.feature }}
-      - name: Copy to bin
-        shell: sh
-        run: |
-          ls target/release
-          mkdir -p rust/plugin/windows
-          cp target/release/patchwork_rust_core.dll rust/plugin/windows/patchwork_rust_core.windows.${{ matrix.arch }}.dll
-          ls -la rust/plugin/windows
-
-      - name: Copy static lib
-        if: ${{ matrix.include-static-libs }}
-        shell: sh
-        run: |
-          mkdir -p rust/plugin/windows
-          cp target/release/patchwork_rust_core.lib rust/plugin/windows/patchwork_rust_core.windows.${{ matrix.arch }}.lib
-          ls -la rust/plugin/windows
-
+          
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: patchwork-godot-windows-${{ matrix.arch }}
+          name: patchwork-build-windows-${{ matrix.arch }}
           path: |
-            rust/plugin/windows/*
+            build/patchwork/*
           if-no-files-found: error

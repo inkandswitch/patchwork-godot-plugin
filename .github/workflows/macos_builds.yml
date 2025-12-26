@@ -1,4 +1,4 @@
-name: 🍎 macOS Builds
+name: 🍎 Build Patchwork for macOS
 on:
   workflow_call:
 
@@ -8,17 +8,14 @@ env:
 jobs:
   macos:
     runs-on: "macos-14"
-    name:  ${{ matrix.arch }}
+    name: 📐 Build ${{ matrix.arch }}
     strategy:
       fail-fast: false
       matrix:
         arch:  ["x86_64-apple-darwin"]
-        include-static-libs: [false]
-
     steps:
       - uses: actions/checkout@v4
 
-      # restore cache
       - name: Restore Cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -28,28 +25,11 @@ jobs:
         uses: ./.github/actions/build-plugin
         with:
           arch: ${{ matrix.arch }}
-          # features: ${{ matrix.features.feature }},${{ matrix.precision }}-${{ matrix.dimensions.feature }}
-
-      - name: Copy to bin
-        shell: sh
-        run: |
-          mkdir -p rust/plugin/macos/libpatchwork_rust_core.macos.framework
-          cp target/release/libpatchwork_rust_core.dylib rust/plugin/macos/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.dylib
-          ls -la rust/plugin/macos/libpatchwork_rust_core.macos.framework
-
-      - name: Copy static libs
-        if: ${{ matrix.include-static-libs }}
-        shell: sh
-        run: |
-          mkdir -p rust/plugin/macos/libpatchwork_rust_core.macos.framework
-          cp target/release/libpatchwork_rust_core.arm64.a rust/plugin/macos/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.arm64.a
-          cp target/release/libpatchwork_rust_core.x86_64.a rust/plugin/macos/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.x86_64.a
-          ls -la rust/plugin/macos/libpatchwork_rust_core.macos.framework
 
       - name: Mac Sign
         uses: ./.github/actions/macos-sign
         with:
-          FRAMEWORK_PATH: ${{ github.workspace }}/rust/plugin/macos/libpatchwork_rust_core.macos.framework
+          FRAMEWORK_PATH: ${{ github.workspace }}/build/patchwork/bin/libpatchwork_rust_core.macos.framework
           SIGN_FLAGS: "--deep"
           APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
           APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
@@ -57,10 +37,11 @@ jobs:
           APPLE_DEV_ID: ${{ secrets.APPLE_DEV_ID }}
           APPLE_DEV_TEAM_ID: ${{ secrets.APPLE_DEV_TEAM_ID }}
           APPLE_DEV_APP_ID: ${{ secrets.APPLE_DEV_APP_ID }}
+
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: patchwork-godot-macos-${{ matrix.arch}}
+          name: patchwork-build-macos-${{ matrix.arch }}
           path: |
-            rust/plugin/macos/**/*
+            build/patchwork/*
           if-no-files-found: error

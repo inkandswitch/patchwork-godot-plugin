@@ -1,11 +1,11 @@
-name: 🐧 Linux Builds
+name: 🐧 Build Patchwork for Linux
 on:
   workflow_call:
 
 jobs:
   linux:
     runs-on: "ubuntu-22.04"
-    name: linux ${{ matrix.arch }}
+    name: 📐 Build ${{ matrix.arch }}
     strategy:
       fail-fast: false
       matrix:
@@ -15,10 +15,9 @@ jobs:
           #"armv7-unknown-linux-gnueabihf", # TODO: fix this, newer godot-rust is failing to build for arm32
           #"i686-unknown-linux-gnu"
         ]
-        include-static-libs: [false]
-
     steps:
       - uses: actions/checkout@v4
+
       - name: "Install dependencies"
         shell: sh
         run: |
@@ -43,25 +42,12 @@ jobs:
         uses: ./.github/actions/build-plugin
         with:
           arch: ${{ matrix.arch }}
-          # features: ${{ matrix.features.feature }},${{ matrix.precision }}-${{ matrix.dimensions.feature }}
-      - name: Copy to bin
-        shell: sh
-        run: |
-          mkdir -p rust/plugin/linux
-          cp target/release/libpatchwork_rust_core.so rust/plugin/linux/libpatchwork_rust_core.linux.${{ matrix.arch }}.so
-          ls -la rust/plugin/linux
-      - name: Copy static lib
-        if: ${{ matrix.include-static-libs }}
-        shell: sh
-        run: |
-          mkdir -p rust/plugin/linux
-          cp target/release/libpatchwork_rust_core.a rust/plugin/linux/libpatchwork_rust_core.linux.${{ matrix.arch }}.a
-          ls -la rust/plugin/linux
+
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: patchwork-godot-linux-${{ matrix.arch }}
+          name: patchwork-build-linux-${{ matrix.arch }}
           path: |
-            rust/plugin/linux/*
+            build/patchwork/*
           if-no-files-found: error
 

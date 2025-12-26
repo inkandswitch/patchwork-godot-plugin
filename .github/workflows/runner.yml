@@ -28,126 +28,35 @@ concurrency:
 
 jobs:
   editor-builds:
-    name: 📝 Editor All Platforms
+    name: 🤖 Build Godot for All Platforms
     uses: ./.github/workflows/all_editor_builds.yml
     secrets: inherit
 
   macos-plugin-builds:
-    name: 🍎 macOS
+    name: 🍎 Build Patchwork for macOS
     uses: ./.github/workflows/macos_builds.yml
     secrets: inherit
 
   windows-plugin-builds:
-    name: 🏁 Windows
+    name: 🪟 Build Patchwork for Windows
     uses: ./.github/workflows/windows_builds.yml
+
   linux-plugin-builds:
-    name: 🐧 Linux
+    name: 🐧 Build Patchwork for Linux
     uses: ./.github/workflows/linux_builds.yml
 
   merge-plugin-builds:
-    runs-on: ubuntu-latest
-    name: Merge
+    name: 🧩 Merge Patchwork Builds
     needs: [macos-plugin-builds, windows-plugin-builds, linux-plugin-builds]
-    steps:
-      # checkout
-      - uses: actions/checkout@v4
-        with:
-          path: ws/addons/patchwork
-          persist-credentials: false
-          fetch-depth: 0
+    uses: ./.github/workflows/merge_builds.yml
 
-      - name: Install python3 and git
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3 git
+  compose-projects:
+    name: 🧵 Compose Projects
+    needs: [merge-plugin-builds]
+    uses: ./.github/workflows/compose_projects.yml
 
-      - name: Update version
-        run: |
-          cd ws/addons/patchwork
-          python3 update_version.py
-      # just download the artifacts from the macos, windows and linux plugin builds
-      - name: Download Linux artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: patchwork-godot-linux-*
-          path: ws/addons/patchwork/rust/plugin/linux
-          merge-multiple: true
-      - name: Download MacOS artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: patchwork-godot-macos-*
-          path: ws/addons/patchwork/rust/plugin/macos
-          merge-multiple: true
-      - name: Download Windows artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: patchwork-godot-windows-*
-          path: ws/addons/patchwork/rust/plugin/windows
-          merge-multiple: true
-      - name: Wut
-        run: |
-          ls -la ws/addons/patchwork/rust/plugin/linux || echo "No linux artifacts"
-          ls -la ws/addons/patchwork/rust/plugin/macos/libpatchwork_rust_core.macos.framework || echo "No macos artifacts"
-          ls -la ws/addons/patchwork/rust/plugin/windows || echo "No windows artifacts"
-      - name: Create artifacts/
-        run: mkdir artifacts
-      # add the entire "addons" folder to the artifacts
-      - name: Copy addons to artifacts/
-        run: cp -R ws/addons artifacts/patchwork-godot-plugin
-      - name: Upload patchwork-godot-plugin
-        uses: actions/upload-artifact@v4
-        with:
-          path: artifacts/patchwork-godot-plugin
-          name: patchwork-godot-plugin
-      - uses: actions/checkout@v4
-        with:
-          repository: endlessm/moddable-platformer
-          ref: main
-          path: moddable-platformer
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Copy addons to moddable-platformer
-        run: |
-          mkdir -p moddable-platformer/addons
-          cp -R ws/addons/patchwork moddable-platformer/addons
-      - name: Copy moddable-platformer to artifacts/
-        run: cp -R moddable-platformer artifacts/moddable-platformer-with-patchwork
-      - name: Upload moddable-platformer
-        uses: actions/upload-artifact@v4
-        with:
-          path: artifacts/moddable-platformer-with-patchwork
-          name: moddable-platformer-with-patchwork
-      - uses: actions/checkout@v4
-        with:
-          repository: endlessm/threadbare
-          ref: main
-          path: threadbare
-          fetch-depth: 0
-          lfs: true
-          persist-credentials: false
-      - name: Copy addons to threadbare
-        run: |
-          cp -R ws/addons/patchwork threadbare/addons
-      - name: Copy threadbare to artifacts/
-        run: cp -R threadbare artifacts/threadbare-with-patchwork
-      - name: Upload threadbare
-        uses: actions/upload-artifact@v4
-        with:
-          path: artifacts/threadbare-with-patchwork
-          name: threadbare-with-patchwork
-      - name: Zip artifacts for release
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          ls -la artifacts/*
-          cd artifacts
-          zip -r9  "patchwork-godot-plugin.zip" "patchwork-godot-plugin/*"
-          zip -r9  "moddable-platformer-with-patchwork.zip" "moddable-platformer-with-patchwork/*"
-          zip -r9  "threadbare-with-patchwork.zip" "threadbare-with-patchwork/*"
-      - name: Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: nikitalita/action-gh-release@v1.0
-        with:
-          files: |
-            artifacts/patchwork-godot-plugin.zip
-            artifacts/moddable-platformer-with-patchwork.zip
-            artifacts/threadbare-with-patchwork.zip
+  release:
+    name: 📦 Release
+    if: github.ref_type == 'tag'
+    needs: [editor-builds, merge-plugin-builds, compose-projects]
+    uses: ./.github/workflows/release.yml

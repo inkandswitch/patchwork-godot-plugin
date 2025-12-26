@@ -1,0 +1,34 @@
+name: 📦 Release
+on:
+  workflow_call:
+
+jobs:
+  release:
+    matrix:
+      artifact:
+        - godot-with-patchwork-windows
+        - godot-with-patchwork-linux
+        - godot-with-patchwork-macos
+        - patchwork-godot-plugin
+        - threadbare-with-patchwork
+        - moddable-platformer-with-patchwork
+
+    runs-on: ubuntu-latest
+    name: ✉️ Release ${{ matrix.artifact }}
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ matrix.artifact }}
+          path: ${{ GITHUB_WORKSPACE }}
+    
+      - name: Zip artifact
+        run: |
+          zip -r9  ${{ matrix.artifact }}-${{ github.ref_name }}.zip ${{ matrix.artifact }}/*
+
+      - name: Release artifact
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ matrix.artifact }}-${{ github.ref_name }}.zip

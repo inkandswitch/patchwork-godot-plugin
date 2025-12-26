@@ -1,0 +1,41 @@
+name: 🧵 Compose Projects
+on:
+  workflow_call:
+
+jobs:
+  compose-projects:
+    runs-on: "ubuntu-latest"
+    name: 🪡 Compose ${{ matrix.project.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # TODO (Lilith): Input these values from a .env file in both justfile and here
+        project:
+          - name: threadbare
+            repo: endlessm/threadbare
+            ref: godot-4.6
+          - name: moddable-platformer
+            repo: endlessm/moddable-platformer
+            ref: godot-4.6
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.project.repo }}
+          ref: ${{ matrix.project.ref }}
+          path: ${{ matrix.project.name }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download Patchwork
+        uses: actions/download-artifact@v4
+        with:
+          pattern: patchwork-godot-plugin
+          path: ${{ matrix.project.name }}/addons/patchwork
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.project.name }}-with-patchwork
+          path: |
+            ${{ matrix.project.name }}
+          if-no-files-found: error
+
