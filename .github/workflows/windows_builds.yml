@@ -12,8 +12,9 @@ jobs:
         # ARM32 Is not officially supported yet, you need to self build rust target.
         arch: ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"] #, , "i686-pc-windows-msvc", "aarch64-pc-windows-msvc", "thumbv7a-pc-windows-msvc"]
     steps:
-      - uses: actions/checkout@v4
-        fetch-tags: true
+      - uses: actions/checkout@v6
+        with:
+          fetch-tags: true
       - name: Restore Cache
         uses: Swatinem/rust-cache@v2
         with:

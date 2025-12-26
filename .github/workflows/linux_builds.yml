@@ -16,8 +16,9 @@ jobs:
           #"i686-unknown-linux-gnu"
         ]
     steps:
-      - uses: actions/checkout@v4
-        fetch-tags: true
+      - uses: actions/checkout@v6
+        with:
+          fetch-tags: true
       - name: "Install dependencies"
         shell: sh
         run: |

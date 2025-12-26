@@ -14,9 +14,9 @@ jobs:
       matrix:
         arch:  ["x86_64-apple-darwin"]
     steps:
-      - uses: actions/checkout@v4
-        fetch-tags: true
-
+      - uses: actions/checkout@v6
+        with:
+          fetch-tags: true
       - name: Restore Cache
         uses: Swatinem/rust-cache@v2
         with:
