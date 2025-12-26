@@ -17,9 +17,7 @@ jobs:
         ]
     steps:
       - uses: actions/checkout@v4
-      - name: Pull tags
-        run: git fetch --depth=1 origin +refs/tags/*:refs/tags/*
-
+        fetch-tags: true
       - name: "Install dependencies"
         shell: sh
         run: |

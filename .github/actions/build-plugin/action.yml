@@ -10,10 +10,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Install Just
-      shell: sh
-      run: |
-        cargo install just
+    - uses: extractions/setup-just@v3
     - name: Update Rust
       shell: sh
       run: |
