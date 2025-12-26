@@ -29,6 +29,9 @@ default_server := "24.199.97.236:8080"
 # Get the default architecture
 default_arch := shell("rustc --version --verbose | grep host | awk '{print $2}'")
 
+default:
+  just --list
+
 # Safely symlink src to dest
 _symlink src dest:
     #!/usr/bin/env python3
