@@ -13,7 +13,7 @@ jobs:
         arch: ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"] #, , "i686-pc-windows-msvc", "aarch64-pc-windows-msvc", "thumbv7a-pc-windows-msvc"]
     steps:
       - uses: actions/checkout@v4
-        # pull the tags so Just can sign the version
+      - name: Pull tags
         run: git fetch --depth=1 origin +refs/tags/*:refs/tags/*
       - name: Restore Cache
         uses: Swatinem/rust-cache@v2

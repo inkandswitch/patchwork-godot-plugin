@@ -17,7 +17,7 @@ jobs:
         ]
     steps:
       - uses: actions/checkout@v4
-        # pull the tags so Just can sign the version
+      - name: Pull tags
         run: git fetch --depth=1 origin +refs/tags/*:refs/tags/*
 
       - name: "Install dependencies"
