@@ -11,6 +11,7 @@ runs:
   using: composite
   steps:
     - run: git --version
+      shell: sh
     - uses: extractions/setup-just@v3
     - name: Update Rust
       shell: sh
