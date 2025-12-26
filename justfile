@@ -148,7 +148,7 @@ _build-plugin architecture profile:
 _build-plugin-all-macos profile: (_build-plugin "aarch64-apple-darwin" profile) (_build-plugin "x86_64-apple-darwin" profile) _make-plugin-dir
     # Copy the entire macos directory to get the Resources framework directory
     rm -rf "{{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}/libpatchwork_rust_core.macos.framework"
-    cp -r "rust/macos/libpatchwork_rust_core.macos.framework" "{{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}"
+    cp -r "rust/macos/libpatchwork_rust_core.macos.framework" "{{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}/libpatchwork_rust_core.macos.framework"
 
     # Rather than copying the generated .dylibs, we combine them into a single one.
     lipo -create -output {{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.dylib \
@@ -164,7 +164,7 @@ _build-plugin-single-arch architecture profile: (_build-plugin architecture prof
 
     # Copy the entire macos directory to get the Resources framework directory
     rm -rf "{{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}/libpatchwork_rust_core.macos.framework"
-    cp -r "rust/macos/libpatchwork_rust_core.macos.framework" "{{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}"
+    cp -r "rust/macos/libpatchwork_rust_core.macos.framework" "{{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}/libpatchwork_rust_core.macos.framework"
 
     if [ -f "target/{{architecture}}/{{profile}}/patchwork_rust_core.dll" ] ; then
         cp "target/{{architecture}}/{{profile}}/patchwork_rust_core.dll" \
