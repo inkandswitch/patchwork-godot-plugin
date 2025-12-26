@@ -23,11 +23,11 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: patchwork-build-*
-          path: ${{ $GITHUB_WORKSPACE }}/patchwork-godot-plugin
+          path: ${{ github.workspace }}/patchwork-godot-plugin
           merge-multiple: true
       - name: Wut
         run: |
-          ls -la ${{ $GITHUB_WORKSPACE }}/patchwork-godot-plugin/bin || echo "No artifacts"
+          ls -la ${{ github.workspace }}/patchwork-godot-plugin/bin || echo "No artifacts"
 
       - name: Upload patchwork-godot-plugin
         uses: actions/upload-artifact@v4
