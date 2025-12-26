@@ -189,6 +189,9 @@ _configure-patchwork: _make-plugin-dir
     import subprocess
 
     # load the version from git
+    print(f"Current directory: {os.getcwd()}")
+    print(os.listdir())
+
     git_describe = subprocess.check_output(["git", "describe", "--tags", "--abbrev=6"]).decode("utf-8").strip()
 
     # if it has more than two `-` in the version, replace all the subsequent `-` with `+`
