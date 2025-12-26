@@ -23,8 +23,6 @@ editor_dir := "editor"
 # The directory of our source "public" folder that includes gdscript & assets that should be linked directly into the plugin
 public_dir := "public"
 
-default_server := "24.199.97.236:8080"
-
 # TODO: expose this as an environment variable
 # Get the default architecture
 default_arch := shell("rustc --version --verbose | grep host | awk '{print $2}'")
@@ -310,6 +308,11 @@ _write-url project url: (_link-project project)
     import subprocess
     from pathlib import Path
 
+    # For now, if the URL is blank (default), don't touch the config.
+    # When we have an actual serve command, we can then expect the user to always specify. 
+    if {{url}} == "":
+        exit(0)
+
     path = "{{build_dir}}/{{project}}/patchwork.cfg"
 
     try:
@@ -342,7 +345,7 @@ _write-url project url: (_link-project project)
 [arg('project', pattern='moddable-platformer|threadbare')]
 [arg('patchwork_profile', pattern='release|debug')]
 [arg('godot_profile', pattern='release|debug|sani')]
-prepare project="moddable-platformer" patchwork_profile="release" godot_profile="release" server_url=default_server:\
+prepare project="moddable-platformer" patchwork_profile="release" godot_profile="release" server_url="":\
         (_link-project project) (build-godot godot_profile) (build-patchwork patchwork_profile)
 
 
@@ -350,7 +353,7 @@ prepare project="moddable-platformer" patchwork_profile="release" godot_profile=
 [arg('project', pattern='moddable-platformer|threadbare')]
 [arg('patchwork_profile', pattern='release|debug')]
 [arg('godot_profile', pattern='release|debug|sani')]
-launch project="moddable-platformer" patchwork_profile="release" godot_profile="release" server_url=default_server: \
+launch project="moddable-platformer" patchwork_profile="release" godot_profile="release" server_url="": \
         (prepare project patchwork_profile godot_profile server_url)
     #!/usr/bin/env sh
     set -euxo pipefail
