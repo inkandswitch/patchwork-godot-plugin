@@ -15,10 +15,15 @@ threadbare_checkout := "godot-4.6"
 godot_repo := "git@github.com:godotengine/godot.git"
 godot_checkout := "bb92a4c8e27e30cdec05ab6d540d724b9b3cfb72"
 
+godot_formatters_repo := "git@github.com:nikitalita/GodotFormatters.git"
+godot_formatters_checkout := "master"
+
 # The directory of the editor module that needs to be compiled with Godot
 editor_dir := "editor"
 # The directory of our source "public" folder that includes gdscript & assets that should be linked directly into the plugin
 public_dir := "public"
+
+default_server := "24.199.97.236:8080"
 
 # TODO: expose this as an environment variable
 # Get the default architecture
@@ -99,6 +104,10 @@ _acquire-project project: _make-build-dir
 # Clone the Godot repository and checkout the proper commit.
 _acquire-godot: _make-build-dir
     just _clone "{{godot_repo}}" "{{build_dir}}/godot" "{{godot_checkout}}"
+
+# Clone the GodotFormatters repository and checkout the proper commit.
+_acquire-formatters: _make-build-dir
+    just _clone "{{godot_formatters_repo}}" "{{build_dir}}/GodotFormatters" "{{godot_formatters_checkout}}"
 
 # Link our plugin build directory to the desired project.
 _link-project project: (_acquire-project project) _make-plugin-dir
@@ -290,17 +299,59 @@ clean-project project:
 # Clean Patchwork, and the projects threadbare, moddable-platformer.
 clean: (clean-project "threadbare") (clean-project "moddable-platformer") clean-patchwork
 
+# Write to the project .cfg with a new server url
+[arg('project', pattern='moddable-platformer|threadbare')]
+_write-url project url: (_link-project project)
+    #!/usr/bin/env python3
+    import os
+    import subprocess
+    from pathlib import Path
 
-# Launch a project with Godot. Available projects are threadbare, moddable-platformer.
+    path = "{{build_dir}}/{{project}}/patchwork.cfg"
+
+    try:
+        f = open(path)
+    except FileNotFoundError:
+        lines = []
+    else:
+        with f: lines = f.readlines()
+
+    new_lines: list[str] = []
+    found_patchwork = False
+    for line in lines:
+        # place the server url immediately after patchwork
+        if line.startswith("[patchwork]"):
+            found_patchwork = True
+            new_lines.append(line)
+            new_lines.append('server_url="{{url}}"\n')
+        # skip future server URLs
+        elif not line.startswith("server_url="):
+            new_lines.append(line)
+    
+    if not found_patchwork:
+        new_lines = ['[patchwork]\n', 'server_url="{{url}}"']
+
+    with open(path, "w") as file:
+        file.writelines(new_lines)
+
+# Prepare a project for launch with Godot. Available projects are threadbare, moddable-platformer.
 [parallel]
 [arg('project', pattern='moddable-platformer|threadbare')]
 [arg('patchwork_profile', pattern='release|debug')]
 [arg('godot_profile', pattern='release|debug|sani')]
-launch project="moddable-platformer" patchwork_profile="release" godot_profile="release": \
+prepare project="moddable-platformer" patchwork_profile="release" godot_profile="release" server_url=default_server:\
         (_link-project project) (build-godot godot_profile) (build-patchwork patchwork_profile)
+
+
+# Launch a project with Godot. Available projects are threadbare, moddable-platformer.
+[arg('project', pattern='moddable-platformer|threadbare')]
+[arg('patchwork_profile', pattern='release|debug')]
+[arg('godot_profile', pattern='release|debug|sani')]
+launch project="moddable-platformer" patchwork_profile="release" godot_profile="release" server_url=default_server: \
+        (prepare project patchwork_profile godot_profile server_url)
     #!/usr/bin/env sh
     set -euxo pipefail
-
+    
     case "{{arch()}}" in
         "x86_64")
             arch=x86_64 ;;
