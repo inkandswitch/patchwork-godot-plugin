@@ -10,6 +10,10 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Install Just
+      shell: sh
+      run: |
+        cargo install just
     - name: Update Rust
       shell: sh
       run: |
@@ -21,6 +25,7 @@ runs:
     - name: Add additional arm64 target for macOS
       shell: sh
       if: ${{ inputs.arch == 'x86_64-apple-darwin'}}
+      run: |
         rustup target add aarch64-apple-darwin
     - name: Rust add current target
       shell: sh
