@@ -28,7 +28,7 @@ jobs:
           arch: ${{ matrix.arch }}
 
       - shell: sh
-        run: find . -path ./target -prune -o -print
+        run: find ./build -path ./target -prune -o -print
 
       - name: Mac Sign
         uses: ./.github/actions/macos-sign
