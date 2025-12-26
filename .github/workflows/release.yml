@@ -4,23 +4,25 @@ on:
 
 jobs:
   release:
-    matrix:
-      artifact:
-        - godot-with-patchwork-windows
-        - godot-with-patchwork-linux
-        - godot-with-patchwork-macos
-        - patchwork-godot-plugin
-        - threadbare-with-patchwork
-        - moddable-platformer-with-patchwork
-
     runs-on: ubuntu-latest
     name: ✉️ Release ${{ matrix.artifact }}
+    strategy:
+      fail-fast: false
+      matrix:
+        artifact:
+          - godot-with-patchwork-windows
+          - godot-with-patchwork-linux
+          - godot-with-patchwork-macos
+          - patchwork-godot-plugin
+          - threadbare-with-patchwork
+          - moddable-platformer-with-patchwork
+          
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
           pattern: ${{ matrix.artifact }}
-          path: ${{ GITHUB_WORKSPACE }}
+          path: ${{ $GITHUB_WORKSPACE }}
     
       - name: Zip artifact
         run: |
