@@ -15,6 +15,8 @@ jobs:
         arch:  ["x86_64-apple-darwin"]
     steps:
       - uses: actions/checkout@v4
+        # pull the tags so Just can sign the version
+        run: git fetch --depth=1 origin +refs/tags/*:refs/tags/*
 
       - name: Restore Cache
         uses: Swatinem/rust-cache@v2
