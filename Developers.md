@@ -6,7 +6,7 @@
 # 1. Git installed?
 git --version
 
-# 2. Rust installed?
+# 2. Rust installed? Must be at least 1.91.1
 rustc --version
 cargo --version
 
@@ -18,190 +18,83 @@ scons --version
 # Windows: Check Visual Studio is installed
 # macOS: xcode-select -p
 # Linux: gcc --version
+
+# 5. `just` installed? If not, `cargo install just`
+just --version
 ```
 
 If any are missing, see [Detailed Setup](#detailed-setup) below.
 
 ---
 
-### Clone Repositories
+
+### `just` build system
+
+We use [just](https://github.com/casey/just) as our command runner. 
+
+To view a detailed list of targets, type `just`. 
+
+### Quick start: Launching projects
+
+If you want to get up and running as fast as possible, type `just launch`. It will launch Endless's `moddable-platformer` project with Patchwork installed, using a custom-built Godot editor with the Patchwork module.
+
+Otherwise, you can specify arguments for `just launch`:
 
 ```bash
-# Clone custom Godot fork
-git clone -b master https://github.com/godotengine/godot
-git checkout bb92a4c8e27e30cdec05ab6d540d724b9b3cfb72
-cd godot
-
-# Clone plugin into modules/
-cd modules
-git clone https://github.com/inkandswitch/patchwork-godot-plugin patchwork_editor --recurse-submodules
-
+project=[moddable-platformer|threadbare] # launch threadbare or moddable-platformer projects
+patchwork_profile=[release|debug] # whether we should build the rust code with release or debug configuration
+godot_profile=[release|debug|sani] # whether we should build Godot with release, debug, or sani configuration
+server_url=<url> # force embed a server URL into the project. By default, just keeps whatever server URL is already configured in the project.
 ```
 
-**Directory structure verification**:
+#### Using Visual Studio Code
 
-```
-godot/
-├── modules/
-│   ├── patchwork_editor/    ← Plugin here
-│   │   ├── editor/          ← C++ module
-│   │   ├── gdscript/        ← GDScript UI
-│   │   ├── rust/plugin/     ← Rust core
-│   │   ├── plugin.cfg
-│   │   └── Patchwork.gdextension
-│   └── ... (other modules)
-├── bin/                     ← Compiled editor will be here
-├── core/
-└── SConstruct               ← Build configuration
-```
+A variety of helpful launch configurations are specified when you open the project in Visual Studio Code. These run `just` commands to prepare projects, and then attach an in-editor debugger.
 
----
+When working with GDScript, you'll need to open `moddable-platformer` or `threadbare` directly in VSCode, and Godot must be running with `just launch`.
 
-### Build
 
-The [patchwork_build_tools](https://github.com/berraknil/patchwork-dev-tools) repository provides automation scripts that streamline the entire build, sync, and development workflow.
+### Build structure
 
-If you would like to build and develop manually, please continue below.
+When you run `just launch`, the output generated files are copied to `build/`. There are several important directories, here:
 
-#### Prerequisites
+- `build/patchwork`:
+  + The built plugin.
+  + `bin`: Rust binaries
+  + `public`: Symlinked from `public/` in the repo root. For GDScript and assets we must ship directly with the plugin.
+- `build/moddable-platformer`/`build/threadbare`:
+  + A clone of each project repository.
+  + `addons/patchwork`: Symlinked from `build/patchwork`, so feel free to make GDScript or UI changes directly to `addons/patchwork/public`.
+- `build/godot`:
+  + A clone of the Godot repository
+  + `modules/patchwork_editor`: Symlinked from `editor/` to form a new editor module.
+  + `bin`: Contains the built Godot executable.
+- `GodotFormatters`:
+  + A special `lldb` formatter for Godot objects. Only cloned when running the project through VSCode.
 
-If you haven't cloned the patchwork_editor module yet:
 
-```bash
-cd godot/modules
-git clone https://github.com/nikitalita/patchwork_editor patchwork_editor --recurse-submodules
-```
 
-**1. Build the Rust Plugin**
 
-```bash
-# Install cargo-post to run post build process successfully
-cargo install cargo-post
-
-# Navigate to patchwork_editor root directory
-cd godot/modules/patchwork_editor
-
-# Build
-cargo post build
-
-# The DLL/library will be copied to the appropriate location for your platform
-```
-
-**2. Build Godot with Patchwork Module**
-
-```bash
-# Navigate to Godot root
-cd godot
-
-# Build Godot editor with SCons
-# Basic build:
-scons platform=windows target=editor
-
-# With optimization and parallel jobs:
-scons platform=windows target=editor -j8 production=yes
-
-# Other platforms:
-scons platform=linuxbsd target=editor -j8
-scons platform=macos target=editor -j8
-```
-
-**Important SCons flags:**
-
-- `platform=` - Target platform (windows, linuxbsd, macos)
-- `target=editor` - Build the editor (not export templates)
-- `-j8` - Use 8 parallel jobs (adjust to your CPU cores)
-- `production=yes` - Optimized build (slower compile, faster runtime)
-- `dev_build=yes` - Debug symbols (for development)
-
-**Common Build Issues:**
-
-If you encounter `LNK1106: invalid file or disk full` error on Windows:
-
-```powershell
-# 1. Clean build artifacts
-scons --clean
-
-# 2. Check disk space (need at least 20GB free)
-Get-PSDrive C
-
-# 3. Reduce parallel jobs (less memory/disk usage)
-scons platform=windows target=editor -j4
-
-# 4. Add antivirus exclusion for godot build directory
-# Go to Windows Security → Virus & threat protection → Exclusions
-# Add: C:\path\to\godot
-
-# 5. Use shorter path if possible
-# Move godot to C:\godot instead of deep nested folders
-```
-
-**3. Verify Build Output**
-
-Check that the editor was built:
-
-```bash
-# Windows
-ls bin/godot.windows.editor.x86_64.exe
-
-# Linux
-ls bin/godot.linuxbsd.editor.x86_64
-
-# macOS
-ls bin/godot.macos.editor.arm64
-```
-
-**4. Link Plugin to Your Project**
-
-Link the plugin directory in your project:
-
-#### Windows
-In your Godot project directory, run the following commands:
-(cmd.exe only, this does not work on powershell)
-```
-mkdir .\addons
-mklink /D .\addons\patchwork C:\path\to\godot\modules\patchwork_editor
-```
-
-#### Linux and macOS
-```bash
-# In your Godot project directory, run the following commands:
-mkdir -p addons
-ln -s /path/to/godot/modules/patchwork_editor addons/patchwork
-```
-
-**5. Open Project with Custom Editor**
-
-```bash
-# Windows
-godot\bin\godot.windows.editor.x86_64.exe -e --path "C:\path\to\your\project"
-
-# Linux
-godot/bin/godot.linuxbsd.editor.x86_64 -e --path "/path/to/your/project"
-
-# macOS
-godot/bin/godot.macos.editor.arm64 -e --path "/path/to/your/project"
-```
-
-**6. Understanding Patchwork's Architecture**
+### Understanding Patchwork's Architecture
 
 Patchwork is a **hybrid Godot Engine C++ module + GDExtension**, not a traditional plugin:
 
-- **Godot Engine C++ Module** (`modules/patchwork_editor/`) - Built INTO your custom Godot editor
+- **Godot Engine C++ Module** (`editor/`) - Built INTO your custom Godot editor
   - Automatically active when you launch the custom editor
-  - Registers core classes (`PatchworkEditor`, etc.)
-  - Primarily here to provide editor functionality that is not currently exposed to GDExtensions
+  - Registers the `PatchworkEditor` class
+  - Only here to provide editor functionality that is not currently exposed to GDExtensions
     - Will eventually be removed once this functionality is upstreamed to Godot
 
-- **GDExtension Component** (`addons/patchwork/`) - Provides Rust functionality
+- **GDExtension Component** (`public/` and `rust/`) - Actually runs the application
   - Contains the Rust plugin DLL/library
-  - Contains GDScript UI components
+  - Contains public GDScript UI components
   - Located in your project's `addons/patchwork/` folder
 
 Because the C++ module is compiled directly into Godot (see [register_types.cpp:11-14](register_types.cpp#L11-L14)), Patchwork automatically initializes when the editor starts. The `plugin.cfg` file exists for compatibility but has an empty `script=""` field because there's no GDScript plugin script to enable/disable.
 
-**In summary:** When you build Godot with Patchwork and copy the files to `addons/patchwork/`, the plugin is **always active** - you don't need to manually enable it in the Plugins menu. The Patchwork tab will appear automatically.
+**In summary:** When `just` builds Godot with Patchwork and symlinks the files to `addons/patchwork/`, the plugin is **always active** - you don't need to manually enable it in the Plugins menu. The Patchwork tab will appear automatically.
 
-#### Manual Development Workflow
+### Development Workflow
 
 When developing manually, after making changes:
 
@@ -211,32 +104,13 @@ Click the "Reload UI" button in the Patchwork tab to reload the UI.
 
 **For Rust changes:**
 
-```bash
-
-cd godot/modules/patchwork_editor
-cargo post build --release
-# Restart Godot to reload library
-```
-
-```powershell
-# Windows - Rebuild Rust
-cd godot\modules\patchwork_editor
-cargo post build --release
-# Restart Godot to reload DLL
-```
+Either run `just build-patchwork (release/debug)` in a terminal, or launch the `Hot reload patchwork` target in VSCode. Godot should reload the Rust binary automatically, but you may have to restart the editor if it explodes.
 
 **For C++ module changes:**
 
-```bash
-# Rebuild Godot
-cd godot
-scons platform=windows target=editor -j8
+Close the editor, and run `just launch` again (or launch from VSCode).
 
-# Restart Godot with the new editor
-bin/godot.windows.editor.x86_64.exe -e --path "YOUR_PROJECT"
-```
-
-#### Rust Plugin Development with Auto-Rebuild
+#### Auto-rebuild Rust changes (optional)
 
 For faster Rust development iteration, use `watchexec` to automatically rebuild on file changes:
 
@@ -261,7 +135,7 @@ cargo install watchexec-cli
 cd godot/modules/patchwork_editor
 
 # Auto-rebuild on any .rs or .toml file change
-watchexec -e rs,toml cargo post build
+watchexec -e rs,toml just build-patchwork release
 ```
 
 This will watch for changes to `.rs` and `.toml` files and automatically run `cargo post build` when changes are detected.
@@ -272,7 +146,7 @@ Godot will automatically reload the plugin after the build is complete.
 If you're on macOS and need code signing for the built library:
 
 ```bash
-# In the rust/plugin directory, create the identity file
+# In the rust directory, create the identity file
 mkdir -p .cargo
 echo "Apple Development: Your Name (TEAMID)" > .cargo/.devidentity
 
@@ -293,7 +167,7 @@ echo "Apple Development: Nikita Zatkovich (RFTZV7M2RV)" > .cargo/.devidentity
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # Restart terminal, then verify
-rustc --version  # Should be 1.57.0 or higher
+rustc --version  # Should be 1.91.1 or higher
 cargo --version
 ```
 
@@ -378,3 +252,11 @@ echo "Apple Development: Your Name (TEAMID)" > .cargo/.devidentity
 Without this, macOS will show security warnings when loading the plugin.
 
 ---
+
+### 5. Install Just
+
+Once you have `cargo`, it's easiest to run:
+
+```
+cargo install just
+```
