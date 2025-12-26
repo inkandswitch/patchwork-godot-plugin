@@ -27,10 +27,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Download Patchwork
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: patchwork-godot-plugin
-          path: ${{ matrix.project.name }}/addons/patchwork
+          path: patchwork-godot-plugin
+      - name: Copy to addons
+        shell: sh
+        run: |
+          mkdir -p ${{ matrix.project.name }}/addons/patchwork |
+          cp patchwork-godot-plugin/* ${{ matrix.project.name }}/addons/patchwork
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
