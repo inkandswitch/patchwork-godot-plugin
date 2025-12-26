@@ -146,6 +146,10 @@ _build-plugin architecture profile:
 # Build the multi-arch target for MacOS.
 [parallel]
 _build-plugin-all-macos profile: (_build-plugin "aarch64-apple-darwin" profile) (_build-plugin "x86_64-apple-darwin" profile) _make-plugin-dir
+    # Copy the entire macos directory to get the Resources framework directory
+    rm -rf "{{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}/libpatchwork_rust_core.macos.framework"
+    cp -r "rust/macos/libpatchwork_rust_core.macos.framework" "{{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}"
+
     # Rather than copying the generated .dylibs, we combine them into a single one.
     lipo -create -output {{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.dylib \
         target/aarch64-apple-darwin/{{profile}}/libpatchwork_rust_core.dylib \
