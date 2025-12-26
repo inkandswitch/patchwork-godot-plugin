@@ -27,6 +27,9 @@ jobs:
         with:
           arch: ${{ matrix.arch }}
 
+      - shell: sh
+        run: find .
+
       - name: Mac Sign
         uses: ./.github/actions/macos-sign
         with:
