@@ -147,7 +147,7 @@ _build-plugin architecture profile:
 [parallel]
 _build-plugin-all-macos profile: (_build-plugin "aarch64-apple-darwin" profile) (_build-plugin "x86_64-apple-darwin" profile) _make-plugin-dir
     mkdir -p {{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}
-    
+
     # Copy the entire macos directory to get the Resources framework directory
     rm -rf "{{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}/libpatchwork_rust_core.macos.framework"
     cp -r "rust/macos/libpatchwork_rust_core.macos.framework" "{{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}/libpatchwork_rust_core.macos.framework"
@@ -173,8 +173,8 @@ _build-plugin-single-arch architecture profile: (_build-plugin architecture prof
             {{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}/patchwork_rust_core.windows.{{architecture}}.dll
     fi
 
-    if [ -f "target/{{architecture}}/{{profile}}/patchwork_rust_core.so" ] ; then
-        cp "target/{{architecture}}/{{profile}}/patchwork_rust_core.so" \
+    if [ -f "target/{{architecture}}/{{profile}}/libpatchwork_rust_core.so" ] ; then
+        cp "target/{{architecture}}/{{profile}}/libpatchwork_rust_core.so" \
             {{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}/patchwork_rust_core.linux.{{architecture}}.so
     fi
 
