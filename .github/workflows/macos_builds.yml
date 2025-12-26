@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-tags: true
+          fetch-depth: 0
       - name: Restore Cache
         uses: Swatinem/rust-cache@v2
         with:
