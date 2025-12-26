@@ -8,15 +8,6 @@ jobs:
     name: 🧩 Merge Patchwork Builds
     strategy:
       fail-fast: false
-      matrix:
-        # TODO (Lilith): Input these values from a .env file in both justfile and here
-        project:
-          - name: threadbare
-            repo: endlessm/threadbare
-            ref: godot-4.6
-          - name: moddable-platformer
-            repo: endlessm/moddable-platformer
-            ref: godot-4.6
     steps:
       # just download the artifacts from the macos, windows and linux plugin builds
       - name: Download artifacts
