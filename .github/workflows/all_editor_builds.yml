@@ -5,14 +5,7 @@ on:
 # Global Settings
 # SCONS_CACHE for windows must be set in the build environment
 env:
-  GODOT_REPOSITORY: godotengine/godot
-  GODOT_BASE_BRANCH: master
-  # Change Developers.md and Justfile too
-  # TODO (Lilith): Input these values from a .env file in both justfile and here
-  GODOT_MAIN_SYNC_REF: bb92a4c8e27e30cdec05ab6d540d724b9b3cfb72
   SCONSFLAGS: verbose=yes warnings=all werror=no module_text_server_fb_enabled=yes minizip=yes deprecated=yes module_patchwork_editor_enabled=yes
-  SCONSFLAGS_TEMPLATE: no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no
-  SCONS_CACHE_MSVC_CONFIG: true
 
 concurrency:
   group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}
@@ -20,7 +13,6 @@ concurrency:
 
 jobs:
   build:
-    # Windows 10 with latest image
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.name }}
     strategy:
@@ -53,18 +45,26 @@ jobs:
             bin: ./bin/godot.macos.editor.arm64
 
     steps:
-      - name: checkout-godot
-        uses: actions/checkout@v4
-        with:
-          repository: ${{env.GODOT_REPOSITORY}}
-          ref: ${{env.GODOT_MAIN_SYNC_REF}}
 
       - name: checkout-patchwork-godot-plugin
         uses: actions/checkout@v4
         with:
           path: tmp/patchwork-godot-plugin
           fetch-depth: 0
-        
+
+      # Grab the environment variables from build.env and output them
+      - id: dotenv
+        uses: falti/dotenv-action@v1.1.5
+        with:
+          path: tmp/patchwork-godot-plugin/build.env
+          keys-case: bypass
+
+      - name: checkout-godot
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.dotenv.outputs.GODOT_REPO }}
+          ref: ${{ steps.dotenv.outputs.GODOT_REF }}
+
       - name: copy editor directory
         shell: bash
         run: |
@@ -180,60 +180,3 @@ jobs:
           name: godot-with-patchwork-${{ matrix.platform }}
           path: ${{ github.workspace }}/bin/*
           retention-days: 90
-
-  # test:
-  #   needs: build
-  #   runs-on: ${{ matrix.os }}
-  #   name: ${{ matrix.name }} test
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       include:
-  #         - name: "Windows"
-  #           os: "windows-latest"
-  #           platform: windows
-  #           bin: ./bin/godot.windows.editor.x86_64.exe
-
-  #         - name: "🐧 Linux"
-  #           os: "ubuntu-24.04"
-  #           platform: linux
-  #           bin: ./bin/godot.linuxbsd.editor.x86_64
-
-  #         - name: "🍎 macOS"
-  #           os: "macos-14"
-  #           platform: macos
-  #           bin: ./bin/godot.macos.editor.arm64
-
-  #   steps:
-  #     - name: checkout-godot
-  #       uses: actions/checkout@v4
-  #       with:
-  #         repository: GODOT_REPOSITORY
-  #         ref: ${{env.GODOT_MAIN_SYNC_REF}}
-
-  #     - name: checkout-patchwork_editor
-  #       uses: actions/checkout@v4
-  #       with:
-  #         path: modules/patchwork_editor
-  #         fetch-depth: 0
-
-  #     - name: copy actions
-  #       shell: bash
-  #       run: |
-  #         cp -R modules/patchwork_editor/.github/actions/* .github/actions/
-
-  #     - name: Download patchwork_editor artifacts
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         name: patchwork_editor-editor-${{ matrix.platform }}
-  #         path: bin
-
-  #     - name: set permissions
-  #       shell: bash
-  #       run: |
-  #         chmod a+x bin/godot*
-
-  #     - name: run tests
-  #       shell: bash
-  #       run: |
-  #         ${{matrix.bin}} --headless --test --force-colors "--test-case=[patchwork_editor]*"

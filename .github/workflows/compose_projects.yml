@@ -3,11 +3,10 @@ on:
   workflow_call:
 
 jobs:
-  retrieve-env:
+  # Grab the environment variables from build.env and output them
+  load-env:
     name: 🔍 Load Environment variables
     runs-on: "ubuntu-latest"
-    strategy:
-      fail-fast: false
     outputs:
       THREADBARE_REPO: ${{ steps.dotenv.outputs.THREADBARE_REPO }}
       THREADBARE_REF: ${{ steps.dotenv.outputs.THREADBARE_REF }}
@@ -19,11 +18,10 @@ jobs:
         uses: falti/dotenv-action@v1.1.5
         with:
           path: build.env
-          log-variables: true
           keys-case: bypass
 
   compose-projects:
-    needs: [retrieve-env]
+    needs: [load-env]
     runs-on: "ubuntu-latest"
     name: 🪡 Compose ${{ matrix.project.name }}
     strategy:
@@ -31,16 +29,12 @@ jobs:
       matrix:
         project:
           - name: threadbare
-            repo: ${{ needs.retrieve-env.outputs.THREADBARE_REPO }}
-            ref: ${{ needs.retrieve-env.outputs.THREADBARE_REF }}
+            repo: ${{ needs.load-env.outputs.THREADBARE_REPO }}
+            ref: ${{ needs.load-env.outputs.THREADBARE_REF }}
           - name: moddable-platformer
-            repo: ${{ needs.retrieve-env.outputs.MODDABLE_PLATFORMER_REPO }}
-            ref: ${{ needs.retrieve-env.outputs.MODDABLE_PLATFORMER_REF }}
+            repo: ${{ needs.load-env.outputs.MODDABLE_PLATFORMER_REPO }}
+            ref: ${{ needs.load-env.outputs.MODDABLE_PLATFORMER_REF }}
     steps:
-      - shell: sh
-        run: |
-          echo "'${{ toJSON(needs) }}'"
-          
       - name: Checkout project
         uses: actions/checkout@v4
         with:

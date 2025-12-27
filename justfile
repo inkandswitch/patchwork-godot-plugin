@@ -1,29 +1,7 @@
-build_dir := "build"
-# The plugin directory in build_dir
-plugin_dir := "patchwork"
-# The directory for Rust binaries inside plugin_dir
-plugin_bin_dir := "bin"
-# The directory that all that public stuff goes into in the plugin itself
-plugin_public_dir := "public"
+set dotenv-load
+set dotenv-filename := "build.env"
+set dotenv-required
 
-moddable_platformer_repo := "git@github.com:endlessm/moddable-platformer.git"
-moddable_platformer_checkout := "godot-4.6"
-
-threadbare_repo := "git@github.com:endlessm/threadbare.git"
-threadbare_checkout := "godot-4.6"
-
-godot_repo := "git@github.com:godotengine/godot.git"
-godot_checkout := "bb92a4c8e27e30cdec05ab6d540d724b9b3cfb72"
-
-godot_formatters_repo := "git@github.com:nikitalita/GodotFormatters.git"
-godot_formatters_checkout := "master"
-
-# The directory of the editor module that needs to be compiled with Godot
-editor_dir := "editor"
-# The directory of our source "public" folder that includes gdscript & assets that should be linked directly into the plugin
-public_dir := "public"
-
-# TODO: expose this as an environment variable
 # Get the default architecture
 default_arch := shell("rustc --version --verbose | grep host | awk '{print $2}'")
 
@@ -62,11 +40,11 @@ _symlink src dest:
 
 # Create build/
 @_make-build-dir:
-    mkdir -p {{build_dir}}
+    mkdir -p build
 
-# Create build/plugin
+# Create build/patchwork
 @_make-plugin-dir: _make-build-dir
-    mkdir -p {{build_dir}}/{{plugin_dir}}
+    mkdir -p build/patchwork
 
 # Clone a repository to a directory and check out a commit.
 _clone repo_url directory checkout:
@@ -97,39 +75,39 @@ _acquire-project project: _make-build-dir
     #!/usr/bin/env sh
     # set -euxo pipefail
     if [[ "{{project}}" = "moddable-platformer" ]]; then
-        just _clone "{{moddable_platformer_repo}}" "{{build_dir}}/{{project}}" "{{moddable_platformer_checkout}}"
+        just _clone "$MODDABLE_PLATFORMER_REPO" "build/{{project}}" "$MODDABLE_PLATFORMER_REF"
     else
-        just _clone "{{threadbare_repo}}" "{{build_dir}}/{{project}}" "{{threadbare_checkout}}"
+        just _clone "$THREADBARE_REPO" "build/{{project}}" "$THREADBARE_REF"
     fi
 
 # Clone the Godot repository and checkout the proper commit.
 _acquire-godot: _make-build-dir
-    just _clone "{{godot_repo}}" "{{build_dir}}/godot" "{{godot_checkout}}"
+    just _clone "$GODOT_REPO" "build/godot" "$GODOT_REF"
 
 # Clone the GodotFormatters repository and checkout the proper commit.
 _acquire-formatters: _make-build-dir
-    just _clone "{{godot_formatters_repo}}" "{{build_dir}}/GodotFormatters" "{{godot_formatters_checkout}}"
+    just _clone "$GODOT_FORMATTERS_REPO" "build/GodotFormatters" "$GODOT_FORMATTERS_REF"
 
 # Link our plugin build directory to the desired project.
 _link-project project: (_acquire-project project) _make-plugin-dir
-    mkdir -p "{{build_dir}}/{{project}}/addons"
-    just _symlink "{{build_dir}}/{{plugin_dir}}" "{{build_dir}}/{{project}}/addons/patchwork"
+    mkdir -p "build/{{project}}/addons"
+    just _symlink "build/patchwork" "build/{{project}}/addons/patchwork"
 
 # Link our custom Godot editor module
 _link-godot: _acquire-godot
-    mkdir -p "{{build_dir}}/godot/"
-    just _symlink "{{editor_dir}}" "{{build_dir}}/godot/modules/patchwork_editor"
+    mkdir -p "build/godot/"
+    just _symlink "editor" "build/godot/modules/patchwork_editor"
 
 # Link the assets directory for our plugin
 _link-public: _make-plugin-dir
-    just _symlink "{{public_dir}}" "{{build_dir}}/{{plugin_dir}}/{{plugin_public_dir}}"
+    just _symlink "public" "build/patchwork/public"
 
 # Build the Godot editor with our editor module linked in. Available profiles are release, debug, or sani (for use_asan=yes)
 [arg('profile', pattern='release|debug|sani')]
 build-godot profile: _link-godot
     #!/usr/bin/env sh
     # set -euxo pipefail
-    cd "{{build_dir}}/godot"
+    cd "build/godot"
     # TODO: figure out a way to see if scons actually needs a run, since this takes forever even when built
     if [[ {{profile}} = "release" ]] ; then
         scons dev_build=no debug_symbols=no target=editor deprecated=yes minizip=yes compiledb=yes
@@ -146,14 +124,14 @@ _build-plugin architecture profile:
 # Build the multi-arch target for MacOS.
 [parallel]
 _build-plugin-all-macos profile: (_build-plugin "aarch64-apple-darwin" profile) (_build-plugin "x86_64-apple-darwin" profile) _make-plugin-dir
-    mkdir -p {{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}
+    mkdir -p build/patchwork/bin
 
     # Copy the entire macos directory to get the Resources framework directory
-    rm -rf "{{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}/libpatchwork_rust_core.macos.framework"
-    cp -r "rust/macos/libpatchwork_rust_core.macos.framework" "{{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}/libpatchwork_rust_core.macos.framework"
+    rm -rf "build/patchwork/bin/libpatchwork_rust_core.macos.framework"
+    cp -r "rust/macos/libpatchwork_rust_core.macos.framework" "build/patchwork/bin/libpatchwork_rust_core.macos.framework"
 
     # Rather than copying the generated .dylibs, we combine them into a single one.
-    lipo -create -output {{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.dylib \
+    lipo -create -output build/patchwork/bin/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.dylib \
         target/aarch64-apple-darwin/{{profile}}/libpatchwork_rust_core.dylib \
         target/x86_64-apple-darwin/{{profile}}/libpatchwork_rust_core.dylib
     # TODO: Perhaps sign here instead of in github actions?
@@ -162,30 +140,30 @@ _build-plugin-all-macos profile: (_build-plugin "aarch64-apple-darwin" profile) 
 _build-plugin-single-arch architecture profile: (_build-plugin architecture profile) _make-plugin-dir
     #!/usr/bin/env sh
     # set -euo pipefail
-    mkdir -p {{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}
+    mkdir -p build/patchwork/bin
 
     # Copy the entire macos directory to get the Resources framework directory
-    rm -rf "{{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}/libpatchwork_rust_core.macos.framework"
-    cp -r "rust/macos/libpatchwork_rust_core.macos.framework" "{{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}/libpatchwork_rust_core.macos.framework"
+    rm -rf "build/patchwork/bin/libpatchwork_rust_core.macos.framework"
+    cp -r "rust/macos/libpatchwork_rust_core.macos.framework" "build/patchwork/bin/libpatchwork_rust_core.macos.framework"
 
     if [ -f "target/{{architecture}}/{{profile}}/patchwork_rust_core.dll" ] ; then
         cp "target/{{architecture}}/{{profile}}/patchwork_rust_core.dll" \
-            {{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}/patchwork_rust_core.windows.{{architecture}}.dll
+            build/patchwork/bin/patchwork_rust_core.windows.{{architecture}}.dll
     fi
 
     if [ -f "target/{{architecture}}/{{profile}}/libpatchwork_rust_core.so" ] ; then
         cp "target/{{architecture}}/{{profile}}/libpatchwork_rust_core.so" \
-            {{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}/patchwork_rust_core.linux.{{architecture}}.so
+            build/patchwork/bin/patchwork_rust_core.linux.{{architecture}}.so
     fi
 
     if [ -f "target/{{architecture}}/{{profile}}/patchwork_rust_core.dylib" ] ; then
         cp "target/{{architecture}}/{{profile}}/patchwork_rust_core.dylib" \
-            {{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.dylib
+            build/patchwork/bin/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.dylib
     fi
     
     if [ -f "target/{{architecture}}/{{profile}}/patchwork_rust_core.pdb" ] ; then
         cp "target/{{architecture}}/{{profile}}/patchwork_rust_core.pdb" \
-            {{build_dir}}/{{plugin_dir}}/{{plugin_bin_dir}}/patchwork_rust_core.pdb
+            build/patchwork/bin/patchwork_rust_core.pdb
     fi
 
 # Write plugin.cfg and Patchwork.gdextension
@@ -208,7 +186,7 @@ _configure-patchwork: _make-plugin-dir
 
     print(f"Loaded version from Git repository: {git_describe}")
 
-    with open("{{build_dir}}/{{plugin_dir}}/plugin.cfg", "a") as file:
+    with open("build/patchwork/plugin.cfg", "a") as file:
         file.write(f"""[plugin]
     name="Patchwork"
     description="Version control for Godot"
@@ -217,7 +195,7 @@ _configure-patchwork: _make-plugin-dir
     script=""
     """)
     
-    with open("{{build_dir}}/{{plugin_dir}}/Patchwork.gdextension", "a") as file:
+    with open("build/patchwork/Patchwork.gdextension", "a") as file:
         file.write(f"""[configuration]
     entry_symbol = "gdext_rust_init"
     compatibility_minimum = 4.6
@@ -260,17 +238,17 @@ build-patchwork profile architecture=(default_arch): _configure-patchwork _link-
 clean-godot:
     #!/usr/bin/env sh
     # set -euxo pipefail
-    if [[ ! -d "{{build_dir}}" ]]; then
+    if [[ ! -d "build" ]]; then
         exit 0
     fi
-    cd "{{build_dir}}"
+    cd "build"
     
     # set -euxo pipefail
     if [[ ! -d "godot" ]]; then
         exit 0
     fi
     cd godot
-    git checkout -f {{godot_checkout}}
+    git checkout -f $GODOT_REF
     git clean -xdf
 
 # Remove any built Patchwork artifacts.
@@ -278,10 +256,10 @@ clean-patchwork:
     #!/usr/bin/env sh
     # set -euxo pipefail
     cargo clean
-    if [[ ! -d "{{build_dir}}/{{plugin_dir}}" ]]; then
+    if [[ ! -d "build/patchwork" ]]; then
         exit 0
     fi
-    rm -rf "{{build_dir}}/{{plugin_dir}}"
+    rm -rf "build/patchwork"
 
 # Clean a single project, resetting the repository and unlinking Patchwork.
 [arg('project', pattern='moddable-platformer|threadbare')]
@@ -289,15 +267,15 @@ clean-project project:
     #!/usr/bin/env sh
     # set -euxo pipefail
     if [[ "{{project}}" = "moddable-platformer" ]]; then
-        checkout="{{moddable_platformer_checkout}}"
+        checkout="$MODDABLE_PLATFORMER_REF"
     else
-        checkout="{{threadbare_checkout}}"
+        checkout="$THREADBARE_REF"
     fi
     
-    if [[ ! -d "{{build_dir}}" ]]; then
+    if [[ ! -d "build" ]]; then
         exit 0
     fi
-    cd "{{build_dir}}"
+    cd "build"
     
     if [[ ! -d "{{project}}" ]]; then
         exit 0
@@ -322,7 +300,7 @@ _write-url project url: (_link-project project)
     if {{url}} == "":
         exit(0)
 
-    path = "{{build_dir}}/{{project}}/patchwork.cfg"
+    path = "build/{{project}}/patchwork.cfg"
 
     try:
         f = open(path)
@@ -392,9 +370,9 @@ launch project="moddable-platformer" patchwork_profile="release" godot_profile="
     esac
     
     if [[ {{godot_profile}} = "release" ]] ; then
-        godot_path="{{build_dir}}/godot/bin/godot.{{os()}}.editor.$arch$ext"
+        godot_path="build/godot/bin/godot.{{os()}}.editor.$arch$ext"
     else
-        godot_path="{{build_dir}}/godot/bin/godot.{{os()}}.editor.dev.$arch$ext"
+        godot_path="build/godot/bin/godot.{{os()}}.editor.dev.$arch$ext"
     fi
 
-    $godot_path -e --path "{{build_dir}}/{{project}}"
+    $godot_path -e --path "build/{{project}}"
