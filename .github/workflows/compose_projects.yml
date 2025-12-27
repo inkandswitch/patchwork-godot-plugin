@@ -10,7 +10,8 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
-      - uses: falti/dotenv-action@v1.1.5
+      - id: dotenv
+        uses: falti/dotenv-action@v1.1.5
         with:
           path: build.env
           log-variables: true
@@ -25,11 +26,11 @@ jobs:
       matrix:
         project:
           - name: threadbare
-            repo: ${{ needs.retrieve-env.outputs.THREADBARE_REPO }}
-            ref: ${{ needs.retrieve-env.outputs.THREADBARE_REF }}
+            repo: ${{ needs.retrieve-env.steps.dotenv.outputs.THREADBARE_REPO }}
+            ref: ${{ needs.retrieve-env.steps.dotenv.outputs.THREADBARE_REF }}
           - name: moddable-platformer
-            repo: ${{ needs.retrieve-env.outputs.MODDABLE_PLATFORMER_REPO }}
-            ref: ${{ needs.retrieve-env.outputs.MODDABLE_PLATFORMER_REF }}
+            repo: ${{ needs.retrieve-env.steps.dotenv.outputs.MODDABLE_PLATFORMER_REPO }}
+            ref: ${{ needs.retrieve-env.steps.dotenv.outputs.MODDABLE_PLATFORMER_REF }}
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
