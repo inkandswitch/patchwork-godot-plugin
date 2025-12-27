@@ -9,7 +9,10 @@ jobs:
     strategy:
       fail-fast: false
     outputs:
-      env: ${{ steps.dotenv.outputs }}
+      THREADBARE_REPO: ${{ steps.dotenv.outputs.THREADBARE_REPO }}
+      THREADBARE_REF: ${{ steps.dotenv.outputs.THREADBARE_REF }}
+      MODDABLE_PLATFORMER_REPO: ${{ steps.dotenv.outputs.MODDABLE_PLATFORMER_REPO }}
+      MODDABLE_PLATFORMER_REF: ${{ steps.dotenv.outputs.MODDABLE_PLATFORMER_REF }}
     steps:
       - uses: actions/checkout@v4
       - id: dotenv
@@ -18,10 +21,6 @@ jobs:
           path: build.env
           log-variables: true
           keys-case: bypass
-      - id: logstuff
-        shell: sh
-        run: |
-          echo "'${{ toJSON(steps.dotenv.outputs) }}'"
 
   compose-projects:
     needs: [retrieve-env]
