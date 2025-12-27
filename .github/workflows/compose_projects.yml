@@ -8,6 +8,8 @@ jobs:
     runs-on: "ubuntu-latest"
     strategy:
       fail-fast: false
+    outputs:
+      env: ${{ steps.dotenv.outputs }}
     steps:
       - uses: actions/checkout@v4
       - id: dotenv
@@ -19,8 +21,7 @@ jobs:
       - id: logstuff
         shell: sh
         run: |
-          echo ${{ toJSON(outputs) }}
-          echo ${{ toJSON(steps) }}
+          echo ${{ toJSON(steps.dotenv.outputs) }}
 
   compose-projects:
     needs: [retrieve-env]
@@ -31,11 +32,11 @@ jobs:
       matrix:
         project:
           - name: threadbare
-            repo: ${{ needs.retrieve-env.steps.dotenv.outputs.THREADBARE_REPO }}
-            ref: ${{ needs.retrieve-env.steps.dotenv.outputs.THREADBARE_REF }}
+            repo: ${{ needs.retrieve-env.outputs.THREADBARE_REPO }}
+            ref: ${{ needs.retrieve-env.outputs.THREADBARE_REF }}
           - name: moddable-platformer
-            repo: ${{ needs.retrieve-env.steps.dotenv.outputs.MODDABLE_PLATFORMER_REPO }}
-            ref: ${{ needs.retrieve-env.steps.dotenv.outputs.MODDABLE_PLATFORMER_REF }}
+            repo: ${{ needs.retrieve-env.outputs.MODDABLE_PLATFORMER_REPO }}
+            ref: ${{ needs.retrieve-env.outputs.MODDABLE_PLATFORMER_REF }}
     steps:
       - run: |
         shell: sh
