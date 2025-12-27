@@ -160,7 +160,7 @@ jobs:
 
       - name: Mac Sign
         if: matrix.platform == 'macos' && matrix.target == 'editor'
-        uses: ../patchwork-tmp/.github/actions/macos-sign
+        uses: ./../patchwork-tmp/.github/actions/macos-sign
         with:
           FRAMEWORK_PATH: ${{ github.workspace }}/bin/godot_macos_editor.app
           SIGN_FLAGS: "--deep --force --options=runtime --entitlements ${{ github.workspace }}/misc/dist/macos/editor.entitlements"
