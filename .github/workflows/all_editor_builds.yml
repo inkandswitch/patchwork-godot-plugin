@@ -91,7 +91,7 @@ jobs:
           sudo apt-get install libwayland-bin
 
       - name: Setup python and scons
-        uses: build/godot/.github/actions/godot-deps
+        uses: ./build/godot/.github/actions/godot-deps
 
       - name: Download Direct3D 12 SDK components
         shell: sh
@@ -114,14 +114,14 @@ jobs:
       - name: Compile Editor (x86_64)
         if: matrix.target == 'editor'
         id: compile-editor
-        uses: build/godot/.github/actions/godot-build
+        uses: ./build/godot/.github/actions/godot-build
         with:
           scons-flags: arch=x86_64 ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }}
           platform: ${{ matrix.platform }}
           target: editor
 
       - name: Compile Editor for macos arm64
-        uses: build/godot/.github/actions/godot-build
+        uses: ./build/godot/.github/actions/godot-build
         if: matrix.platform == 'macos' && matrix.target == 'editor'
         with:
           # generate the bundle on this one; generate_bundle automatically lipos the binaries
@@ -139,11 +139,11 @@ jobs:
       - name: Prepare artifact
       # Stripping the debug symbols screws up lipo'd binaries on macos, so don't do it
         if: matrix.platform != 'macos'
-        uses: .github/actions/godot-prepare-artifact
+        uses: ./.github/actions/godot-prepare-artifact
 
       - name: Save Godot build cache
         # if: success() || (steps.restore-cache.outputs.cache-hit == 'false' && (steps.compile-editor.outcome != 'skipped' || steps.compile-template.outcome != 'skipped'))
-        uses: build/godot/.github/actions/godot-cache-save
+        uses: ./build/godot/.github/actions/godot-cache-save
         with:
           cache-name: ${{ matrix.id }}-${{ matrix.target }}
         continue-on-error: true
@@ -157,7 +157,7 @@ jobs:
 
       - name: Mac Sign
         if: matrix.platform == 'macos' && matrix.target == 'editor'
-        uses: .github/actions/macos-sign
+        uses: ./.github/actions/macos-sign
         with:
           FRAMEWORK_PATH: ${{ github.workspace }}/build/godot/bin/godot_macos_editor.app
           SIGN_FLAGS: "--deep --force --options=runtime --entitlements ${{ github.workspace }}/build/godot/misc/dist/macos/editor.entitlements"
