@@ -45,14 +45,19 @@ jobs:
             bin: ./bin/godot.macos.editor.arm64
 
     steps:
-      # Checkout patchwork. We must put this in a higher directory than our CWD,
-      # because if we don't, cloning godot will overwrite patchwork.
-      # (And Godot's actions expect Godot to be our CWD.)
+      # Checkout patchwork to tmp/
       - name: Checkout patchwork-godot-plugin
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          path: ../patchwork-tmp
+          path: tmp/patchwork-tmp
+          
+      # We must move patchwork to a higher directory than our CWD,
+      # because if we don't, cloning godot will overwrite patchwork.
+      # (And Godot's actions expect Godot to be our CWD.)
+      - name: Move to higher directory
+        shell: sh
+        run: mv tmp/patchwork-tmp ../patchwork-tmp
 
       # Grab the environment variables from build.env and output them
       - name: Fetch env variables
