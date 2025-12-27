@@ -16,6 +16,11 @@ jobs:
           path: build.env
           log-variables: true
           keys-case: bypass
+      - id: logstuff
+        shell: sh
+        run: |
+          echo ${{ toJSON(outputs) }}
+          echo ${{ toJSON(steps) }}
 
   compose-projects:
     needs: [retrieve-env]
@@ -32,6 +37,9 @@ jobs:
             repo: ${{ needs.retrieve-env.steps.dotenv.outputs.MODDABLE_PLATFORMER_REPO }}
             ref: ${{ needs.retrieve-env.steps.dotenv.outputs.MODDABLE_PLATFORMER_REF }}
     steps:
+      - run: |
+        shell: sh
+          echo ${{ toJSON(needs) }}
       - name: Checkout project
         uses: actions/checkout@v4
         with:
