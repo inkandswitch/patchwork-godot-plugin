@@ -64,6 +64,9 @@ jobs:
           repository: ${{ steps.dotenv.outputs.GODOT_REPO }}
           ref: ${{ steps.dotenv.outputs.GODOT_REF }}
           path: build/godot
+      - name: list
+        shell: sh
+        run: ls -la .
       
       - name: Change CWD to godot
         shell: sh
