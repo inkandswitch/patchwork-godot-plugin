@@ -91,6 +91,7 @@ jobs:
           sudo apt-get install libwayland-bin
 
       - name: Setup python and scons
+        working-directory: build/godot
         uses: ./build/godot/.github/actions/godot-deps
 
       - name: Download Direct3D 12 SDK components
