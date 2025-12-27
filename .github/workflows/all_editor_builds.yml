@@ -45,17 +45,21 @@ jobs:
             bin: ./bin/godot.macos.editor.arm64
 
     steps:
+      # Checkout patchwork. We must put this in a higher directory than our CWD,
+      # because if we don't, cloning godot will overwrite patchwork.
+      # (And Godot's actions expect Godot to be our CWD.)
       - name: Checkout patchwork-godot-plugin
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          path: ../patchwork-godot-plugin
 
       # Grab the environment variables from build.env and output them
       - name: Fetch env variables
         id: dotenv
         uses: falti/dotenv-action@v1.1.5
         with:
-          path: build.env
+          path: ../patchwork-godot-plugin/build.env
           keys-case: bypass
 
       - name: Checkout Godot
@@ -63,19 +67,23 @@ jobs:
         with:
           repository: ${{ steps.dotenv.outputs.GODOT_REPO }}
           ref: ${{ steps.dotenv.outputs.GODOT_REF }}
-          path: build/godot
 
       - name: Copy editor directory
         shell: bash
         run: |
-          cp -R editor build/godot/modules/patchwork_editor
+          cp -R ../patchwork-godot-plugin/editor modules/patchwork_editor
+
+      - name: Copy Patchwork's actions to Godot's actions
+        shell: bash
+        run: |
+          cp -R ../patchwork-godot-plugin/.github/actions/* .github/actions/
 
       - name: Select Xcode 16
         if: matrix.platform == 'macos'
         run: sudo xcode-select -s /Applications/Xcode_16.2.app
 
       - name: Restore Godot build cache
-        uses: ./build/godot/.github/actions/godot-cache-restore
+        uses: ./.github/actions/godot-cache-restore
         id: restore-cache
         with:
           cache-name: ${{ matrix.id }}-${{ matrix.target }}
@@ -91,15 +99,14 @@ jobs:
           sudo apt-get install libwayland-bin
 
       - name: Setup python and scons
-        working-directory: build/godot
-        uses: ./build/godot/.github/actions/godot-deps
+        uses: ./.github/actions/godot-deps
 
       - name: Download Direct3D 12 SDK components
         shell: sh
         id: d3d12-sdk
         if: matrix.platform == 'windows'
         run: |
-          if python build/godot/misc/scripts/install_d3d12_sdk_windows.py; then
+          if python ./misc/scripts/install_d3d12_sdk_windows.py; then
             echo "D3D12_ENABLED=yes" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::Windows: Direct3D 12 SDK installation failed, building without Direct3D 12 support."
@@ -110,19 +117,19 @@ jobs:
       - name: Setup Vulkan SDK
         if: matrix.platform == 'macos'
         run: |
-          sh build/godot/misc/scripts/install_vulkan_sdk_macos.sh
+          sh misc/scripts/install_vulkan_sdk_macos.sh
 
       - name: Compile Editor (x86_64)
         if: matrix.target == 'editor'
         id: compile-editor
-        uses: ./build/godot/.github/actions/godot-build
+        uses: ./.github/actions/godot-build
         with:
           scons-flags: arch=x86_64 ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }}
           platform: ${{ matrix.platform }}
           target: editor
 
       - name: Compile Editor for macos arm64
-        uses: ./build/godot/.github/actions/godot-build
+        uses: ./.github/actions/godot-build
         if: matrix.platform == 'macos' && matrix.target == 'editor'
         with:
           # generate the bundle on this one; generate_bundle automatically lipos the binaries
@@ -134,17 +141,17 @@ jobs:
         if: matrix.platform == 'macos' && matrix.target == 'editor'
         shell: bash
         run: |
-          rm -f build/godot/bin/godot.macos.*
-          chmod +x build/godot/bin/godot_macos_editor.app/Contents/MacOS/Godot
+          rm -f ./bin/godot.macos.*
+          chmod +x bin/godot_macos_editor.app/Contents/MacOS/Godot
 
       - name: Prepare artifact
       # Stripping the debug symbols screws up lipo'd binaries on macos, so don't do it
         if: matrix.platform != 'macos'
-        uses: ./.github/actions/godot-prepare-artifact
+        uses: ./../patchwork-godot-plugin/.github/actions/godot-prepare-artifact
 
       - name: Save Godot build cache
         # if: success() || (steps.restore-cache.outputs.cache-hit == 'false' && (steps.compile-editor.outcome != 'skipped' || steps.compile-template.outcome != 'skipped'))
-        uses: ./build/godot/.github/actions/godot-cache-save
+        uses: ./.github/actions/godot-cache-save
         with:
           cache-name: ${{ matrix.id }}-${{ matrix.target }}
         continue-on-error: true
@@ -154,14 +161,14 @@ jobs:
         if: matrix.platform == 'macos' && matrix.target == 'editor'
         shell: bash
         run: |
-          chmod +x build/godot/bin/godot_macos_editor.app/Contents/MacOS/Godot
+          chmod +x bin/godot_macos_editor.app/Contents/MacOS/Godot
 
       - name: Mac Sign
         if: matrix.platform == 'macos' && matrix.target == 'editor'
         uses: ./.github/actions/macos-sign
         with:
-          FRAMEWORK_PATH: ${{ github.workspace }}/build/godot/bin/godot_macos_editor.app
-          SIGN_FLAGS: "--deep --force --options=runtime --entitlements ${{ github.workspace }}/build/godot/misc/dist/macos/editor.entitlements"
+          FRAMEWORK_PATH: ${{ github.workspace }}/bin/godot_macos_editor.app
+          SIGN_FLAGS: "--deep --force --options=runtime --entitlements ${{ github.workspace }}/misc/dist/macos/editor.entitlements"
           APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
           APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
           APPLE_DEV_PASSWORD: ${{ secrets.APPLE_DEV_PASSWORD }}
@@ -174,5 +181,5 @@ jobs:
         if: matrix.id != 'linux-sanitizers'
         with:
           name: godot-with-patchwork-${{ matrix.platform }}
-          path: build/godot/bin/*
+          path: ${{ github.workspace }}/godot/bin/*
           retention-days: 90
