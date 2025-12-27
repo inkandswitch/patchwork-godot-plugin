@@ -45,35 +45,40 @@ jobs:
             bin: ./bin/godot.macos.editor.arm64
 
     steps:
-
-      - name: checkout-patchwork-godot-plugin
+      - name: Checkout patchwork-godot-plugin
         uses: actions/checkout@v4
         with:
-          path: tmp/patchwork-godot-plugin
           fetch-depth: 0
 
       # Grab the environment variables from build.env and output them
-      - id: dotenv
+      - name: Fetch env variables
+        id: dotenv
         uses: falti/dotenv-action@v1.1.5
         with:
           path: tmp/patchwork-godot-plugin/build.env
           keys-case: bypass
 
-      - name: checkout-godot
+      - name: Checkout Godot
         uses: actions/checkout@v4
         with:
           repository: ${{ steps.dotenv.outputs.GODOT_REPO }}
           ref: ${{ steps.dotenv.outputs.GODOT_REF }}
+          path: patchwork-godot-plugin/build/godot
+      
+      - name: Change CWD to godot
+        shell: sh
+        run: |
+          cd patchwork-godot-plugin/build/godot
 
-      - name: copy editor directory
+      - name: Copy editor directory
         shell: bash
         run: |
-          cp -R tmp/patchwork-godot-plugin/editor modules/patchwork_editor
+          cp -R ../../editor modules/patchwork_editor
 
-      - name: copy actions
+      - name: Copy Patchwork's actions to Godot's actions
         shell: bash
         run: |
-          cp -R tmp/patchwork-godot-plugin/.github/actions/* .github/actions/
+          cp -R ../../.github/actions/* .github/actions/
 
       - name: Select Xcode 16
         if: matrix.platform == 'macos'
@@ -158,14 +163,14 @@ jobs:
         if: matrix.platform == 'macos' && matrix.target == 'editor'
         shell: bash
         run: |
-          chmod +x ${{ github.workspace }}/bin/godot_macos_editor.app/Contents/MacOS/Godot
+          chmod +x ${{ github.workspace }}/patchwork-godot-plugin/build/godot/bin/godot_macos_editor.app/Contents/MacOS/Godot
 
       - name: Mac Sign
         if: matrix.platform == 'macos' && matrix.target == 'editor'
         uses: ./.github/actions/macos-sign
         with:
-          FRAMEWORK_PATH: ${{ github.workspace }}/bin/godot_macos_editor.app
-          SIGN_FLAGS: "--deep --force --options=runtime --entitlements ${{ github.workspace }}/misc/dist/macos/editor.entitlements"
+          FRAMEWORK_PATH: ${{ github.workspace }}/patchwork-godot-plugin/build/godot/bin/godot_macos_editor.app
+          SIGN_FLAGS: "--deep --force --options=runtime --entitlements ${{ github.workspace }}/patchwork-godot-plugin/build/godot/misc/dist/macos/editor.entitlements"
           APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
           APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
           APPLE_DEV_PASSWORD: ${{ secrets.APPLE_DEV_PASSWORD }}
@@ -178,5 +183,5 @@ jobs:
         if: matrix.id != 'linux-sanitizers'
         with:
           name: godot-with-patchwork-${{ matrix.platform }}
-          path: ${{ github.workspace }}/bin/*
+          path: ${{ github.workspace }}/patchwork-godot-plugin/build/godot/bin/*
           retention-days: 90
