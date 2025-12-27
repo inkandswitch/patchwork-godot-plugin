@@ -55,7 +55,7 @@ jobs:
         id: dotenv
         uses: falti/dotenv-action@v1.1.5
         with:
-          path: patchwork-godot-plugin/build.env
+          path: build.env
           keys-case: bypass
 
       - name: Checkout Godot
@@ -63,12 +63,12 @@ jobs:
         with:
           repository: ${{ steps.dotenv.outputs.GODOT_REPO }}
           ref: ${{ steps.dotenv.outputs.GODOT_REF }}
-          path: patchwork-godot-plugin/build/godot
+          path: build/godot
       
       - name: Change CWD to godot
         shell: sh
         run: |
-          cd patchwork-godot-plugin/build/godot
+          cd build/godot
 
       - name: Copy editor directory
         shell: bash
