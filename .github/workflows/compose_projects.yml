@@ -24,11 +24,11 @@ jobs:
         # TODO (Lilith): Input these values from a .env file in both justfile and here
         project:
           - name: threadbare
-            repo: ${{ needs.retrieve-env.output.THREADBARE_REPO }}
-            ref: ${{ needs.retrieve-env.output.THREADBARE_REF }}
+            repo: ${{ needs.retrieve-env.outputs.THREADBARE_REPO }}
+            ref: ${{ needs.retrieve-env.outputs.THREADBARE_REF }}
           - name: moddable-platformer
-            repo: ${{ needs.retrieve-env.output.MODDABLE_PLATFORMER_REPO }}
-            ref: ${{ needs.retrieve-env.output.MODDABLE_PLATFORMER_REF }}
+            repo: ${{ needs.retrieve-env.outputs.MODDABLE_PLATFORMER_REPO }}
+            ref: ${{ needs.retrieve-env.outputs.MODDABLE_PLATFORMER_REF }}
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
