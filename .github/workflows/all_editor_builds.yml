@@ -55,7 +55,7 @@ jobs:
         id: dotenv
         uses: falti/dotenv-action@v1.1.5
         with:
-          path: tmp/patchwork-godot-plugin/build.env
+          path: patchwork-godot-plugin/build.env
           keys-case: bypass
 
       - name: Checkout Godot
