@@ -52,14 +52,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          path: ../patchwork-godot-plugin
+          path: ../patchwork-tmp
 
       # Grab the environment variables from build.env and output them
       - name: Fetch env variables
         id: dotenv
         uses: falti/dotenv-action@v1.1.5
         with:
-          path: ../patchwork-godot-plugin/build.env
+          path: ../patchwork-tmp/build.env
           keys-case: bypass
 
       - name: Checkout Godot
@@ -71,7 +71,7 @@ jobs:
       - name: Copy editor directory
         shell: bash
         run: |
-          cp -R ../patchwork-godot-plugin/editor modules/patchwork_editor
+          cp -R ../patchwork-tmp/editor modules/patchwork_editor
 
       - name: Select Xcode 16
         if: matrix.platform == 'macos'
@@ -142,7 +142,7 @@ jobs:
       - name: Prepare artifact
       # Stripping the debug symbols screws up lipo'd binaries on macos, so don't do it
         if: matrix.platform != 'macos'
-        uses: ./../patchwork-godot-plugin/.github/actions/godot-prepare-artifact
+        uses: ./../patchwork-tmp/.github/actions/godot-prepare-artifact
 
       - name: Save Godot build cache
         # if: success() || (steps.restore-cache.outputs.cache-hit == 'false' && (steps.compile-editor.outcome != 'skipped' || steps.compile-template.outcome != 'skipped'))
@@ -160,7 +160,7 @@ jobs:
 
       - name: Mac Sign
         if: matrix.platform == 'macos' && matrix.target == 'editor'
-        uses: ./.github/actions/macos-sign
+        uses: ../patchwork-tmp/.github/actions/macos-sign
         with:
           FRAMEWORK_PATH: ${{ github.workspace }}/bin/godot_macos_editor.app
           SIGN_FLAGS: "--deep --force --options=runtime --entitlements ${{ github.workspace }}/misc/dist/macos/editor.entitlements"
