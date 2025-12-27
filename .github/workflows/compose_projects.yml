@@ -38,9 +38,9 @@ jobs:
             repo: ${{ needs.retrieve-env.outputs.MODDABLE_PLATFORMER_REPO }}
             ref: ${{ needs.retrieve-env.outputs.MODDABLE_PLATFORMER_REF }}
     steps:
-      - run: |
-        echo ${{ toJSON(needs) }}
-        shell: sh
+      - shell: sh
+        run: |
+          echo ${{ toJSON(needs) }}
           
       - name: Checkout project
         uses: actions/checkout@v4
