@@ -10,17 +10,25 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
-      - uses: aarcangeli/load-dotenv@v1
+      - uses: falti/dotenv-action@v1.1.5
         with:
-          filenames: build.env
-      - run: echo "matrix={\"project\":[{\"name\":\"threadbare\",\"repo\":\"${{ env.THREADBARE_REPO }}\",\"ref\":\"${{ env.THREADBARE_REF }}\"},{\"name\":\"moddable-platformer\",\"repo\":\"${{ env.MODDABLE_PLATFORMER_REPO }}\",\"ref\":\"${{ env.MODDABLE_PLATFORMER_REF }}\"}]}" >> $GITHUB_OUTPUT
+          path: build.env
 
   compose-projects:
+    needs: [retrieve-env]
     runs-on: "ubuntu-latest"
     name: 🪡 Compose ${{ matrix.project.name }}
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.retrieve-env.outputs.matrix) }}
+      matrix:
+        # TODO (Lilith): Input these values from a .env file in both justfile and here
+        project:
+          - name: threadbare
+            repo: ${{ needs.retrieve-env.output.THREADBARE_REPO }}
+            ref: ${{ needs.retrieve-env.output.THREADBARE_REF }}
+          - name: moddable-platformer
+            repo: ${{ needs.retrieve-env.output.MODDABLE_PLATFORMER_REPO }}
+            ref: ${{ needs.retrieve-env.output.MODDABLE_PLATFORMER_REF }}
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
