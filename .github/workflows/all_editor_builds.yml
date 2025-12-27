@@ -75,7 +75,7 @@ jobs:
         run: sudo xcode-select -s /Applications/Xcode_16.2.app
 
       - name: Restore Godot build cache
-        uses: build/godot/.github/actions/godot-cache-restore
+        uses: ./build/godot/.github/actions/godot-cache-restore
         id: restore-cache
         with:
           cache-name: ${{ matrix.id }}-${{ matrix.target }}
