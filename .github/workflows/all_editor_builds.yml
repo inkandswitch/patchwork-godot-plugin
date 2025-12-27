@@ -51,7 +51,7 @@ jobs:
         with:
           fetch-depth: 0
           path: tmp/patchwork-tmp
-          
+
       # We must move patchwork to a higher directory than our CWD,
       # because if we don't, cloning godot will overwrite patchwork.
       # (And Godot's actions expect Godot to be our CWD.)
@@ -181,5 +181,5 @@ jobs:
         if: matrix.id != 'linux-sanitizers'
         with:
           name: godot-with-patchwork-${{ matrix.platform }}
-          path: ${{ github.workspace }}/godot/bin/*
+          path: ${{ github.workspace }}/bin/*
           retention-days: 90
