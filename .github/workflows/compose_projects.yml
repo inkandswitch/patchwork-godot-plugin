@@ -21,7 +21,7 @@ jobs:
       - id: logstuff
         shell: sh
         run: |
-          echo ${{ toJSON(steps.dotenv.outputs) }}
+          echo "'${{ toJSON(steps.dotenv.outputs) }}'"
 
   compose-projects:
     needs: [retrieve-env]
@@ -40,7 +40,7 @@ jobs:
     steps:
       - shell: sh
         run: |
-          echo ${{ toJSON(needs) }}
+          echo "'${{ toJSON(needs) }}'"
           
       - name: Checkout project
         uses: actions/checkout@v4
