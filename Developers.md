@@ -135,10 +135,10 @@ cargo install watchexec-cli
 cd godot/modules/patchwork_editor
 
 # Auto-rebuild on any .rs or .toml file change
-watchexec -e rs,toml just build-patchwork release
+watchexec -e rs,toml just build-patchwork (release/debug)
 ```
 
-This will watch for changes to `.rs` and `.toml` files and automatically run `cargo post build` when changes are detected.
+This will watch for changes to `.rs` and `.toml` files and automatically run `just build-patchwork` when changes are detected.
 Godot will automatically reload the plugin after the build is complete.
 
 **3. macOS Code Signing (if needed):**
