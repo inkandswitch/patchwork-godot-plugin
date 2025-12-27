@@ -1,0 +1,27 @@
+name: 🧩 Merge Patchwork Builds
+on:
+  workflow_call:
+
+jobs:
+  merge-builds:
+    runs-on: "ubuntu-latest"
+    name: 🧩 Merge Patchwork Builds
+    strategy:
+      fail-fast: false
+    steps:
+      # just download the artifacts from the macos, windows and linux plugin builds
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: patchwork-build-*
+          path: ${{ github.workspace }}/patchwork-godot-plugin
+          merge-multiple: true
+      - name: Wut
+        run: |
+          ls -la ${{ github.workspace }}/patchwork-godot-plugin/bin || echo "No artifacts"
+
+      - name: Upload patchwork-godot-plugin
+        uses: actions/upload-artifact@v4
+        with:
+          path: patchwork-godot-plugin
+          name: patchwork-godot-plugin

@@ -1,8 +1,8 @@
 #ifndef PATCHWORK_EDITOR_H
 #define PATCHWORK_EDITOR_H
 
-#include "core/io/resource_importer.h"
 #include "core/object/ref_counted.h"
+#include "core/io/resource_importer.h"
 #include "core/variant/dictionary.h"
 #include "core/variant/variant.h"
 #include "editor/editor_node.h"

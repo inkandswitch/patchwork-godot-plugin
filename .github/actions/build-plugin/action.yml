@@ -6,18 +6,11 @@ inputs:
     required: true
     default: ''
     description: Rust target platform.
-  extra_flags:
-    required: false
-    default: ''
-    description: Rust extra flags.
-  features:
-    required: false
-    default: ''
-    description: simd-nightly,simd-stable,parallel,enhanced-determinism
   
 runs:
   using: composite
   steps:
+    - uses: extractions/setup-just@v3
     - name: Update Rust
       shell: sh
       run: |
@@ -26,33 +19,28 @@ runs:
       shell: sh
       run: |
         rustc --print=target-list
-    - name: Rust Add target
+    - name: Add additional arm64 target for macOS
+      shell: sh
+      if: ${{ inputs.arch == 'x86_64-apple-darwin'}}
+      run: |
+        rustup target add aarch64-apple-darwin
+    - name: Rust add current target
       shell: sh
       run: |
         rustup target add ${{ inputs.arch }}
-    #--features="${{ inputs.features }}" --no-default-features
-    - name: Build
+    - name: Build for Windows and Linux
       shell: sh
+      if: ${{ inputs.arch != 'x86_64-apple-darwin'}}
       run: |
-        cargo build --target=${{ inputs.arch }} --release  ${{ inputs.extra_flags}}
+        just build-patchwork release ${{ inputs.arch }}
+    - name: Build for Mac
+      shell: sh
+      if: ${{ inputs.arch == 'x86_64-apple-darwin'}}
+      run: |
+        just build-patchwork release "all-apple-darwin"
     - name: Copy to release
       shell: sh
       run: |
         mkdir -p target/release
         rm -rf target/release
         cp -rf target/${{ inputs.arch }}/release target/release
-    - name: Build Rapier Macos Universal
-      shell: sh
-      # we already built for x86_64-apple-darwin for mac, now build arm64
-      if: ${{ inputs.arch == 'x86_64-apple-darwin'}}
-      run: |
-        mkdir -p target/release
-        rustup target add aarch64-apple-darwin
-        cargo build --target=aarch64-apple-darwin --release
-        lipo -create -output target/release/libpatchwork_rust_core.dylib target/aarch64-apple-darwin/release/libpatchwork_rust_core.dylib target/x86_64-apple-darwin/release/libpatchwork_rust_core.dylib
-    - name: Move Static Libs macOS
-      shell: sh
-      if: ${{ inputs.arch == 'x86_64-apple-darwin'}}
-      run: |
-        mv target/x86_64-apple-darwin/release/libpatchwork_rust_core.a target/release/libpatchwork_rust_core.x86_64.a
-        mv target/aarch64-apple-darwin/release/libpatchwork_rust_core.a target/release/libpatchwork_rust_core.arm64.a
