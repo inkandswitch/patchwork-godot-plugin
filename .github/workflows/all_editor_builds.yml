@@ -1,17 +1,11 @@
-name: Build Editor All Platforms
+name: 🤖 Build Godot for All Platforms
 on:
   workflow_call:
 
 # Global Settings
 # SCONS_CACHE for windows must be set in the build environment
 env:
-  GODOT_REPOSITORY: godotengine/godot
-  GODOT_BASE_BRANCH: master
-  # Change Developers.md too
-  GODOT_MAIN_SYNC_REF: bb92a4c8e27e30cdec05ab6d540d724b9b3cfb72
   SCONSFLAGS: verbose=yes warnings=all werror=no module_text_server_fb_enabled=yes minizip=yes deprecated=yes module_patchwork_editor_enabled=yes
-  SCONSFLAGS_TEMPLATE: no_editor_splash=yes module_camera_enabled=no module_mobile_vr_enabled=no module_upnp_enabled=no module_websocket_enabled=no module_csg_enabled=yes module_gridmap_enabled=yes use_static_cpp=yes builtin_freetype=yes builtin_libpng=yes builtin_zlib=yes builtin_libwebp=yes builtin_libvorbis=yes builtin_libogg=yes disable_3d=no
-  SCONS_CACHE_MSVC_CONFIG: true
 
 concurrency:
   group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}
@@ -19,14 +13,13 @@ concurrency:
 
 jobs:
   build:
-    # Windows 10 with latest image
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: "Windows Editor"
+          - name: "🪟 Build Godot for Windows"
             os: "windows-latest"
             id: windows-editor
             platform: windows
@@ -34,7 +27,7 @@ jobs:
             sconsflags: tests=yes debug_symbols=yes
             bin: ./bin/godot.windows.editor.x86_64.exe
 
-          - name: "🐧 Linux Editor"
+          - name: "🐧 Build Godot for Linux"
             os: "ubuntu-22.04"
             id: linux-editor
             platform: linux
@@ -43,7 +36,7 @@ jobs:
             sconsflags-template: optimize=size use_lto=yes debug_symbols=no
             bin: ./bin/godot.linuxbsd.editor.x86_64
 
-          - name: "🍎 macOS Editor"
+          - name: "🍎 Build Godot for macOS"
             os: "macos-14"
             id: macos-editor
             platform: macos
@@ -52,22 +45,38 @@ jobs:
             bin: ./bin/godot.macos.editor.arm64
 
     steps:
-      - name: checkout-godot
+      # Checkout patchwork to tmp/
+      - name: Checkout patchwork-godot-plugin
         uses: actions/checkout@v4
         with:
-          repository: ${{env.GODOT_REPOSITORY}}
-          ref: ${{env.GODOT_MAIN_SYNC_REF}}
-
-      - name: checkout-patchwork_editor
-        uses: actions/checkout@v4
-        with:
-          path: modules/patchwork_editor
           fetch-depth: 0
+          path: tmp/patchwork-tmp
 
-      - name: copy actions
+      # We must move patchwork to a higher directory than our CWD,
+      # because if we don't, cloning godot will overwrite patchwork.
+      # (And Godot's actions expect Godot to be our CWD.)
+      - name: Move to higher directory
+        shell: sh
+        run: mv tmp/patchwork-tmp ../patchwork-tmp
+
+      # Grab the environment variables from build.env and output them
+      - name: Fetch env variables
+        id: dotenv
+        uses: falti/dotenv-action@v1.1.5
+        with:
+          path: ../patchwork-tmp/build.env
+          keys-case: bypass
+
+      - name: Checkout Godot
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.dotenv.outputs.GODOT_REPO }}
+          ref: ${{ steps.dotenv.outputs.GODOT_REF }}
+
+      - name: Copy editor directory
         shell: bash
         run: |
-          cp -R modules/patchwork_editor/.github/actions/* .github/actions/
+          cp -R ../patchwork-tmp/editor modules/patchwork_editor
 
       - name: Select Xcode 16
         if: matrix.platform == 'macos'
@@ -138,7 +147,7 @@ jobs:
       - name: Prepare artifact
       # Stripping the debug symbols screws up lipo'd binaries on macos, so don't do it
         if: matrix.platform != 'macos'
-        uses: ./.github/actions/godot-prepare-artifact
+        uses: ./../patchwork-tmp/.github/actions/godot-prepare-artifact
 
       - name: Save Godot build cache
         # if: success() || (steps.restore-cache.outputs.cache-hit == 'false' && (steps.compile-editor.outcome != 'skipped' || steps.compile-template.outcome != 'skipped'))
@@ -152,11 +161,11 @@ jobs:
         if: matrix.platform == 'macos' && matrix.target == 'editor'
         shell: bash
         run: |
-          chmod +x ${{ github.workspace }}/bin/godot_macos_editor.app/Contents/MacOS/Godot
+          chmod +x bin/godot_macos_editor.app/Contents/MacOS/Godot
 
       - name: Mac Sign
         if: matrix.platform == 'macos' && matrix.target == 'editor'
-        uses: ./.github/actions/macos-sign
+        uses: ./../patchwork-tmp/.github/actions/macos-sign
         with:
           FRAMEWORK_PATH: ${{ github.workspace }}/bin/godot_macos_editor.app
           SIGN_FLAGS: "--deep --force --options=runtime --entitlements ${{ github.workspace }}/misc/dist/macos/editor.entitlements"
@@ -171,106 +180,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: matrix.id != 'linux-sanitizers'
         with:
-          name: patchwork_editor-${{ matrix.platform }}
-          path: ${{github.workspace}}/bin/*
+          name: godot-with-patchwork-${{ matrix.platform }}
+          path: ${{ github.workspace }}/bin/*
           retention-days: 90
-
-  # test:
-  #   needs: build
-  #   runs-on: ${{ matrix.os }}
-  #   name: ${{ matrix.name }} test
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       include:
-  #         - name: "Windows"
-  #           os: "windows-latest"
-  #           platform: windows
-  #           bin: ./bin/godot.windows.editor.x86_64.exe
-
-  #         - name: "🐧 Linux"
-  #           os: "ubuntu-24.04"
-  #           platform: linux
-  #           bin: ./bin/godot.linuxbsd.editor.x86_64
-
-  #         - name: "🍎 macOS"
-  #           os: "macos-14"
-  #           platform: macos
-  #           bin: ./bin/godot.macos.editor.arm64
-
-  #   steps:
-  #     - name: checkout-godot
-  #       uses: actions/checkout@v4
-  #       with:
-  #         repository: GODOT_REPOSITORY
-  #         ref: ${{env.GODOT_MAIN_SYNC_REF}}
-
-  #     - name: checkout-patchwork_editor
-  #       uses: actions/checkout@v4
-  #       with:
-  #         path: modules/patchwork_editor
-  #         fetch-depth: 0
-
-  #     - name: copy actions
-  #       shell: bash
-  #       run: |
-  #         cp -R modules/patchwork_editor/.github/actions/* .github/actions/
-
-  #     - name: Download patchwork_editor artifacts
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         name: patchwork_editor-editor-${{ matrix.platform }}
-  #         path: bin
-
-  #     - name: set permissions
-  #       shell: bash
-  #       run: |
-  #         chmod a+x bin/godot*
-
-  #     - name: run tests
-  #       shell: bash
-  #       run: |
-  #         ${{matrix.bin}} --headless --test --force-colors "--test-case=[patchwork_editor]*"
-
-  release:
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: "ubuntu-latest"
-    permissions:
-      contents: write
-    needs: [build]
-    steps:
-      - name: Download Linux artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: patchwork_editor-linux
-          path: artifacts/linux
-      - name: Download MacOS artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: patchwork_editor-macos
-          path: artifacts/macos
-      - name: Download Windows artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: patchwork_editor-windows
-          path: artifacts/windows
-      - name: Zip artifacts
-        run: |
-          ls -la artifacts/*
-          cd artifacts/windows
-          zip -r9  "../patchwork_editor-${{ github.ref_name }}-windows.zip" *
-          cd ../..
-          cd artifacts/macos
-          chmod a+x godot_macos_editor.app/Contents/MacOS/Godot
-          zip -r9  "../patchwork_editor-${{ github.ref_name }}-macos.zip" *
-          cd ../..
-          cd artifacts/linux
-          chmod a+x *
-          zip -r9  "../patchwork_editor-${{ github.ref_name }}-linux.zip" *
-      - name: Release
-        uses: nikitalita/action-gh-release@v1.0
-        with:
-          files: |
-            artifacts/patchwork_editor-${{ github.ref_name }}-windows.zip
-            artifacts/patchwork_editor-${{ github.ref_name }}-macos.zip
-            artifacts/patchwork_editor-${{ github.ref_name }}-linux.zip
