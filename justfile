@@ -110,11 +110,11 @@ build-godot profile: _link-godot
     cd "build/godot"
     # TODO: figure out a way to see if scons actually needs a run, since this takes forever even when built
     if [[ {{profile}} = "release" ]] ; then
-        scons dev_build=no debug_symbols=no target=editor deprecated=yes minizip=yes compiledb=yes
+        scons dev_build=no debug_symbols=no target=editor deprecated=yes minizip=yes compiledb=yes metal=no
     elif [[ {{profile}} = "sani" ]] ; then
-        scons dev_build=yes target=editor compiledb=yes deprecated=yes minizip=yes tests=yes use_asan=yes 
+        scons dev_build=yes target=editor compiledb=yes deprecated=yes minizip=yes tests=yes use_asan=yes metal=no
     else
-        scons dev_build=yes target=editor compiledb=yes deprecated=yes minizip=yes tests=yes 
+        scons dev_build=yes target=editor compiledb=yes deprecated=yes minizip=yes tests=yes metal=no
     fi
 
 # Build the Rust plugin binaries.
@@ -156,8 +156,8 @@ _build-plugin-single-arch architecture profile: (_build-plugin architecture prof
             build/patchwork/bin/patchwork_rust_core.linux.{{architecture}}.so
     fi
 
-    if [ -f "target/{{architecture}}/{{profile}}/patchwork_rust_core.dylib" ] ; then
-        cp "target/{{architecture}}/{{profile}}/patchwork_rust_core.dylib" \
+    if [ -f "target/{{architecture}}/{{profile}}/libpatchwork_rust_core.dylib" ] ; then
+        cp "target/{{architecture}}/{{profile}}/libpatchwork_rust_core.dylib" \
             build/patchwork/bin/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.dylib
     fi
     
@@ -361,7 +361,7 @@ launch project="moddable-platformer" patchwork_profile="release" godot_profile="
             ext=".exe" ;;
         "linux")
             ext="" ;;
-        "mac")
+        "mac"|"macos")
             ext="" ;;
         *)
             echo "Unsupported OS for development: {{os()}}."
