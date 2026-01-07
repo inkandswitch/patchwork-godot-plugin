@@ -51,12 +51,12 @@ _clone repo_url directory checkout:
     #!/usr/bin/env sh
     # set -euxo pipefail
     if [[ ! -d "{{directory}}" ]]; then
-        git clone "{{repo_url}}" "{{directory}}"
+        git clone "git@github.com:{{repo_url}}" "{{directory}}"
     else
         if git -C "{{directory}}" remote | grep -q '^origin$'; then
-            git -C "{{directory}}" remote set-url origin "{{repo_url}}"
+            git -C "{{directory}}" remote set-url origin "git@github.com:{{repo_url}}"
         else
-            git -C "{{directory}}" remote add origin "{{repo_url}}"
+            git -C "{{directory}}" remote add origin "git@github.com:{{repo_url}}"
         fi
     fi
 
