@@ -110,11 +110,11 @@ build-godot profile: _link-godot
     cd "build/godot"
     # TODO: figure out a way to see if scons actually needs a run, since this takes forever even when built
     if [[ {{profile}} = "release" ]] ; then
-        scons dev_build=no debug_symbols=no target=editor deprecated=yes minizip=yes compiledb=yes metal=no
+        scons dev_build=no debug_symbols=no target=editor deprecated=yes minizip=yes compiledb=yes metal=no module_text_server_fb_enabled=yes
     elif [[ {{profile}} = "sani" ]] ; then
-        scons dev_build=yes target=editor compiledb=yes deprecated=yes minizip=yes tests=yes use_asan=yes metal=no
+        scons dev_build=yes target=editor compiledb=yes deprecated=yes minizip=yes tests=yes use_asan=yes metal=no module_text_server_fb_enabled=yes
     else
-        scons dev_build=yes target=editor compiledb=yes deprecated=yes minizip=yes tests=yes metal=no
+        scons dev_build=yes target=editor compiledb=yes deprecated=yes minizip=yes tests=yes metal=no module_text_server_fb_enabled=yes
     fi
 
 # Build the Rust plugin binaries.
