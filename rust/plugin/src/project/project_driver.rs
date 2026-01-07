@@ -1,5 +1,5 @@
 use automerge::Automerge;
-use samod::{ConnDirection, ConnectionInfo, DocHandle, DocumentId, Repo, Stopped};
+use samod::{ConcurrencyConfig, ConnDirection, ConnectionInfo, DocHandle, DocumentId, Repo, Stopped};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, Stream};
 use std::collections::HashSet;
@@ -199,6 +199,7 @@ impl ProjectDriver {
 		let storage = samod::storage::TokioFilesystemStorage::new(storage_folder_path);
 
 		let repo_handle = Repo::build_tokio()
+            .with_concurrency(ConcurrencyConfig::Threadpool(rayon::ThreadPoolBuilder::new().build().unwrap()))
 			.with_storage(storage)
 			.load()
 			.await;

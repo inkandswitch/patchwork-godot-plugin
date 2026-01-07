@@ -53,7 +53,8 @@ rlimit = "0.10.2"
 tracing = "0.1.40"
 tracing-appender = "0.2.2"
 chrono = "0.4.31"
-samod = { git="https://github.com/LilithSilver/samod.git", branch="patchwork", features = ["tokio"] }
+samod = { git="https://github.com/LilithSilver/samod.git", branch="patchwork", features = ["tokio", "threadpool"] }
+rayon = "1.11.0"
 
 [build-dependencies]
 cbindgen = "^0.27"
