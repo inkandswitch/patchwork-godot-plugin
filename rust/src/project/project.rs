@@ -2,7 +2,7 @@ use ::safer_ffi::prelude::*;
 use automerge::{
     ChangeHash, ObjId, ObjType, ROOT, ReadDoc
 };
-use automerge_repo::{DocHandle, DocumentId, PeerConnectionInfo};
+use samod::{DocHandle, DocumentId, ConnectionInfo};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::instrument;
 use std::{cell::RefCell, collections::HashSet};
@@ -45,7 +45,7 @@ pub struct Project {
     driver: Option<ProjectDriver>,
     pub(super) driver_input_tx: UnboundedSender<InputEvent>,
     driver_output_rx: UnboundedReceiver<OutputEvent>,
-    pub(super) sync_server_connection_info: Option<PeerConnectionInfo>,
+    pub(super) sync_server_connection_info: Option<ConnectionInfo>,
     file_system_driver: Option<FileSystemDriver>,
 	project_dir: String,
 	is_started: bool,
@@ -90,7 +90,7 @@ impl Default for Project {
 }
 
 /// The default server URL used for syncing Patchwork projects. Can be overridden by user or project configuration.
-const DEFAULT_SERVER_URL: &str = "24.199.97.236:8080";
+const DEFAULT_SERVER_URL: &str = "24.199.97.236:8085";
 
 /// Notifications that can be emitted via process and consumed by GodotProject, in order to trigger signals to GDScript.
 pub enum GodotProjectSignal {
@@ -147,7 +147,7 @@ impl Project {
 			.and_then(|i| i.docs.get(&branch_state.doc_handle.document_id()))
 			.and_then(|p| p.last_acked_heads.as_ref());
 
-        let changes = branch_state.doc_handle.with_doc(|d|
+        let changes = branch_state.doc_handle.with_document(|d|
             d.get_changes(&[])
             .to_vec()
             .iter()
@@ -258,7 +258,7 @@ impl Project {
 		);
 		println!("");
 		let branch_state = self.get_checked_out_branch_state().unwrap();
-		let heads = branch_state.doc_handle.with_doc(|d| {
+		let heads = branch_state.doc_handle.with_document(|d| {
 			d.get_heads()
 		});
 		let content = self.get_changed_file_content_between(Some(branch_state.doc_handle.document_id().clone()), branch_state.doc_handle.document_id().clone(), heads.clone(), revert_to.clone(), true);
@@ -306,7 +306,7 @@ impl Project {
 			panic!("_get_descendent_document: previous_heads is empty");
 		}
 
-		if branch_state.doc_handle.with_doc(|d| {
+		if branch_state.doc_handle.with_document(|d| {
 				d.get_obj_id_at(ROOT, "files", &previous_heads).is_some() &&
 				d.get_obj_id_at(ROOT, "files", &current_heads).is_some()
 		}) {
@@ -320,7 +320,7 @@ impl Project {
 				return None;
 			}
 		};
-		if other_branch_state.doc_handle.with_doc(|d| {
+		if other_branch_state.doc_handle.with_document(|d| {
 			d.get_obj_id_at(ROOT, "files", &previous_heads).is_some() &&
 			d.get_obj_id_at(ROOT, "files", &current_heads).is_some()
 		}) {
@@ -338,7 +338,7 @@ impl Project {
 
 	pub fn revert_to_heads(&mut self, to_revert_to: Vec<ChangeHash>) {
 		let branch_state = self.get_checked_out_branch_state().unwrap();
-		let heads = branch_state.doc_handle.with_doc(|d| {
+		let heads = branch_state.doc_handle.with_document(|d| {
 			d.get_heads()
 		});
 		let content = self.get_changed_file_content_between(Some(branch_state.doc_handle.document_id().clone()), branch_state.doc_handle.document_id().clone(), heads.clone(), to_revert_to.clone(), true);
@@ -455,7 +455,7 @@ impl Project {
 			curr_heads.to_short_form()
 		);
         let (patches, old_file_set, curr_file_set) =
-		branch_state.doc_handle.with_doc(|d| {
+		branch_state.doc_handle.with_document(|d| {
 			let old_files_id: Option<ObjId> = d.get_obj_id_at(ROOT, "files", &previous_heads);
 			let curr_files_id = d.get_obj_id_at(ROOT, "files", &curr_heads);
 			let old_file_set = if old_files_id.is_none(){
@@ -521,7 +521,7 @@ impl Project {
 			changed_file_events.push(FileSystemEvent::FileDeleted(PathBuf::from(path)));
 		}
 
-		branch_state.doc_handle.with_doc(|doc|{
+		branch_state.doc_handle.with_document(|doc|{
 			let files_obj_id: ObjId = doc.get_at(ROOT, "files", &curr_heads).unwrap().unwrap().1;
 
 			for path in doc.keys_at(&files_obj_id, &curr_heads) {
@@ -585,7 +585,7 @@ impl Project {
 	fn get_linked_file(&self, doc_id: &DocumentId) -> Option<FileContent> {
 		self.doc_handles.get(&doc_id)
 		.map(|doc_handle| {
-			doc_handle.with_doc(|d| match d.get(ROOT, "content") {
+			doc_handle.with_document(|d| match d.get(ROOT, "content") {
 				Ok(Some((value, _))) if value.is_bytes() => {
 					Some(FileContent::Binary(value.into_bytes().unwrap()))
 				}
@@ -616,7 +616,7 @@ impl Project {
 			&HashSet::new()
 		};
 
-        branch_state.doc_handle.with_doc(|doc|{
+        branch_state.doc_handle.with_document(|doc|{
 			let files_obj_id: ObjId = doc.get_at(ROOT, "files", &heads).unwrap().unwrap().1;
 			for path in doc.keys_at(&files_obj_id, &heads) {
 				if filtered_paths.len() > 0 && !filtered_paths.contains(&path) {
@@ -757,7 +757,7 @@ impl Project {
 		differ.get_diff()
 	}
 
-    fn start_driver(&mut self) {
+    async fn start_driver(&mut self) {
         if self.driver.is_some() {
             return;
         }
@@ -780,7 +780,7 @@ impl Project {
 			tracing::info!("Using project override for server url: {:?}", server_url);
 		}
 
-        let mut driver: ProjectDriver = ProjectDriver::create(storage_folder_path, server_url);
+        let mut driver: ProjectDriver = ProjectDriver::create(storage_folder_path, server_url).await;
         let maybe_user_name: String = PatchworkConfigAccessor::get_user_value("user_name", "");
         driver.spawn(
             driver_input_rx,
@@ -875,7 +875,8 @@ impl Project {
             self.checked_out_branch_state
         );
 
-        self.start_driver();
+		// Bad practice; figure out a way to propogate this await to the UI instead
+        futures::executor::block_on(self.start_driver());
         self.start_file_system_driver();
         self.is_started = true;
         // get the project path
@@ -956,12 +957,12 @@ impl Project {
 				}
 			}
 		};
-		if &current_doc_id == from_branch_id.as_ref().unwrap_or(&current_doc_id) && current_heads == previous_heads {
+		if current_doc_id == from_branch_id.as_ref().unwrap_or(&current_doc_id) && current_heads == previous_heads {
 			tracing::debug!("heads are the same, no changes to sync");
 			return Vec::new();
 		}
 		tracing::debug!("syncing branch {:?} from {}{} to {}", current_branch_state.name,
-			if from_branch_id.as_ref().unwrap_or(&current_doc_id) != &current_doc_id {
+			if from_branch_id.as_ref().unwrap_or(&current_doc_id) != current_doc_id {
 				format!("{} @ ", self.get_branch_name(from_branch_id.as_ref().unwrap()))
 			} else {
 				"".to_string()
@@ -1130,12 +1131,12 @@ impl Project {
                         tracing::trace!(
                             "NewBinaryDocHandle !!!! {} {} changes",
                             doc_handle.document_id(),
-                            doc_handle.with_doc(|d| d.get_heads().len())
+                            doc_handle.with_document(|d| d.get_heads().len())
                         );
                     }
 
                     self.doc_handles
-                        .insert(doc_handle.document_id(), doc_handle.clone());
+                        .insert(doc_handle.document_id().clone(), doc_handle.clone());
                 }
                 OutputEvent::BranchStateChanged {
                     branch_state: new_branch_state,
@@ -1158,7 +1159,7 @@ impl Project {
                                 checking_out_new_branch = true;
 
                                 self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(
-                                    branch_state.doc_handle.document_id(),
+                                    branch_state.doc_handle.document_id().clone(),
                                     prev_branch_id.clone(),
                                 );
                                 (Some(branch_state), cloned_prev_branch_id)
@@ -1186,7 +1187,7 @@ impl Project {
                                 );
 
                                 self.checked_out_branch_state = CheckedOutBranchState::CheckedOut(
-                                    active_branch_state.doc_handle.document_id(),
+                                    active_branch_state.doc_handle.document_id().clone(),
 									prev_branch_info,
                                 );
 
@@ -1215,6 +1216,10 @@ impl Project {
                 OutputEvent::PeerConnectionInfoChanged {
                     peer_connection_info,
                 } => {
+					// TODO(Samod): Remove this hack
+					let Some(peer_connection_info) = peer_connection_info else {
+						continue;
+					};
                     let _info = match self
                         .sync_server_connection_info
                         .as_mut()
