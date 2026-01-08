@@ -90,7 +90,7 @@ impl Default for Project {
 }
 
 /// The default server URL used for syncing Patchwork projects. Can be overridden by user or project configuration.
-const DEFAULT_SERVER_URL: &str = "24.199.97.236:8080";
+const DEFAULT_SERVER_URL: &str = "24.199.97.236:8085";
 
 /// Notifications that can be emitted via process and consumed by GodotProject, in order to trigger signals to GDScript.
 pub enum GodotProjectSignal {
