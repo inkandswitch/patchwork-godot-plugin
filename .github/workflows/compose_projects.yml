@@ -31,9 +31,11 @@ jobs:
           - name: threadbare
             repo: ${{ needs.load-env.outputs.THREADBARE_REPO }}
             ref: ${{ needs.load-env.outputs.THREADBARE_REF }}
+            lfs: true
           - name: moddable-platformer
             repo: ${{ needs.load-env.outputs.MODDABLE_PLATFORMER_REPO }}
             ref: ${{ needs.load-env.outputs.MODDABLE_PLATFORMER_REF }}
+            lfs: false
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
@@ -41,6 +43,7 @@ jobs:
           repository: ${{ matrix.project.repo }}
           ref: ${{ matrix.project.ref }}
           path: ${{ matrix.project.name }}
+          lfs: ${{ matrix.project.lfs }}
           fetch-depth: 0
           persist-credentials: false
       - name: Download Patchwork
