@@ -313,7 +313,7 @@ _write-url project url: (_link-project project)
 
     # For now, if the URL is blank (default), don't touch the config.
     # When we have an actual serve command, we can then expect the user to always specify. 
-    if {{url}} == "":
+    if "{{url}}" == "":
         exit(0)
 
     path = "build/{{project}}/patchwork.cfg"
@@ -349,7 +349,7 @@ _write-url project url: (_link-project project)
 [arg('patchwork_profile', pattern='release|debug')]
 [arg('godot_profile', pattern='release|debug|sani')]
 prepare project="moddable-platformer" patchwork_profile="release" godot_profile="release" server_url="":\
-        (_link-project project) (build-godot godot_profile) (build-patchwork patchwork_profile)
+        (_link-project project) (build-godot godot_profile) (build-patchwork patchwork_profile) (_write-url project server_url)
 
 
 # Launch a project with Godot. Available projects are threadbare, moddable-platformer.
