@@ -1,0 +1,23 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "shell",
+			"group": "build",
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"label": "Build: Prepare moddable-platformer (Release)",
+			"command": "just _acquire-formatters && just prepare moddable-platformer release release"
+		},
+		{
+			"type": "shell",
+			"group": "build",
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"label": "Build: Prepare moddable-platformer (Debug)",
+			"command": "just _acquire-formatters && just prepare moddable-platformer debug debug"
+		},
+	]
+}

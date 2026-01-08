@@ -1,0 +1,102 @@
+#!/usr/bin/env python
+import re
+import shutil
+from subprocess import Popen, PIPE
+
+Import("env")
+Import("env_modules")
+
+env_patchwork_editor = env_modules.Clone()
+env_patchwork_editor["disable_exceptions"] = False
+
+env_patchwork_editor.Append(CPPPATH=["."])
+
+def doproc(cmd):
+    # ensure that it doesn't print stderr to the terminal if print_err is False
+    process = Popen(cmd, stdout=PIPE, stderr=PIPE)
+    (output, err) = process.communicate()
+    if not err:
+        return output.decode("utf-8").strip()
+    else:
+        return None
+
+semver_regex = r"^[vV]?(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
+
+# TODO (Lilith): Do we still need to do this? What's the point of this?
+def write_version_header():
+    git = shutil.which("git")
+    version_info = "unknown"
+    is_tag = False
+    if git == None:
+        print("GDRE WARNING: cannot find git on path, unknown version will be saved in gdre_version.gen.h")
+    else:
+        # git describe --abbrev=6
+        version_info = doproc([git, "describe", "--tags", "--abbrev=6"])
+        if version_info is None:
+            print("GDRE WARNING: git failed to run, unknown version will be saved in gdre_version.gen.h")
+            version_info = "unknown"
+        else:
+            # git describe --exact-match --tags HEAD
+            res = doproc([git, "describe", "--exact-match", "--tags", "HEAD"])
+            if not res:
+                splits = version_info.split("-")
+                build_info = splits[-1]
+                build_num = splits[-2]
+                # everything but the last two elements
+                new_version_info = "-".join(splits[:-2])
+                semver_regex_match = re.match(semver_regex, new_version_info)
+                if semver_regex_match:
+                    major = semver_regex_match.group("major")
+                    minor = semver_regex_match.group("minor")
+                    patch = semver_regex_match.group("patch")
+                    prerelease_tag = semver_regex_match.group("prerelease")
+                    build_metadata = semver_regex_match.group("buildmetadata")
+                else:
+                    print("WARNING: version string does not match semver format")
+                    splits = new_version_info.split(".")
+                    if len(splits) < 3:
+                        print("WARNING: version string is too short")
+                        major = "0"
+                        minor = "0"
+                        patch = "0"
+                    else:
+                        major = splits[0]
+                        minor = splits[1]
+                        patch = splits[2]
+                    prerelease_tag = ""
+                    build_metadata = ""
+                dev_stuff = f"dev.{build_num}+{build_info}"
+                if prerelease_tag:
+                    prerelease_name = prerelease_tag.split(".")[0]
+                    prerelease_num = prerelease_tag.split(".")[-1]
+                    if prerelease_num.isdigit():
+                        prerelease_num = str(int(prerelease_num) + 1)
+                        print("prerelease_num", prerelease_num)
+                        prerelease_tag = f"{prerelease_name}.{prerelease_num}"
+                    else:
+                        prerelease_tag += ".1"
+                    new_version_info = f"{major}.{minor}.{patch}-{prerelease_tag}+{dev_stuff.replace('+', '-')}"
+                else:
+                    patch = str(int(patch) + 1) if patch.isdigit() else 0
+                    new_version_info = f"{major}.{minor}.{patch}-{dev_stuff}"
+                version_info = new_version_info
+            else:
+                version_info = res
+
+    f = open("patchwork_version.gen.h", "w")
+    # check if we're not on a tag
+    process = Popen([git, "status", "--porcelain"], stdout=PIPE)
+    # define GDRE_VERSION "dev-poc (for Godot 4.0)"
+    f.write('#define GDRE_VERSION "')
+    f.write(version_info)
+    f.write('"\n')
+    f.close()
+
+
+write_version_header()
+
+module_obj = []
+
+env_patchwork_editor.add_source_files(module_obj, "*.cpp")
+# build_patchwork_rust(module_obj)
+env.modules_sources += module_obj

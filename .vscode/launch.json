@@ -1,0 +1,169 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Hot reload Patchwork",
+            "type": "node-terminal",
+            "request": "launch",
+            // unsure if this works on non-windows platforms; test
+            "command": "just build-patchwork release && exit",
+            "windows": { "command": "just build-patchwork release && $host.SetShouldExit(0)" }
+        },
+        {
+            "name": "Hot reload Patchwork (dev)",
+            "type": "node-terminal",
+            "request": "launch",
+            "command": "just build-patchwork debug && exit",
+            "windows": { "command": "just build-patchwork debug && $host.SetShouldExit(0)" }
+        },
+        {
+            "name": "lldb: Launch moddable-platformer",
+            "type": "lldb",
+            "request": "launch",
+            "program": "",
+            "osx": { "program": "${workspaceFolder}/bin/godot.macos.editor.arm64" },
+            "windows": { "program": "${workspaceFolder}/build/godot/bin/godot.windows.editor.x86_64.exe" },
+            "linux": { "program": "${workspaceFolder}/bin/godot.linux.editor.x86_64" },
+            "args": [
+                "-e",
+                "--path",
+                "${workspaceFolder}/build/moddable-platformer",
+            ],
+			"console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+			"initCommands": [
+				"script import ${workspaceFolder}/build/GodotFormatters/godot_formatters",
+			],
+            "preLaunchTask": "Build: Prepare moddable-platformer (Release)"
+        },
+        {
+            "name": "lldb: Launch moddable-platformer (dev)",
+            "type": "lldb",
+            "request": "launch",
+            "program": "",
+            "osx": { "program": "${workspaceFolder}/bin/godot.macos.editor.dev.arm64" },
+            "windows": { "program": "${workspaceFolder}/build/godot/bin/godot.windows.editor.dev.x86_64.exe" },
+            "linux": { "program": "${workspaceFolder}/bin/godot.linux.editor.dev.x86_64" },
+            "args": [
+                "-e",
+                "--path",
+                "${workspaceFolder}/build/moddable-platformer",
+            ],
+			"console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+			"initCommands": [
+				"script import ${workspaceFolder}/build/GodotFormatters/godot_formatters",
+			],
+            "preLaunchTask": "Build: Prepare moddable-platformer (Debug)"
+        },        
+        {
+            "name": "Windows: Launch moddable-platformer",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "",
+            "osx": { "program": "${workspaceFolder}/bin/godot.macos.editor.arm64" },
+            "windows": { "program": "${workspaceFolder}/build/godot/bin/godot.windows.editor.x86_64.exe" },
+            "linux": { "program": "${workspaceFolder}/bin/godot.linux.editor.x86_64" },
+            "args": [
+                "-e",
+                "--path",
+                "${workspaceFolder}/build/moddable-platformer",
+            ],
+            "visualizerFile": "${workspaceFolder}build/godot/platform/windows/godot.natvis",
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build: Prepare moddable-platformer (Release)"
+        },        
+        {
+            "name": "Windows: Launch moddable-platformer (dev)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "",
+            "osx": { "program": "${workspaceFolder}/bin/godot.macos.editor.dev.arm64" },
+            "windows": { "program": "${workspaceFolder}/build/godot/bin/godot.windows.editor.dev.x86_64.exe" },
+            "linux": { "program": "${workspaceFolder}/bin/godot.linux.editor.dev.x86_64" },
+            "args": [
+                "-e",
+                "--path",
+                "${workspaceFolder}/build/moddable-platformer",
+            ],
+            "visualizerFile": "${workspaceFolder}build/godot/platform/windows/godot.natvis",
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build: Prepare moddable-platformer (Debug)"
+        },        
+        {
+            "name": "macOS: Launch moddable-platformer",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/bin/godot.macos.editor.arm64",
+            "args": [
+                "-e",
+                "--path",
+                "${workspaceFolder}/build/moddable-platformer",
+            ],
+            "visualizerFile": "${workspaceFolder}build/godot/platform/windows/godot.natvis",
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Build: Prepare moddable-platformer (Release)",
+            "MIMode": "lldb"
+        },
+        // Since mac is using LLDB anyways, do we really need a separate config for it with cppdbg?
+        {
+            "name": "macOS: Launch moddable-platformer (dev)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "",
+            "osx": { "program": "${workspaceFolder}/bin/godot.macos.editor.dev.arm64" },
+            "windows": { "program": "${workspaceFolder}/build/godot/bin/godot.windows.editor.dev.x86_64.exe" },
+            "linux": { "program": "${workspaceFolder}/bin/godot.linux.editor.dev.x86_64" },
+            "args": [
+                "-e",
+                "--path",
+                "${workspaceFolder}/build/moddable-platformer",
+            ],
+            "visualizerFile": "${workspaceFolder}build/godot/platform/windows/godot.natvis",
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Build: Prepare moddable-platformer (Debug)",
+            "MIMode": "lldb"
+        },   
+        {
+            "name": "Linux: Launch moddable-platformer",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/bin/godot.macos.editor.arm64",
+            "args": [
+                "-e",
+                "--path",
+                "${workspaceFolder}/build/moddable-platformer",
+            ],
+            "visualizerFile": "${workspaceFolder}build/godot/platform/windows/godot.natvis",
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Build: Prepare moddable-platformer (Release)",
+            "MIMode": "gdb"
+        },        
+        {
+            "name": "Linux: Launch moddable-platformer (dev)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "",
+            "osx": { "program": "${workspaceFolder}/bin/godot.macos.editor.dev.arm64" },
+            "windows": { "program": "${workspaceFolder}/build/godot/bin/godot.windows.editor.dev.x86_64.exe" },
+            "linux": { "program": "${workspaceFolder}/bin/godot.linux.editor.dev.x86_64" },
+            "args": [
+                "-e",
+                "--path",
+                "${workspaceFolder}/build/moddable-platformer",
+            ],
+            "visualizerFile": "${workspaceFolder}build/godot/platform/windows/godot.natvis",
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Build: Prepare moddable-platformer (Debug)",
+            "MIMode": "gdb"
+        },
+    ]
+}

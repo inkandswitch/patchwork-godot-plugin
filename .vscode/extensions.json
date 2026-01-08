@@ -1,0 +1,13 @@
+{
+  "recommendations": [
+    "ms-python.black-formatter",
+    "ms-vscode.cpptools",
+    "llvm-vs-code-extensions.vscode-clangd",
+    "vadimcn.vscode-lldb",
+    "rust-lang.rust-analyzer",
+    "tamasfe.even-better-toml",
+    "nefrob.vscode-just-syntax",
+    // TODO: enable this once they implement a project picker
+    // "geequlim.godot-tools"
+  ]
+}

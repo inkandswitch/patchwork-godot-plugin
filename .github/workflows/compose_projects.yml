@@ -1,0 +1,63 @@
+name: 🧵 Compose Projects
+on:
+  workflow_call:
+
+jobs:
+  # Grab the environment variables from build.env and output them
+  load-env:
+    name: 🔍 Load Environment variables
+    runs-on: "ubuntu-latest"
+    outputs:
+      THREADBARE_REPO: ${{ steps.dotenv.outputs.THREADBARE_REPO }}
+      THREADBARE_REF: ${{ steps.dotenv.outputs.THREADBARE_REF }}
+      MODDABLE_PLATFORMER_REPO: ${{ steps.dotenv.outputs.MODDABLE_PLATFORMER_REPO }}
+      MODDABLE_PLATFORMER_REF: ${{ steps.dotenv.outputs.MODDABLE_PLATFORMER_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: dotenv
+        uses: falti/dotenv-action@v1.1.5
+        with:
+          path: build.env
+          keys-case: bypass
+
+  compose-projects:
+    needs: [load-env]
+    runs-on: "ubuntu-latest"
+    name: 🪡 Compose ${{ matrix.project.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - name: threadbare
+            repo: ${{ needs.load-env.outputs.THREADBARE_REPO }}
+            ref: ${{ needs.load-env.outputs.THREADBARE_REF }}
+          - name: moddable-platformer
+            repo: ${{ needs.load-env.outputs.MODDABLE_PLATFORMER_REPO }}
+            ref: ${{ needs.load-env.outputs.MODDABLE_PLATFORMER_REF }}
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.project.repo }}
+          ref: ${{ matrix.project.ref }}
+          path: ${{ matrix.project.name }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download Patchwork
+        uses: actions/download-artifact@v7
+        with:
+          pattern: patchwork-godot-plugin
+          path: patchwork-godot-plugin
+      - name: Copy to addons
+        shell: sh
+        run: |
+          mkdir -p ${{ matrix.project.name }}/addons/patchwork
+          cp -r patchwork-godot-plugin/* ${{ matrix.project.name }}/addons/patchwork
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.project.name }}-with-patchwork
+          path: |
+            ${{ matrix.project.name }}
+          if-no-files-found: error
+
