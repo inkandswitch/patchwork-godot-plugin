@@ -50,24 +50,40 @@ _symlink src dest:
 _clone repo_url directory checkout:
     #!/usr/bin/env sh
     # set -euxo pipefail
+
+    # If the directory doesn't exist, freshly clone
     if [[ ! -d "{{directory}}" ]]; then
-        git clone "git@github.com:{{repo_url}}" "{{directory}}"
-    else
-        if git -C "{{directory}}" remote | grep -q '^origin$'; then
-            git -C "{{directory}}" remote set-url origin "git@github.com:{{repo_url}}"
-        else
-            git -C "{{directory}}" remote add origin "git@github.com:{{repo_url}}"
-        fi
+        git clone "git@github.com:{{repo_url}}" "{{directory}}" --no-checkout --filter=blob:none 
     fi
 
+    # Require .git to exist
+    if [[ ! -d "{{directory}}/.git" ]]; then
+        echo "Not a git repository: {{directory}}"
+        exit 1
+    fi
+
+    # Ensure the git repository is actually valid
+    # Force Git to use THIS directory's metadata only, so the parent isn't grabbed.
+    # (If the parent is grabbed, we could corrupt the enclosing repository!)
+    if ! GIT_DIR="{{absolute_path(directory)}}/.git" GIT_WORK_TREE="{{absolute_path(directory)}}" \
+            git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        echo "Invalid git repository: {{directory}}"
+        exit 1
+    fi
+
+    if git -C "{{directory}}" remote | grep -q '^origin$'; then
+        git -C "{{directory}}" remote set-url origin "git@github.com:{{repo_url}}"
+    else
+        git -C "{{directory}}" remote add origin "git@github.com:{{repo_url}}"
+    fi
+    
     # try checkout, if we get an error fetch then try again.
     # this won't pull updates from the remote, but that's probably fine for now.
     # if we need to handle local changes, this will need to be refactored (to force reset?)
+    git -C "{{directory}}"  fetch --depth 1 origin {{checkout}}
     if git -C "{{directory}}"  checkout "{{checkout}}" | grep -q '^fatal'; then
-        git -C "{{directory}}" fetch --all
         git -C "{{directory}}"  checkout "{{checkout}}"
     fi
-
 
 # Clone our desired project and checkout the proper commit.
 [arg('project', pattern='moddable-platformer|threadbare')]
@@ -297,7 +313,7 @@ _write-url project url: (_link-project project)
 
     # For now, if the URL is blank (default), don't touch the config.
     # When we have an actual serve command, we can then expect the user to always specify. 
-    if {{url}} == "":
+    if "{{url}}" == "":
         exit(0)
 
     path = "build/{{project}}/patchwork.cfg"
@@ -333,7 +349,7 @@ _write-url project url: (_link-project project)
 [arg('patchwork_profile', pattern='release|debug')]
 [arg('godot_profile', pattern='release|debug|sani')]
 prepare project="moddable-platformer" patchwork_profile="release" godot_profile="release" server_url="":\
-        (_link-project project) (build-godot godot_profile) (build-patchwork patchwork_profile)
+        (_link-project project) (build-godot godot_profile) (build-patchwork patchwork_profile) (_write-url project server_url)
 
 
 # Launch a project with Godot. Available projects are threadbare, moddable-platformer.
