@@ -560,10 +560,11 @@ void PatchworkEditor::refresh_after_source_change() {
 		EditorInterface::get_singleton()->reload_scene_from_path(scene);
 	}
 	if (current_scene != nullptr) {
-		while (is_changing_scene()) {
+		// always iterate once if we must switch back, because sometimes is_changing_scene is false but we still need to iterate (?!)
+		do {
 			OS::get_singleton()->delay_usec(10000);
 			Main::iteration();
-		}
+		} while (is_changing_scene());
 		EditorInterface::get_singleton()->reload_scene_from_path(current_scene->get_scene_file_path());
 	}
 }
