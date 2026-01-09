@@ -532,7 +532,10 @@ func update_history_tree():
 		if change.is_setup:
 			set_history_item_enabled(item, false);
 
-		if change.is_synced && !change.is_setup:
+		var is_revertable = true;
+		if change.is_setup && i == 0: is_revertable = false # we can't revert to the very first setup commit, because there's 2
+		if i == history.size() - 1: is_revertable = false # we can't revert to the current commit
+		if is_revertable:
 			item.add_button(HistoryColumns.TEXT, item_context_menu_icon, 1, false, "Open context menu")
 
 		# timestamp

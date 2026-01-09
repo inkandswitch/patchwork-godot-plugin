@@ -186,7 +186,7 @@ impl Project {
 			// merge commit
 			if let Some(merge_info) = &meta?.merge_metadata {
 				let merged_branch = &self.get_branch(&merge_info.merged_branch_id.clone())?.get_name();
-				return Some(format!("↪️ {author} merged {merged_branch} branch"));
+				return Some(format!("↪ {author} merged {merged_branch} branch"));
 			}
 
 			// revert commit
@@ -194,7 +194,7 @@ impl Project {
 				let heads = revert_info.iter()
 					.map(|s| &s[..7])
 					.collect::<Vec<&str>>().join(", ");
-				return Some(format!("↩️ {author} reverted to {heads}"));
+				return Some(format!("↩ {author} reverted to {heads}"));
 			}
 
 			// initial commit

@@ -80,7 +80,9 @@ impl ProjectViewModel for Project {
 
     fn can_create_revert_preview_branch(&self, head: ChangeHash) -> bool {
 		if self.is_revert_preview_branch_active() || self.is_merge_preview_branch_active() { return false; }
-		if self.get_change(head).is_some_and(|c| !c.is_setup()) {
+		if self.get_change(head).is_some_and(|c|
+			// Allow reverts for only the second setup commit
+			!c.is_setup() || self.get_branch_history().iter().position(|&h| h == head) == Some(1)) {
 			return self.get_checked_out_branch_state().is_some();
 		}
 		false
