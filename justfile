@@ -202,7 +202,7 @@ _configure-patchwork: _make-plugin-dir
 
     print(f"Loaded version from Git repository: {git_describe}")
 
-    with open("build/patchwork/plugin.cfg", "a") as file:
+    with open("build/patchwork/plugin.cfg", "w") as file:
         file.write(f"""[plugin]
     name="Patchwork"
     description="Version control for Godot"
@@ -210,20 +210,20 @@ _configure-patchwork: _make-plugin-dir
     version="{git_describe}"
     script=""
     """)
-    
-    with open("build/patchwork/Patchwork.gdextension", "a") as file:
+
+    with open("build/patchwork/Patchwork.gdextension", "w") as file:
         file.write(f"""[configuration]
     entry_symbol = "gdext_rust_init"
     compatibility_minimum = 4.6
     reloadable = true
 
     [libraries]
-    linux.debug.x86_64 =        "bin/libpatchwork_rust_core.linux.x86_64-unknown-linux-gnu.so"
-    linux.release.x86_64 =      "bin/libpatchwork_rust_core.linux.x86_64-unknown-linux-gnu.so"
-    linux.debug.arm64 =         "bin/libpatchwork_rust_core.linux.aarch64-unknown-linux-gnu.so"
-    linux.release.arm64 =       "bin/libpatchwork_rust_core.linux.aarch64-unknown-linux-gnu.so"
-    linux.debug.arm32 =         "bin/libpatchwork_rust_core.linux.armv7-unknown-linux-gnueabihf.so"
-    linux.release.arm32 =       "bin/libpatchwork_rust_core.linux.armv7-unknown-linux-gnueabihf.so"
+    linux.debug.x86_64 =        "bin/patchwork_rust_core.linux.x86_64-unknown-linux-gnu.so"
+    linux.release.x86_64 =      "bin/patchwork_rust_core.linux.x86_64-unknown-linux-gnu.so"
+    linux.debug.arm64 =         "bin/patchwork_rust_core.linux.aarch64-unknown-linux-gnu.so"
+    linux.release.arm64 =       "bin/patchwork_rust_core.linux.aarch64-unknown-linux-gnu.so"
+    linux.debug.arm32 =         "bin/patchwork_rust_core.linux.armv7-unknown-linux-gnueabihf.so"
+    linux.release.arm32 =       "bin/patchwork_rust_core.linux.armv7-unknown-linux-gnueabihf.so"
     windows.debug.x86_64 =      "bin/patchwork_rust_core.windows.x86_64-pc-windows-msvc.dll"
     windows.release.x86_64 =    "bin/patchwork_rust_core.windows.x86_64-pc-windows-msvc.dll"
     windows.debug.arm64 =       "bin/patchwork_rust_core.windows.aarch64-pc-windows-msvc.dll"
@@ -374,10 +374,13 @@ launch project="moddable-platformer" patchwork_profile="release" godot_profile="
     
     case "{{os()}}" in
         "windows")
+            platform="windows"
             ext=".exe" ;;
         "linux")
+            platform="linuxbsd"
             ext="" ;;
         "macos")
+            platform="macos"
             ext="" ;;
         *)
             echo "Unsupported OS for development: {{os()}}."
@@ -386,9 +389,9 @@ launch project="moddable-platformer" patchwork_profile="release" godot_profile="
     esac
     
     if [[ {{godot_profile}} = "release" ]] ; then
-        godot_path="build/godot/bin/godot.{{os()}}.editor.$arch$ext"
+        godot_path="build/godot/bin/godot.$platform.editor.$arch$ext"
     else
-        godot_path="build/godot/bin/godot.{{os()}}.editor.dev.$arch$ext"
+        godot_path="build/godot/bin/godot.$platform.editor.dev.$arch$ext"
     fi
 
     $godot_path -e --path "build/{{project}}"
