@@ -374,10 +374,13 @@ launch project="moddable-platformer" patchwork_profile="release" godot_profile="
     
     case "{{os()}}" in
         "windows")
+            platform="windows"
             ext=".exe" ;;
         "linux")
+            platform="linuxbsd"
             ext="" ;;
         "macos")
+            platform="macos"
             ext="" ;;
         *)
             echo "Unsupported OS for development: {{os()}}."
@@ -386,9 +389,9 @@ launch project="moddable-platformer" patchwork_profile="release" godot_profile="
     esac
     
     if [[ {{godot_profile}} = "release" ]] ; then
-        godot_path="build/godot/bin/godot.{{os()}}.editor.$arch$ext"
+        godot_path="build/godot/bin/godot.$platform.editor.$arch$ext"
     else
-        godot_path="build/godot/bin/godot.{{os()}}.editor.dev.$arch$ext"
+        godot_path="build/godot/bin/godot.$platform.editor.dev.$arch$ext"
     fi
 
     $godot_path -e --path "build/{{project}}"
