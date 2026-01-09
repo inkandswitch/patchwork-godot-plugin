@@ -202,7 +202,7 @@ _configure-patchwork: _make-plugin-dir
 
     print(f"Loaded version from Git repository: {git_describe}")
 
-    with open("build/patchwork/plugin.cfg", "a") as file:
+    with open("build/patchwork/plugin.cfg", "w") as file:
         file.write(f"""[plugin]
     name="Patchwork"
     description="Version control for Godot"
@@ -210,8 +210,8 @@ _configure-patchwork: _make-plugin-dir
     version="{git_describe}"
     script=""
     """)
-    
-    with open("build/patchwork/Patchwork.gdextension", "a") as file:
+
+    with open("build/patchwork/Patchwork.gdextension", "w") as file:
         file.write(f"""[configuration]
     entry_symbol = "gdext_rust_init"
     compatibility_minimum = 4.6
