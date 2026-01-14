@@ -2,7 +2,7 @@ use godot::builtin::{Color, GString, Rect2, StringName, Variant, Vector2};
 use godot::classes::notify::ContainerNotification;
 use godot::classes::text_server::JustificationFlag;
 use godot::classes::{
-    Container, Control, EditorInspector, EditorProperty, IContainer, Input, InputEvent, InputEventMouseButton, InputEventMouseMotion, Object, StyleBoxFlat, Texture2D, Timer, VBoxContainer
+    CanvasItem, Container, Control, EditorInspector, EditorProperty, IContainer, Input, InputEvent, InputEventMouseButton, InputEventMouseMotion, Object, StyleBoxFlat, Texture2D, Timer, VBoxContainer
 };
 use godot::global::{HorizontalAlignment, MouseButton, PropertyHint};
 use godot::prelude::*;
@@ -188,6 +188,9 @@ impl DiffInspectorSection {
         self.section.clone()
     }
 
+    // This is currently only used in process to handle input, to mouse over the
+    // header. It's the same code from draw() that computes the header rect.
+    // Ideally we'd factor out the dimensions.
     fn get_header_rect(&self) -> Rect2 {
         let section_indent_size = self
             .base()
@@ -344,6 +347,31 @@ impl DiffInspectorSection {
 
 #[godot_api]
 impl IContainer for DiffInspectorSection {
+    fn process(&mut self, _delta: f64) {
+        let mut base = self.base().clone();
+        let mouse_pos = self.base().get_local_mouse_position();
+
+        let entered = self.foldable && self.get_header_rect()
+            .contains_point(mouse_pos);
+        
+        if self.entered != entered {
+            let section = self.section.clone();
+            self.base_mut().call_deferred(
+                "emit_signal",
+                &[
+                    Variant::from(if entered {
+                        "section_mouse_entered"
+                    } else {
+                        "section_mouse_exited"
+                    }),
+                    Variant::from(section),
+                ],
+            );
+            self.entered = entered;
+            base.queue_redraw();
+        }
+    }
+    
     fn init(base: Base<Container>) -> Self {
         let vbox = VBoxContainer::new_alloc();
         let mut dropping_unfold_timer = Timer::new_alloc();
@@ -479,20 +507,6 @@ impl IContainer for DiffInspectorSection {
                 }
             } else if !mb.is_pressed() {
                 self.base_mut().queue_redraw();
-            }
-        }
-
-        if let Ok(mm) = event.clone().try_cast::<InputEventMouseMotion>() {
-            // let mm = mm.bind();
-            let header_rect = self.get_header_rect();
-            if !self.entered {
-                if header_rect.contains_point(mm.get_position()) {
-                    self.base_mut().queue_redraw();
-                }
-            } else {
-                if !header_rect.contains_point(mm.get_position()) {
-                    self.base_mut().queue_redraw();
-                }
             }
         }
     }
@@ -637,37 +651,12 @@ impl DiffInspectorSection {
         let mut c = self.bg_color;
         c.a *= 0.4;
 
-        let mouse_pos = self.base().get_local_mouse_position();
-        if self.foldable && header_rect.contains_point(mouse_pos) {
+        if self.entered {
             if Input::singleton().is_mouse_button_pressed(MouseButton::LEFT) {
                 // MouseButton::LEFT
                 c = c.lightened(-0.05);
             } else {
                 c = c.lightened(0.2);
-            }
-
-            if !self.entered {
-                self.entered = true;
-                let section = self.section.clone();
-                self.base_mut().call_deferred(
-                    "emit_signal",
-                    &[
-                        Variant::from("section_mouse_entered"),
-                        Variant::from(section),
-                    ],
-                );
-            }
-        } else {
-            if self.entered {
-                self.entered = false;
-                let section = self.section.clone();
-                self.base_mut().call_deferred(
-                    "emit_signal",
-                    &[
-                        Variant::from("section_mouse_exited"),
-                        Variant::from(section),
-                    ],
-                );
             }
         }
 
