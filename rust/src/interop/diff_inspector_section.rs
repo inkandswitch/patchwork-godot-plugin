@@ -188,6 +188,9 @@ impl DiffInspectorSection {
         self.section.clone()
     }
 
+    // This is currently only used in process to handle input, to mouse over the
+    // header. It's the same code from draw() that computes the header rect.
+    // Ideally we'd factor out the dimensions.
     fn get_header_rect(&self) -> Rect2 {
         let section_indent_size = self
             .base()
@@ -346,8 +349,11 @@ impl DiffInspectorSection {
 impl IContainer for DiffInspectorSection {
     fn process(&mut self, _delta: f64) {
         let mut base = self.base().clone();
-        let entered = Rect2::new(Vector2::default(), base.get_size())
-            .contains_point(base.get_local_mouse_position());
+        let mouse_pos = self.base().get_local_mouse_position();
+
+        let entered = self.foldable && self.get_header_rect()
+            .contains_point(mouse_pos);
+        
         if self.entered != entered {
             let section = self.section.clone();
             self.base_mut().call_deferred(
@@ -460,7 +466,6 @@ impl IContainer for DiffInspectorSection {
     }
 
     fn gui_input(&mut self, event: Gd<InputEvent>) {
-        tracing::debug!("gui input");
         if let Ok(mb) = event.clone().try_cast::<InputEventMouseButton>() {
             if mb.is_pressed() && mb.get_button_index() == MouseButton::LEFT {
                 // MouseButton::LEFT
