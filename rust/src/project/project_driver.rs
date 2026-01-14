@@ -13,6 +13,7 @@ use tokio::task::JoinHandle;
 
 use crate::helpers::branch::{BinaryDocState, BranchState, BranchStateForkInfo, BranchStateMergeInfo, BranchStateRevertInfo};
 use crate::fs::file_utils::FileContent;
+use crate::project::branch_db::{SharedBranchDB, ThreadLocalBranchDB};
 use crate::parser::godot_parser::GodotScene;
 use crate::helpers::doc_utils::SimpleDocReader;
 use crate::helpers::utils::ToShortForm;
@@ -138,6 +139,9 @@ struct DriverState {
 
     user_name: Option<String>,
 
+    // thread-local copy for network thread
+    branch_db: ThreadLocalBranchDB,
+
     main_branch_doc_handle: DocHandle,
     branches_metadata_doc_handle: DocHandle,
 
@@ -222,6 +226,7 @@ impl ProjectDriver {
         tx: UnboundedSender<OutputEvent>,
         branches_metadata_doc_id: Option<DocumentId>,
         user_name: Option<String>,
+        shared_branch_db: SharedBranchDB,
     ) {
         if self.connection_thread.is_some() || self.spawned_thread.is_some() {
             tracing::warn!("driver already spawned");
@@ -232,7 +237,7 @@ impl ProjectDriver {
 
         // Spawn sync task for all doc handles
         self.spawned_thread =
-            Some(self.spawn_driver_task(rx, tx, branches_metadata_doc_id, &user_name));
+            Some(self.spawn_driver_task(rx, tx, branches_metadata_doc_id, &user_name, shared_branch_db));
     }
 
     pub fn teardown(&mut self) {
@@ -339,6 +344,7 @@ impl ProjectDriver {
         tx: UnboundedSender<OutputEvent>,
         branches_metadata_doc_id: Option<DocumentId>,
         user_name: &Option<String>,
+        shared_branch_db: SharedBranchDB,
     ) -> JoinHandle<()> {
         let repo_handle = self.repo_handle.clone();
         let user_name = user_name.clone();
@@ -382,12 +388,26 @@ impl ProjectDriver {
 				}
 			}
 
-            tx.unbounded_send(OutputEvent::Initialized { project_doc_id: branches_metadata_doc_handle.document_id().clone() }).unwrap();
+            let project_doc_id = branches_metadata_doc_handle.document_id().clone();
+            tx.unbounded_send(OutputEvent::Initialized { project_doc_id: project_doc_id.clone() }).unwrap();
+
+            let mut branch_db = ThreadLocalBranchDB::new(shared_branch_db).await;
+            
+            {
+                let mut db = branch_db.write();
+                db.project_doc_id = Some(project_doc_id.clone());
+                db.main_branch_doc_id = Some(main_branch_doc_handle.document_id().clone());
+                db.branches_metadata_doc_id = Some(project_doc_id.clone());
+                db.doc_handles.insert(project_doc_id.clone(), branches_metadata_doc_handle.clone());
+                db.doc_handles.insert(main_branch_doc_handle.document_id().clone(), main_branch_doc_handle.clone());
+            }
+            branch_db.push().await;
 
             let mut state = DriverState {
                 tx: tx.clone(),
                 repo_handle: repo_handle.clone(),
                 user_name: user_name.clone(),
+                branch_db,
                 main_branch_doc_handle: main_branch_doc_handle.clone(),
                 binary_doc_states: HashMap::new(),
                 branch_states: HashMap::new(),
@@ -408,6 +428,12 @@ impl ProjectDriver {
 			let (_, peer_stream) = repo_handle.connected_peers();
 			let mut peer_stream = peer_stream.fuse();
             loop {
+                if state.branch_db.is_stale().await {
+                    let _pull_result = state.branch_db.pull().await;
+                    // TODO: Remove, hack to sync old fields
+                    state.sync_from_branch_db();
+                }
+                
                 futures::select! {
         			next = peer_stream.next() => {
                         if let Some(info) = next {
@@ -424,6 +450,8 @@ impl ProjectDriver {
                             match result {
                                 Ok(Some(doc_handle)) => {
                                     state.add_binary_doc_handle(&path, &doc_handle);
+                                    // push changes to shared BranchDB
+                                    state.branch_db.push().await;
                                 },
 								Ok(None) => tracing::error!("binary doc not found"),
                                 Err(_) => {
@@ -439,6 +467,8 @@ impl ProjectDriver {
                                 Ok(Some(doc_handle)) => {
                                     state.pending_branch_doc_ids.remove(&doc_handle.document_id());
                                     state.update_branch_doc_state(doc_handle.clone());
+                                    // push changes to shared BranchDB
+                                    state.branch_db.push().await;
                                     state.subscribe_to_doc_handle(doc_handle.clone());
                                     tracing::debug!("added branch doc: {:?}", branch_name);
 
@@ -457,15 +487,34 @@ impl ProjectDriver {
                                 doc_handle
                             },
                             SubscriptionMessage::Added { doc_handle } => {
+                                {
+                                    let mut branch_db = state.branch_db.write();
+                                    branch_db.doc_handles.insert(
+                                        doc_handle.document_id().clone(),
+                                        doc_handle.clone()
+                                    );
+                                }
+                                state.branch_db.push().await;
+                                
                                 tx.unbounded_send(OutputEvent::NewDocHandle { doc_handle: doc_handle.clone(), doc_handle_type: DocHandleType::Unknown }).unwrap();
                                 doc_handle
                             },
                         };
 
                         let document_id = doc_handle.document_id();
+                        
+                        {
+                            let mut branch_db = state.branch_db.write();
+                            branch_db.doc_handles.insert(document_id.clone(), doc_handle.clone());
+                        }
 
                         // branches metadata doc changed
                         if document_id == state.branches_metadata_doc_handle.document_id() {
+                            {
+                                let mut branch_db = state.branch_db.write();
+                                branch_db.doc_handles.insert(document_id.clone(), doc_handle.clone());
+                            }
+                            
                             let branches = state.get_branches_metadata().branches.clone();
 
                             // check if there are new branches that haven't loaded yet
@@ -481,11 +530,14 @@ impl ProjectDriver {
                                     }).boxed());
                                 }
                             }
+                            
+                            state.branch_db.push().await;
                         }
 
                         // branch doc changed
                         if state.branch_states.contains_key(&document_id) {
                             state.update_branch_doc_state(doc_handle.clone());
+                            state.branch_db.push().await;
                         }
                     },
 
@@ -1231,6 +1283,18 @@ impl DriverState {
 
             print_branch_state("branch doc state immediately loaded", &branch_state);
 
+            {
+                let mut branch_db = self.branch_db.write();
+                branch_db.branch_states.insert(
+                    branch_doc_handle.document_id().clone(),
+                    branch_state.clone()
+                );
+                branch_db.doc_handles.insert(
+                    branch_doc_handle.document_id().clone(),
+                    branch_doc_handle.clone()
+                );
+            }
+
             self.tx
                 .unbounded_send(OutputEvent::BranchStateChanged {
                     branch_state: branch_state.clone(),
@@ -1244,12 +1308,22 @@ impl DriverState {
     }
 
     fn add_binary_doc_handle(&mut self, _path: &String, binary_doc_handle: &DocHandle) {
+        let doc_id = binary_doc_handle.document_id().clone();
+        
         self.binary_doc_states.insert(
-            binary_doc_handle.document_id().clone(),
+            doc_id.clone(),
             BinaryDocState {
                 doc_handle: Some(binary_doc_handle.clone()),
             },
         );
+
+        {
+            let mut branch_db = self.branch_db.write();
+            branch_db.binary_doc_handles.insert(
+                doc_id.clone(),
+                binary_doc_handle.clone()
+            );
+        }
 
         let _ = &self
             .tx
@@ -1273,6 +1347,15 @@ impl DriverState {
                 // check if all linked docs have been loaded
                 if missing_binary_doc_ids.is_empty() {
                     branch_state.synced_heads = branch_state.doc_handle.with_document(|d| d.get_heads());
+                    
+                    {
+                        let mut branch_db = self.branch_db.write();
+                        branch_db.branch_states.insert(
+                            branch_state.doc_handle.document_id().clone(),
+                            branch_state.clone()
+                        );
+                    }
+                    
                     self.tx
                         .unbounded_send(OutputEvent::BranchStateChanged {
                             branch_state: branch_state.clone(),
@@ -1311,6 +1394,29 @@ impl DriverState {
             .with_document(|d| hydrate(d).unwrap());
 
         return branches_metadata;
+    }
+    
+    /// keeps both in sync during refactoring
+    fn sync_from_branch_db(&mut self) {
+        let branch_db = self.branch_db.read();
+        
+        
+        for (branch_id, branch_state) in &branch_db.branch_states {
+            self.branch_states.insert(branch_id.clone(), branch_state.clone());
+        }
+        
+        for (doc_id, doc_handle) in &branch_db.binary_doc_handles {
+            if let Some(binary_doc_state) = self.binary_doc_states.get_mut(doc_id) {
+                binary_doc_state.doc_handle = Some(doc_handle.clone());
+            } else {
+                self.binary_doc_states.insert(
+                    doc_id.clone(),
+                    BinaryDocState {
+                        doc_handle: Some(doc_handle.clone()),
+                    }
+                );
+            }
+        }
     }
 }
 

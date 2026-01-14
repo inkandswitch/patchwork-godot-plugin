@@ -7,6 +7,7 @@ use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::instrument;
 use std::{cell::RefCell, collections::HashSet};
 use std::path::{PathBuf};
+use std::sync::Arc;
 use std::time::SystemTime;
 use std::{collections::HashMap, str::FromStr};
 use crate::diff::differ::{Differ, ProjectDiff};
@@ -18,6 +19,7 @@ use crate::helpers::utils::{CommitInfo, ToShortForm, get_automerge_doc_diff, get
 use crate::interop::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
 use crate::project::project_driver::{ConnectionThreadError, DocHandleType, ProjectDriver, InputEvent, OutputEvent};
 use crate::project::project_api::{BranchViewModel, ChangeViewModel, ProjectViewModel};
+use crate::project::branch_db::{BranchDB, SharedBranchDB, ThreadLocalBranchDB};
 
 /// Represents the state of the currently checked out branch.
 #[derive(Debug, Clone)]
@@ -34,8 +36,15 @@ pub(super) enum CheckedOutBranchState {
 /// Its API is exposed to GDScript via the GodotProject struct.
 #[derive(Debug)]
 pub struct Project {
+    // shared state accessible from all threads
+    shared_branch_db: SharedBranchDB,
+    // thread-local copy for main thread
+    branch_db: ThreadLocalBranchDB,
+    
+    // TODO: remove these
     doc_handles: HashMap<DocumentId, DocHandle>,
     pub(super) branch_states: HashMap<DocumentId, BranchState>,
+    
     pub(super) checked_out_branch_state: CheckedOutBranchState,
     project_doc_id: Option<DocumentId>,
     new_project: bool,
@@ -63,7 +72,17 @@ impl Default for Project {
 		// TODO: Move driver input tx and output rx to the GodotProjectImpl struct, like in FileSystemDriver
 		let (driver_input_tx, _) = futures::channel::mpsc::unbounded();
 		let (_, driver_output_rx) = futures::channel::mpsc::unbounded();
+		
+		// Create shared BranchDB
+		let shared_branch_db: SharedBranchDB = Arc::new(tokio::sync::RwLock::new(BranchDB::new()));
+		
+		// Initialize thread-local BranchDB (blocking since Default can't be async)
+		// This will be properly initialized in start() if needed
+		let branch_db = futures::executor::block_on(ThreadLocalBranchDB::new(shared_branch_db.clone()));
+		
 		Self {
+            shared_branch_db,
+            branch_db,
             sync_server_connection_info: None,
             doc_handles: HashMap::new(),
             branch_states: HashMap::new(),
@@ -131,6 +150,28 @@ impl Project {
 
     pub fn get_project_doc_id(&self) -> Option<DocumentId> {
 		self.project_doc_id.clone()
+	}
+	
+	pub fn get_shared_branch_db(&self) -> SharedBranchDB {
+		self.shared_branch_db.clone()
+	}
+	
+	/// TODO: remove this
+	/// keeps both in sync during refactoring
+	fn sync_from_branch_db(&mut self) {
+		let branch_db = self.branch_db.read();
+		
+		// Sync doc_handles: add any new ones from BranchDB
+		for (doc_id, doc_handle) in &branch_db.doc_handles {
+			if !self.doc_handles.contains_key(doc_id) {
+				self.doc_handles.insert(doc_id.clone(), doc_handle.clone());
+			}
+		}
+		
+		// Sync branch_states: update from BranchDB
+		for (branch_id, branch_state) in &branch_db.branch_states {
+			self.branch_states.insert(branch_id.clone(), branch_state.clone());
+		}
 	}
 
     /// Expensive operation to ingest all branch changes from automerge into the project data.
@@ -791,6 +832,7 @@ impl Project {
             } else {
                 Some(maybe_user_name)
             },
+            self.shared_branch_db.clone(),
         );
         self.driver = Some(driver);
     }
@@ -846,7 +888,7 @@ impl Project {
 		parse_gitignore(project_path.clone(), ".gdignore");
 
 
-        self.file_system_driver = Some(FileSystemDriver::spawn(project_path, ignore_globs));
+        self.file_system_driver = Some(FileSystemDriver::spawn(project_path, ignore_globs, self.shared_branch_db.clone()));
     }
 
     pub fn start(&mut self) {
@@ -1055,7 +1097,15 @@ impl Project {
 	}
 
 	pub fn new(project_dir: String) -> Self {
+		// Create shared BranchDB
+		let shared_branch_db: SharedBranchDB = Arc::new(tokio::sync::RwLock::new(BranchDB::new()));
+		
+		// Initialize thread-local BranchDB (blocking since this is sync)
+		let branch_db = futures::executor::block_on(ThreadLocalBranchDB::new(shared_branch_db.clone()));
+		
 		Self {
+			shared_branch_db,
+			branch_db,
 			project_dir,
 			..Default::default()
 		}
@@ -1098,6 +1148,25 @@ impl Project {
 	#[instrument(target = "patchwork_rust_core::godot_project::inner_process", level = tracing::Level::DEBUG, skip_all)]
 	pub fn process(&mut self, _delta: f64) -> (Vec<FileSystemEvent>, Vec<GodotProjectSignal>) {
 		let mut signals: Vec<GodotProjectSignal> = Vec::new();
+		
+		// check if stale and pull changes if needed
+		// we have to block on the async execution since process() is synchronous
+		// TODO: use something to try_wait instead
+		if futures::executor::block_on(self.branch_db.is_stale()) {
+			let (pull_result, push_result) = futures::executor::block_on(self.branch_db.sync());
+			// TODO: Remove, this is just a hack to sync the legacy stuff
+			self.sync_from_branch_db();
+			
+			if !pull_result.merged_docs.is_empty() || !pull_result.added_docs.is_empty() {
+				tracing::debug!("BranchDB sync: pulled {} merged docs, {} added docs", 
+					pull_result.merged_docs.len(), pull_result.added_docs.len());
+			}
+			if !push_result.merged_docs.is_empty() || !push_result.added_docs.is_empty() {
+				tracing::debug!("BranchDB sync: pushed {} merged docs, {} added docs", 
+					push_result.merged_docs.len(), push_result.added_docs.len());
+			}
+		}
+		
 		if self.try_ingest_changes() {
 			signals.push(GodotProjectSignal::ChangesIngested);
 		}
@@ -1133,6 +1202,17 @@ impl Project {
                             doc_handle.document_id(),
                             doc_handle.with_document(|d| d.get_heads().len())
                         );
+                        // BranchDB
+                        self.branch_db.write().binary_doc_handles.insert(
+                            doc_handle.document_id().clone(),
+                            doc_handle.clone()
+                        );
+                    } else {
+                        // BranchDB
+                        self.branch_db.write().doc_handles.insert(
+                            doc_handle.document_id().clone(),
+                            doc_handle.clone()
+                        );
                     }
 
                     self.doc_handles
@@ -1144,6 +1224,16 @@ impl Project {
                 } => {
 					let new_branch_state_doc_handle = new_branch_state.doc_handle.clone();
 					let new_branch_state_doc_id = new_branch_state_doc_handle.document_id();
+					
+					// BranchDB
+					{
+						let mut branch_db = self.branch_db.write();
+						branch_db.branch_states.insert(new_branch_state_doc_id.clone(), new_branch_state.clone());
+						branch_db.doc_handles.insert(new_branch_state_doc_id.clone(), new_branch_state_doc_handle.clone());
+					}
+					futures::executor::block_on(self.branch_db.push());
+					
+					// Legacy: keep branch_states in sync
                     self.branch_states
                         .insert(new_branch_state_doc_id.clone(), new_branch_state);
 
@@ -1203,7 +1293,16 @@ impl Project {
                     }
                 }
                 OutputEvent::Initialized { project_doc_id } => {
+                    let project_doc_id_clone = project_doc_id.clone();
                     self.project_doc_id = Some(project_doc_id);
+                    
+                    // Update BranchDB: set project doc ID
+                    {
+                        let mut branch_db = self.branch_db.write();
+                        branch_db.project_doc_id = Some(project_doc_id_clone.clone());
+                        branch_db.branches_metadata_doc_id = Some(project_doc_id_clone);
+                    }
+                    futures::executor::block_on(self.branch_db.push());
                 }
 
                 OutputEvent::CompletedCreateBranch { branch_doc_id } => {

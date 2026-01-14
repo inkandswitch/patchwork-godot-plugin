@@ -21,6 +21,7 @@ use glob::Pattern;
 use crate::helpers::utils::ToShortForm;
 
 use super::file_utils::{calculate_file_hash, get_buffer_and_hash, FileContent};
+use crate::project::branch_db::{SharedBranchDB, ThreadLocalBranchDB};
 
 #[cfg(test)]
 mod tests;
@@ -104,7 +105,7 @@ impl ToShortForm for Vec<FileSystemUpdateEvent> {
 	}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct FileSystemTask {
     watch_path: PathBuf,
     file_hashes: Arc<Mutex<HashMap<PathBuf, String>>>,
@@ -113,6 +114,8 @@ pub struct FileSystemTask {
 	// atomic bool
 	paused: Arc<AtomicBool>,
 	found_ignored_paths: HashSet<PathBuf>,
+	// thread-local copy for filesystem thread
+	branch_db: ThreadLocalBranchDB,
 }
 
 #[derive(Debug)]
@@ -382,6 +385,11 @@ impl FileSystemTask {
 		self.stop_watching_paths(&self.found_ignored_paths).await;
 		// Process both file system events and update events
 		loop {
+			// TODO: actually sync the stuff from the branch db into the file system
+			if self.branch_db.is_stale().await {
+				let _pull_result = self.branch_db.pull().await;
+			}
+			
 			tokio::select! {
 				// Handle file system events
 				Some(notify_result) = notify_rx.next() => {
@@ -501,7 +509,7 @@ impl FileSystemDriver {
 		}
 	}
 
-	fn spawn_with_runtime(watch_path: PathBuf, ignore_globs: Vec<String>, rt: Option<tokio::runtime::Runtime>) -> Self {
+	fn spawn_with_runtime(watch_path: PathBuf, ignore_globs: Vec<String>, rt: Option<tokio::runtime::Runtime>, shared_branch_db: SharedBranchDB) -> Self {
 		// if macos, increase ulimit to 100000000
 		Self::increase_ulimit();
 		let (output_tx, output_rx) = futures::channel::mpsc::unbounded();
@@ -526,20 +534,39 @@ impl FileSystemDriver {
 		} else {
 			tokio::runtime::Handle::current()
 		};
-		let task: FileSystemTask = FileSystemTask {
+		
+		let shared_branch_db_clone = shared_branch_db.clone();
+		let watch_path_clone = watch_path.clone();
+		let ignore_globs_clone = ignore_globs.clone();
+		
+		let handle = rt_handle.spawn(async move {
+			let mut task = FileSystemTask {
+				watch_path: watch_path_clone,
+				file_hashes: Arc::new(Mutex::new(HashMap::new())),
+				ignore_globs: ignore_globs_clone,
+				watcher: Arc::new(Mutex::new(debouncer)),
+				paused: Arc::new(AtomicBool::new(false)),
+				found_ignored_paths: HashSet::new(),
+				branch_db: ThreadLocalBranchDB::new(shared_branch_db_clone).await,
+			};
+			
+			task.main_loop(&mut notify_rx, &mut input_rx, &output_tx).await;
+		});
+		
+		// placeholder task for the driver
+		// only used for blocking operations that don't need the actual task state
+		let task = FileSystemTask {
 			watch_path: watch_path.clone(),
 			file_hashes: Arc::new(Mutex::new(HashMap::new())),
 			ignore_globs: ignore_globs,
-			watcher: Arc::new(Mutex::new(debouncer)),
+			watcher: Arc::new(Mutex::new(new_debouncer_opt::<_, WatcherImpl>(
+				notify_debouncer_mini::Config::default(),
+				|_| {}
+			).unwrap())),
 			paused: Arc::new(AtomicBool::new(false)),
-			found_ignored_paths: HashSet::new()
+			found_ignored_paths: HashSet::new(),
+			branch_db: futures::executor::block_on(ThreadLocalBranchDB::new(shared_branch_db)),
 		};
-
-		let mut this_task = task.clone();
-
-		let handle = rt_handle.spawn(async move {
-			this_task.main_loop(&mut notify_rx, &mut input_rx, &output_tx).await;
-		});
 		Self {
 			task,
 			output_rx,
@@ -549,14 +576,14 @@ impl FileSystemDriver {
 		}
 	}
 
-	pub fn spawn(watch_path: PathBuf, ignore_globs: Vec<String>) -> Self {
+	pub fn spawn(watch_path: PathBuf, ignore_globs: Vec<String>, shared_branch_db: SharedBranchDB) -> Self {
 		let rt = tokio::runtime::Builder::new_multi_thread()
 			.worker_threads(1)
 			.thread_name("FileSystemDriver: watcher thread")
 			.enable_all()
 			.build()
 			.unwrap();
-		Self::spawn_with_runtime(watch_path, ignore_globs, Some(rt))
+		Self::spawn_with_runtime(watch_path, ignore_globs, Some(rt), shared_branch_db)
 	}
 
 
