@@ -1,7 +1,8 @@
 use automerge::Automerge;
 use samod::{ConcurrencyConfig, ConnDirection, ConnectionInfo, DocHandle, DocumentId, Repo, Stopped};
 use futures::stream::FuturesUnordered;
-use futures::{FutureExt, Stream};
+use futures::{FutureExt, Stream, future};
+use serde::de::value::Error;
 use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
@@ -9,7 +10,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time;
 use std::{collections::HashMap, str::FromStr};
-use tokio::task::JoinHandle;
+use tokio::task::{self, JoinHandle};
 
 use crate::helpers::branch::{BinaryDocState, BranchState, BranchStateForkInfo, BranchStateMergeInfo, BranchStateRevertInfo};
 use crate::fs::file_utils::FileContent;
@@ -910,7 +911,7 @@ impl DriverState {
 		new_project: bool,
 		revert: Option<Vec<ChangeHash>>
     ) {
-        let mut binary_entries: Vec<(String, DocHandle)> = Vec::new();
+        let mut binary_entries = Vec::new();
         let mut text_entries: Vec<(String, &String)> = Vec::new();
         let mut scene_entries: Vec<(String, &GodotScene)> = Vec::new();
 		let mut deleted_entries: Vec<String> = Vec::new();
@@ -919,25 +920,39 @@ impl DriverState {
         for (path, content) in file_entries.iter() {
             match content {
                 FileContent::Binary(content) => {
-                    let binary_doc_handle = self.repo_handle.create(Automerge::new()).await.unwrap();
-                    binary_doc_handle.with_document(|d| {
-                        let mut tx = d.transaction();
-                        let _ = tx.put(ROOT, "content", content.clone());
-                        commit_with_attribution_and_timestamp(
-                            tx,
-                            &CommitMetadata {
-                                username: self.user_name.clone(),
-                                branch_id: None,
-                                merge_metadata: None,
-								reverted_to: None,
-                                changed_files: None,
-								is_setup: Some(new_project)
-                            },
-                        );
-                    });
+                    let username = self.user_name.clone();
+                    let repo_handle = self.repo_handle.clone();
+                    let content = content.clone(); // idk why we have to clone this; should just move?
 
-                    self.add_binary_doc_handle(path, &binary_doc_handle);
-                    binary_entries.push((path.clone(), binary_doc_handle));
+                    // Spawn off a task to handle creating the file and editing it
+                    let handle_fut: JoinHandle<DocHandle> = tokio::spawn(async move {
+                        let binary_doc_handle = repo_handle.create(Automerge::new()).await.unwrap();
+                        
+                        // with_document blocks the current thread based on I/O, so encapsulate it into a separately-threaded future for lock safety
+                        let binary_doc_handle = task::spawn_blocking(move || {
+                            binary_doc_handle.with_document(|d| {
+                                let mut tx = d.transaction();
+                                let _ = tx.put(ROOT, "content", content);
+                                commit_with_attribution_and_timestamp(
+                                    tx,
+                                    &CommitMetadata {
+                                        username: username,
+                                        branch_id: None,
+                                        merge_metadata: None,
+                                        reverted_to: None,
+                                        changed_files: None,
+                                        is_setup: Some(new_project)
+                                    },
+                                );
+                            });
+                            binary_doc_handle
+                        }).await.unwrap();
+                        binary_doc_handle
+                    });
+                    // include the path inside the promise
+                    binary_entries.push(async move {
+                        (path.clone(), handle_fut.await)
+                    });
                 }
                 FileContent::String(content) => {
                     text_entries.push((path.clone(), content));
@@ -950,6 +965,14 @@ impl DriverState {
                 }
             }
         }
+
+        // Await all the binary futures together
+        let binary_entries: Vec<(String, DocHandle)> = future::join_all(binary_entries)
+            .await
+            .into_iter()
+            .map(|(path, r)| (path, r.unwrap()))
+            .collect();
+
         branch_doc_handle.with_document(|d| {
             let mut tx = match heads {
                 Some(heads) => d.transaction_at(
