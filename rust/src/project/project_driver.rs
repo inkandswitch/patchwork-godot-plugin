@@ -299,23 +299,43 @@ impl ProjectDriver {
 				tokio::time::sleep(std::time::Duration::from_millis(backoff as u64)).await;
 			}
             loop {
-				tracing::info!("Attempting to connect to automerge repo...");
-                // Start a client.
-                let stream = loop {
-                    // Try to connect to a peer
-                    let res = TcpStream::connect(server_url.clone()).await;
-                    if let Err(e) = res {
-                        tracing::error!("error connecting: {:?}", e);
-                        // sleep for 1 second
-                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                        continue;
-                    }
-                    break res.unwrap();
-                };
-                tracing::info!("Connected successfully!");
+				tracing::info!("Attempting to connect to server at {server_url}...");
+                
+                let connection;
+                if server_url.starts_with("ws://") {
+                    let (stream, _) = loop {
+                        // Try to connect to a peer
+                        let res = tokio_tungstenite::connect_async(server_url.clone()).await;
+                        if let Err(e) = res {
+                            tracing::error!("error connecting via WebSockets: {:?}", e);
+                            // sleep for 1 second
+                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                            continue;
+                        }
+                        break res.unwrap();
+                    };
 
-				let connection = repo_handle_clone
-                    .connect_tokio_io(stream, ConnDirection::Outgoing).unwrap();
+                    connection = repo_handle_clone
+                        .connect_tungstenite(stream, ConnDirection::Outgoing).unwrap();
+                }
+                else {
+                    let stream = loop {
+                        // Try to connect to a peer
+                        let res = TcpStream::connect(server_url.clone()).await;
+                        if let Err(e) = res {
+                            tracing::error!("error connecting via TCP: {:?}", e);
+                            // sleep for 1 second
+                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                            continue;
+                        }
+                        break res.unwrap();
+                    };
+
+                    connection = repo_handle_clone
+                        .connect_tokio_io(stream, ConnDirection::Outgoing).unwrap();
+                }
+
+                tracing::info!("Connected successfully!");
 
 				if let Err(e) = connection.handshake_complete().await {
               			tracing::error!("Failed to connect: {}", e);
