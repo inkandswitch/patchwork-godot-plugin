@@ -3,6 +3,7 @@ use automerge::{
 };
 use autosurgeon::{Hydrate, HydrateError, Prop, Reconcile, ReadDoc, Reconciler};
 use rand::Rng;
+use regex::Regex;
 use std::{collections::{HashMap, HashSet}, fmt::Display};
 use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator};
 
@@ -17,7 +18,57 @@ fn hydrate_nodes<D: ReadDoc>(
 	let res = HashMap::<String, GodotNode>::hydrate(doc, obj, prop);
 	if let Ok(map) = res {
 		// convert the map to a HashMap<i32, GodotNode>
-		let map = map.into_iter().map(|(k, v)| (k.parse::<i32>().unwrap(), v)).collect();
+		let mut map: HashMap<i32, GodotNode> = map.into_iter().map(|(k, v)| (k.parse::<i32>().unwrap(), v)).collect();
+        let keys: Vec<i32> = map.keys().cloned().collect();
+        // Because Godot stores parents by path and not ID, we gotta dedupe names within children
+        for id in keys {
+            let parent_id = match map.get(&id).and_then(|n| n.parent_id) {
+                Some(pid) => pid,
+                None => continue,
+            };
+
+            let child_ids = match map.get(&parent_id) {
+                Some(parent) => parent.child_node_ids.clone(),
+                None => continue,
+            };
+
+            // Just increment the name until we're no longer duped.
+            // Performant in cases of only 1 duplicate; not very performant for multiple dupes.
+            // But still probably OK, since we're only ever performing a single regex per inner loop.
+            let mut found = true;
+            let re = Regex::new(r"(.*?)(\d+)$").unwrap();
+            while found {
+                found = false;
+                let name = map.get(&id).unwrap().name.clone();
+                for child_id in &child_ids {
+                    if *child_id == id {
+                        continue;
+                    }
+                    let Some(child) = map.get(child_id) else {
+                        continue;
+                    };
+                    if child.name != name {
+                        continue;
+                    }
+
+                    // We've got the same parent and the same name.
+                    // So increment the number...
+                    let node = map.get_mut(&id).unwrap();
+                    node.name = if let Some(caps) = re.captures(&node.name) {
+                        let prefix = &caps[1];
+                        let number: u64 = caps[2].parse().unwrap();
+                        format!("{}{}", prefix, number + 1)
+                    } else {
+                        format!("{}1", node.name)
+                    };
+                    // ... and try again.
+                    found = true;
+                    break;
+                }
+            }
+
+        }
+
 		Ok(map)
 	} else {
 		Err(res.err().unwrap())

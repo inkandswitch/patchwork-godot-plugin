@@ -55,6 +55,7 @@ tracing-appender = "0.2.2"
 chrono = "0.4.31"
 samod = { git="https://github.com/LilithSilver/samod.git", branch="patchwork", features = ["tokio", "threadpool"] }
 rayon = "1.11.0"
+regex = "1.12.2"
 
 [build-dependencies]
 cbindgen = "^0.27"
