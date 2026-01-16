@@ -32,6 +32,9 @@ jobs:
           fetch-depth: 0
           path: patchwork-update-script
           repository: LilithSilver/patchwork-update-script
+      - name: info
+        run: |
+          find . -maxdepth 3
       - name: Copy batch and ps1 files
         run: cp patchwork-update-script/*.{cmd,ps1} moddable-platformer
       - name: Merge .gitignore

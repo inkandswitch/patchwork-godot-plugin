@@ -38,7 +38,7 @@ jobs:
             lfs: false
     steps:
       - name: Checkout project
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ matrix.project.repo }}
           ref: ${{ matrix.project.ref }}
