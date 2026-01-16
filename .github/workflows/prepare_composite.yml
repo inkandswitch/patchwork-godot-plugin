@@ -9,7 +9,7 @@ on:
   # moddable-platformer-with-patchwork already provides 1, so we just need to handle 2 and 3
   prepare-moddable-platformer-composite:
     runs-on: ubuntu-latest
-    name: ✉️ Release ${{ matrix.artifact }}
+    name: 🚀 Prepare Windows-Ready Projects
     steps:
       - name: Acquire moddable-platformer-with-patchwork
         uses: actions/download-artifact@v4
