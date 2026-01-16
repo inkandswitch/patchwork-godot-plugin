@@ -16,7 +16,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: moddable-platformer-with-patchwork
-          path: ${{ github.workspace }}
+          path: ${{ github.workspace }}/moddable-platformer
       - name: Acquire godot-windows
         uses: actions/download-artifact@v4
         with:
@@ -24,8 +24,8 @@ jobs:
           path: ${{ github.workspace }}
       - name: Copy Godot into moddable-platformer
         run: |
-          mkdir moddable-platformer-with-patchwork/godot_editor
-          cp godot-with-patchwork-windows/* moddable-platformer-with-patchwork/godot_editor
+          mkdir moddable-platformer/godot_editor
+          cp godot-with-patchwork-windows/* moddable-platformer/godot_editor
       - name: Checkout update scripts
         uses: actions/checkout@v6
         with:
@@ -33,15 +33,12 @@ jobs:
           path: patchwork-update-script
           repository: LilithSilver/patchwork-update-script
       - name: Copy batch and ps1 files
-        run: |
-          mkdir moddable-platformer-with-patchwork/godot_editor
-          cp patchwork-update-script/*.{cmd,ps1} moddable-platformer-with-patchwork
+        run: cp patchwork-update-script/*.{cmd,ps1} moddable-platformer
       - name: Merge .gitignore
-        run: cat patchwork-update-script/.gitignore >> moddable-platformer-with-patchwork/.gitignore
+        run: cat patchwork-update-script/.gitignore >> moddable-platformer/.gitignore
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: moddable-platformer-windows-ready
-          path: |
-            moddable-platformer-with-patchwork/*
+          path: moddable-platformer/*
           if-no-files-found: error
