@@ -55,7 +55,7 @@ jobs:
         shell: sh
         run: |
           mkdir -p ${{ matrix.project.name }}/addons/patchwork
-          cp -r patchwork-godot-plugin/* ${{ matrix.project.name }}/addons/patchwork
+          cp -r patchwork-godot-plugin/. ${{ matrix.project.name }}/addons/patchwork
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
