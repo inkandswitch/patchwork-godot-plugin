@@ -21,7 +21,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: godot-with-patchwork-windows
-          path: ${{ github.workspace }}
+          path: ${{ github.workspace }}/godot-with-patchwork-windows
       - name: Copy Godot into moddable-platformer
         run: |
           mkdir moddable-platformer/godot_editor
