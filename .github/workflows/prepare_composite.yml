@@ -2,6 +2,7 @@ name: 🚀 Prepare Windows-Ready Projects
 on:
   workflow_call:
 
+jobs:
   # Endless has requested a special version of moddable-platformer with:
   # 1. Patchwork installed
   # 2. Godot for Windows installed in godot_editor/
