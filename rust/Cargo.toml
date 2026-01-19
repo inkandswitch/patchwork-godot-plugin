@@ -55,6 +55,7 @@ tracing-appender = "0.2.2"
 chrono = "0.4.31"
 samod = { version="0.7.1", features = ["tokio", "threadpool", "tungstenite"] }
 rayon = "1.11.0"
+regex = "1.12.2"
 tokio-tungstenite = "0.27.0"
 
 [build-dependencies]
