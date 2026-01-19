@@ -20,6 +20,7 @@ use crate::interop::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigA
 use crate::project::project_driver::{ConnectionThreadError, DocHandleType, ProjectDriver, InputEvent, OutputEvent};
 use crate::project::project_api::{BranchViewModel, ChangeViewModel, ProjectViewModel};
 use crate::project::branch_db::{BranchDB, SharedBranchDB, ThreadLocalBranchDB};
+use crate::project::branch_doc_wrapper::BranchDocWrapper;
 
 /// Represents the state of the currently checked out branch.
 #[derive(Debug, Clone)]
@@ -160,17 +161,18 @@ impl Project {
 	/// keeps both in sync during refactoring
 	fn sync_from_branch_db(&mut self) {
 		let branch_db = self.branch_db.read();
-		
-		// Sync doc_handles: add any new ones from BranchDB
-		for (doc_id, doc_handle) in &branch_db.doc_handles {
-			if !self.doc_handles.contains_key(doc_id) {
-				self.doc_handles.insert(doc_id.clone(), doc_handle.clone());
+		// Sync branches_metadata_doc_handle from BranchDB
+		if let Some(metadata_doc_handle) = &branch_db.branches_metadata_doc_handle {
+			if let Some(project_doc_id) = &branch_db.project_doc_id {
+				if !self.doc_handles.contains_key(project_doc_id) {
+					self.doc_handles.insert(project_doc_id.clone(), metadata_doc_handle.clone());
+				}
 			}
 		}
 		
 		// Sync branch_states: update from BranchDB
-		for (branch_id, branch_state) in &branch_db.branch_states {
-			self.branch_states.insert(branch_id.clone(), branch_state.clone());
+		for (branch_id, wrapper) in branch_db.branch_wrappers() {
+			self.branch_states.insert(branch_id.clone(), wrapper.branch_state.clone());
 		}
 	}
 
@@ -1208,11 +1210,14 @@ impl Project {
                             doc_handle.clone()
                         );
                     } else {
-                        // BranchDB
-                        self.branch_db.write().doc_handles.insert(
-                            doc_handle.document_id().clone(),
-                            doc_handle.clone()
-                        );
+                        // Non-binary doc handle - could be branches metadata or branch doc
+                        // If it's the branches metadata doc, update it
+                        if let Some(project_doc_id) = &self.project_doc_id {
+                            if doc_handle.document_id() == project_doc_id {
+                                self.branch_db.write().branches_metadata_doc_handle = Some(doc_handle.clone());
+                            }
+                        }
+                        // Branch docs will be handled when BranchStateChanged event is received
                     }
 
                     self.doc_handles
@@ -1228,8 +1233,11 @@ impl Project {
 					// BranchDB
 					{
 						let mut branch_db = self.branch_db.write();
-						branch_db.branch_states.insert(new_branch_state_doc_id.clone(), new_branch_state.clone());
-						branch_db.doc_handles.insert(new_branch_state_doc_id.clone(), new_branch_state_doc_handle.clone());
+						let wrapper = BranchDocWrapper::new(
+							new_branch_state_doc_handle.clone(),
+							new_branch_state.clone()
+						);
+						branch_db.insert_branch_wrapper(new_branch_state_doc_id.clone(), wrapper);
 					}
 					futures::executor::block_on(self.branch_db.push());
 					
@@ -1300,7 +1308,7 @@ impl Project {
                     {
                         let mut branch_db = self.branch_db.write();
                         branch_db.project_doc_id = Some(project_doc_id_clone.clone());
-                        branch_db.branches_metadata_doc_id = Some(project_doc_id_clone);
+                        // branches_metadata_doc_handle will be set when the doc handle is received
                     }
                     futures::executor::block_on(self.branch_db.push());
                 }

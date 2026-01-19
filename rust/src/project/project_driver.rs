@@ -14,6 +14,7 @@ use tokio::task::JoinHandle;
 use crate::helpers::branch::{BinaryDocState, BranchState, BranchStateForkInfo, BranchStateMergeInfo, BranchStateRevertInfo};
 use crate::fs::file_utils::FileContent;
 use crate::project::branch_db::{SharedBranchDB, ThreadLocalBranchDB};
+use crate::project::branch_doc_wrapper::BranchDocWrapper;
 use crate::parser::godot_parser::GodotScene;
 use crate::helpers::doc_utils::SimpleDocReader;
 use crate::helpers::utils::ToShortForm;
@@ -397,9 +398,8 @@ impl ProjectDriver {
                 let mut db = branch_db.write();
                 db.project_doc_id = Some(project_doc_id.clone());
                 db.main_branch_doc_id = Some(main_branch_doc_handle.document_id().clone());
-                db.branches_metadata_doc_id = Some(project_doc_id.clone());
-                db.doc_handles.insert(project_doc_id.clone(), branches_metadata_doc_handle.clone());
-                db.doc_handles.insert(main_branch_doc_handle.document_id().clone(), main_branch_doc_handle.clone());
+                db.branches_metadata_doc_handle = Some(branches_metadata_doc_handle.clone());
+                // Main branch will be added to branch_wrappers when update_branch_doc_state is called
             }
             branch_db.push().await;
 
@@ -487,13 +487,8 @@ impl ProjectDriver {
                                 doc_handle
                             },
                             SubscriptionMessage::Added { doc_handle } => {
-                                {
-                                    let mut branch_db = state.branch_db.write();
-                                    branch_db.doc_handles.insert(
-                                        doc_handle.document_id().clone(),
-                                        doc_handle.clone()
-                                    );
-                                }
+                                // Unknown doc handle - will be categorized later when we know its type
+                                // (could be branches metadata, branch doc, or binary doc)
                                 state.branch_db.push().await;
                                 
                                 tx.unbounded_send(OutputEvent::NewDocHandle { doc_handle: doc_handle.clone(), doc_handle_type: DocHandleType::Unknown }).unwrap();
@@ -502,17 +497,12 @@ impl ProjectDriver {
                         };
 
                         let document_id = doc_handle.document_id();
-                        
-                        {
-                            let mut branch_db = state.branch_db.write();
-                            branch_db.doc_handles.insert(document_id.clone(), doc_handle.clone());
-                        }
 
                         // branches metadata doc changed
                         if document_id == state.branches_metadata_doc_handle.document_id() {
                             {
                                 let mut branch_db = state.branch_db.write();
-                                branch_db.doc_handles.insert(document_id.clone(), doc_handle.clone());
+                                branch_db.branches_metadata_doc_handle = Some(doc_handle.clone());
                             }
                             
                             let branches = state.get_branches_metadata().branches.clone();
@@ -545,7 +535,22 @@ impl ProjectDriver {
 
                         match message {
                             InputEvent::CreateBranch { name, source_branch_doc_id } => {
-                                state.create_branch(name.clone(), source_branch_doc_id.clone()).await;
+                                match state.branch_db.write().create_branch(
+                                    &state.repo_handle,
+                                    name.clone(),
+                                    &source_branch_doc_id,
+                                    state.user_name.clone(),
+                                ).await {
+                                    Ok(new_branch_id) => {
+                                        state.branch_db.push().await;
+                                        state.tx.unbounded_send(OutputEvent::CompletedCreateBranch {
+                                            branch_doc_id: new_branch_id,
+                                        }).unwrap();
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Failed to create branch: {}", e);
+                                    }
+                                }
                             },
 
 							InputEvent::CreateRevertPreviewBranch { branch_doc_id, files, revert_to } => {
@@ -718,58 +723,6 @@ async fn init_project_doc_handles(
 }
 
 impl DriverState {
-    async fn create_branch(&mut self, name: String, source_branch_doc_id: DocumentId) {
-        let source_branch_doc_handle = self
-            .branch_states
-            .get(&source_branch_doc_id)
-            .unwrap()
-            .doc_handle
-            .clone();
-
-        let new_branch_handle = clone_doc(&self.repo_handle, &source_branch_doc_handle).await;
-
-        let branch = Branch {
-            name: name.clone(),
-            id: new_branch_handle.document_id().to_string(),
-            fork_info: Some(ForkInfo {
-                forked_from: source_branch_doc_id.to_string(),
-                forked_at: source_branch_doc_handle
-                    .with_document(|d| d.get_heads())
-                    .iter()
-                    .map(|h| h.to_string())
-                    .collect(),
-            }),
-            merge_info: None,
-			created_by: self.user_name.clone(),
-			merged_into: None,
-			reverted_to: None,
-        };
-
-        self.tx
-            .unbounded_send(OutputEvent::CompletedCreateBranch {
-                branch_doc_id: new_branch_handle.document_id().clone(),
-            })
-            .unwrap();
-
-        self.branches_metadata_doc_handle.with_document(|d| {
-            let mut branches_metadata: BranchesMetadataDoc = hydrate(d).unwrap();
-            let mut tx = d.transaction();
-            branches_metadata.branches.insert(branch.id.clone(), branch);
-            let _ = reconcile(&mut tx, branches_metadata);
-            commit_with_attribution_and_timestamp(
-                tx,
-                &CommitMetadata {
-                    username: self.user_name.clone(),
-                    branch_id: None,
-                    merge_metadata: None,
-					reverted_to: None,
-                    changed_files: None,
-					is_setup: Some(true)
-                },
-            );
-        });
-		tracing::debug!("driver: created new branch: {:?}", new_branch_handle.document_id());
-    }
 
 	async fn create_revert_preview_branch(
 		&mut self,
@@ -1285,13 +1238,13 @@ impl DriverState {
 
             {
                 let mut branch_db = self.branch_db.write();
-                branch_db.branch_states.insert(
-                    branch_doc_handle.document_id().clone(),
+                let wrapper = BranchDocWrapper::new(
+                    branch_doc_handle.clone(),
                     branch_state.clone()
                 );
-                branch_db.doc_handles.insert(
+                branch_db.insert_branch_wrapper(
                     branch_doc_handle.document_id().clone(),
-                    branch_doc_handle.clone()
+                    wrapper
                 );
             }
 
@@ -1350,9 +1303,13 @@ impl DriverState {
                     
                     {
                         let mut branch_db = self.branch_db.write();
-                        branch_db.branch_states.insert(
-                            branch_state.doc_handle.document_id().clone(),
+                        let wrapper = BranchDocWrapper::new(
+                            branch_state.doc_handle.clone(),
                             branch_state.clone()
+                        );
+                        branch_db.insert_branch_wrapper(
+                            branch_state.doc_handle.document_id().clone(),
+                            wrapper
                         );
                     }
                     
@@ -1401,8 +1358,8 @@ impl DriverState {
         let branch_db = self.branch_db.read();
         
         
-        for (branch_id, branch_state) in &branch_db.branch_states {
-            self.branch_states.insert(branch_id.clone(), branch_state.clone());
+        for (branch_id, wrapper) in branch_db.branch_wrappers() {
+            self.branch_states.insert(branch_id.clone(), wrapper.branch_state.clone());
         }
         
         for (doc_id, doc_handle) in &branch_db.binary_doc_handles {
