@@ -39,6 +39,8 @@ jobs:
         run: cp patchwork-update-script/*.{cmd,ps1} moddable-platformer
       - name: Merge .gitignore
         run: cat patchwork-update-script/.gitignore >> moddable-platformer/.gitignore
+      - name: Write .patchwork_version
+        run: echo "${{ github.ref_name }}" >> moddable-platformer/.patchwork_version
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
