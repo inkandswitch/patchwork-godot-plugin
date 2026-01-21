@@ -791,7 +791,10 @@ func _on_history_tree_mouse_selected(_at_position: Vector2, button_idx: int) -> 
 func show_contextmenu(item_hash):
 	context_menu_hash = item_hash
 	history_list_popup.position = DisplayServer.mouse_get_position()
-	history_list_popup.visible = true
+	if EditorInterface.get_editor_settings().get_setting("interface/editor/single_window_mode"):
+		history_list_popup.popup()
+	else:
+		history_list_popup.visible = true
 
 func _on_history_tree_button_clicked(item: TreeItem, _column : int, id: int, mouse_button_index: int) -> void:
 	if mouse_button_index != MOUSE_BUTTON_LEFT: return
