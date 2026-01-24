@@ -1,17 +1,30 @@
+use std::{fmt::Display, sync::Arc};
+
 use futures::{Stream, StreamExt as _};
 use samod::{ConnDirection, ConnFinishedReason, Repo};
 use tokio::{
-    net::TcpStream,
-    sync::{broadcast, watch},
-    task::JoinHandle,
+    net::TcpStream, select, sync::{broadcast, watch}
 };
 use tokio_stream::wrappers::BroadcastStream;
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone)]
 enum ConnectionStoppedReason {
     TcpConnectionError(String),
     WebSocketsConnectionError(String),
     ConnectionCompleted(ConnFinishedReason),
+    ConnectionCancelled()
+}
+
+impl Display for ConnectionStoppedReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TcpConnectionError(e) => write!(f, "TCP connection error: {}", e),
+            Self::WebSocketsConnectionError(e) => write!(f, "WebSocket connection error: {}", e),
+            Self::ConnectionCompleted(reason) => write!(f, "Connection completed: {:?}", reason),
+            Self::ConnectionCancelled() => write!(f, "Connection cancelled"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -27,12 +40,12 @@ pub enum RemoteConnectionStatus {
     Disconnected,
 }
 
-/// Connects a repo to the remote server.
+/// Connects a repo to the remote server. Shuts down when dropped.
 #[derive(Debug)]
 pub struct RemoteConnection {
-    connection_handle: JoinHandle<()>,
     status_rx: watch::Receiver<RemoteConnectionStatus>,
     events_tx: broadcast::Sender<RemoteConnectionEvent>,
+    inner: Arc<RemoteConnectionInner>
 }
 
 #[derive(Clone, Debug)]
@@ -41,12 +54,13 @@ struct RemoteConnectionInner {
     server_url: String,
     events_tx: broadcast::Sender<RemoteConnectionEvent>,
     status_tx: watch::Sender<RemoteConnectionStatus>,
+    token: CancellationToken
 }
 
 impl Drop for RemoteConnection {
     // Stop the connection on drop
     fn drop(&mut self) {
-        &self.connection_handle.abort();
+        self.inner.token.cancel()
     }
 }
 
@@ -56,21 +70,23 @@ impl RemoteConnection {
     pub fn new(repo: Repo, server_url: String) -> Self {
         let (events_tx, _) = broadcast::channel(32);
         let (status_tx, status_rx) = watch::channel(RemoteConnectionStatus::Disconnected);
-        let inner = RemoteConnectionInner {
+        let inner = Arc::new(RemoteConnectionInner {
             repo,
             server_url,
             events_tx: events_tx.clone(),
             status_tx,
-        };
+            token: CancellationToken::new()
+        });
 
-        let connection_handle: JoinHandle<()> = tokio::spawn(async move {
-            inner.retry_connection().await;
+        let inner_clone = inner.clone();
+        tokio::spawn(async move {
+            inner_clone.retry_connection().await;
         });
 
         Self {
-            connection_handle,
+            inner,
             status_rx,
-            events_tx,
+            events_tx
         }
     }
 
@@ -103,9 +119,20 @@ impl RemoteConnectionInner {
         let backoff = 1000;
         loop {
             let termination_reason = self.try_connection().await;
+            match termination_reason {
+                ConnectionStoppedReason::ConnectionCancelled() => break,
+                _ => (),
+            }
             tracing::error!("Connection failure: {:?}", termination_reason);
             tracing::error!("Retrying in {}ms...", backoff);
-            tokio::time::sleep(std::time::Duration::from_millis(backoff as u64)).await;
+
+            // Look for the cancelation token here as well, so we cancel from the backoff
+            select! {
+                _ = tokio::time::sleep(std::time::Duration::from_millis(backoff as u64)) => {}
+                _ = self.token.cancelled() => {
+                    break;
+                }
+            }
         }
     }
 
@@ -120,7 +147,7 @@ impl RemoteConnectionInner {
             let res = tokio_tungstenite::connect_async(server_url.clone()).await;
             match res {
                 Err(e) => {
-                    self.events_tx.send(RemoteConnectionEvent::ConnectionFailed);
+                    _ = self.events_tx.send(RemoteConnectionEvent::ConnectionFailed);
                     return ConnectionStoppedReason::WebSocketsConnectionError(e.to_string());
                 }
                 Ok((res, _)) => repo_handle
@@ -133,7 +160,7 @@ impl RemoteConnectionInner {
             let res = TcpStream::connect(server_url.clone()).await;
             match res {
                 Err(e) => {
-                    self.events_tx.send(RemoteConnectionEvent::ConnectionFailed);
+                    _ = self.events_tx.send(RemoteConnectionEvent::ConnectionFailed);
                     return ConnectionStoppedReason::TcpConnectionError(e.to_string());
                 }
                 Ok(res) => repo_handle
@@ -145,18 +172,24 @@ impl RemoteConnectionInner {
         tracing::info!("Connected successfully!");
 
         if let Err(e) = connection.handshake_complete().await {
-            self.status_tx.send(RemoteConnectionStatus::Disconnected);
-            self.events_tx.send(RemoteConnectionEvent::ConnectionFailed);
+            _ = self.status_tx.send(RemoteConnectionStatus::Disconnected);
+            _ = self.events_tx.send(RemoteConnectionEvent::ConnectionFailed);
             return ConnectionStoppedReason::ConnectionCompleted(e);
         }
 
         tracing::info!("Handshake completed!");
-        self.status_tx.send(RemoteConnectionStatus::Connected);
-        self.events_tx.send(RemoteConnectionEvent::Connected);
+        _ = self.status_tx.send(RemoteConnectionStatus::Connected);
+        _ = self.events_tx.send(RemoteConnectionEvent::Connected);
         
-        let completed = connection.finished().await;
-        self.status_tx.send(RemoteConnectionStatus::Disconnected);
-        self.events_tx.send(RemoteConnectionEvent::ConnectionCompleted);
-        return ConnectionStoppedReason::ConnectionCompleted(completed);
+        select! {
+            completed = connection.finished() => {
+                _ = self.status_tx.send(RemoteConnectionStatus::Disconnected);
+                _ = self.events_tx.send(RemoteConnectionEvent::ConnectionCompleted);
+                return ConnectionStoppedReason::ConnectionCompleted(completed);
+            },
+            _ = self.token.cancelled() => {
+                return ConnectionStoppedReason::ConnectionCancelled();
+            }
+        }
     }
 }

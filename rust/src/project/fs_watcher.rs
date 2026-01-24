@@ -13,7 +13,7 @@ use notify_debouncer_mini::{DebouncedEvent, new_debouncer_opt};
 use tokio::{
     sync::{
         Mutex,
-        mpsc::{self},
+        mpsc::{self, UnboundedSender},
     },
     task::JoinSet,
     time::sleep,
@@ -40,7 +40,7 @@ pub struct FileSystemWatcher {
     watch_path: PathBuf,
     file_hashes: Arc<Mutex<HashMap<PathBuf, Digest>>>,
     branch_db: BranchDb,
-    found_ignored_paths: Arc<Mutex<HashSet<PathBuf>>>,
+    found_ignored_paths: Arc<Mutex<HashSet<PathBuf>>>
 }
 
 impl FileSystemWatcher {
@@ -88,7 +88,7 @@ impl FileSystemWatcher {
     // Initialize the hash map with existing files
     async fn initialize_file_hashes(&self) {
         self.initialize_file_hashes_recur(self.watch_path.clone())
-            .await;
+            .await.unwrap();
     }
 
     // Handle file creation and modification events
@@ -185,10 +185,11 @@ impl FileSystemWatcher {
             .with_batch_mode(true)
             .with_notify_config(notify_config);
 
+        let notify_tx_clone = notify_tx.clone();
         let mut debouncer = new_debouncer_opt::<_, RecommendedWatcher>(
             debouncer_config,
             move |event: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
-                notify_tx.send(event).unwrap();
+                notify_tx_clone.send(event).unwrap();
             },
         )
         .unwrap();
@@ -212,19 +213,24 @@ impl FileSystemWatcher {
             let _ret = debouncer.watcher().unwatch(path);
         }
         let stream = UnboundedReceiverStream::new(notify_rx);
-        // Process both file system events and update events
+        // Process both file system events and update eventss
         stream! {
+            // move the debouncer into the returned stream
+            let _keep_alive = debouncer;
             // Handle file system events
             for await notify_events in stream {
                 let Ok(notify_events) = notify_events else {
                     continue;
                 };
+                tracing::debug!("Heard filesystem event list of {:?} items", notify_events.len());
                 for notify_event in notify_events {
+                    tracing::debug!("Heard filesystem event {:?}", notify_event);
                     if let Some(evt) = this.process_notify_event(notify_event).await {
                         yield evt;
                     }
                 }
             }
+            tracing::debug!("fs_watcher shutting down!");
         }
     }
 }

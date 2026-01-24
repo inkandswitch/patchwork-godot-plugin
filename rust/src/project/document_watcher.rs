@@ -19,58 +19,67 @@ use automerge::{ChangeHash, ROOT, ReadDoc};
 use autosurgeon::hydrate;
 use futures::{FutureExt, StreamExt};
 use samod::{DocHandle, DocumentId, Repo};
-use tokio::{sync::Mutex, task::JoinHandle};
+use tokio::select;
+use tokio_util::sync::CancellationToken;
 
 /// Tracks branch and metadata documents from an Automerge repo, updating BranchDB when the state changes.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct DocumentWatcher {
+    inner: Arc<DocumentWatcherInner>,
+}
+
+#[derive(Debug, Clone)]
+struct DocumentWatcherInner {
     repo: Repo,
     branch_db: BranchDb,
-    tracking_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    token: CancellationToken,
 }
 
 impl Drop for DocumentWatcher {
     fn drop(&mut self) {
-        for handle in self.tracking_handles.blocking_lock().drain(..) {
-            // NOTE: spawn_blocking calls are not immediately aborted. They will run to completion in the background, then finish.
-            handle.abort();
-        }
+        self.inner.token.cancel();
     }
 }
 
 impl DocumentWatcher {
     /// Spawns the [DocumentWatcher], creating parallel tasks for the metadata document tracking and subsequent tasks for any child documents.
-    pub fn new(repo: Repo, branch_db: BranchDb, metadata_handle: DocHandle) -> Self {
-        let this = Self {
-            repo,
+    pub async fn new(repo: Repo, branch_db: BranchDb, metadata_handle: DocHandle) -> Self {
+        let inner = Arc::new(DocumentWatcherInner {
             branch_db,
-            tracking_handles: Arc::new(Mutex::new(Vec::new())),
-        };
+            repo,
+            token: CancellationToken::new(),
+        });
 
-        let this_clone = this.clone();
+        let inner_clone = inner.clone();
 
-        this.tracking_handles
-            .blocking_lock()
-            .push(tokio::spawn(async move {
-                // do the initial ingest
-                this_clone
-                    .ingest_metadata_document(metadata_handle.clone())
-                    .await;
-                // track changes for future ingests
-                this_clone.track_metadata_document(metadata_handle).await;
-            }));
+        tokio::spawn(async move {
+            // do the initial ingest
+            inner_clone
+                .ingest_metadata_document(metadata_handle.clone())
+                .await;
+            // track changes for future ingests
+            inner_clone.track_metadata_document(metadata_handle).await;
+        });
 
-        return this;
+        return Self { inner };
     }
+}
 
+impl DocumentWatcherInner {
     // The branch documents are a document for each branch, containing all the serialized data for all scenes and text files.
     async fn track_branch_document(&self, handle: DocHandle) {
         let mut stream = handle.changes();
         loop {
-            let _ = stream.next().await;
-            // collapse the rest of the stream, in case multiple futures are ready
-            while let Some(_) = stream.next().now_or_never().flatten() {}
-            self.ingest_branch_document(handle.clone()).await;
+            select! {
+                _ = stream.next() => {
+                    // collapse the rest of the stream, in case multiple futures are ready
+                    while let Some(_) = stream.next().now_or_never().flatten() {}
+                    self.ingest_branch_document(handle.clone()).await;
+                },
+                _ = self.token.cancelled() => {
+                    break;
+                }
+            }
         }
     }
 
@@ -78,10 +87,16 @@ impl DocumentWatcher {
     async fn track_metadata_document(&self, handle: DocHandle) {
         let mut stream = handle.changes();
         loop {
-            let _ = stream.next().await;
-            // collapse the rest of the stream, in case multiple futures are ready
-            while let Some(_) = stream.next().now_or_never().flatten() {}
-            self.ingest_metadata_document(handle.clone()).await;
+            select! {
+                _ = stream.next() => {
+                    // collapse the rest of the stream, in case multiple futures are ready
+                    while let Some(_) = stream.next().now_or_never().flatten() {}
+                    self.ingest_metadata_document(handle.clone()).await;
+                },
+                _ = self.token.cancelled() => {
+                    break;
+                }
+            }
         }
     }
 
@@ -204,7 +219,8 @@ impl DocumentWatcher {
         .await
         .unwrap();
         self.branch_db
-            .set_metadata_state(handle.document_id().clone(), meta.clone());
+            .set_metadata_state(handle.document_id().clone(), meta.clone())
+            .await;
         // check if there are new branches that haven't loaded yet
         for (branch_id_str, _) in meta.branches.iter() {
             let branch_id = DocumentId::from_str(branch_id_str).unwrap();
@@ -220,11 +236,7 @@ impl DocumentWatcher {
                 self.ingest_branch_document(handle.clone()).await;
                 // Track the document
                 let this = self.clone();
-                self.tracking_handles
-                    .blocking_lock()
-                    .push(tokio::spawn(async move {
-                        this.track_branch_document(handle).await
-                    }));
+                tokio::spawn(async move { this.track_branch_document(handle).await });
             }
         }
     }

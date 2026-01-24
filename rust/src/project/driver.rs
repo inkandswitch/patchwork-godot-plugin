@@ -19,22 +19,36 @@ use std::sync::Arc;
 /// The main driver for the project.
 /// Hooks together all the various controllers.
 /// When this object is constructed, it is started. When the handle is dropped, it shuts down.
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct Driver {
     inner: Arc<DriverInner>,
 }
 
 #[derive(Debug)]
 pub struct DriverInner {
+    repo: Repo,
+    #[allow(unused)]
     connection: RemoteConnection,
     branch_db: BranchDb,
     peer_watcher: PeerWatcher,
+    #[allow(unused)]
     document_watcher: DocumentWatcher,
     sync_automerge_to_fs: SyncAutomergeToFileSystem,
     sync_fs_to_automerge: SyncFileSystemToAutomerge,
     // TODO (Lilith): Currently the differ is broken because it can't be sent across threads due to the Variant cache.
     // Figure out a way to fix that. One option is maybe a global singleton cache only on one thread? Or just killing Variants in the differ, which is ideal.
     // differ: Differ,
+}
+
+impl Drop for DriverInner {
+    fn drop(&mut self) {
+        // don't use tokio for this, I think that's correct?
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.block_on(self.repo.stop());
+        } else {
+            futures::executor::block_on(self.repo.stop());
+        }
+    }
 }
 
 impl Driver {
@@ -47,7 +61,7 @@ impl Driver {
         let content = match tokio::fs::read_to_string(gitignore_path).await {
             Ok(content) => content,
             Err(_) => {
-                tracing::error!("Couldn't read gitignore file at {:?}", gitignore_path);
+                tracing::info!("Couldn't read gitignore file at {:?}", gitignore_path);
                 return ignore_globs;
             }
         };
@@ -91,15 +105,6 @@ impl Driver {
         storage_directory: PathBuf,
         metadata_id: Option<DocumentId>,
     ) -> Option<Self> {
-        // TODO (Lilith): ensure we make this work across the ENTIRE program. Initialize it only once, etc.
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
-            .enable_all()
-            .thread_name("GodotProjectDriver: worker thread")
-            .build()
-            .unwrap();
-
-        let _ = runtime.enter();
         let storage = samod::storage::TokioFilesystemStorage::new(storage_directory);
         let repo = Repo::build_tokio()
             .with_concurrency(ConcurrencyConfig::Threadpool(
@@ -158,7 +163,7 @@ impl Driver {
 
         // The document watcher will auto-ingest the provided metadata handle.
         let document_watcher =
-            DocumentWatcher::new(repo.clone(), branch_db.clone(), metadata_handle);
+            DocumentWatcher::new(repo.clone(), branch_db.clone(), metadata_handle).await;
         let peer_watcher = PeerWatcher::new(repo.clone(), branch_db.clone());
         let sync_automerge_to_fs = SyncAutomergeToFileSystem::new(branch_db.clone());
         let sync_fs_to_automerge = SyncFileSystemToAutomerge::new(branch_db.clone());
@@ -169,6 +174,7 @@ impl Driver {
 
         Some(Driver {
             inner: DriverInner {
+                repo,
                 connection,
                 branch_db,
                 peer_watcher,
@@ -320,13 +326,6 @@ impl Driver {
             .map(|(id, _)| id)
     }
 
-    pub fn safe_to_update_godot() -> bool {
-        return !(EditorFilesystemAccessor::is_scanning()
-            || PatchworkEditorAccessor::is_editor_importing()
-            || PatchworkEditorAccessor::is_changing_scene()
-            || PatchworkEditorAccessor::unsaved_files_open());
-    }
-
     pub async fn get_main_branch(&self) -> Option<DocumentId> {
         self.inner
             .branch_db
@@ -413,6 +412,13 @@ impl Driver {
 
         changes
             .into_iter()
+            // only changes on the current branch with valid metadata
+            .filter(|change| {
+                change
+                    .metadata
+                    .as_ref()
+                    .is_some_and(|m| m.branch_id.as_ref().is_some_and(|id| id == doc_id))
+            })
             .enumerate()
             .map(|(i, change)| CommitInfo {
                 synced: (i as i32) <= synced_until_index,
@@ -430,7 +436,7 @@ impl Driver {
     /// Make sure not to run two of these at once, for safety.
     /// (It would likely be OK state-wise but weird results might happen on the UI side.)
     /// Returns a vector of filesystem changes we performed.
-    pub async fn sync(&self) -> Vec<FileSystemEvent> {
+    pub async fn sync(&self, safe_to_update_godot: bool) -> Vec<FileSystemEvent> {
         // TODO (Lilith): There are inefficiencies with this strategy.
         // Basically, every time we save a file, it'll do a bunch of extra work.
         // It will first commit the changes, then it will check out the changes we just committed.
@@ -438,7 +444,7 @@ impl Driver {
         // The same happens in reverse: when we check out a ref, it will attempt to commit and not
         // find any actual changes.
         // Maybe that's OK, we need to profile to see if it's a problem.
-        let changes = if Self::safe_to_update_godot() {
+        let changes = if safe_to_update_godot {
             let goal_ref = {
                 let current_ref_lock = self.inner.branch_db.get_checked_out_ref_mut().await;
                 let current_ref_guard = current_ref_lock.read().await;
@@ -466,7 +472,7 @@ impl Driver {
                 // guard dropped here
             };
             // TODO (Lilith): minor problem, the checked out ref could change between these lines when the guard is dropped.
-            // That said, uhhhh I think that's fine? We're already syncing, so other sync methods shouldn't effect it.
+            // That said, uhhhh I think that's fine? We're already syncing, so other sync methods shouldn't affect it.
             // If we're doing some branch edits, like a merge or revert preview or something, that could mean we
             // never checkout our desired ref... but we need to rethink this for branch swapping anyways.
             // For branch swapping, we either need to checkout a ref elsewhere during a merge or something and prevent sync.

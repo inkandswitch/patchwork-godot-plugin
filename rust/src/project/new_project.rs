@@ -1,17 +1,16 @@
 use crate::diff::differ::ProjectDiff;
 use crate::fs::file_utils::FileSystemEvent;
 use crate::helpers::utils::{CommitInfo, summarize_changes};
-use crate::interop::godot_accessors::
-    PatchworkConfigAccessor
-;
+use crate::interop::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
 use crate::project::branch_db::HistoryRef;
 use crate::project::driver::Driver;
 use crate::project::project_api::ChangeViewModel;
 use automerge::ChangeHash;
+use futures::future::join_all;
 use samod::DocumentId;
+use std::cell::RefCell;
 use std::path::PathBuf;
 use std::time::SystemTime;
-use std::cell::RefCell;
 use std::{collections::HashMap, str::FromStr};
 use tokio::runtime::Runtime;
 
@@ -29,7 +28,7 @@ pub struct Project {
     pub(super) changes: HashMap<ChangeHash, CommitInfo>,
     last_ingest: (SystemTime, i32),
     ingest_requested: bool,
-	last_known_branch: Option<DocumentId>,
+    last_known_branch: Option<DocumentId>,
 
     // Cached diffs between refs
     pub(super) diff_cache: RefCell<HashMap<(HistoryRef, HistoryRef), ProjectDiff>>,
@@ -63,69 +62,80 @@ impl Project {
             changes: HashMap::new(),
             last_ingest: (SystemTime::UNIX_EPOCH, 0),
             ingest_requested: true,
-			last_known_branch: None,
+            last_known_branch: None,
             diff_cache: RefCell::new(HashMap::new()),
         }
     }
 
     /// Expensive operation to ingest all branch changes from automerge into the project data.
     /// Should be called when we think there are new changes to process.
-    async fn ingest_changes(&mut self) {
-		let Some(driver) = self.driver.clone() else {
-			tracing::error!("Driver not started, can't ingest changes!");
-			return;
-		};
+    fn ingest_changes(&mut self) {
+        let Some(driver) = self.driver.clone() else {
+            tracing::error!("Driver not started, can't ingest changes!");
+            return;
+        };
 
-        tracing::info!("Ingesting changes...");
+        // tracing::info!("Ingesting changes...");
 
-		let changes = self.runtime.block_on(tokio::spawn(async move {
-			driver.get_changes().await
-		})).unwrap();
+        let changes = self
+            .runtime
+            .block_on(self.runtime.spawn(async move {
+                let changes =
+                    driver
+                        .get_changes()
+                        .await
+                        .into_iter()
+                        .map(async |change| CommitInfo {
+                            summary: Self::get_change_summary(&change, driver.clone())
+                                .await
+                                .unwrap_or("Invalid data".to_string()),
+                            ..change
+                        });
+                // a little awk. Parallelization doesn't really matter here at all and is maybe bad (bc locks).
+                // but otherwise we're iteratively constructing a vec, probably doesn't matter
+                join_all(changes).await
+            }))
+            .unwrap();
+
+		self.history.clear();
+		self.changes.clear();
 
         // Consume changes into self.changes
         for change in changes {
             self.history.push(change.hash);
-            self.changes.insert(change.hash, CommitInfo {
-				// the only actual things we're awaiting here are data locks
-				// so dw about parallelization
-				summary: self.get_change_summary(&change).await.unwrap_or("Invalid data".to_string()),
-				..change
-			});
+            self.changes.insert(change.hash, change);
         }
     }
 
-    async fn get_change_summary(&self, change: &CommitInfo) -> Option<String> {
-		let meta = change.metadata.as_ref();
-		let author = meta?.username.as_ref()?;
+    async fn get_change_summary(change: &CommitInfo, driver: Driver) -> Option<String> {
+        let meta = change.metadata.as_ref();
+        let author = meta?.username.clone().unwrap_or("Anonymous".to_string());
 
-		// merge commit
-		if let Some(merge_info) = &meta?.merge_metadata {
-			let merged_branch = &self
-				.driver
-				.as_ref()
-				.unwrap() // the driver had better be valid
-				.get_branch_name(&merge_info.merged_branch_id.clone())
-				.await
-				.unwrap_or(merge_info.merged_branch_id.to_string());
-			return Some(format!("↪ {author} merged {merged_branch}"));
-		}
+        // merge commit
+        if let Some(merge_info) = &meta?.merge_metadata {
+            let merged_branch = driver
+                .get_branch_name(&merge_info.merged_branch_id.clone())
+                .await
+                .unwrap_or(merge_info.merged_branch_id.to_string());
+            return Some(format!("↪ {author} merged {merged_branch}"));
+        }
 
-		// revert commit
-		if let Some(revert_info) = &meta?.reverted_to {
-			let heads = revert_info
-				.iter()
-				.map(|s| &s[..7])
-				.collect::<Vec<&str>>()
-				.join(", ");
-			return Some(format!("↩ {author} reverted to {heads}"));
-		}
+        // revert commit
+        if let Some(revert_info) = &meta?.reverted_to {
+            let heads = revert_info
+                .iter()
+                .map(|s| &s[..7])
+                .collect::<Vec<&str>>()
+                .join(", ");
+            return Some(format!("↩ {author} reverted to {heads}"));
+        }
 
-		// initial commit
-		if change.is_setup() {
-			return Some(format!("Initialized repository"));
-		}
+        // initial commit
+        if change.is_setup() {
+            return Some(format!("Initialized repository"));
+        }
 
-		return Some(summarize_changes(&author, meta?.changed_files.as_ref()?));
+        return Some(summarize_changes(&author, meta?.changed_files.as_ref()?));
     }
 
     /// Request for a change ingestion to be dispatched.
@@ -162,11 +172,7 @@ impl Project {
         true
     }
 
-    pub fn get_cached_diff(
-        &self,
-        before: HistoryRef,
-        after: HistoryRef,
-    ) -> ProjectDiff {
+    pub fn get_cached_diff(&self, before: HistoryRef, after: HistoryRef) -> ProjectDiff {
         self.diff_cache
             .borrow_mut()
             .entry((before.clone(), after.clone()))
@@ -178,23 +184,27 @@ impl Project {
         self.diff_cache.borrow_mut().clear();
     }
 
-    pub fn get_diff(
-        &self,
-        before: HistoryRef,
-        after: HistoryRef,
-    ) -> ProjectDiff {
+	// Do not run this on anything except the main thread!
+    pub fn safe_to_update_godot() -> bool {
+        return !(EditorFilesystemAccessor::is_scanning()
+            || PatchworkEditorAccessor::is_editor_importing()
+            || PatchworkEditorAccessor::is_changing_scene()
+            || PatchworkEditorAccessor::unsaved_files_open());
+    }
+
+    pub fn get_diff(&self, before: HistoryRef, after: HistoryRef) -> ProjectDiff {
         let Some(driver) = &self.driver else {
             return ProjectDiff::default();
         };
-		ProjectDiff::default()
+        ProjectDiff::default()
 
-		// TODO (Lilith): make this code work; ProjectDiff includes variants which can't be pushed across threads
-		// TODO: these can get expensive; propagate a spinner to the UI
-		// self.runtime.block_on(async move {
-		// 	tokio::spawn(async move {
-		// 		driver.get_diff(&before, &after).await
-		// 	}).await.unwrap()
-		// })
+        // TODO (Lilith): make this code work; ProjectDiff includes variants which can't be pushed across threads
+        // TODO: these can get expensive; propagate a spinner to the UI
+        // self.runtime.block_on(
+        // 	self.runtime.spawn(async move {
+        // 		driver.get_diff(&before, &after).await
+        // 	}).await.unwrap()
+        // )
     }
 
     pub fn start(&mut self) {
@@ -220,8 +230,8 @@ impl Project {
             }
         };
 
-		// If the metadata ID is not a valid document ID, give up.
-		// If it's an empty string, returns None so we can make a new doc.
+        // If the metadata ID is not a valid document ID, give up.
+        // If it's an empty string, returns None so we can make a new doc.
         let metadata_id = match Some(PatchworkConfigAccessor::get_project_value(
             "project_doc_id",
             "",
@@ -245,13 +255,16 @@ impl Project {
             metadata_id
         );
 
-		let project_dir = self.project_dir.clone();
-        self.driver = self.runtime.block_on(async move {
-			// I think it's correct to spawn this on a different task explicitly, because block_on runs the future on the current thread, not a worker thread.
-			tokio::spawn(async move {
-            	Driver::new(server_url, project_dir, storage_dir, metadata_id).await
-			}).await.unwrap()
-        });
+        let project_dir = self.project_dir.clone();
+        self.driver = self
+            .runtime
+            .block_on(
+                // I think it's correct to spawn this on a different task explicitly, because block_on runs the future on the current thread, not a worker thread.
+                self.runtime.spawn(async move {
+                    Driver::new(server_url, project_dir, storage_dir, metadata_id).await
+                }),
+            )
+            .unwrap();
 
         if self.driver.is_none() {
             tracing::error!("Could not start the driver!");
@@ -264,30 +277,35 @@ impl Project {
     }
 
     pub fn process(&mut self, _delta: f64) -> (Vec<FileSystemEvent>, Vec<GodotProjectSignal>) {
-		let Some(driver) = &self.driver else {
-			return Default::default();
-		};
-		let driver = driver.clone();
+        let Some(driver) = &self.driver else {
+            return Default::default();
+        };
+        let driver = driver.clone();
 
         let mut signals: Vec<GodotProjectSignal> = Vec::new();
         if self.try_ingest_changes() {
             signals.push(GodotProjectSignal::ChangesIngested);
         }
+		let safe_to_update = Self::safe_to_update_godot();
+        // Run the main sync
+        let (changed_files, checked_out_ref) =
+            self.runtime
+                .block_on(self.runtime.spawn(async move {
+                    (driver.sync(safe_to_update).await, driver.get_checked_out_ref().await)
+                }))
+                .unwrap();
 
-		// Run the main sync
-		let (changed_files, checked_out_ref) = self.runtime.block_on(async move {
-			tokio::spawn(async move {
-				(driver.sync().await, driver.get_checked_out_ref().await)
-			}).await.unwrap()
-		});
+        let current_branch = checked_out_ref.and_then(|r| Some(r.branch));
+        if self.last_known_branch != current_branch {
+            signals.push(GodotProjectSignal::CheckedOutBranch);
+			self.last_known_branch = current_branch;
+        }
 
-		let current_branch = checked_out_ref.and_then(|r| Some(r.branch));
-		if self.last_known_branch != current_branch {
-			signals.push(GodotProjectSignal::CheckedOutBranch);
-		}
+        // TODO (Lilith): VERY IMPORTANT, set the patchwork config branch ID here!!!
+        // So that we save the branch ID for future checkouts.
 
-		// TODO (Lilith): VERY IMPORTANT, set the patchwork config branch ID here!!!
-		// So that we save the branch ID for future checkouts.
+        // TODO (Lilith): Don't request an ingestion every frame
+        self.request_ingestion();
 
         (changed_files, signals)
     }

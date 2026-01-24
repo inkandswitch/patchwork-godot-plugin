@@ -2,9 +2,9 @@ use std::{path::PathBuf, sync::Arc};
 
 use futures::StreamExt;
 use tokio::{
-    sync::Mutex,
-    task::{JoinHandle, JoinSet},
+    select, sync::Mutex, task::{JoinHandle, JoinSet}
 };
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     fs::{file_utils::FileContent, file_utils::FileSystemEvent},
@@ -22,43 +22,55 @@ pub struct SyncFileSystemToAutomerge {
     // Stream is good though because I ***think*** we can poll with now_or_never
     pending_changes: Arc<Mutex<Vec<(String, FileContent)>>>,
     branch_db: BranchDb,
-    handle: JoinHandle<()>,
+    token: CancellationToken,
 }
 
 impl Drop for SyncFileSystemToAutomerge {
     fn drop(&mut self) {
-        self.handle.abort();
+        self.token.cancel();
     }
 }
 
 impl SyncFileSystemToAutomerge {
     pub fn new(branch_db: BranchDb) -> Self {
         let pending_changes = Arc::new(Mutex::new(Vec::new()));
+        let token = CancellationToken::new();
+
         let pending_changes_clone = pending_changes.clone();
         let branch_db_clone = branch_db.clone();
-        let handle = tokio::spawn(async move {
+        let token_clone = token.clone();
+
+        // TODO (Lilith): stick this on a method on an Inner struct like the rest
+        tokio::spawn(async move {
             let changes = FileSystemWatcher::start_watching(
                 branch_db_clone.get_project_dir().clone(),
                 branch_db_clone.clone(),
             )
             .await;
             tokio::pin!(changes);
-            while let Some(event) = changes.next().await {
-                let (path, content) = match event {
-                    FileSystemEvent::FileCreated(path, content) => (path, content),
-                    FileSystemEvent::FileModified(path, content) => (path, content),
-                    FileSystemEvent::FileDeleted(path) => (path, FileContent::Deleted),
-                };
-                pending_changes_clone
-                    .lock()
-                    .await
-                    .push((branch_db_clone.localize_path(&path), content));
+
+            loop {
+                select! {
+                    event = changes.next() => {
+                        let Some(event) = event else { continue; };
+                        let (path, content) = match event {
+                            FileSystemEvent::FileCreated(path, content) => (path, content),
+                            FileSystemEvent::FileModified(path, content) => (path, content),
+                            FileSystemEvent::FileDeleted(path) => (path, FileContent::Deleted),
+                        };
+                        pending_changes_clone
+                            .lock()
+                            .await
+                            .push((branch_db_clone.localize_path(&path), content));
+                    },
+                    _ = token_clone.cancelled() => { break; }
+                }
             }
         });
 
         Self {
             pending_changes,
-            handle,
+            token,
             branch_db,
         }
     }
@@ -75,8 +87,11 @@ impl SyncFileSystemToAutomerge {
             return;
         }
 
+        tracing::info!("There are {:?} pending changes, attempting to commit...", pending_changes.len());
+
         // If the checked-out ref is invalid, we can't commit to the current branch.
         if checked_out_ref.as_ref().is_none_or(|r| !r.is_valid()) {
+            tracing::warn!("Can't commit to the current ref {:?}, because it isn't valid.", checked_out_ref);
             return;
         }
 
@@ -90,6 +105,7 @@ impl SyncFileSystemToAutomerge {
             )
             .await;
         if let Some(new_ref) = new_ref {
+            tracing::info!("Successfully made a commit! {:?}", new_ref);
             pending_changes.clear();
             *checked_out_ref = Some(new_ref);
         } else {
@@ -97,6 +113,7 @@ impl SyncFileSystemToAutomerge {
         }
     }
 
+    // TODO (Lilith): We need to check in the files... make it happen.
     /// Make an initial commit of ALL files from the filesystem to automerge.
     pub async fn checkin(&self) {
         // Because we always change the checked out ref after committing, we need to lock this in write mode.

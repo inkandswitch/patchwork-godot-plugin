@@ -31,7 +31,7 @@ impl ProjectViewModel for Project {
     fn get_project_id(&self) -> Option<DocumentId> {
         let driver = self.driver.clone()?;
         self.runtime
-            .block_on(tokio::spawn(async move { driver.get_metadata_doc().await }))
+            .block_on(self.runtime.spawn(async move { driver.get_metadata_doc().await }))
             .unwrap()
     }
 
@@ -73,9 +73,9 @@ impl ProjectViewModel for Project {
         let Some(driver) = self.driver.clone() else {
             return;
         };
-        self.runtime.block_on(tokio::spawn(async move {
+        self.runtime.block_on(self.runtime.spawn(async move {
             driver.set_username(Some(name)).await
-        }));
+        })).unwrap();
     }
 
     fn can_create_merge_preview_branch(&self) -> bool {
@@ -295,7 +295,7 @@ impl ProjectViewModel for Project {
         let id = id.clone();
         let state = self
             .runtime
-            .block_on(tokio::spawn(
+            .block_on(self.runtime.spawn(
                 async move { driver.get_branch_state(&id).await },
             ))
             .unwrap();
@@ -341,7 +341,7 @@ impl ProjectViewModel for Project {
         let driver = self.driver.clone()?;
         let id = self
             .runtime
-            .block_on(tokio::spawn(async move { driver.get_main_branch().await }))
+            .block_on(self.runtime.spawn(async move { driver.get_main_branch().await }))
             .unwrap()?;
         self.get_branch(&id)
     }
@@ -350,7 +350,7 @@ impl ProjectViewModel for Project {
         let driver = self.driver.clone()?;
         let id = self
             .runtime
-            .block_on(tokio::spawn(
+            .block_on(self.runtime.spawn(
                 async move { driver.get_checked_out_ref().await },
             ))
             .unwrap()?;
@@ -437,7 +437,7 @@ impl ProjectViewModel for Project {
         let driver = self.driver.clone()?;
         let branch_state = self
             .runtime
-            .block_on(tokio::spawn(async move {
+            .block_on(self.runtime.spawn(async move {
                 driver
                     .get_branch_state(&driver.get_checked_out_ref().await?.branch)
                     .await
@@ -531,7 +531,7 @@ impl ProjectViewModel for Project {
         let driver = self.driver.clone()?;
         let branch_state = self
             .runtime
-            .block_on(tokio::spawn(async move {
+            .block_on(self.runtime.spawn(async move {
                 driver
                     .get_branch_state(&driver.get_checked_out_ref().await?.branch)
                     .await

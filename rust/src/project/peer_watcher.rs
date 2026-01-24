@@ -7,49 +7,44 @@ use tokio::{sync::Mutex, task::JoinHandle};
 
 #[derive(Debug)]
 pub struct PeerWatcher {
-    repo_handle: Repo,
-    branch_db: BranchDb,
     server_info: Arc<Mutex<Option<ConnectionInfo>>>,
-    handle: Option<JoinHandle<()>>,
+    handle: JoinHandle<()>,
 }
 
 impl Drop for PeerWatcher {
     fn drop(&mut self) {
         // Is this safe? Alternatively we could use a cancellation token
         // I think it's safe though
-        self.handle.as_ref().map(|h| h.abort());
+        self.handle.abort();
     }
 }
 
 impl PeerWatcher {
     pub fn new(repo_handle: Repo, branch_db: BranchDb) -> Self {
-        Self {
-            repo_handle,
-            branch_db,
-            server_info: Arc::new(Mutex::new(None)),
-            handle: None,
-        }
-    }
-
-    pub async fn get_server_info(&self) -> Option<ConnectionInfo> {
-        return self.server_info.lock().await.clone();
-    }
-
-    pub fn start(&mut self) {
-        let repo_handle = self.repo_handle.clone();
-        let server_info = self.server_info.clone();
-        self.handle = Some(tokio::spawn(async move {
-            let (_, stream) = repo_handle.connected_peers();
+        let server_info = Arc::new(Mutex::new(None));
+        let server_info_clone = server_info.clone();
+        let repo_handle_clone = repo_handle.clone();
+        let handle = tokio::spawn(async move {
+            let (_, stream) = repo_handle_clone.connected_peers();
             tokio::pin!(stream);
             while let Some(peers) = stream.next().await {
                 // Currently, we only ever have 1 peer: the server.
                 // Therefore, this code expects that the server is the first and only peer, if it's connected.
                 // When we move to more peers, we'll need to figure out a way to identify the server here.
                 if let Some(info) = peers.first() {
-                    Self::update_server_info(server_info.clone(), info.clone()).await;
+                    Self::update_server_info(server_info_clone.clone(), info.clone()).await;
                 }
             }
-        }));
+        });
+
+        Self {
+            server_info,
+            handle,
+        }
+    }
+
+    pub async fn get_server_info(&self) -> Option<ConnectionInfo> {
+        return self.server_info.lock().await.clone();
     }
 
     async fn update_server_info(
@@ -58,7 +53,7 @@ impl PeerWatcher {
     ) {
         let mut server_info = old_info.lock().await;
         if server_info.is_none() {
-            server_info.insert(new_info);
+            *server_info = Some(new_info);
             return;
         }
         let mut info = server_info.clone().unwrap();

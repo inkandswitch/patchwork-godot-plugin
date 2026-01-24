@@ -34,6 +34,11 @@ impl SyncAutomergeToFileSystem {
             return Vec::new();
         }
 
+        tracing::info!(
+            "Our current ref is different than the requested ref. Attempting to checkout {:?}",
+            goal_ref
+        );
+
         let Some(changes) = self
             .branch_db
             .get_changed_file_content_between_refs(checked_out_ref.as_ref(), &goal_ref, false)
@@ -64,11 +69,16 @@ impl SyncAutomergeToFileSystem {
             (change, written)
         });
 
-        let results = join_all(futures)
+        let results: Vec<FileSystemEvent> = join_all(futures)
             .await
             .into_iter()
             .filter_map(|(event, written)| written.then_some(event))
             .collect();
+        
+        tracing::info!(
+            "Wrote {:?} files!",
+            results.len()
+        );
 
         *checked_out_ref = Some(goal_ref);
 
@@ -116,6 +126,7 @@ impl SyncAutomergeToFileSystem {
             tracing::error!("Failed to write file {:?} during checkout: {}", path, e);
             return false;
         };
+        tracing::info!("Successfully modified {:?}", path);
         true
     }
 
@@ -134,6 +145,7 @@ impl SyncAutomergeToFileSystem {
             }
             Ok(_) => (),
         };
+        tracing::info!("Successfully deleted {:?}", path);
         return true;
     }
 }

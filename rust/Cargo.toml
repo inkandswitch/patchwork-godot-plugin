@@ -59,6 +59,7 @@ regex = "1.12.2"
 tokio-tungstenite = "0.27.0"
 async-stream = "0.3.6"
 tokio-stream = { version = "0.1.18", features = ["sync"] }
+tokio-util = "0.7.18"
 
 [build-dependencies]
 cbindgen = "^0.27"

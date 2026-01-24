@@ -414,7 +414,7 @@ impl GodotProject {
 		if !self.pending_editor_update.any_changes() {
 			return false;
 		}
-		if !Driver::safe_to_update_godot() {
+		if !Project::safe_to_update_godot() {
 			return false;
 		}
 		self.base_mut().set_process(false);
