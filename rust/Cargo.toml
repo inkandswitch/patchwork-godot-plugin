@@ -24,7 +24,7 @@ automerge = "0.7.2"
 autosurgeon = "0.10.1"
 futures = "0.3.31"
 godot = "0.4.3"
-tokio = { version = "1.41.1", features = ["full"] }
+tokio = { version = "1.49.0", features = ["full"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
 tree-sitter = "0.25.4"
 tree-sitter-godot-resource = { git = "https://github.com/nikitalita/tree-sitter-godot-resource.git", branch = "fix-string-names" }
@@ -47,7 +47,7 @@ rand = "0.9.2"
 
 # patchwork_rust_post_build_script = { path = "patchwork_rust_post_build_script" }
 serde = { version = "1.0", features = ["derive"] }
-yet-another-md5 = "2.0.0"
+md5 = "0.8.0"
 glob = "0.3.1"
 rlimit = "0.10.2"
 tracing = "0.1.40"
@@ -57,6 +57,8 @@ samod = { version="0.7.1", features = ["tokio", "threadpool", "tungstenite"] }
 rayon = "1.11.0"
 regex = "1.12.2"
 tokio-tungstenite = "0.27.0"
+async-stream = "0.3.6"
+tokio-stream = { version = "0.1.18", features = ["sync"] }
 
 [build-dependencies]
 cbindgen = "^0.27"

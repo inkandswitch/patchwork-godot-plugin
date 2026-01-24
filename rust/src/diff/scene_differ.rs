@@ -2,9 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use godot::{
     builtin::{StringName, Variant},
-    classes::{ClassDb},
-	global::str_to_var,
-    meta::ToGodot, obj::Singleton,
+    classes::ClassDb,
+    global::str_to_var,
+    meta::ToGodot,
+    obj::Singleton,
 };
 
 use crate::{
@@ -12,6 +13,7 @@ use crate::{
     parser::godot_parser::{
         ExternalResourceNode, GodotNode, GodotScene, SubResourceNode, TypeOrInstance,
     },
+    project::branch_db::HistoryRef,
 };
 
 /// Represents a diff of a scene, with a scene path and a list of changed nodes.
@@ -119,13 +121,15 @@ impl std::fmt::Display for VariantStrValue {
 }
 
 /// Implement scene-related functions on the Differ
-impl Differ<'_> {
+impl Differ {
     /// Generate a [SceneDiff] between the previous and current heads.
-    pub(super) fn get_scene_diff(
+    pub(super) async fn get_scene_diff(
         &self,
         path: &String,
         old_scene: Option<&GodotScene>,
         new_scene: Option<&GodotScene>,
+        before: &HistoryRef,
+        after: &HistoryRef,
     ) -> SceneDiff {
         let mut node_ids = HashSet::new();
         let mut sub_resource_ids = HashSet::new();
@@ -156,7 +160,7 @@ impl Differ<'_> {
             let old_node = old_scene.as_ref().and_then(|s| s.get_node(*node_id));
             let new_node = new_scene.as_ref().and_then(|s| s.get_node(*node_id));
 
-            let Some(diff) = self.get_node_diff(*node_id, old_node, new_node, old_scene, new_scene)
+            let Some(diff) = self.get_node_diff(*node_id, old_node, new_node, old_scene, new_scene, before, after).await
             else {
                 // If the node has no changes or is otherwise invalid, just skip this one.
                 continue;
@@ -177,13 +181,15 @@ impl Differ<'_> {
     }
 
     /// Generate a [NodeDiff] between two nodes.
-    fn get_node_diff(
+    async fn get_node_diff(
         &self,
         node_id: i32,
         old_node: Option<&GodotNode>,
         new_node: Option<&GodotNode>,
         old_scene: Option<&GodotScene>,
         new_scene: Option<&GodotScene>,
+        before: &HistoryRef,
+        after: &HistoryRef,
     ) -> Option<NodeDiff> {
         if old_node.is_none() && new_node.is_none() {
             return None;
@@ -210,7 +216,7 @@ impl Differ<'_> {
         // Iterate through the props
         for prop in &props {
             if let Some(prop_diff) =
-                self.get_property_diff(prop, old_node, new_node, old_scene, new_scene)
+                self.get_property_diff(prop, old_node, new_node, old_scene, new_scene, before, after).await
             {
                 changed_properties.insert(prop.clone(), prop_diff);
             }
@@ -292,13 +298,15 @@ impl Differ<'_> {
 
     /// Returns a [PropertyDiff] comparing the old property value versus the new one.
     /// Returns [None] if neither node is valid, or if the value has not meaningfully changed.
-    fn get_property_diff(
+    async fn get_property_diff(
         &self,
         prop: &String,
         old_node: Option<&GodotNode>,
         new_node: Option<&GodotNode>,
         old_scene: Option<&GodotScene>,
         new_scene: Option<&GodotScene>,
+        before: &HistoryRef,
+        after: &HistoryRef,
     ) -> Option<PropertyDiff> {
         // If neither node is valid, there's no valid property diff.
         if new_node.is_none() && old_node.is_none() {
@@ -315,12 +323,14 @@ impl Differ<'_> {
         }
 
         // Expensive: Load any ext resources and turn them into Variants
-        let old = old_value
-            .as_ref()
-            .map(|v| self.get_prop_value(&v, old_scene, true, prop == "script"));
-        let new = new_value
-            .as_ref()
-            .map(|v| self.get_prop_value(&v, new_scene, false, prop == "script"));
+        let old = match &old_value {
+            Some(v) => Some(self.get_prop_value(v, old_scene, true, prop == "script", before, after).await),
+            None => None,
+        };
+        let new = match &old_value {
+            Some(v) => Some(self.get_prop_value(v, new_scene, false, prop == "script", before, after).await),
+            None => None,
+        };
 
         return Some(PropertyDiff::new(
             prop.clone(),
@@ -461,12 +471,14 @@ impl Differ<'_> {
     /// Returns the value of a given prop, within a given scene.
     /// Normally, it's a String. If it's a (non-script) ExtResource or ResourcePath,
     /// it loads and returns the resource content as a Variant.
-    fn get_prop_value(
+    async fn get_prop_value(
         &self,
         prop_value: &VariantStrValue,
         scene: Option<&GodotScene>,
         is_old: bool,
         is_script: bool,
+        before: &HistoryRef,
+        after: &HistoryRef,
     ) -> Variant {
         // Prevent loading script files during the diff and creating issues for the editor
         if is_script {
@@ -498,14 +510,8 @@ impl Differ<'_> {
             }
         }
 
-        let Some(resource) = self.load_ext_resource(
-            &path,
-            if is_old {
-                &self.prev_heads
-            } else {
-                &self.curr_heads
-            },
-        ) else {
+        let Some(resource) = self.load_ext_resource(&path, if is_old { before } else { after }).await
+        else {
             return "<ExtResource load failed>".to_variant();
         };
 

@@ -1220,13 +1220,14 @@ impl Project {
 					let Some(peer_connection_info) = peer_connection_info else {
 						continue;
 					};
-                    let _info = match self
-                        .sync_server_connection_info
-                        .as_mut()
+					let Some(current_info) = self.sync_server_connection_info else {
+						self.sync_server_connection_info = peer_connection_info.clone();
+						continue;
+					};
+                    match self.sync_server_connection_info.as_mut()
                     {
                         None => {
                             self.sync_server_connection_info = Some(peer_connection_info.clone());
-                            peer_connection_info
                         }
 
                         Some(sync_server_connection_info) => {
@@ -1263,8 +1264,6 @@ impl Project {
                                         .docs
                                         .insert(doc_id.clone(), doc_state.clone());
                                 });
-
-                            peer_connection_info
                         }
                     };
 					self.request_ingestion();

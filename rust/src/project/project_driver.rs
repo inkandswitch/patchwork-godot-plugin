@@ -163,25 +163,18 @@ struct DriverState {
     heads_in_frontend: HashMap<DocumentId, Vec<ChangeHash>>
 }
 
-pub enum ConnectionThreadError {
-	ConnectionThreadDied(String),
-	ConnectionThreadError(String),
-}
 
 #[derive(Debug)]
 pub struct ProjectDriver {
-    runtime: Runtime,
-    repo_handle: Repo,
-	server_url: String,
-	connection_thread_output_rx: Option<UnboundedReceiver<String>>,
-	retries: u32,
-    connection_thread: Option<JoinHandle<()>>,
-    spawned_thread: Option<JoinHandle<()>>,
-	server_connected: Arc<AtomicBool>
+    // todo: make these not pub
+    pub runtime: Runtime,
+    pub repo_handle: Repo,
+    pub spawned_thread: Option<JoinHandle<()>>,
 }
 
 impl ProjectDriver {
     pub async fn create(storage_folder_path: String, server_url: String) -> Self {
+        // TODO: ensure we make this work across the program. Initialize it only once, etc.
         let runtime: Runtime = tokio::runtime::Builder::new_multi_thread()
 			.worker_threads(1)
             .enable_all()
@@ -207,12 +200,7 @@ impl ProjectDriver {
         return Self {
             runtime,
             repo_handle,
-			server_url,
-			retries: 0,
-			connection_thread_output_rx: None,
-            connection_thread: None,
-            spawned_thread: None,
-			server_connected: Arc::new(AtomicBool::new(false))
+            spawned_thread: None
         };
     }
 
@@ -223,134 +211,15 @@ impl ProjectDriver {
         branches_metadata_doc_id: Option<DocumentId>,
         user_name: Option<String>,
     ) {
-        if self.connection_thread.is_some() || self.spawned_thread.is_some() {
-            tracing::warn!("driver already spawned");
-            return;
-        }
-
-        self.respawn_connection_thread();
-
         // Spawn sync task for all doc handles
         self.spawned_thread =
             Some(self.spawn_driver_task(rx, tx, branches_metadata_doc_id, &user_name));
     }
 
     pub fn teardown(&mut self) {
-        if let Some(connection_thread) = self.connection_thread.take() {
-            connection_thread.abort();
-        }
         if let Some(spawned_thread) = self.spawned_thread.take() {
             spawned_thread.abort();
         }
-    }
-
-	fn connection_thread_died(&self) -> bool {
-		if let Some(connection_thread) = &self.connection_thread {
-			return connection_thread.is_finished();
-		}
-		false
-	}
-
-	pub fn connection_thread_get_last_error(&mut self) -> Option<ConnectionThreadError> {
-		if let Some(connection_thread_rx) = &mut self.connection_thread_output_rx {
-			let mut error_str = String::new();
-			while let Ok(Some(error)) = connection_thread_rx.try_next() {
-				error_str.push_str("\n");
-				error_str.push_str(&error);
-			}
-			if self.connection_thread_died() {
-				self.retries += 1;
-				return Some(ConnectionThreadError::ConnectionThreadDied(error_str));
-			}
-			if !error_str.is_empty() {
-				return Some(ConnectionThreadError::ConnectionThreadError(error_str));
-			}
-		}
-		None
-	}
-
-	pub fn respawn_connection_thread(&mut self) -> bool {
-		if let Some(connection_thread) = self.connection_thread.take() {
-			if !connection_thread.is_finished() {
-				tracing::warn!("WARNING: connection thread is not finished, aborting");
-				connection_thread.abort();
-			}
-		}
-		if self.retries > 6 {
-			tracing::error!("connection thread failed too many times, aborting");
-			return false;
-		}
-		let (connection_thread_tx, connection_thread_rx) = futures::channel::mpsc::unbounded();
-		self.connection_thread_output_rx = Some(connection_thread_rx);
-		self.connection_thread = Some(self.spawn_connection_task(connection_thread_tx));
-		return true;
-	}
-
-    fn spawn_connection_task(&self, connection_thread_tx: UnboundedSender<String>) -> JoinHandle<()> {
-        let repo_handle_clone = self.repo_handle.clone();
-		let server_connected = self.server_connected.clone();
-		let retries = self.retries;
-		let server_url = self.server_url.clone();
-        return self.runtime.spawn(async move {
-            tracing::info!("start a client");
-			let backoff = 2_f64.powf(retries as f64) * 100.0;
-			if retries > 0 {
-				tracing::error!("connection thread failed, retrying in {}ms...", backoff);
-				tokio::time::sleep(std::time::Duration::from_millis(backoff as u64)).await;
-			}
-            loop {
-				tracing::info!("Attempting to connect to server at {server_url}...");
-                
-                let connection;
-                if server_url.starts_with("ws://") {
-                    let (stream, _) = loop {
-                        // Try to connect to a peer
-                        let res = tokio_tungstenite::connect_async(server_url.clone()).await;
-                        if let Err(e) = res {
-                            tracing::error!("error connecting via WebSockets: {:?}", e);
-                            // sleep for 1 second
-                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                            continue;
-                        }
-                        break res.unwrap();
-                    };
-
-                    connection = repo_handle_clone
-                        .connect_tungstenite(stream, ConnDirection::Outgoing).unwrap();
-                }
-                else {
-                    let stream = loop {
-                        // Try to connect to a peer
-                        let res = TcpStream::connect(server_url.clone()).await;
-                        if let Err(e) = res {
-                            tracing::error!("error connecting via TCP: {:?}", e);
-                            // sleep for 1 second
-                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                            continue;
-                        }
-                        break res.unwrap();
-                    };
-
-                    connection = repo_handle_clone
-                        .connect_tokio_io(stream, ConnDirection::Outgoing).unwrap();
-                }
-
-                tracing::info!("Connected successfully!");
-
-				if let Err(e) = connection.handshake_complete().await {
-              			tracing::error!("Failed to connect: {}", e);
-            			connection_thread_tx.unbounded_send(format!("{}", e)).unwrap();
-                        // sleep for 5 seconds
-                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                        continue;
-				}
-				server_connected.swap(true, Ordering::Relaxed);
-                let completed = connection.finished().await;
-				server_connected.swap(false, Ordering::Relaxed);
-				tracing::error!("connection terminated because of: {}", completed);
-            	connection_thread_tx.unbounded_send(format!("{}", completed)).unwrap();
-            }
-        });
     }
 
     fn spawn_driver_task(
@@ -362,7 +231,6 @@ impl ProjectDriver {
     ) -> JoinHandle<()> {
         let repo_handle = self.repo_handle.clone();
         let user_name = user_name.clone();
-		let server_connected = self.server_connected.clone();
 
         // let filter = EnvFilter::new("info").add_directive("automerge_repo=info".parse().unwrap());
         // if let Err(e) = tracing_subscriber::registry()
