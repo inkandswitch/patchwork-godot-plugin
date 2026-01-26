@@ -174,15 +174,16 @@ impl ChangeIngesterInner {
         let h = handle.clone();
         let changes = tokio::task::spawn_blocking(move || {
             h.with_document(move |d| {
-                d.get_changes(&[])
+                d.get_changes_meta(&[])
                     .to_vec()
                     .iter()
                     .map(|c| {
                         CommitInfo {
-                            hash: c.hash(),
-                            timestamp: c.timestamp(),
+                            hash: c.hash,
+                            timestamp: c.timestamp,
                             metadata: c
-                                .message()
+                                .message
+                                .as_ref()
                                 .and_then(|m| serde_json::from_str::<CommitMetadata>(&m).ok()),
                             synced: false,           // set later
                             summary: "".to_string(), // set later

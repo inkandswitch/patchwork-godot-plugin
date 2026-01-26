@@ -436,7 +436,7 @@ impl DriverInner {
                 _ = self.token.cancelled() => {break;}
                 // If it lags, turn this down. Alternatively, we could use a different signal to sync.
                 // Will cap to only once per frame due to the guard.
-                _ = tokio::time::sleep(Duration::from_millis(50)) => {
+                _ = tokio::time::sleep(Duration::from_millis(5)) => {
                     self.sync().await
                 }
             }
