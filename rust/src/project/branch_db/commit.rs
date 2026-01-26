@@ -28,7 +28,10 @@ impl BranchDb {
         is_checking_in: bool,
     ) -> Option<HistoryRef> {
         let Some(branch_handle) = self.get_branch_handle(&ref_.branch).await else {
-            tracing::error!("Could not commit changes; ref doesn't have an associated branch handle! {:?}", ref_);
+            tracing::error!(
+                "Could not commit changes; ref doesn't have an associated branch handle! {:?}",
+                ref_
+            );
             return None;
         };
 
@@ -36,7 +39,7 @@ impl BranchDb {
         // Only commit files that have actually changed
         let files = self.filter_changed_files(ref_, files).await;
         let count = files.len();
-        let username = self.inner.lock().await.username.clone();
+        let username = self.username.lock().await.clone();
 
         if (count == 0) {
             tracing::info!("No actual changes found; not committing.");
@@ -223,20 +226,12 @@ impl BranchDb {
             })
             .collect()
     }
-    
 
     pub async fn create_new_binary_doc(&self, content: Vec<u8>) -> DocHandle {
         tracing::info!("Creating new binary doc...");
-        let handle = self
-            .inner
-            .lock()
-            .await
-            .repo
-            .create(Automerge::new())
-            .await
-            .unwrap();
+        let handle = self.repo.create(Automerge::new()).await.unwrap();
 
-        let username = self.inner.lock().await.username.clone();
+        let username = self.username.lock().await.clone();
 
         // we're allowed to transact in the background: nobody needs this to exist yet.
         let h = handle.clone();

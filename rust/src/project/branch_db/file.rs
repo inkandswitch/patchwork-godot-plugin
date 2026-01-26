@@ -194,7 +194,7 @@ impl BranchDb {
     }
     
     async fn get_linked_file(&self, doc_id: &DocumentId) -> Option<FileContent> {
-        let state = self.inner.lock().await.binary_states.get(doc_id).cloned();
+        let state = self.binary_states.lock().await.get(doc_id).cloned();
         let Some(handle) = state.and_then(|f| f.doc_handle) else {
             return None;
         };

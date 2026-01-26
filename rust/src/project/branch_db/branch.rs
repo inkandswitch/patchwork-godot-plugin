@@ -18,15 +18,14 @@ impl BranchDb {
     /// Checks out the initial commit of the main branch automatically.
     pub async fn create_metadata_doc(&self) -> DocHandle {
         tracing::info!("Creating new metadata doc...");
-        let repo = self.inner.lock().await.repo.clone();
-        let username = self.inner.lock().await.username.clone();
+        let username = self.username.lock().await.clone();
         
         // Because we always change the checked out ref after creating, we need to lock this in write mode.
         let r = self.get_checked_out_ref_mut().await;
         let mut checked_out_ref = r.write().await;
 
         // Create new main branch doc
-        let main_handle = repo.create(Automerge::new()).await.unwrap();
+        let main_handle = self.repo.create(Automerge::new()).await.unwrap();
         let main_handle_clone = main_handle.clone();
         let username_clone = username.clone();
         
@@ -79,7 +78,7 @@ impl BranchDb {
         let branches_clone = branches.clone();
 
         // create new branches metadata doc
-        let metadata_handle = repo.create(Automerge::new()).await.unwrap();
+        let metadata_handle = self.repo.create(Automerge::new()).await.unwrap();
         let metadata_handle_clone = metadata_handle.clone();
         tokio::task::spawn_blocking(move || {
             metadata_handle.with_document(|d| {
@@ -108,4 +107,5 @@ impl BranchDb {
         .unwrap();
         metadata_handle_clone
     }
+    
 }
