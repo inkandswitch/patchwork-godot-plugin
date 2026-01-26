@@ -1,7 +1,7 @@
 use crate::fs::file_utils::{FileContent, FileSystemEvent};
 use crate::interop::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
 use crate::project::driver::Driver;
-use crate::project::new_project::{GodotProjectSignal, Project};
+use crate::project::project::{GodotProjectSignal, Project};
 use crate::project::project_api::{BranchViewModel, ProjectViewModel};
 use automerge::ChangeHash;
 use godot::classes::editor_plugin::DockSlot;

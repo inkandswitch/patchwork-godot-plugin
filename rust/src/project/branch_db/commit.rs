@@ -28,12 +28,20 @@ impl BranchDb {
         is_checking_in: bool,
     ) -> Option<HistoryRef> {
         let Some(branch_handle) = self.get_branch_handle(&ref_.branch).await else {
+            tracing::error!("Could not commit changes; ref doesn't have an associated branch handle! {:?}", ref_);
             return None;
         };
 
+        tracing::info!("Attempting to commit changes...");
         // Only commit files that have actually changed
         let files = self.filter_changed_files(ref_, files).await;
+        let count = files.len();
         let username = self.inner.lock().await.username.clone();
+
+        if (count == 0) {
+            tracing::info!("No actual changes found; not committing.");
+            return None;
+        }
 
         let mut binary_entries: Vec<(String, DocHandle)> = Vec::new();
         let mut text_entries: Vec<(String, String)> = Vec::new();
@@ -174,6 +182,7 @@ impl BranchDb {
         .await
         .unwrap();
 
+        tracing::info!("Committed {} files.", count);
         assert!(new_heads != ref_.heads);
         return Some(HistoryRef {
             heads: new_heads,
@@ -217,6 +226,7 @@ impl BranchDb {
     
 
     pub async fn create_new_binary_doc(&self, content: Vec<u8>) -> DocHandle {
+        tracing::info!("Creating new binary doc...");
         let handle = self
             .inner
             .lock()

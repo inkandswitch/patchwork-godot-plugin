@@ -3,7 +3,7 @@ use std::io::Write;
 
 use godot::classes::ProjectSettings;
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::{EnvFilter, Layer, fmt::{format::Writer, time::FormatTime}, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{EnvFilter, Layer, fmt::{format::{FmtSpan, Writer}, time::FormatTime}, layer::SubscriberExt, util::SubscriberInitExt};
 use godot::obj::Singleton;
 
 fn get_user_dir() -> String {
@@ -34,11 +34,12 @@ pub fn initialize_tracing() {
     let stdout_layer = tracing_subscriber::fmt::layer()
         .with_timer(CompactTime)
         .compact()
+        // .with_span_events(FmtSpan::ENTER | FmtSpan::CLOSE)
         .with_writer(CustomStdoutWriter::custom_stdout)
-        .with_filter(EnvFilter::new("info")
-        .add_directive("patchwork_rust_core=debug".parse().unwrap())
-        .add_directive("samod=info".parse().unwrap())
-		.add_directive("samod_core=info".parse().unwrap()));
+        .with_filter(EnvFilter::new("trace")
+            .add_directive("patchwork_rust_core=trace".parse().unwrap())
+            .add_directive("samod=info".parse().unwrap())
+            .add_directive("samod_core=info".parse().unwrap()));
     let file_layer = tracing_subscriber::fmt::layer()
         .with_line_number(true)
 		.with_ansi(false)

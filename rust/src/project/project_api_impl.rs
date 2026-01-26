@@ -13,7 +13,7 @@ use crate::{
     interop::godot_accessors::PatchworkConfigAccessor,
     project::{
         branch_db::HistoryRef,
-        new_project::Project,
+        project::Project,
         project_api::{
             BranchViewModel, ChangeViewModel, DiffViewModel, ProjectViewModel, SyncStatus,
         },
@@ -23,15 +23,22 @@ use crate::{
 // TODO: Ideally this is actually a child of a new project submodule...
 // that's so that it doesn't need pub(super) to acess private fields of
 // itself.
+// TODO (Lilith): Figure out if there's a reasonable way to reduce blocking in this file.
 impl ProjectViewModel for Project {
     fn has_project(&self) -> bool {
-        self.driver.is_some()
+        self.driver.blocking_lock().is_some()
     }
 
     fn get_project_id(&self) -> Option<DocumentId> {
-        let driver = self.driver.clone()?;
+        let driver = self.driver.clone();
         self.runtime
-            .block_on(self.runtime.spawn(async move { driver.get_metadata_doc().await }))
+            .block_on(self.runtime.spawn(async move {
+                let driver = driver.lock().await;
+                if driver.is_none() {
+                    return None;
+                }
+                driver.as_ref().unwrap().get_metadata_doc().await
+            }))
             .unwrap()
     }
 
@@ -70,12 +77,16 @@ impl ProjectViewModel for Project {
 
     fn set_user_name(&self, name: String) {
         PatchworkConfigAccessor::set_user_value("user_name", &name);
-        let Some(driver) = self.driver.clone() else {
-            return;
-        };
-        self.runtime.block_on(self.runtime.spawn(async move {
-            driver.set_username(Some(name)).await
-        })).unwrap();
+        let driver = self.driver.clone();
+        self.runtime
+            .block_on(self.runtime.spawn(async move {
+                let mut driver = driver.lock().await;
+                if driver.is_none() {
+                    return;
+                }
+                driver.as_mut().unwrap().set_username(Some(name)).await
+            }))
+            .unwrap();
     }
 
     fn can_create_merge_preview_branch(&self) -> bool {
@@ -291,13 +302,17 @@ impl ProjectViewModel for Project {
     }
 
     fn get_branch(&self, id: &DocumentId) -> Option<impl BranchViewModel + use<>> {
-        let driver = self.driver.clone()?;
+        let driver = self.driver.clone();
         let id = id.clone();
         let state = self
             .runtime
-            .block_on(self.runtime.spawn(
-                async move { driver.get_branch_state(&id).await },
-            ))
+            .block_on(self.runtime.spawn(async move {
+                let driver = driver.lock().await;
+                if driver.is_none() {
+                    return None;
+                }
+                driver.as_ref().unwrap().get_branch_state(&id).await
+            }))
             .unwrap();
         let Some(state) = state else {
             return None;
@@ -338,21 +353,31 @@ impl ProjectViewModel for Project {
     }
 
     fn get_main_branch(&self) -> Option<impl BranchViewModel> {
-        let driver = self.driver.clone()?;
+        let driver = self.driver.clone();
         let id = self
             .runtime
-            .block_on(self.runtime.spawn(async move { driver.get_main_branch().await }))
+            .block_on(self.runtime.spawn(async move {
+                let driver = driver.lock().await;
+                if driver.is_none() {
+                    return None;
+                }
+                driver.as_ref().unwrap().get_main_branch().await
+            }))
             .unwrap()?;
         self.get_branch(&id)
     }
 
     fn get_checked_out_branch(&self) -> Option<impl BranchViewModel> {
-        let driver = self.driver.clone()?;
+        let driver = self.driver.clone();
         let id = self
             .runtime
-            .block_on(self.runtime.spawn(
-                async move { driver.get_checked_out_ref().await },
-            ))
+            .block_on(self.runtime.spawn(async move {
+                let driver = driver.lock().await;
+                if driver.is_none() {
+                    return None;
+                }
+                driver.as_ref().unwrap().get_checked_out_ref().await
+            }))
             .unwrap()?;
         self.get_branch(&id.branch)
     }
@@ -434,12 +459,18 @@ impl ProjectViewModel for Project {
     fn get_default_diff(&self) -> Option<impl DiffViewModel> {
         let heads_before;
         let heads_after;
-        let driver = self.driver.clone()?;
+        let driver = self.driver.clone();
         let branch_state = self
             .runtime
             .block_on(self.runtime.spawn(async move {
+                let driver = driver.lock().await;
+                if driver.is_none() {
+                    return None;
+                }
                 driver
-                    .get_branch_state(&driver.get_checked_out_ref().await?.branch)
+                    .as_ref()
+                    .unwrap()
+                    .get_branch_state(&driver.as_ref().unwrap().get_checked_out_ref().await?.branch)
                     .await
             }))
             .unwrap()?;
@@ -528,12 +559,18 @@ impl ProjectViewModel for Project {
             }
         }
 
-        let driver = self.driver.clone()?;
+        let driver = self.driver.clone();
         let branch_state = self
             .runtime
             .block_on(self.runtime.spawn(async move {
+                let driver = driver.lock().await;
+                if driver.is_none() {
+                    return None;
+                }
                 driver
-                    .get_branch_state(&driver.get_checked_out_ref().await?.branch)
+                    .as_ref()
+                    .unwrap()
+                    .get_branch_state(&driver.as_ref().unwrap().get_checked_out_ref().await?.branch)
                     .await
             }))
             .unwrap()?;

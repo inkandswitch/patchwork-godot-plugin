@@ -61,12 +61,14 @@ impl BranchDb {
     /// Get a list of file operations between two points in Patchwork history.
     /// If one ref exists in the history of another, we can do a fast automerge diff.
     /// If they have diverged, we must do a slow file-wise diff.
+    #[tracing::instrument(skip_all)]
     pub async fn get_changed_file_content_between_refs(
         &self,
         old_ref: Option<&HistoryRef>,
         new_ref: &HistoryRef,
         force_slow_diff: bool,
     ) -> Option<Vec<FileSystemEvent>> {
+        tracing::info!("Getting changes between {:?} and {:?}", new_ref, old_ref);
         if !new_ref.is_valid() {
             tracing::warn!("new ref is empty, can't get changed files");
             return None;
@@ -211,11 +213,13 @@ impl BranchDb {
         .unwrap()
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn get_files_at_ref(
         &self,
         desired_ref: &HistoryRef,
         filters: &HashSet<String>,
     ) -> Option<HashMap<String, FileContent>> {
+        tracing::info!("Getting files at ref {:?}", desired_ref);
         let Some(branch_state) = self.get_branch_state(&desired_ref.branch).await else {
             return None;
         };

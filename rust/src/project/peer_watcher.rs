@@ -1,62 +1,69 @@
-use std::sync::Arc;
-
-use crate::{project::branch_db::BranchDb};
-use futures::StreamExt;
-use samod::{Connection, ConnectionInfo, Repo};
-use tokio::{sync::Mutex, task::JoinHandle};
+use futures::{Stream, StreamExt};
+use samod::{ConnectionInfo, Repo};
+use tokio::{select, sync::watch};
+use tokio_stream::wrappers::WatchStream;
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug)]
 pub struct PeerWatcher {
-    server_info: Arc<Mutex<Option<ConnectionInfo>>>,
-    handle: JoinHandle<()>,
+    server_info_tx: watch::Sender<Option<ConnectionInfo>>,
+    token: CancellationToken,
 }
 
 impl Drop for PeerWatcher {
     fn drop(&mut self) {
-        // Is this safe? Alternatively we could use a cancellation token
-        // I think it's safe though
-        self.handle.abort();
+        self.token.cancel()
     }
 }
 
 impl PeerWatcher {
-    pub fn new(repo_handle: Repo, branch_db: BranchDb) -> Self {
-        let server_info = Arc::new(Mutex::new(None));
-        let server_info_clone = server_info.clone();
+    pub fn new(repo_handle: Repo) -> Self {
+        let (tx, rx) = watch::channel(None);
+        let tx_clone = tx.clone();
         let repo_handle_clone = repo_handle.clone();
-        let handle = tokio::spawn(async move {
+        let token = CancellationToken::new();
+        let token_clone = token.clone();
+        tokio::spawn(async move {
             let (_, stream) = repo_handle_clone.connected_peers();
             tokio::pin!(stream);
-            while let Some(peers) = stream.next().await {
-                // Currently, we only ever have 1 peer: the server.
-                // Therefore, this code expects that the server is the first and only peer, if it's connected.
-                // When we move to more peers, we'll need to figure out a way to identify the server here.
-                if let Some(info) = peers.first() {
-                    Self::update_server_info(server_info_clone.clone(), info.clone()).await;
+            loop {
+                select! {
+                    _ = token_clone.cancelled() => { break; }
+                    Some(peers) = stream.next() => {
+                        // Currently, we only ever have 1 peer: the server.
+                        // Therefore, this code expects that the server is the first and only peer, if it's connected.
+                        // When we move to more peers, we'll need to figure out a way to identify the server here.
+                        if let Some(info) = peers.first() {
+                            let old_info = rx.borrow().clone();
+                            _ = tx_clone.send(Some(Self::update_server_info(old_info, info.clone()).await));
+                        }
+                    }
                 }
             }
         });
 
         Self {
-            server_info,
-            handle,
+            server_info_tx: tx,
+            token,
         }
     }
 
-    pub async fn get_server_info(&self) -> Option<ConnectionInfo> {
-        return self.server_info.lock().await.clone();
+    pub fn subscribe(&self) -> impl Stream<Item = Option<ConnectionInfo>> {
+        return WatchStream::new(self.server_info_tx.subscribe());
+    }
+
+    pub fn get_server_info(&self) -> Option<ConnectionInfo> {
+        return self.server_info_tx.subscribe().borrow().clone();
     }
 
     async fn update_server_info(
-        old_info: Arc<Mutex<Option<ConnectionInfo>>>,
+        old_info: Option<ConnectionInfo>,
         new_info: ConnectionInfo,
-    ) {
-        let mut server_info = old_info.lock().await;
-        if server_info.is_none() {
-            *server_info = Some(new_info);
-            return;
+    ) -> ConnectionInfo {
+        if old_info.is_none() {
+            return new_info;
         }
-        let mut info = server_info.clone().unwrap();
+        let mut info = old_info.unwrap();
         info.last_received = new_info.last_received;
         info.last_sent = new_info.last_sent;
 
@@ -77,7 +84,6 @@ impl PeerWatcher {
             }
             info.docs.insert(doc_id.clone(), new_doc_state.clone());
         }
-
-        *server_info = Some(info);
+        info
     }
 }

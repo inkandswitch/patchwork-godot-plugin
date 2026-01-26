@@ -9,22 +9,28 @@ use crate::{
         branch::{Branch, BranchesMetadataDoc, GodotProjectDoc},
         utils::{CommitMetadata, commit_with_attribution_and_timestamp},
     },
-    project::branch_db::BranchDb,
+    project::branch_db::{BranchDb, HistoryRef},
 };
 
 // Methods related to branch and document management on a [BranchDb].
 impl BranchDb {
     /// Create a new metadata document, and a new main branch, and return the handle of the metadata document.
+    /// Checks out the initial commit of the main branch automatically.
     pub async fn create_metadata_doc(&self) -> DocHandle {
+        tracing::info!("Creating new metadata doc...");
         let repo = self.inner.lock().await.repo.clone();
         let username = self.inner.lock().await.username.clone();
+        
+        // Because we always change the checked out ref after creating, we need to lock this in write mode.
+        let r = self.get_checked_out_ref_mut().await;
+        let mut checked_out_ref = r.write().await;
 
         // Create new main branch doc
         let main_handle = repo.create(Automerge::new()).await.unwrap();
         let main_handle_clone = main_handle.clone();
         let username_clone = username.clone();
         
-        tokio::task::spawn_blocking(move || {
+        let new_heads = tokio::task::spawn_blocking(move || {
             main_handle_clone.with_document(|d| {
                 let mut tx = d.transaction();
                 let _ = reconcile(
@@ -45,10 +51,16 @@ impl BranchDb {
                         is_setup: Some(true),
                     },
                 );
-            });
+                d.get_heads()
+            })
         })
         .await
         .unwrap();
+    
+        *checked_out_ref = Some(HistoryRef {
+            branch: main_handle.document_id().clone(),
+            heads: new_heads
+        });
 
         let main_branch_doc_id = main_handle.document_id().to_string();
         let main_branch_doc_id_clone = main_branch_doc_id.clone();

@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use futures::future::join_all;
+use tracing::instrument;
 
 use crate::{
     fs::{file_utils::FileContent, file_utils::FileSystemEvent},
@@ -25,6 +26,7 @@ impl SyncAutomergeToFileSystem {
 
     /// Check out a [HistoryRef] from the Patchwork history, changing the filesystem as necessary.
     /// Returns a vector of file changes.
+    #[instrument(skip_all)]
     pub async fn checkout_ref(&self, goal_ref: HistoryRef) -> Vec<FileSystemEvent> {
         // Ensure that there's no way anything can grab the ref while we're trying to write it
         let r = self.branch_db.get_checked_out_ref_mut().await;

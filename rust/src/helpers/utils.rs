@@ -65,14 +65,14 @@ pub(crate) fn parse_automerge_url(url: &str) -> Option<DocumentId> {
     DocumentId::from_str(hash).ok()
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct MergeMetadata {
     pub merged_branch_id: DocumentId,
     pub merged_at_heads: Vec<ChangeHash>,
     pub forked_at_heads: Vec<ChangeHash>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub enum ChangeType {
 	Added,
 	Removed,
@@ -89,13 +89,13 @@ impl fmt::Display for ChangeType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ChangedFile {
     pub change_type: ChangeType,
     pub path: String
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct CommitMetadata {
     pub username: Option<String>,
     pub branch_id: Option<DocumentId>,
@@ -133,7 +133,7 @@ pub(crate) fn print_branch_state(message: &str, branch_state: &BranchState) {
 	tracing::trace!("synced heads: {:?}", branch_state.synced_heads);
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CommitInfo {
 	pub hash: ChangeHash,
 	pub timestamp: i64,

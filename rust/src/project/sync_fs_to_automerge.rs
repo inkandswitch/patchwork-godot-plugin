@@ -1,10 +1,9 @@
 use std::{path::PathBuf, sync::Arc};
 
 use futures::StreamExt;
-use tokio::{
-    select, sync::Mutex, task::{JoinHandle, JoinSet}
-};
+use tokio::{select, sync::Mutex, task::JoinSet};
 use tokio_util::sync::CancellationToken;
+use tracing::instrument;
 
 use crate::{
     fs::{file_utils::FileContent, file_utils::FileSystemEvent},
@@ -76,7 +75,9 @@ impl SyncFileSystemToAutomerge {
     }
 
     /// Make a commit of all watched, pending changes from the filesystem to automerge.
-    pub async fn commit(&self) {
+    /// Returns true on success.
+    #[instrument(skip_all)]
+    pub async fn commit(&self) -> bool {
         // Because we always change the checked out ref after committing, we need to lock this in write mode.
         let r = self.branch_db.get_checked_out_ref_mut().await;
         let mut checked_out_ref = r.write().await;
@@ -84,15 +85,21 @@ impl SyncFileSystemToAutomerge {
         let mut pending_changes = self.pending_changes.lock().await;
 
         if pending_changes.is_empty() {
-            return;
+            return false;
         }
 
-        tracing::info!("There are {:?} pending changes, attempting to commit...", pending_changes.len());
+        tracing::info!(
+            "There are {:?} pending changes, attempting to commit...",
+            pending_changes.len()
+        );
 
         // If the checked-out ref is invalid, we can't commit to the current branch.
         if checked_out_ref.as_ref().is_none_or(|r| !r.is_valid()) {
-            tracing::warn!("Can't commit to the current ref {:?}, because it isn't valid.", checked_out_ref);
-            return;
+            tracing::warn!(
+                "Can't commit to the current ref {:?}, because it isn't valid.",
+                checked_out_ref
+            );
+            return false;
         }
 
         let new_ref = self
@@ -108,17 +115,26 @@ impl SyncFileSystemToAutomerge {
             tracing::info!("Successfully made a commit! {:?}", new_ref);
             pending_changes.clear();
             *checked_out_ref = Some(new_ref);
+            return true;
         } else {
             tracing::error!("Could not commit pending files! Making no changes.");
+            return false;
         }
     }
 
-    // TODO (Lilith): We need to check in the files... make it happen.
     /// Make an initial commit of ALL files from the filesystem to automerge.
+    /// Makes the commit on the currently checked-out branch, and checks out the new heads.
     pub async fn checkin(&self) {
         // Because we always change the checked out ref after committing, we need to lock this in write mode.
         let r = self.branch_db.get_checked_out_ref_mut().await;
         let mut checked_out_ref = r.write().await;
+
+        if checked_out_ref.is_none() {
+            tracing::error!("Could not check in files; we don't have a branch checked out!");
+        }
+        else {
+            tracing::info!("Checking in files at ref {:?}", checked_out_ref);
+        }
 
         let files = self.get_all_files().await;
 
@@ -137,12 +153,6 @@ impl SyncFileSystemToAutomerge {
         } else {
             tracing::error!("Could not check in files! Making no changes.");
         }
-        // The original code runs a sync here... I'm not sure why. The equivalent in the new system would be SyncAutomergeToFileSystem.
-        // I think because we're updating the heads, we're OK...
-        // self.sync_files_at(
-        //     branch_state.doc_handle.clone(),
-        //     files.into_iter().map(|(path, content)| (PathBuf::from(path), content)).collect::<Vec<(PathBuf, FileContent)>>(),
-        //     Some(branch_state.synced_heads.clone()),
     }
 
     fn get_all_files_recur(

@@ -52,12 +52,13 @@ impl DocumentWatcher {
 
         let inner_clone = inner.clone();
 
+        // do the initial ingest
+        inner_clone
+            .ingest_metadata_document(metadata_handle.clone())
+            .await;
+
+        // track changes for future ingests
         tokio::spawn(async move {
-            // do the initial ingest
-            inner_clone
-                .ingest_metadata_document(metadata_handle.clone())
-                .await;
-            // track changes for future ingests
             inner_clone.track_metadata_document(metadata_handle).await;
         });
 
@@ -100,6 +101,7 @@ impl DocumentWatcherInner {
         }
     }
 
+    #[tracing::instrument(skip_all)]
     async fn ingest_branch_document(&self, handle: DocHandle) {
         let (_, meta) = self.branch_db.get_metadata_state().await.expect(
             "Somehow, we haven't loaded a metadata doc, but we're ingesting a branch document?!?!",
@@ -207,6 +209,7 @@ impl DocumentWatcherInner {
         branch_state.linked_doc_ids = linked_docs.values().cloned().collect();
     }
 
+    #[tracing::instrument(skip_all)]
     async fn ingest_metadata_document(&self, handle: DocHandle) {
         // TODO: Stop tracking removed branches
         // Find added branches, and begin tracking them

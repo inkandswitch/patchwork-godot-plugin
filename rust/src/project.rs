@@ -10,6 +10,8 @@ mod sync_automerge_to_fs;
 // pub for use in differ; consider restructuring
 pub mod branch_db;
 mod peer_watcher;
-pub mod new_project;
+pub mod project;
 // TODO (Lilith): Make this not pub
 pub mod driver;
+pub mod main_thread_block;
+mod change_ingester;

@@ -1,6 +1,7 @@
 use std::{path::PathBuf, str::FromStr};
 
 use samod::DocumentId;
+use tracing::instrument;
 
 use crate::project::branch_db::{BranchDb, HistoryRef};
 
@@ -35,6 +36,7 @@ impl BranchDb {
     // or figure out a way to reliably update it when the heads actually change.
     // In the old system, synced heads was just force-updated every branch update.
     // Maybe that's enough? Get DocumentWatcher to do it? Then we remove the with_doc call here. 
+    #[instrument(skip_all)]
     pub async fn get_latest_ref_on_branch(&self, branch: &DocumentId) -> Option<HistoryRef> {
         let state = self.get_branch_state(branch).await;
         let Some(state) = state else {
@@ -76,4 +78,10 @@ impl BranchDb {
             .any(|pattern| pattern.matches(&path.to_string_lossy()))
     }
     
+    pub async fn get_branch_name(&self, id: &DocumentId) -> Option<String> {
+        let Some(state) = self.get_branch_state(id).await else {
+            return None;
+        };
+        Some(state.lock().await.name.clone())
+    }
 }

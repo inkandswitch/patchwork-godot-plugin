@@ -4,12 +4,15 @@ use crate::helpers::utils::{CommitInfo, summarize_changes};
 use crate::interop::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
 use crate::project::branch_db::HistoryRef;
 use crate::project::driver::Driver;
+use crate::project::main_thread_block::MainThreadBlock;
 use crate::project::project_api::ChangeViewModel;
 use automerge::ChangeHash;
 use futures::future::join_all;
 use samod::DocumentId;
+use tokio::sync::{Mutex, watch};
 use std::cell::RefCell;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::SystemTime;
 use std::{collections::HashMap, str::FromStr};
 use tokio::runtime::Runtime;
@@ -18,16 +21,22 @@ use tokio::runtime::Runtime;
 /// Its API is exposed to GDScript via the GodotProject struct.
 #[derive(Debug)]
 pub struct Project {
-    // Project driver. If some, is running
-    pub(super) driver: Option<Driver>,
+    // Sync
+    main_thread_block: MainThreadBlock,
+    // These are here so we don't needlessly block during process
+    changes_rx: Option<watch::Receiver<Vec<CommitInfo>>>,
+    checked_out_ref_rx: Option<watch::Receiver<Option<HistoryRef>>>,
+
+    // Project driver. If some, is running.
+    // I'd prefer this not be a mutex, but we need to move it into temporary threads in order to dispatch async code from sync code.
+    // What's annoying is that we never actually block on this mutex!
+    pub(super) driver: Arc<Mutex<Option<Driver>>>,
     project_dir: PathBuf,
     pub(super) runtime: Runtime,
 
     // Tracked changes for the UI
     pub(super) history: Vec<ChangeHash>,
     pub(super) changes: HashMap<ChangeHash, CommitInfo>,
-    last_ingest: (SystemTime, i32),
-    ingest_requested: bool,
     last_known_branch: Option<DocumentId>,
 
     // Cached diffs between refs
@@ -55,47 +64,21 @@ impl Project {
             .unwrap();
 
         Self {
-            driver: None,
+            main_thread_block: MainThreadBlock::new(),
+            changes_rx: None,
+            checked_out_ref_rx: None,
+            driver: Arc::new(Mutex::new(None)),
             project_dir,
             runtime,
             history: Vec::new(),
             changes: HashMap::new(),
-            last_ingest: (SystemTime::UNIX_EPOCH, 0),
-            ingest_requested: true,
             last_known_branch: None,
             diff_cache: RefCell::new(HashMap::new()),
         }
     }
 
-    /// Expensive operation to ingest all branch changes from automerge into the project data.
-    /// Should be called when we think there are new changes to process.
-    fn ingest_changes(&mut self) {
-        let Some(driver) = self.driver.clone() else {
-            tracing::error!("Driver not started, can't ingest changes!");
-            return;
-        };
-
-        // tracing::info!("Ingesting changes...");
-
-        let changes = self
-            .runtime
-            .block_on(self.runtime.spawn(async move {
-                let changes =
-                    driver
-                        .get_changes()
-                        .await
-                        .into_iter()
-                        .map(async |change| CommitInfo {
-                            summary: Self::get_change_summary(&change, driver.clone())
-                                .await
-                                .unwrap_or("Invalid data".to_string()),
-                            ..change
-                        });
-                // a little awk. Parallelization doesn't really matter here at all and is maybe bad (bc locks).
-                // but otherwise we're iteratively constructing a vec, probably doesn't matter
-                join_all(changes).await
-            }))
-            .unwrap();
+    fn ingest_changes(&mut self, changes: Vec<CommitInfo>) {
+        tracing::info!("Ingesting changes...");
 
 		self.history.clear();
 		self.changes.clear();
@@ -106,72 +89,7 @@ impl Project {
             self.changes.insert(change.hash, change);
         }
     }
-
-    async fn get_change_summary(change: &CommitInfo, driver: Driver) -> Option<String> {
-        let meta = change.metadata.as_ref();
-        let author = meta?.username.clone().unwrap_or("Anonymous".to_string());
-
-        // merge commit
-        if let Some(merge_info) = &meta?.merge_metadata {
-            let merged_branch = driver
-                .get_branch_name(&merge_info.merged_branch_id.clone())
-                .await
-                .unwrap_or(merge_info.merged_branch_id.to_string());
-            return Some(format!("↪ {author} merged {merged_branch}"));
-        }
-
-        // revert commit
-        if let Some(revert_info) = &meta?.reverted_to {
-            let heads = revert_info
-                .iter()
-                .map(|s| &s[..7])
-                .collect::<Vec<&str>>()
-                .join(", ");
-            return Some(format!("↩ {author} reverted to {heads}"));
-        }
-
-        // initial commit
-        if change.is_setup() {
-            return Some(format!("Initialized repository"));
-        }
-
-        return Some(summarize_changes(&author, meta?.changed_files.as_ref()?));
-    }
-
-    /// Request for a change ingestion to be dispatched.
-    fn request_ingestion(&mut self) {
-        self.ingest_requested = true;
-    }
-
-    /// If able, ingest changes, clear the ingestion request, and return true.
-    /// Otherwise, return false.
-    fn try_ingest_changes(&mut self) -> bool {
-        // Do not try to ingest if we haven't requested.
-        if !self.ingest_requested {
-            return false;
-        }
-        let now = SystemTime::now();
-        let Ok(last_diff) = now.duration_since(self.last_ingest.0) else {
-            return false;
-        };
-
-        // Impose an arbitrary cap on requests within a time period.
-        // This is so that immediate syncs -- such as those from a local server -- don't have to wait before getting synced.
-        // But it also prevents spam of like a hundred slowing down the ingestion.
-        if last_diff.as_millis() < 100 {
-            if self.last_ingest.1 >= 3 {
-                return false;
-            }
-        } else {
-            // since we're past the duration with no other requests, the counter resets.
-            self.last_ingest = (now, 0);
-        }
-        self.ingest_changes();
-        self.ingest_requested = false;
-        self.last_ingest.1 += 1;
-        true
-    }
-
+    
     pub fn get_cached_diff(&self, before: HistoryRef, after: HistoryRef) -> ProjectDiff {
         self.diff_cache
             .borrow_mut()
@@ -193,7 +111,7 @@ impl Project {
     }
 
     pub fn get_diff(&self, before: HistoryRef, after: HistoryRef) -> ProjectDiff {
-        let Some(driver) = &self.driver else {
+        let Some(driver) = self.driver.blocking_lock().as_ref() else {
             return ProjectDiff::default();
         };
         ProjectDiff::default()
@@ -208,7 +126,7 @@ impl Project {
     }
 
     pub fn start(&mut self) {
-        if self.driver.is_some() {
+        if self.driver.blocking_lock().is_some() {
             tracing::error!("Driver is already started!");
             return;
         }
@@ -256,57 +174,78 @@ impl Project {
         );
 
         let project_dir = self.project_dir.clone();
-        self.driver = self
+        let block = self.main_thread_block.clone();
+
+        // TODO: Don't block on main thread for checkin
+        *self.driver.blocking_lock() = self
             .runtime
             .block_on(
                 // I think it's correct to spawn this on a different task explicitly, because block_on runs the future on the current thread, not a worker thread.
                 self.runtime.spawn(async move {
-                    Driver::new(server_url, project_dir, storage_dir, metadata_id).await
+                    Driver::new(block, server_url, project_dir, storage_dir, metadata_id).await
                 }),
             )
             .unwrap();
 
-        if self.driver.is_none() {
+        if self.driver.blocking_lock().is_none() {
             tracing::error!("Could not start the driver!");
             return;
         }
+        
+        let driver = self.driver.blocking_lock();
+        self.changes_rx = Some(driver.as_ref().unwrap().get_changes_rx());
+        self.checked_out_ref_rx = Some(driver.as_ref().unwrap().get_ref_rx());
     }
 
     pub fn stop(&mut self) {
-        self.driver.take();
+        self.driver.blocking_lock().take();
     }
 
     pub fn process(&mut self, _delta: f64) -> (Vec<FileSystemEvent>, Vec<GodotProjectSignal>) {
-        let Some(driver) = &self.driver else {
-            return Default::default();
+        let fs_changes = {
+            let mut driver_guard = self.driver.blocking_lock();
+            if driver_guard.is_none() {
+                return (Vec::new(), Vec::new());
+            }
+            // Run the blocking sync
+            driver_guard.as_ref().unwrap().set_safe_to_update_editor(Self::safe_to_update_godot());
+            let block = self.main_thread_block.clone();
+            self.runtime.block_on(self.runtime.spawn(async move {
+                block.checkpoint().await;
+            })).unwrap();
+
+            // Consume any modified files to send to Godot
+            driver_guard.as_mut().unwrap().get_filesystem_changes()
         };
-        let driver = driver.clone();
+        
+        let mut signals = Vec::new();
 
-        let mut signals: Vec<GodotProjectSignal> = Vec::new();
-        if self.try_ingest_changes() {
-            signals.push(GodotProjectSignal::ChangesIngested);
+        // Ingest changes if the driver produced a new changeset
+        let changes = {
+            let rx = self.changes_rx.as_mut().unwrap();
+            if rx.has_changed().unwrap_or(false) {
+                rx.mark_unchanged();
+                signals.push(GodotProjectSignal::ChangesIngested);
+                Some(rx.borrow().clone())
+            }
+            else {
+                None
+            }
+        };
+        
+        if let Some(changes) = changes {
+            self.ingest_changes(changes);
         }
-		let safe_to_update = Self::safe_to_update_godot();
-        // Run the main sync
-        let (changed_files, checked_out_ref) =
-            self.runtime
-                .block_on(self.runtime.spawn(async move {
-                    (driver.sync(safe_to_update).await, driver.get_checked_out_ref().await)
-                }))
-                .unwrap();
 
-        let current_branch = checked_out_ref.and_then(|r| Some(r.branch));
-        if self.last_known_branch != current_branch {
+        // Check to see if we need to produce a CheckedOutBranch signal
+        let rx = self.checked_out_ref_rx.as_ref().unwrap();
+        if rx.has_changed().unwrap_or(false) {
             signals.push(GodotProjectSignal::CheckedOutBranch);
-			self.last_known_branch = current_branch;
         }
 
         // TODO (Lilith): VERY IMPORTANT, set the patchwork config branch ID here!!!
         // So that we save the branch ID for future checkouts.
 
-        // TODO (Lilith): Don't request an ingestion every frame
-        self.request_ingestion();
-
-        (changed_files, signals)
+        (fs_changes, signals)
     }
 }
