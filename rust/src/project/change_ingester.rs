@@ -62,9 +62,9 @@ impl ChangeIngester {
                     _ = stream.next() => {
                         inner_clone.ingestion_request.notify_one();
                     }
-                    // _ = inner_clone.ingestion_request.notified() => {
-                    //     inner_clone.ingest_changes().await;
-                    // },
+                    _ = inner_clone.ingestion_request.notified() => {
+                        inner_clone.ingest_changes().await;
+                    },
                 }
             }
         });
