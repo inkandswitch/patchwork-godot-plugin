@@ -75,7 +75,7 @@ signal reload_ui();
 signal user_name_dialog_closed();
 
 func _update_ui_on_state_change():
-	# print("Patchwork: Updating UI due to state change...")
+	print("Patchwork: Updating UI due to state change...")
 	update_ui()
 
 func _update_ui_on_branch_checked_out():
