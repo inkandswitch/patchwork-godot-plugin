@@ -720,7 +720,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 } else if section_id == "resource" {
                     main_resource = Some(SubResourceNode {
                         id: "".to_string(), // Resource sections don't have IDs
-                        resource_type,
+                        resource_type: scene_metadata.as_ref().map(|s| s.resource_type.clone()).unwrap_or("".to_string()),
                         properties: properties.into_iter().collect(),
                         idx: 0,
                     });
