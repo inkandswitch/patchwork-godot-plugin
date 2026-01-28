@@ -24,7 +24,7 @@ automerge = "0.7.2"
 autosurgeon = "0.10.1"
 futures = "0.3.31"
 godot = "0.4.3"
-tokio = { version = "1.49.0", features = ["full"] }
+tokio = { version = "1.49.0", features = ["full", "tracing"] } # tracing only works with unstable; we need it to log task names
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
 tree-sitter = "0.25.4"
 tree-sitter-godot-resource = { git = "https://github.com/nikitalita/tree-sitter-godot-resource.git", branch = "fix-string-names" }

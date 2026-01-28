@@ -1,7 +1,7 @@
 use crate::diff::differ::ProjectDiff;
 use crate::fs::file_utils::FileSystemEvent;
 use crate::helpers::branch::{self, BranchState};
-use crate::helpers::utils::{CommitInfo, CommitMetadata};
+use crate::helpers::utils::{CommitInfo, CommitMetadata, spawn_named};
 use crate::interop::godot_accessors::{EditorFilesystemAccessor, PatchworkEditorAccessor};
 use crate::project::branch_db::{BranchDb, HistoryRef};
 use crate::project::change_ingester::ChangeIngester;
@@ -235,7 +235,7 @@ impl Driver {
 
         // Spawn off the sync task
         let inner_clone = this.as_ref().unwrap().inner.clone();
-        tokio::spawn(async move {
+        spawn_named("Sync", async move {
             inner_clone.sync_main().await;
         });
         this
@@ -417,17 +417,11 @@ impl Driver {
     }
 
     pub async fn get_branch_name(&self, id: &DocumentId) -> Option<String> {
-        let Some(state) = self.inner.branch_db.get_branch_state(id).await else {
-            return None;
-        };
-        Some(state.lock().await.name.clone())
+        self.inner.branch_db.get_branch_name(id).await
     }
 
     pub async fn get_branch_state(&self, id: &DocumentId) -> Option<BranchState> {
-        let Some(state) = self.inner.branch_db.get_branch_state(id).await else {
-            return None;
-        };
-        Some(state.lock().await.clone())
+        self.inner.branch_db.get_branch_state(id).await
     }
 
     pub async fn get_branch_children(&self, id: &DocumentId) -> Vec<DocumentId> {

@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::PathBuf,
     sync::Arc,
 };
@@ -102,6 +102,7 @@ impl BranchDb {
     }
 
     /// Get the mutable checked out ref for locking.
+    /// TODO (Lilith): This smells kind of nasty, maybe don't expose this... but how else to ensure we don't step on toes?
     pub fn get_checked_out_ref_mut(&self) -> Arc<RwLock<Option<HistoryRef>>> {
         return self.checked_out_ref.clone();
     }
@@ -132,18 +133,12 @@ impl BranchDb {
             .or_insert_with(|| Arc::new(Mutex::new(f())));
     }
 
-    // This exposes inner BranchState objects via Arc. This is important because we use branch states all over the place.
-    // Alternatively we could provide a read-only view in a closure, or clone them.
-    // We do need to be a little careful about locks though.
-    pub async fn get_branch_state(&self, id: &DocumentId) -> Option<Arc<Mutex<BranchState>>> {
-        let st = self.branch_states.lock().await;
-        st.get(id).cloned()
-    }
-
-    pub async fn get_branch_handle(&self, id: &DocumentId) -> Option<DocHandle> {
-        let Some(state) = self.get_branch_state(id).await else {
-            return None;
+    pub async fn set_linked_docs_for_branch(&self, id: &DocumentId, linked_docs: HashSet<DocumentId>) {
+        let states = self.branch_states.lock().await;
+        let Some(state) = states.get(id) else {
+            return;
         };
-        Some(state.lock().await.doc_handle.clone())
+        let mut state = state.lock().await;
+        state.linked_doc_ids = linked_docs;
     }
 }

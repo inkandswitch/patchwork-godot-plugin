@@ -8,6 +8,8 @@ use tokio::{
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_util::sync::CancellationToken;
 
+use crate::helpers::utils::spawn_named;
+
 #[derive(Debug, Clone)]
 enum ConnectionStoppedReason {
     TcpConnectionError(String),
@@ -79,7 +81,7 @@ impl RemoteConnection {
         });
 
         let inner_clone = inner.clone();
-        tokio::spawn(async move {
+        spawn_named("Remote connection", async move {
             inner_clone.retry_connection().await;
         });
 

@@ -1,7 +1,7 @@
 use crate::diff::differ::ProjectDiff;
 use crate::fs::file_utils::FileSystemEvent;
 use crate::helpers::branch::BranchState;
-use crate::helpers::utils::{CommitInfo, summarize_changes};
+use crate::helpers::utils::{CommitInfo, spawn_named, spawn_named_on, summarize_changes};
 use crate::interop::godot_accessors::{
     EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor,
 };
@@ -185,7 +185,7 @@ impl Project {
             .runtime
             .block_on(
                 // I think it's correct to spawn this on a different task explicitly, because block_on runs the future on the current thread, not a worker thread.
-                self.runtime.spawn(async move {
+                spawn_named_on("Create driver", self.runtime.handle(), async move {
                     Driver::new(block, server_url, project_dir, storage_dir, metadata_id).await
                 }),
             )
@@ -205,8 +205,9 @@ impl Project {
         self.driver.blocking_lock().take();
     }
 
+    // common utility function within this class
     pub(super) fn get_checked_out_branch_state(&self) -> Option<BranchState> {
-        self.with_driver_blocking(|driver| async move {
+        self.with_driver_blocking("Get checked out branch state", |driver| async move {
             if driver.is_none() {
                 return None;
             }
@@ -220,18 +221,21 @@ impl Project {
 
     /// Jank utility function to lock on the driver and run on a different thread.
     /// Allows us to easily block on async code when we need the driver.
-    pub(super) fn with_driver_blocking<F, Fut, R>(&self, f: F) -> R
+    pub(super) fn with_driver_blocking<F, Fut, R>(&self, name: &str, f: F) -> R
     where
         F: FnOnce(OwnedMutexGuard<Option<Driver>>) -> Fut + Send + 'static,
         Fut: Future<Output = R> + Send + 'static,
         R: Send + 'static,
     {
         let driver = self.driver.clone();
-
+        let name_clone = name.to_string();
         self.runtime
-            .block_on(self.runtime.spawn(async move {
+            .block_on(spawn_named_on(name, self.runtime.handle(), async move {
+                tracing::trace!("Starting block on {name_clone}...");
                 let driver = driver.lock_owned().await;
-                f(driver).await
+                let res =f(driver).await;
+                tracing::trace!("Finishing block on {name_clone}!");
+                return res;
             }))
             .unwrap()
     }
@@ -252,7 +256,7 @@ impl Project {
             let block = self.main_thread_block.clone();
             tracing::trace!("Blocking for dependents...");
             self.runtime
-                .block_on(self.runtime.spawn(async move {
+                .block_on(spawn_named_on("Blocking guard", self.runtime.handle(), async move {
                     block.checkpoint().await;
                 }))
                 .unwrap();

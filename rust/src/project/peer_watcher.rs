@@ -4,6 +4,8 @@ use tokio::{select, sync::watch};
 use tokio_stream::wrappers::WatchStream;
 use tokio_util::sync::CancellationToken;
 
+use crate::helpers::utils::spawn_named;
+
 #[derive(Debug)]
 pub struct PeerWatcher {
     server_info_tx: watch::Sender<Option<ConnectionInfo>>,
@@ -23,7 +25,7 @@ impl PeerWatcher {
         let repo_handle_clone = repo_handle.clone();
         let token = CancellationToken::new();
         let token_clone = token.clone();
-        tokio::spawn(async move {
+        spawn_named("Peer watcher", async move {
             let (_, stream) = repo_handle_clone.connected_peers();
             tokio::pin!(stream);
             loop {

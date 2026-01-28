@@ -11,7 +11,7 @@ use crate::{
             BranchesMetadataDoc,
         },
         doc_utils::SimpleDocReader,
-        utils::parse_automerge_url,
+        utils::{parse_automerge_url, spawn_named},
     },
     project::branch_db::BranchDb,
 };
@@ -58,7 +58,7 @@ impl DocumentWatcher {
             .await;
 
         // track changes for future ingests
-        tokio::spawn(async move {
+        spawn_named("Metadata tracker", async move {
             inner_clone.track_metadata_document(metadata_handle).await;
         });
 
@@ -193,13 +193,7 @@ impl DocumentWatcherInner {
         .await
         .unwrap();
 
-        let branch_state_mutex = self
-            .branch_db
-            .get_branch_state(&handle.document_id())
-            .await
-            .unwrap();
-        let mut branch_state = branch_state_mutex.lock().await;
-        branch_state.linked_doc_ids = linked_docs.values().cloned().collect();
+        self.branch_db.set_linked_docs_for_branch(handle.document_id(), linked_docs.values().cloned().collect());
     }
 
     #[tracing::instrument(skip_all)]
@@ -232,7 +226,9 @@ impl DocumentWatcherInner {
                 self.ingest_branch_document(handle.clone()).await;
                 // Track the document
                 let this = self.clone();
-                tokio::spawn(async move { this.track_branch_document(handle).await });
+                spawn_named(&format!("Document tracker: {:?}", branch_id), async move {
+                    this.track_branch_document(handle).await
+                });
             }
         }
     }

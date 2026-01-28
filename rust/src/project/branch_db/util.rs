@@ -3,7 +3,7 @@ use std::{path::PathBuf, str::FromStr};
 use samod::{DocHandle, DocumentId};
 use tracing::instrument;
 
-use crate::project::branch_db::{BranchDb, HistoryRef};
+use crate::{helpers::branch::BranchState, project::branch_db::{BranchDb, HistoryRef}};
 
 // Utility methods for working with [BranchDb].
 impl BranchDb {
@@ -38,13 +38,7 @@ impl BranchDb {
     // Maybe that's enough? Get DocumentWatcher to do it? Then we remove the with_doc call here. 
     #[instrument(skip_all)]
     pub async fn get_latest_ref_on_branch(&self, branch: &DocumentId) -> Option<HistoryRef> {
-        let state = self.get_branch_state(branch).await;
-        let Some(state) = state else {
-            tracing::error!("Couldn't get latest ref on branch; branch state not loaded!");
-            return None;
-        };
-        let state = state.lock().await;
-        let handle = state.doc_handle.clone();
+        let handle = self.get_branch_handle(branch).await?;
         let heads = tokio::task::spawn_blocking(move || handle.with_document(|d| d.get_heads())).await.unwrap();
         
         Some(HistoryRef {
@@ -79,10 +73,22 @@ impl BranchDb {
     }
     
     pub async fn get_branch_name(&self, id: &DocumentId) -> Option<String> {
-        let Some(state) = self.get_branch_state(id).await else {
-            return None;
-        };
-        Some(state.lock().await.name.clone())
+        let states = self.branch_states.lock().await;
+        Some(states.get(id)?.lock().await.name.clone())
+    }
+
+    // This is not ideal -- I'd prefer not to clone unless necessary.
+    // However, we NEVER want to expose our internal BranchState mutexes.
+    // That could cause deadlocks if they acquired a branch state and later tried to call any branch info method on branch_db.
+    // Callers should preferentially use other getter methods.
+    pub async fn get_branch_state(&self, id: &DocumentId) -> Option<BranchState> {
+        let states = self.branch_states.lock().await;
+        Some(states.get(id)?.lock().await.clone())
+    }
+
+    pub async fn get_branch_handle(&self, id: &DocumentId) -> Option<DocHandle> {
+        let states = self.branch_states.lock().await;
+        Some(states.get(id)?.lock().await.doc_handle.clone())
     }
 
     pub async fn get_branch_children(&self, id: &DocumentId) -> Vec<DocumentId> {
@@ -90,7 +96,7 @@ impl BranchDb {
         let mut result = Vec::new();
 
         for (bid, state) in states.iter() {
-            let state = state.lock().await;
+            let state: tokio::sync::MutexGuard<'_, crate::helpers::branch::BranchState> = state.lock().await;
             if let Some(fork_info) = &state.fork_info {
                 if &fork_info.forked_from == id {
                     result.push(bid.clone());

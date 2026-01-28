@@ -220,14 +220,10 @@ impl BranchDb {
         filters: &HashSet<String>,
     ) -> Option<HashMap<String, FileContent>> {
         tracing::info!("Getting files at ref {:?}", desired_ref);
-        let Some(branch_state) = self.get_branch_state(&desired_ref.branch).await else {
-            return None;
-        };
-
         let mut files = HashMap::new();
         let mut linked_doc_ids = Vec::new();
 
-        let doc_handle = branch_state.lock().await.doc_handle.clone();
+        let doc_handle = self.get_branch_handle(&desired_ref.branch).await?;
         let filters = filters.clone();
         let desired_ref = desired_ref.clone();
         let (mut files, linked_doc_ids) = tokio::task::spawn_blocking(move || {

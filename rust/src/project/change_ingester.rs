@@ -11,7 +11,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    helpers::utils::{CommitInfo, CommitMetadata, summarize_changes},
+    helpers::utils::{CommitInfo, CommitMetadata, spawn_named, summarize_changes},
     project::{branch_db::BranchDb, peer_watcher::PeerWatcher, project_api::ChangeViewModel},
 };
 
@@ -52,7 +52,7 @@ impl ChangeIngester {
         });
 
         let inner_clone = inner.clone();
-        tokio::spawn(async move {
+        spawn_named("Change ingester", async move {
             let stream = inner_clone.peer_watcher.subscribe();
             tokio::pin!(stream);
 
@@ -152,14 +152,10 @@ impl ChangeIngesterInner {
             return Vec::new();
         };
 
-        let Some(branch_state) = self.branch_db.get_branch_state(&checked_out.branch).await else {
-            tracing::info!("Can't get the checked out branch state; something must be wrong");
+        let Some(handle) = self.branch_db.get_branch_handle(&checked_out.branch).await else {        
+            tracing::info!("Can't get the checked out branch handle; something must be wrong");
             return Vec::new();
         };
-
-        // TODO: we probably don't need to lock the branch state for this whole method
-        let branch_state = branch_state.lock().await;
-        let handle = branch_state.doc_handle.clone();
         let doc_id = handle.document_id();
 
         let last_acked_heads = self

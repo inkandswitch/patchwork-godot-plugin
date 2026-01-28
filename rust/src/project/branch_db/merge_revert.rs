@@ -19,19 +19,17 @@ impl BranchDb {
         source: &DocumentId,
         target: &DocumentId,
     ) -> Option<DocumentId> {
-        let Some(source_state) = self.get_branch_state(source).await else {
-            return None;
-        };
-        let Some(target_state) = self.get_branch_state(target).await else {
-            return None;
-        };
-
-        let (source_state, target_state) = (source_state.lock().await, target_state.lock().await);
+        // Not getting the branch state so we don't gotta clone, honestly that was probably simpler though
+        let source_name = self.get_branch_name(source).await?;
+        let target_name = self.get_branch_name(target).await?;
+        let source_handle = self.get_branch_handle(source).await?;
+        let target_handle = self.get_branch_handle(target).await?;
+        
+        let source_ref = self.get_latest_ref_on_branch(source).await?;
+        let target_ref = self.get_latest_ref_on_branch(target).await?;
 
         let handle = self.repo.create(Automerge::new()).await.unwrap();
         let handle_clone = handle.clone();
-        let source_handle = source_state.doc_handle.clone();
-        let target_handle = target_state.doc_handle.clone();
 
         tokio::task::spawn_blocking(move || {
             source_handle.with_document(|d| {
@@ -51,20 +49,20 @@ impl BranchDb {
 
         let username = self.username.lock().await.clone();
         self.add_branch_to_meta(Branch {
-            name: format!("{} <- {}", target_state.name, source_state.name),
+            name: format!("{} <- {}", target_name, source_name),
             id: handle.document_id().to_string(),
             fork_info: Some(ForkInfo {
                 forked_from: source.to_string(),
-                forked_at: source_state
-                    .synced_heads
+                forked_at: source_ref
+                    .heads
                     .iter()
                     .map(|h| h.to_string())
                     .collect(),
             }),
             merge_info: Some(MergeInfo {
                 merge_into: target.to_string(),
-                merge_at: target_state
-                    .synced_heads
+                merge_at: target_ref
+                    .heads
                     .iter()
                     .map(|h| h.to_string())
                     .collect(),
@@ -84,8 +82,6 @@ impl BranchDb {
             return;
         };
 
-        let (source_state, target_state) = (source_state.lock().await, target_state.lock().await);
-
         let source_handle = source_state.doc_handle.clone();
         let target_handle = target_state.doc_handle.clone();
         tokio::task::spawn_blocking(move || {
@@ -103,7 +99,6 @@ impl BranchDb {
                 .await
             {
                 Some(original_state) => {
-                    let original_state = original_state.lock().await;
                     Some(MergeMetadata {
                         merged_branch_id: original_state.doc_handle.document_id().clone(),
                         merged_at_heads: original_state.synced_heads.clone(),

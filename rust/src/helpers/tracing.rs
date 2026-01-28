@@ -31,6 +31,7 @@ pub fn initialize_tracing() {
 	unsafe{M_FILE_WRITER_MUTEX = Some(_guard);}
     println!("!!! Logging to {:?}/patchwork.log", get_user_dir());
 
+    // TODO (Lilith): Maybe guard this behind a debug flag
     let console_layer = console_subscriber::ConsoleLayer::builder()
         .with_default_env()
         .spawn();

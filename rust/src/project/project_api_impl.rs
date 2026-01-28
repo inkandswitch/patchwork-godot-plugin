@@ -8,7 +8,7 @@ use crate::{
     diff::differ::ProjectDiff,
     helpers::utils::{
         BranchWrapper, CommitInfo, DiffWrapper, exact_human_readable_timestamp,
-        human_readable_timestamp,
+        human_readable_timestamp, spawn_named, spawn_named_on,
     },
     interop::godot_accessors::PatchworkConfigAccessor,
     project::{
@@ -32,11 +32,8 @@ impl ProjectViewModel for Project {
     }
 
     fn get_project_id(&self) -> Option<DocumentId> {
-        self.with_driver_blocking(|driver| async move {
-            if driver.is_none() {
-                return None;
-            }
-            driver.as_ref().unwrap().get_metadata_doc().await
+        self.with_driver_blocking("Get project ID", |driver| async move {
+            driver.as_ref()?.get_metadata_doc().await
         })
     }
 
@@ -75,11 +72,9 @@ impl ProjectViewModel for Project {
 
     fn set_user_name(&self, name: String) {
         PatchworkConfigAccessor::set_user_value("user_name", &name);
-        self.with_driver_blocking(|driver| async move {
-            if driver.is_none() {
-                return;
-            }
-            driver.as_ref().unwrap().set_username(Some(name)).await
+        self.with_driver_blocking("Set username", |driver| async move {
+            driver.as_ref()?.set_username(Some(name)).await;
+            Some(())
         });
     }
 
@@ -100,15 +95,12 @@ impl ProjectViewModel for Project {
 
         let source = checked_out_branch.doc_handle.document_id().clone();
         let target = fork_info.forked_from.clone();
-        self.with_driver_blocking(|driver| async move {
-            if driver.is_none() {
-                return;
-            }
+        self.with_driver_blocking("Create merge preview branch", |driver| async move {
             driver
-                .as_ref()
-                .unwrap()
+                .as_ref()?
                 .create_merge_preview_branch(&source, &target)
                 .await;
+            Some(())
         });
     }
 
@@ -169,13 +161,9 @@ impl ProjectViewModel for Project {
 
         let forked_from = fork_info.forked_from.clone();
         let merge_into = merge_info.merge_into.clone();
-        let Some((source_branch, dest_branch)) = self.with_driver_blocking(|driver| async move {
-            if driver.is_none() {
-                return None;
-            }
+        let Some((source_branch, dest_branch)) = self.with_driver_blocking("Is safe to merge", |driver| async move {
             let source_branch = driver
-                .as_ref()
-                .unwrap()
+                .as_ref()?
                 .get_branch_state(&forked_from)
                 .await;
             let dest_branch = driver.as_ref().unwrap().get_branch_state(&merge_into).await;
@@ -210,15 +198,12 @@ impl ProjectViewModel for Project {
         } else if let Some(merge_info) = branch_state.merge_info {
             let source = branch_state.doc_handle.document_id().clone();
             let target = merge_info.merge_into;
-            self.with_driver_blocking(|driver| async move {
-                if driver.is_none() {
-                    return;
-                }
+            self.with_driver_blocking("Confirm merge preview branch", |driver| async move {
                 driver
-                    .as_ref()
-                    .unwrap()
+                    .as_ref()?
                     .merge_branch(&source, &target)
                     .await;
+                Some(())
             });
         }
     }
@@ -229,11 +214,9 @@ impl ProjectViewModel for Project {
         let Some(fork_info) = &branch_state.fork_info else {
             return;
         };
-        self.with_driver_blocking(|driver| async move {
-            if driver.is_none() {
-                return;
-            }
-            driver.as_ref().unwrap().discard_current_branch().await;
+        self.with_driver_blocking("Discard preview branch", |driver| async move {
+            driver.as_ref()?.discard_current_branch().await;
+            Some(())
         });
     }
 
@@ -322,14 +305,13 @@ impl ProjectViewModel for Project {
     fn get_branch(&self, id: &DocumentId) -> Option<impl BranchViewModel + use<>> {
         let id = id.clone();
 
-        let Some((state, mut children)) = self.with_driver_blocking(|driver| async move {
-            if driver.is_none() {
-                return None;
-            }
-            let Some(state) = driver.as_ref().unwrap().get_branch_state(&id).await else {
+        let Some((state, mut children)) = self.with_driver_blocking("Get branch", |driver| async move {
+            tracing::trace!("Getting branch state...");
+            let Some(state) = driver.as_ref()?.get_branch_state(&id).await else {
                 return None;
             };
-            let children = driver.as_ref().unwrap().get_branch_children(&id).await;
+            tracing::trace!("Getting branch children...");
+            let children = driver.as_ref()?.get_branch_children(&id).await;
             Some((state, children))
         }) else {
             return None;
@@ -358,32 +340,16 @@ impl ProjectViewModel for Project {
     }
 
     fn get_main_branch(&self) -> Option<impl BranchViewModel> {
-        let driver = self.driver.clone();
-        let id = self
-            .runtime
-            .block_on(self.runtime.spawn(async move {
-                let driver = driver.lock().await;
-                if driver.is_none() {
-                    return None;
-                }
-                driver.as_ref().unwrap().get_main_branch().await
-            }))
-            .unwrap()?;
+        let id = self.with_driver_blocking("Get main branch", |driver| async move {
+            driver.as_ref()?.get_main_branch().await
+        })?;
         self.get_branch(&id)
     }
 
     fn get_checked_out_branch(&self) -> Option<impl BranchViewModel> {
-        let driver = self.driver.clone();
-        let id = self
-            .runtime
-            .block_on(self.runtime.spawn(async move {
-                let driver = driver.lock().await;
-                if driver.is_none() {
-                    return None;
-                }
-                driver.as_ref().unwrap().get_checked_out_ref().await
-            }))
-            .unwrap()?;
+        let id = self.with_driver_blocking("Get checked out branch", |driver| async move {
+            driver.as_ref()?.get_checked_out_ref().await
+        })?;
         self.get_branch(&id.branch)
     }
 
@@ -391,26 +357,20 @@ impl ProjectViewModel for Project {
         let Some(branch_state) = self.get_checked_out_branch_state() else {
             return;
         };
-        self.with_driver_blocking(|driver| async move {
-            if driver.is_none() {
-                return;
-            }
+        self.with_driver_blocking("Create branch", |driver| async move {
             driver
-                .as_ref()
-                .unwrap()
+                .as_ref()?
                 .fork_branch(name, branch_state.doc_handle.document_id()).await;
+            Some(())
         });
     }
 
     fn checkout_branch(&mut self, branch_doc_id: DocumentId) {
-        self.with_driver_blocking(|driver| async move {
-            if driver.is_none() {
-                return;
-            }
+        self.with_driver_blocking("Checkout branch", |driver| async move {
             driver
-                .as_ref()
-                .unwrap()
+                .as_ref()?
                 .request_checkout(&branch_doc_id).await;
+            Some(())
         });
     }
 
@@ -421,21 +381,13 @@ impl ProjectViewModel for Project {
     fn get_default_diff(&self) -> Option<impl DiffViewModel> {
         let heads_before;
         let heads_after;
-        let driver = self.driver.clone();
-        let branch_state = self
-            .runtime
-            .block_on(self.runtime.spawn(async move {
-                let driver = driver.lock().await;
-                if driver.is_none() {
-                    return None;
-                }
-                driver
-                    .as_ref()
-                    .unwrap()
-                    .get_branch_state(&driver.as_ref().unwrap().get_checked_out_ref().await?.branch)
-                    .await
-            }))
-            .unwrap()?;
+        
+        let branch_state = self.with_driver_blocking("Get default diff", |driver| async move {
+            driver
+                .as_ref()?
+                .get_branch_state(&driver.as_ref().unwrap().get_checked_out_ref().await?.branch)
+                .await
+        })?;
 
         // There is no default diff for the main branch!
         if branch_state.is_main {
@@ -521,21 +473,7 @@ impl ProjectViewModel for Project {
             }
         }
 
-        let driver = self.driver.clone();
-        let branch_state = self
-            .runtime
-            .block_on(self.runtime.spawn(async move {
-                let driver = driver.lock().await;
-                if driver.is_none() {
-                    return None;
-                }
-                driver
-                    .as_ref()
-                    .unwrap()
-                    .get_branch_state(&driver.as_ref().unwrap().get_checked_out_ref().await?.branch)
-                    .await
-            }))
-            .unwrap()?;
+        let branch_state = self.get_checked_out_branch_state()?;
 
         if let Some(prev_hash) = prev_hash {
             heads_before = vec![prev_hash];

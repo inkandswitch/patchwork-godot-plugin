@@ -6,8 +6,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::instrument;
 
 use crate::{
-    fs::{file_utils::FileContent, file_utils::FileSystemEvent},
-    project::{branch_db::BranchDb, fs_watcher::FileSystemWatcher},
+    fs::file_utils::{FileContent, FileSystemEvent}, helpers::utils::spawn_named, project::{branch_db::BranchDb, fs_watcher::FileSystemWatcher}
 };
 
 /// Tracks changes using [FileSystemWatcher], handles the changes, and tracks them as pending.
@@ -40,7 +39,7 @@ impl SyncFileSystemToAutomerge {
         let token_clone = token.clone();
 
         // TODO (Lilith): stick this on a method on an Inner struct like the rest
-        tokio::spawn(async move {
+        spawn_named("Sync FS to Automerge", async move {
             let changes = FileSystemWatcher::start_watching(
                 branch_db_clone.get_project_dir().clone(),
                 branch_db_clone.clone(),
