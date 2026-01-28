@@ -25,14 +25,19 @@ pub struct SceneDiff {
     pub change_type: ChangeType,
     /// The nodes changed in this diff.
     pub changed_nodes: Vec<NodeDiff>,
+
+    pub before: HistoryRef,
+    pub after: HistoryRef,
 }
 
 impl SceneDiff {
-    fn new(path: String, change_type: ChangeType, changed_nodes: Vec<NodeDiff>) -> SceneDiff {
+    fn new(path: String, change_type: ChangeType, changed_nodes: Vec<NodeDiff>, before: HistoryRef, after: HistoryRef) -> SceneDiff {
         SceneDiff {
             path,
             change_type,
             changed_nodes,
+            before,
+            after,
         }
     }
 }
@@ -48,16 +53,20 @@ pub struct TextResourceDiff {
     /// The sub resources changed in this diff.
     pub changed_sub_resources: Vec<SubResourceDiff>,
     pub changed_main_resource: Option<SubResourceDiff>,
+    pub before: HistoryRef,
+    pub after: HistoryRef,
 }
 
 impl TextResourceDiff {
-    fn new(path: String, resource_type: String, change_type: ChangeType, changed_sub_resources: Vec<SubResourceDiff>, changed_main_resource: Option<SubResourceDiff>) -> TextResourceDiff {
+    fn new(path: String, resource_type: String, change_type: ChangeType, changed_sub_resources: Vec<SubResourceDiff>, changed_main_resource: Option<SubResourceDiff>, before: HistoryRef, after: HistoryRef) -> TextResourceDiff {
         TextResourceDiff {
             path,
             resource_type,
             change_type,
             changed_sub_resources,
             changed_main_resource,
+            before,
+            after,
         }
     }
 }
@@ -124,17 +133,17 @@ pub struct PropertyDiff {
     /// The change type of the property.
     pub change_type: ChangeType,
     /// The old value of the property, if it existed.
-    pub old_value: Option<Variant>,
+    pub old_value: Option<VariantStrValue>,
     /// The new value of the property, if it still exists.
-    pub new_value: Option<Variant>,
+    pub new_value: Option<VariantStrValue>,
 }
 
 impl PropertyDiff {
     pub fn new(
         name: String,
         change_type: ChangeType,
-        old_value: Option<Variant>,
-        new_value: Option<Variant>,
+        old_value: Option<VariantStrValue>,
+        new_value: Option<VariantStrValue>,
     ) -> Self {
         PropertyDiff {
             name,
@@ -146,7 +155,7 @@ impl PropertyDiff {
 }
 
 /// The different types of Godot-recognized string values that can be stored in a Variant.
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 enum VariantStrValue {
     /// A normal string that doesn't refer to a resource.
     Variant(String),
@@ -154,8 +163,8 @@ enum VariantStrValue {
     ResourcePath(String),
     /// A Godot sub-resource identifier string.
     SubResourceID(String),
-    /// A Godot external resource identifier string.
-    ExtResourceID(String),
+    /// A Godot external resource identifier string (id, path)
+    ExtResourceID(String, String),
 }
 
 /// Implement the to_string method for this enum
@@ -165,7 +174,7 @@ impl std::fmt::Display for VariantStrValue {
             VariantStrValue::Variant(s) => write!(f, "{}", s),
             VariantStrValue::ResourcePath(s) => write!(f, "Resource({})", s),
             VariantStrValue::SubResourceID(s) => write!(f, "SubResource({})", s),
-            VariantStrValue::ExtResourceID(s) => write!(f, "ExtResource({})", s),
+            VariantStrValue::ExtResourceID(id, _path) => write!(f, "ExtResource({})", id),
         }
     }
 }
@@ -254,7 +263,7 @@ impl Differ {
             let old_node = old_scene.as_ref().and_then(|s| s.get_node(*node_id));
             let new_node = new_scene.as_ref().and_then(|s| s.get_node(*node_id));
 
-            let Some(diff) = self.get_node_diff(*node_id, old_node, new_node, old_scene, new_scene, before, after).await
+            let Some(diff) = self.get_node_diff(*node_id, old_node, new_node, old_scene, new_scene).await
             else {
                 // If the node has no changes or is otherwise invalid, just skip this one.
                 continue;
@@ -271,6 +280,8 @@ impl Differ {
                 (_, _) => ChangeType::Modified,
             },
             node_diffs,
+            before.clone(),
+            after.clone(),
         )
     }
 
@@ -313,7 +324,7 @@ impl Differ {
             let old_sub_resource = old_scene.as_ref().and_then(|s| s.sub_resources.get(sub_resource_id));
             let new_sub_resource = new_scene.as_ref().and_then(|s| s.sub_resources.get(sub_resource_id));
 
-            let Some(diff) = self.get_sub_resource_diff(sub_resource_id, old_sub_resource, new_sub_resource, old_scene, new_scene, before, after).await
+            let Some(diff) = self.get_sub_resource_diff(sub_resource_id, old_sub_resource, new_sub_resource, old_scene, new_scene).await
             else {
                 // If the node has no changes or is otherwise invalid, just skip this one.
                 continue;
@@ -321,7 +332,7 @@ impl Differ {
 
             changed_sub_resources.push(diff);
         }
-        let changed_main_resource = self.get_sub_resource_diff(&"".to_string(), old_scene.and_then(|s| s.main_resource.as_ref()), new_scene.and_then(|s| s.main_resource.as_ref()), old_scene, new_scene, before, after).await;
+        let changed_main_resource = self.get_sub_resource_diff(&"".to_string(), old_scene.and_then(|s| s.main_resource.as_ref()), new_scene.and_then(|s| s.main_resource.as_ref()), old_scene, new_scene).await;
 
         TextResourceDiff::new(
             path.clone(),
@@ -333,6 +344,8 @@ impl Differ {
             },
             changed_sub_resources,
             changed_main_resource,
+            before.clone(),
+            after.clone(),
         )
 
     }
@@ -343,9 +356,7 @@ impl Differ {
         old_node: Option<&SubResourceNode>,
         new_node: Option<&SubResourceNode>,
         old_scene: Option<&GodotScene>,
-        new_scene: Option<&GodotScene>,
-        before: &HistoryRef,
-        after: &HistoryRef,
+        new_scene: Option<&GodotScene>
     ) -> Option<SubResourceDiff> {
         if old_node.is_none() && new_node.is_none() {
             return None;
@@ -369,7 +380,7 @@ impl Differ {
         }
         for prop in &props {
             if let Some(prop_diff) =
-                self.get_property_diff(prop, old_node, new_node, old_scene, new_scene, before, after).await
+                self.get_property_diff(prop, old_node, new_node, old_scene, new_scene).await
             {
                 changed_properties.insert(prop.clone(), prop_diff);
             }
@@ -393,9 +404,7 @@ impl Differ {
         old_node: Option<&impl PropertyGetter>,
         new_node: Option<&impl PropertyGetter>,
         old_scene: Option<&GodotScene>,
-        new_scene: Option<&GodotScene>,
-        before: &HistoryRef,
-        after: &HistoryRef,
+        new_scene: Option<&GodotScene>
     ) -> Option<NodeDiff> {
         if old_node.is_none() && new_node.is_none() {
             return None;
@@ -422,7 +431,7 @@ impl Differ {
         // Iterate through the props
         for prop in &props {
             if let Some(prop_diff) =
-                self.get_property_diff(prop, old_node, new_node, old_scene, new_scene, before, after).await
+                self.get_property_diff(prop, old_node, new_node, old_scene, new_scene).await
             {
                 changed_properties.insert(prop.clone(), prop_diff);
             }
@@ -489,27 +498,29 @@ impl Differ {
     /// Returns the [VariantStrValue] of a property on a node, or the default value if the property doesn't
     /// exist on the node.
     /// If the node itself doesn't exist, returns [None].
-    fn get_varstr_or_default(prop: &String, node: Option<&impl PropertyGetter>) -> Option<VariantStrValue> {
+    fn get_varstr_or_default(prop: &String, node: Option<&impl PropertyGetter>, scene: Option<&GodotScene>) -> Option<VariantStrValue> {
         // If this node never existed, don't provide a value.
         let Some(node) = node else {
             return None;
         };
         let val = node.get_property(prop).map_or_else(
-            ||
+            || None,
 			// If the property doesn't exist on the node, calculate the default.
-			match &node.get_type_or_instance() {
-				TypeOrInstance::Type(class_name) => Self::get_classdb_default_value(class_name, prop),
-				TypeOrInstance::Instance(class_name) => match node.is_subresource() {
-					true => Self::get_classdb_default_value(class_name, prop),
-                    // Instance properties are always set on Nodes, regardless of the default value, so this is going to be unused.
-					false => "".to_string(),
-				},
-			},
+			// match &node.get_type_or_instance() {
+			// 	TypeOrInstance::Type(class_name) => Self::get_classdb_default_value(class_name, prop),
+			// 	TypeOrInstance::Instance(class_name) => match node.is_subresource() {
+			// 		true => Self::get_classdb_default_value(class_name, prop),
+            //         // Instance properties are always set on Nodes, regardless of the default value, so this is going to be unused.
+			// 		false => "".to_string(),
+			// 	},
+			// },
             // Otherwise, get the value from the property.
-            |val| val.get_value(),
+            |val| Some(val.get_value()),
         );
-
-        Some(Self::get_varstr_value(val))
+        if let Some(val) = val {
+            return Some(Self::get_varstr_value(val, scene));
+        }
+        None
     }
 
     /// Returns a [PropertyDiff] comparing the old property value versus the new one.
@@ -520,9 +531,7 @@ impl Differ {
         old_node: Option<&impl PropertyGetter>,
         new_node: Option<&impl PropertyGetter>,
         old_scene: Option<&GodotScene>,
-        new_scene: Option<&GodotScene>,
-        before: &HistoryRef,
-        after: &HistoryRef,
+        new_scene: Option<&GodotScene>
     ) -> Option<PropertyDiff> {
         // If neither node is valid, there's no valid property diff.
         if new_node.is_none() && old_node.is_none() {
@@ -530,23 +539,13 @@ impl Differ {
         };
 
         // Slightly weird hack: Diff against the default instead of the normal property.
-        let old_value = Self::get_varstr_or_default(prop, old_node);
-        let new_value = Self::get_varstr_or_default(prop, new_node);
+        let old_value = Self::get_varstr_or_default(prop, old_node, old_scene);
+        let new_value = Self::get_varstr_or_default(prop, new_node, new_scene);
 
         // Skip in case of no changes
         if !self.did_prop_change(old_value.as_ref(), new_value.as_ref(), old_scene, new_scene) {
             return None;
         }
-
-        // Expensive: Load any ext resources and turn them into Variants
-        let old = match &old_value {
-            Some(v) => Some(self.get_prop_value(v, old_scene, true, prop == "script", before, after).await),
-            None => None,
-        };
-        let new = match &old_value {
-            Some(v) => Some(self.get_prop_value(v, new_scene, false, prop == "script", before, after).await),
-            None => None,
-        };
 
         return Some(PropertyDiff::new(
             prop.clone(),
@@ -557,8 +556,8 @@ impl Differ {
                 (Some(_), None) => ChangeType::Removed,
                 (_, _) => ChangeType::Modified,
             },
-            old,
-            new,
+            old_value,
+            new_value,
         ));
     }
 
@@ -595,8 +594,8 @@ impl Differ {
                 return false;
             };
 
-            let old_prop = Self::get_varstr_value(old_prop.get_value());
-            let new_prop = Self::get_varstr_value(new_prop.get_value());
+            let old_prop = Self::get_varstr_value(old_prop.get_value(), Some(old_scene));
+            let new_prop = Self::get_varstr_value(new_prop.get_value(), Some(new_scene));
             if self.did_prop_change(
                 Some(&old_prop),
                 Some(&new_prop),
@@ -665,8 +664,8 @@ impl Differ {
             ),
             // Shallowly lookup extresource references
             (
-                VariantStrValue::ExtResourceID(old_value),
-                VariantStrValue::ExtResourceID(new_value),
+                VariantStrValue::ExtResourceID(old_value, old_path),
+                VariantStrValue::ExtResourceID(new_value, new_path),
             ) => self.did_ext_resource_reference_change(
                 old_scene.ext_resources.get(old_value),
                 new_scene.ext_resources.get(new_value),
@@ -712,7 +711,7 @@ impl Differ {
             VariantStrValue::ResourcePath(resource_path) => {
                 path = resource_path;
             }
-            VariantStrValue::ExtResourceID(ext_resource_id) => {
+            VariantStrValue::ExtResourceID(ext_resource_id, _path) => {
                 let p = scene.and_then(|scene| {
                     scene
                         .ext_resources
@@ -755,7 +754,7 @@ impl Differ {
 
     /// Parse a prop_value string into a [VariantStrValue] enum.
     // Ideally, the parser would do this for us... but for now, we're doing it ourselves.
-    fn get_varstr_value(prop_value: String) -> VariantStrValue {
+    fn get_varstr_value(prop_value: String, scene: Option<&GodotScene>) -> VariantStrValue {
         if prop_value.starts_with("Resource(")
             || prop_value.starts_with("SubResource(")
             || prop_value.starts_with("ExtResource(")
@@ -772,7 +771,8 @@ impl Differ {
             if prop_value.contains("SubResource(") {
                 return VariantStrValue::SubResourceID(id);
             } else if prop_value.contains("ExtResource(") {
-                return VariantStrValue::ExtResourceID(id);
+                let path = scene.and_then(|scene| scene.get_ext_resource_path(&id));
+                return VariantStrValue::ExtResourceID(id, path.unwrap_or("".to_string()));
             } else {
                 // 4.5 and above started writing `Resource(uid, path)` instead of `Resource(path)`, so we need to handle that here.
                 // if this is a Resource() with the format "Resource(uid, path)", we need to extract the path
