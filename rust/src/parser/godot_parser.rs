@@ -549,6 +549,10 @@ impl GodotScene {
 		self.nodes.get(&node_id)
 	}
 
+    pub fn get_ext_resource_path(&self, ext_resource_id: &String) -> Option<String> {
+        self.ext_resources.get(ext_resource_id).map(|ext_resource| ext_resource.path.clone())
+    }
+
 }
 
 #[inline]
