@@ -11,7 +11,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    helpers::utils::{CommitInfo, CommitMetadata, spawn_named, summarize_changes},
+    helpers::{spawn_utils::spawn_named, utils::{CommitInfo, CommitMetadata, summarize_changes}},
     project::{branch_db::BranchDb, peer_watcher::PeerWatcher, project_api::ChangeViewModel},
 };
 

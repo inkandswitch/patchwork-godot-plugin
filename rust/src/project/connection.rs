@@ -8,7 +8,7 @@ use tokio::{
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_util::sync::CancellationToken;
 
-use crate::helpers::utils::spawn_named;
+use crate::helpers::spawn_utils::spawn_named;
 
 #[derive(Debug, Clone)]
 enum ConnectionStoppedReason {

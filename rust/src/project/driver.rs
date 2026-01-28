@@ -1,7 +1,8 @@
 use crate::diff::differ::ProjectDiff;
 use crate::fs::file_utils::FileSystemEvent;
 use crate::helpers::branch::{self, BranchState};
-use crate::helpers::utils::{CommitInfo, CommitMetadata, spawn_named};
+use crate::helpers::spawn_utils::spawn_named;
+use crate::helpers::utils::{CommitInfo, CommitMetadata};
 use crate::interop::godot_accessors::{EditorFilesystemAccessor, PatchworkEditorAccessor};
 use crate::project::branch_db::{BranchDb, HistoryRef};
 use crate::project::change_ingester::ChangeIngester;

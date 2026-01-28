@@ -9,9 +9,7 @@ use crate::{
         branch::{
             BranchState, BranchStateForkInfo, BranchStateMergeInfo, BranchStateRevertInfo,
             BranchesMetadataDoc,
-        },
-        doc_utils::SimpleDocReader,
-        utils::{parse_automerge_url, spawn_named},
+        }, doc_utils::SimpleDocReader, spawn_utils::spawn_named, utils::parse_automerge_url
     },
     project::branch_db::BranchDb,
 };

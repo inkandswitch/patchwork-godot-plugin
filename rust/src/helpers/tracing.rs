@@ -2,9 +2,14 @@ use std::fmt;
 use std::io::Write;
 
 use godot::classes::ProjectSettings;
-use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::{EnvFilter, Layer, fmt::{format::{FmtSpan, Writer}, time::FormatTime}, layer::SubscriberExt, util::SubscriberInitExt};
 use godot::obj::Singleton;
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::{
+    EnvFilter, Layer,
+    fmt::{format::Writer, time::FormatTime},
+    layer::SubscriberExt,
+    util::SubscriberInitExt,
+};
 
 fn get_user_dir() -> String {
     let user_dir = ProjectSettings::singleton()
@@ -16,59 +21,66 @@ fn get_user_dir() -> String {
 struct CompactTime;
 impl FormatTime for CompactTime {
     fn format_time(&self, w: &mut Writer<'_>) -> Result<(), std::fmt::Error> {
-        write!(
-            w,
-            "{}",
-            TimeNoDate::from(std::time::SystemTime::now())
-        )
+        write!(w, "{}", TimeNoDate::from(std::time::SystemTime::now()))
     }
 }
 static mut M_FILE_WRITER_MUTEX: Option<WorkerGuard> = None;
 pub fn initialize_tracing() {
     let file_appender = tracing_appender::rolling::daily(get_user_dir(), "patchwork.log");
     let (non_blocking_file_writer, _guard) = tracing_appender::non_blocking(file_appender);
-	// if the mutex gets dropped, the file writer will be closed, so we need to keep it alive
-	unsafe{M_FILE_WRITER_MUTEX = Some(_guard);}
+    // if the mutex gets dropped, the file writer will be closed, so we need to keep it alive
+    unsafe {
+        M_FILE_WRITER_MUTEX = Some(_guard);
+    }
     println!("!!! Logging to {:?}/patchwork.log", get_user_dir());
 
-    // TODO (Lilith): Maybe guard this behind a debug flag
-    let console_layer = console_subscriber::ConsoleLayer::builder()
-        .with_default_env()
-        .spawn();
     let stdout_layer = tracing_subscriber::fmt::layer()
         .with_timer(CompactTime)
         .compact()
         // .with_span_events(FmtSpan::ENTER | FmtSpan::CLOSE)
         .with_writer(CustomStdoutWriter::custom_stdout)
-        .with_filter(EnvFilter::new("info")
-            // .add_directive("tokio=trace".parse().unwrap())
-            // .add_directive("runtime=trace".parse().unwrap())
-            .add_directive("patchwork_rust_core=trace".parse().unwrap())
-            .add_directive("samod=info".parse().unwrap())
-            .add_directive("samod_core=info".parse().unwrap()));
+        .with_filter(
+            EnvFilter::new("info")
+                // .add_directive("tokio=trace".parse().unwrap())
+                // .add_directive("runtime=trace".parse().unwrap())
+                .add_directive("patchwork_rust_core=debug".parse().unwrap())
+                .add_directive("samod=info".parse().unwrap())
+                .add_directive("samod_core=info".parse().unwrap()),
+        );
     let file_layer = tracing_subscriber::fmt::layer()
         .with_line_number(true)
-		.with_ansi(false)
+        .with_ansi(false)
         .with_writer(non_blocking_file_writer.clone())
-        .with_filter(EnvFilter::new("info")
-        .add_directive("patchwork_rust_core=trace".parse().unwrap())
-        .add_directive("samod=info".parse().unwrap())
-		.add_directive("samod_core=info".parse().unwrap()));
-    if let Err(e) = tracing_subscriber::registry()
-        // tokio-console
-        .with(console_layer)
-        // stdout writer
+        .with_filter(
+            EnvFilter::new("info")
+                .add_directive("patchwork_rust_core=trace".parse().unwrap())
+                .add_directive("samod=info".parse().unwrap())
+                .add_directive("samod_core=info".parse().unwrap()),
+        );
+
+    #[cfg(feature = "tokio-console")]
+    let subscriber = tracing_subscriber::registry()
+        .with(
+            console_subscriber::ConsoleLayer::builder()
+                .with_default_env()
+                .spawn(),
+        )
         .with(stdout_layer)
-        // we want a file writer too
         .with(file_layer)
-        .try_init()
-    {
+        .try_init();
+
+    #[cfg(not(feature = "tokio-console"))]
+    let subscriber = tracing_subscriber::registry()
+        .with(stdout_layer)
+        .with(file_layer)
+        .try_init();
+
+    if let Err(e) = subscriber {
         tracing::error!("Failed to initialize tracing subscriber: {:?}", e);
     } else {
         tracing::info!("Tracing subscriber initialized");
     }
 }
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TimeNoDate {
@@ -94,7 +106,7 @@ impl fmt::Display for TimeNoDate {
         write!(
             f,
             // "-{:02}-{:02}T{:02}:{:02}:{:02}.{:06}Z",
-			"{:02}:{:02}:{:02}.{:06}",
+            "{:02}:{:02}:{:02}.{:06}",
             self.hour,
             self.minute,
             self.second,
@@ -191,25 +203,25 @@ impl From<std::time::SystemTime> for TimeNoDate {
 }
 
 // custom stdout Writer
-pub struct CustomStdoutWriter{
-	inner: std::io::Stdout,
+pub struct CustomStdoutWriter {
+    inner: std::io::Stdout,
 }
 impl CustomStdoutWriter {
-	pub fn custom_stdout() -> CustomStdoutWriter {
-		CustomStdoutWriter {
-			inner: std::io::stdout(),
-		}
-	}
+    pub fn custom_stdout() -> CustomStdoutWriter {
+        CustomStdoutWriter {
+            inner: std::io::stdout(),
+        }
+    }
 }
 
 // the formatting in tracing-subscriber REALLY SUCKS, so we need to just search-and-replace the output strings
 // Search and replace for the level names
 const LEVEL_NAMES_TO_REPLACEMENT: &[(&str, &str)] = &[
-	("TRACE", "T"),
-	("DEBUG", "D"),
-	(" INFO", "I"), // extra space because INFO is 4 letters long
-	(" WARN", "W"),
-	("ERROR", "X"),
+    ("TRACE", "T"),
+    ("DEBUG", "D"),
+    (" INFO", "I"), // extra space because INFO is 4 letters long
+    (" WARN", "W"),
+    ("ERROR", "X"),
 ];
 
 const CRATE_NAME: &str = "patchwork_rust_core";
@@ -222,9 +234,9 @@ impl Write for CustomStdoutWriter {
 		LEVEL_NAMES_TO_REPLACEMENT.iter().fold(s.to_string(), |acc, (from, to)| acc.replace(from, to))
 		.replace(CRATE_NAME, "<PWRC>");
 
-		let size_diff = buf.len() - s.len();
+        let size_diff = buf.len() - s.len();
         let actual_written = self.inner.write(s.as_bytes())?;
-		Ok(actual_written + size_diff)
+        Ok(actual_written + size_diff)
     }
     fn flush(&mut self) -> std::io::Result<()> {
         self.inner.flush()
@@ -241,7 +253,6 @@ impl Write for CustomStdoutWriter {
 // 		}
 // 	}
 // }
-
 
 // impl Write for CustomJSONStdoutWriter {
 //     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
@@ -264,8 +275,6 @@ impl Write for CustomStdoutWriter {
 //         self.inner.flush()
 //     }
 // }
-
-
 
 // // This needs to be a seperate impl block because they place different bounds on the type parameters.
 // impl<S, N, E, W> Layer<S, N, E, W>
@@ -342,7 +351,6 @@ impl Write for CustomStdoutWriter {
 //     }
 // }
 
-
 // impl<S, N> FormatEvent<S, N>
 //     for fn(ctx: &FmtContext<'_, S, N>, Writer<'_>, &Event<'_>) -> fmt::Result
 // where
@@ -371,7 +379,6 @@ impl Write for CustomStdoutWriter {
 //         event: &Event<'_>,
 //     ) -> fmt::Result;
 // }
-
 
 // impl<S, N, T> FormatEventEXT<S, N> for Format<Compact, T>
 // where

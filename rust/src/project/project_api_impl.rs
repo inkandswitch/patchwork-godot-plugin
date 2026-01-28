@@ -8,7 +8,7 @@ use crate::{
     diff::differ::ProjectDiff,
     helpers::utils::{
         BranchWrapper, CommitInfo, DiffWrapper, exact_human_readable_timestamp,
-        human_readable_timestamp, spawn_named, spawn_named_on,
+        human_readable_timestamp,
     },
     interop::godot_accessors::PatchworkConfigAccessor,
     project::{

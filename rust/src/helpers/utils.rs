@@ -289,25 +289,3 @@ pub fn exact_human_readable_timestamp(timestamp: i64) -> String {
     let datetime : DateTime<Local> = DateTime::from(dt.unwrap());
     return datetime.format("%Y-%m-%d %H:%M:%S").to_string();
 }
-
-pub fn spawn_named<F>(name: &str, future: F) -> JoinHandle<F::Output> where
-    F: Future + Send + 'static,
-    F::Output: Send + 'static,
-{
-    let span = tracing::info_span!("task", name = name);
-    tokio::task::Builder::new()
-        .name(name)
-        .spawn(future.instrument(span))
-        .expect(&format!("Something went wrong trying to build the task {name}."))
-}
-
-pub fn spawn_named_on<F>(name: &str, runtime: &runtime::Handle, future: F) -> JoinHandle<F::Output> where
-    F: Future + Send + 'static,
-    F::Output: Send + 'static,
-{
-    let span = tracing::info_span!("task", name = name);
-    tokio::task::Builder::new()
-        .name(name)
-        .spawn_on(future.instrument(span), runtime)
-        .expect(&format!("Something went wrong trying to build the task {name}."))
-}
