@@ -105,7 +105,7 @@ impl Differ {
         let temp_dir = format!("res://.patchwork/temp_{}/", temp_id);
         let temp_path = path.replace("res://", &temp_dir);
         if let Err(e) = content
-            .write(&PathBuf::from(self.branch_db.globalize_path(&temp_path)))
+            .write(&self.branch_db.globalize_path(&temp_path))
             .await
         {
             tracing::error!("error writing file to temp path: {:?}", e);
@@ -120,9 +120,7 @@ impl Differ {
                     import_file_content.replace(r#"uid=uid://[^\n]+"#, "uid=uid://<invalid>");
                 // write the import file content to the temp path
                 let import_file_path: String = format!("{}.import", temp_path);
-                let _ = FileContent::String(import_file_content).write(&PathBuf::from(
-                    self.branch_db.globalize_path(&import_file_path),
-                ));
+                let _ = FileContent::String(import_file_content).write(&self.branch_db.globalize_path(&import_file_path));
 
                 let res = PatchworkEditorAccessor::import_and_load_resource(&temp_path);
                 if res.is_nil() {

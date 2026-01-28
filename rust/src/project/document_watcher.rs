@@ -191,7 +191,7 @@ impl DocumentWatcherInner {
         .await
         .unwrap();
 
-        self.branch_db.set_linked_docs_for_branch(handle.document_id(), linked_docs.values().cloned().collect());
+        self.branch_db.set_linked_docs_for_branch(handle.document_id(), linked_docs.values().cloned().collect()).await;
     }
 
     #[tracing::instrument(skip_all)]

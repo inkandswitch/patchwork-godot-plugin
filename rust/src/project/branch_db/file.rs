@@ -77,14 +77,15 @@ impl BranchDb {
         if old_ref.is_none() || !old_ref.unwrap().is_valid() {
             tracing::info!("old heads empty, getting ALL files on branch");
 
+            // NOTE: This returns local res:// paths, we must globalize them before exporting them to FileSystemEvents
             let files = self.get_files_at_ref(&new_ref, &HashSet::new()).await?;
 
             return Some(
                 files
                     .into_iter()
                     .map(|(path, content)| match content {
-                        FileContent::Deleted => FileSystemEvent::FileDeleted(PathBuf::from(path)),
-                        _ => FileSystemEvent::FileCreated(PathBuf::from(path), content),
+                        FileContent::Deleted => FileSystemEvent::FileDeleted(self.globalize_path(&path)),
+                        _ => FileSystemEvent::FileCreated(self.globalize_path(&path), content),
                     })
                     .collect(),
             );
@@ -103,21 +104,21 @@ impl BranchDb {
             let mut events = Vec::new();
             for (path, _) in old_files.iter() {
                 if !new_files.contains_key(path) {
-                    events.push(FileSystemEvent::FileDeleted(PathBuf::from(path)));
+                    events.push(FileSystemEvent::FileDeleted(self.globalize_path(path)));
                 }
             }
             for (path, content) in new_files {
                 match content {
                     FileContent::Deleted => {
-                        events.push(FileSystemEvent::FileDeleted(PathBuf::from(path)));
+                        events.push(FileSystemEvent::FileDeleted(self.globalize_path(&path)));
                         continue;
                     }
                     _ => {}
                 }
                 if !old_files.contains_key(&path) {
-                    events.push(FileSystemEvent::FileCreated(PathBuf::from(path), content));
+                    events.push(FileSystemEvent::FileCreated(self.globalize_path(&path), content));
                 } else if &content != old_files.get(&path).unwrap() {
-                    events.push(FileSystemEvent::FileModified(PathBuf::from(path), content));
+                    events.push(FileSystemEvent::FileModified(self.globalize_path(&path), content));
                 }
             }
             return Some(events);
@@ -175,19 +176,19 @@ impl BranchDb {
                 .await?
                 .into_iter()
                 .map(|(path, content)| match content {
-                    FileContent::Deleted => FileSystemEvent::FileDeleted(PathBuf::from(path)),
+                    FileContent::Deleted => FileSystemEvent::FileDeleted(self.globalize_path(&path)),
                     _ if added_files.contains(&path) => {
-                        FileSystemEvent::FileCreated(PathBuf::from(path), content)
+                        FileSystemEvent::FileCreated(self.globalize_path(&path), content)
                     }
                     _ if deleted_files.contains(&path) => {
-                        FileSystemEvent::FileDeleted(PathBuf::from(path))
+                        FileSystemEvent::FileDeleted(self.globalize_path(&path))
                     }
-                    _ => FileSystemEvent::FileModified(PathBuf::from(path), content),
+                    _ => FileSystemEvent::FileModified(self.globalize_path(&path), content),
                 })
                 .chain(
                     deleted_files
                         .iter()
-                        .map(|path| FileSystemEvent::FileDeleted(PathBuf::from(path))),
+                        .map(|path| FileSystemEvent::FileDeleted(self.globalize_path(&path))),
                 )
                 .collect(),
         )

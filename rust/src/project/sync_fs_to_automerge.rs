@@ -116,7 +116,8 @@ impl SyncFileSystemToAutomerge {
             *checked_out_ref = Some(new_ref);
             return true;
         } else {
-            tracing::error!("Could not commit pending files! Making no changes.");
+            tracing::info!("Did not commit pending files!");
+            pending_changes.clear();
             return false;
         }
     }

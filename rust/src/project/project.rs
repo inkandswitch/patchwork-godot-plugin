@@ -179,6 +179,7 @@ impl Project {
         );
 
         let project_dir = self.project_dir.clone();
+        let username = PatchworkConfigAccessor::get_user_value("user_name", "");
         let block = self.main_thread_block.clone();
 
         // TODO: Don't block on main thread for checkin
@@ -187,7 +188,7 @@ impl Project {
             .block_on(
                 // I think it's correct to spawn this on a different task explicitly, because block_on runs the future on the current thread, not a worker thread.
                 spawn_named_on("Create driver", self.runtime.handle(), async move {
-                    Driver::new(block, server_url, project_dir, storage_dir, metadata_id).await
+                    Driver::new(block, server_url, project_dir, username, storage_dir, metadata_id).await
                 }),
             )
             .unwrap();

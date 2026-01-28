@@ -128,6 +128,7 @@ impl Driver {
         main_thread_block: MainThreadBlock,
         server_url: String,
         project_path: PathBuf,
+        username: String,
         storage_directory: PathBuf,
         metadata_id: Option<DocumentId>,
     ) -> Option<Self> {
@@ -139,8 +140,6 @@ impl Driver {
             .with_storage(storage)
             .load()
             .await;
-
-        let project_path = PathBuf::from(project_path);
 
         // Construct the ignore globs, and link in the gitignores
         let ignore_globs = vec![
@@ -174,6 +173,13 @@ impl Driver {
         // Start the connection
         let connection = RemoteConnection::new(repo.clone(), server_url);
         let branch_db = BranchDb::new(repo.clone(), project_path, ignore_globs);
+        branch_db
+            .set_username(if username.trim() == "" {
+                None
+            } else {
+                Some(username.trim().to_string())
+            })
+            .await;
         let peer_watcher = Arc::new(PeerWatcher::new(repo.clone()));
         let sync_automerge_to_fs = SyncAutomergeToFileSystem::new(branch_db.clone());
         let sync_fs_to_automerge = SyncFileSystemToAutomerge::new(branch_db.clone());
@@ -538,7 +544,13 @@ impl DriverInner {
         let current_ref = self.branch_db.get_checked_out_ref_mut();
         let current_ref = current_ref.read().await;
         if let Some(current_ref) = current_ref.clone() {
-            return Some(current_ref);
+            if let Some(ref_) = self
+                .branch_db
+                .get_latest_ref_on_branch(&current_ref.branch)
+                .await
+            {
+                return Some(ref_);
+            }
         }
         if let Some(main_branch) = self.branch_db.get_main_branch().await {
             if let Some(ref_) = self.branch_db.get_latest_ref_on_branch(&main_branch).await {

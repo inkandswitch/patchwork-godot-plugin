@@ -41,7 +41,7 @@ impl BranchDb {
         let count = files.len();
         let username = self.username.lock().await.clone();
 
-        if (count == 0) {
+        if count == 0  {
             tracing::info!("No actual changes found; not committing.");
             return None;
         }

@@ -224,7 +224,7 @@ impl FileSystemWatcher {
                 };
                 tracing::debug!("Heard filesystem event list of {:?} items", notify_events.len());
                 for notify_event in notify_events {
-                    tracing::debug!("Heard filesystem event {:?}", notify_event);
+                    tracing::trace!("Heard filesystem event {:?}", notify_event);
                     if let Some(evt) = this.process_notify_event(notify_event).await {
                         yield evt;
                     }

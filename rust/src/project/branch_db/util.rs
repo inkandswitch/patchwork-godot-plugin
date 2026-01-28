@@ -8,11 +8,14 @@ use crate::{helpers::branch::BranchState, project::branch_db::{BranchDb, History
 // Utility methods for working with [BranchDb].
 impl BranchDb {
     /// Turns a filesytem path into a project-local res:// path.
+    /// Local paths are represented with a [String], while global paths are represented with a [PathBuf].
+    /// This is because local paths are a URL, not a filesystem path.
     pub fn localize_path(&self, path: &PathBuf) -> String {
         let path = path.to_string_lossy().replace("\\", "/");
         let project_dir = self.project_dir.to_string_lossy().replace("\\", "/");
         if path.starts_with(&project_dir) {
-            // TODO: this isn't teeechnically a Path, it's a URL... PathBuf is probably the wrong choice
+            // TODO: this isn't teeechnically a Path, it's a URL... PathBuf is probably the wrong choice.
+            // That's why we turn it into a string when we export!
             let thing = PathBuf::from("res://".to_string())
                 .join(PathBuf::from(&path[project_dir.len()..].to_string()));
             thing.to_string_lossy().to_string()
@@ -22,6 +25,8 @@ impl BranchDb {
     }
 
     /// Convert a project URL like res:// into a local filesystem path.
+    /// Local paths are represented with a [String], while global paths are represented with a [PathBuf].
+    /// This is because local paths are a URL, not a filesystem path.
     pub fn globalize_path(&self, path: &String) -> PathBuf {
         // trim the project_dir from the front of the path
         if path.starts_with("res://") {
