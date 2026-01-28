@@ -11,7 +11,7 @@ use godot::{
 use crate::{
     diff::differ::{ChangeType, Differ},
     parser::godot_parser::{
-        ExternalResourceNode, GodotNode, GodotScene, SubResourceNode, TypeOrInstance,
+        ExternalResourceNode, GodotNode, GodotScene, OrderedProperty, SubResourceNode, TypeOrInstance
     },
     project::branch_db::HistoryRef,
 };
@@ -33,6 +33,31 @@ impl SceneDiff {
             path,
             change_type,
             changed_nodes,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct TextResourceDiff {
+    /// The path of the scene.
+    pub path: String,
+    /// PackedScene or other
+    pub resource_type: String,
+    /// The change type for the scene.
+    pub change_type: ChangeType,
+    /// The sub resources changed in this diff.
+    pub changed_sub_resources: Vec<SubResourceDiff>,
+    pub changed_main_resource: Option<SubResourceDiff>,
+}
+
+impl TextResourceDiff {
+    fn new(path: String, resource_type: String, change_type: ChangeType, changed_sub_resources: Vec<SubResourceDiff>, changed_main_resource: Option<SubResourceDiff>) -> TextResourceDiff {
+        TextResourceDiff {
+            path,
+            resource_type,
+            change_type,
+            changed_sub_resources,
+            changed_main_resource,
         }
     }
 }
@@ -66,6 +91,31 @@ impl NodeDiff {
     }
 }
 
+
+
+#[derive(Clone, Debug)]
+pub struct SubResourceDiff {
+    pub change_type: ChangeType,
+    pub sub_resource_id: String,
+    pub resource_type: String,
+    pub changed_properties: HashMap<String, PropertyDiff>,
+}
+
+impl SubResourceDiff {
+    pub fn new(
+        change_type: ChangeType,
+        sub_resource_id: String,
+        resource_type: String,
+        changed_properties: HashMap<String, PropertyDiff>,
+    ) -> SubResourceDiff {
+        SubResourceDiff {
+            change_type,
+            sub_resource_id,
+            resource_type,
+            changed_properties,
+        }
+    }
+}
 /// Represents a diff of a single Property within a Node, within a Scene.
 #[derive(Clone, Debug)]
 pub struct PropertyDiff {
@@ -117,6 +167,50 @@ impl std::fmt::Display for VariantStrValue {
             VariantStrValue::SubResourceID(s) => write!(f, "SubResource({})", s),
             VariantStrValue::ExtResourceID(s) => write!(f, "ExtResource({})", s),
         }
+    }
+}
+
+trait PropertyGetter {
+    fn get_property(&self, prop: &String) -> Option<&OrderedProperty>;
+    fn get_properties(&self) -> &HashMap<String, OrderedProperty>;
+    fn get_type_or_instance(&self) -> TypeOrInstance;
+    fn is_subresource(&self) -> bool;
+    fn get_id(&self) -> String;
+}
+
+impl PropertyGetter for GodotNode {
+    fn get_property(&self, prop: &String) -> Option<&OrderedProperty> {
+        self.properties.get(prop)
+    }
+    fn get_properties(&self) -> &HashMap<String, OrderedProperty> {
+        &self.properties
+    }
+    fn get_type_or_instance(&self) -> TypeOrInstance {
+        self.type_or_instance.clone()
+    }
+    fn is_subresource(&self) -> bool {
+        false
+    }
+    fn get_id(&self) -> String {
+        self.id.to_string()
+    }
+}
+
+impl PropertyGetter for SubResourceNode {
+    fn get_property(&self, prop: &String) -> Option<&OrderedProperty> {
+        self.properties.get(prop)
+    }
+    fn get_properties(&self) -> &HashMap<String, OrderedProperty> {
+        &self.properties
+    }
+    fn get_type_or_instance(&self) -> TypeOrInstance {
+        TypeOrInstance::Type(self.resource_type.clone())
+    }
+    fn is_subresource(&self) -> bool {
+        true
+    }
+    fn get_id(&self) -> String {
+        self.id.to_string()
     }
 }
 
@@ -180,12 +274,124 @@ impl Differ {
         )
     }
 
+    pub(super) async fn get_text_resource_diff(
+        &self,
+        path: &String,
+        old_scene: Option<&GodotScene>,
+        new_scene: Option<&GodotScene>,
+        before: &HistoryRef,
+        after: &HistoryRef,
+    ) -> TextResourceDiff {
+        let mut node_ids = HashSet::new();
+        let mut sub_resource_ids = HashSet::new();
+        let mut ext_resource_ids = HashSet::new();
+
+        let mut resource_type: String = "".to_string();
+        // Collect all the relevant node IDs, sub resource IDs, and ext resource IDs from both scenes.
+        if let Some(old_scene) = old_scene {
+            resource_type = old_scene.resource_type.clone();
+            Self::get_ids_from_scene(
+                old_scene,
+                &mut node_ids,
+                &mut ext_resource_ids,
+                &mut sub_resource_ids,
+            );
+        }
+        if let Some(new_scene) = new_scene {
+            resource_type = new_scene.resource_type.clone();
+            Self::get_ids_from_scene(
+                new_scene,
+                &mut node_ids,
+                &mut ext_resource_ids,
+                &mut sub_resource_ids,
+            );
+        }
+
+        let mut changed_sub_resources = Vec::new();
+        // Diff each node
+        for sub_resource_id in &sub_resource_ids {
+            let old_sub_resource = old_scene.as_ref().and_then(|s| s.sub_resources.get(sub_resource_id));
+            let new_sub_resource = new_scene.as_ref().and_then(|s| s.sub_resources.get(sub_resource_id));
+
+            let Some(diff) = self.get_sub_resource_diff(sub_resource_id, old_sub_resource, new_sub_resource, old_scene, new_scene, before, after).await
+            else {
+                // If the node has no changes or is otherwise invalid, just skip this one.
+                continue;
+            };
+
+            changed_sub_resources.push(diff);
+        }
+        let changed_main_resource = self.get_sub_resource_diff(&"".to_string(), old_scene.and_then(|s| s.main_resource.as_ref()), new_scene.and_then(|s| s.main_resource.as_ref()), old_scene, new_scene, before, after).await;
+
+        TextResourceDiff::new(
+            path.clone(),
+            resource_type,
+            match (old_scene, new_scene) {
+                (None, Some(_)) => ChangeType::Added,
+                (Some(_), None) => ChangeType::Removed,
+                (_, _) => ChangeType::Modified,
+            },
+            changed_sub_resources,
+            changed_main_resource,
+        )
+
+    }
+
+    async fn get_sub_resource_diff(
+        &self,
+        sub_resource_id: &String,
+        old_node: Option<&SubResourceNode>,
+        new_node: Option<&SubResourceNode>,
+        old_scene: Option<&GodotScene>,
+        new_scene: Option<&GodotScene>,
+        before: &HistoryRef,
+        after: &HistoryRef,
+    ) -> Option<SubResourceDiff> {
+        if old_node.is_none() && new_node.is_none() {
+            return None;
+        }
+
+        let mut changed_properties = HashMap::new();
+        let old_class_name = old_node.map(|n| n.get_type_or_instance().to_string());
+        let new_class_name = new_node.map(|n| n.get_type_or_instance().to_string());
+
+        // Collect all properties from new and old scenes
+        let mut props: HashSet<String> = HashSet::new();
+        if let Some(node) = old_node {
+            for (key, _) in node.get_properties() {
+                let _ = props.insert(key.to_string());
+            }
+        }
+        if let Some(node) = new_node {
+            for (key, _) in node.get_properties() {
+                let _ = props.insert(key.to_string());
+            }
+        }
+        for prop in &props {
+            if let Some(prop_diff) =
+                self.get_property_diff(prop, old_node, new_node, old_scene, new_scene, before, after).await
+            {
+                changed_properties.insert(prop.clone(), prop_diff);
+            }
+        }
+        Some(SubResourceDiff::new(
+            match (old_node, new_node) {
+                (None, Some(_)) => ChangeType::Added,
+                (Some(_), None) => ChangeType::Removed,
+                (_, _) => ChangeType::Modified,
+            },
+            sub_resource_id.clone(),
+            old_class_name.or(new_class_name)?,
+            changed_properties,
+        ))
+    }
+
     /// Generate a [NodeDiff] between two nodes.
     async fn get_node_diff(
         &self,
         node_id: i32,
-        old_node: Option<&GodotNode>,
-        new_node: Option<&GodotNode>,
+        old_node: Option<&impl PropertyGetter>,
+        new_node: Option<&impl PropertyGetter>,
         old_scene: Option<&GodotScene>,
         new_scene: Option<&GodotScene>,
         before: &HistoryRef,
@@ -195,20 +401,20 @@ impl Differ {
             return None;
         }
 
-        let old_class_name = old_node.map(|n| Self::get_class_name(&n.type_or_instance, old_scene));
-        let new_class_name = new_node.map(|n| Self::get_class_name(&n.type_or_instance, new_scene));
+        let old_class_name = old_node.map(|n| Self::get_class_name(&n.get_type_or_instance(), old_scene));
+        let new_class_name = new_node.map(|n| Self::get_class_name(&n.get_type_or_instance(), new_scene));
 
         let mut changed_properties = HashMap::new();
 
         // Collect all properties from new and old scenes
         let mut props: HashSet<String> = HashSet::new();
         if let Some(node) = old_node {
-            for (key, _) in &node.properties {
+            for (key, _) in node.get_properties() {
                 let _ = props.insert(key.to_string());
             }
         }
         if let Some(node) = new_node {
-            for (key, _) in &node.properties {
+            for (key, _) in node.get_properties() {
                 let _ = props.insert(key.to_string());
             }
         }
@@ -267,27 +473,37 @@ impl Differ {
         }
     }
 
+    fn get_classdb_default_value(class_name: &String, prop: &String) -> String {
+        if (ClassDb::singleton().is_instance_valid() && ClassDb::singleton().class_exists(class_name)) {
+            ClassDb::singleton()
+            .class_get_property_default_value(
+                &StringName::from(class_name),
+                &StringName::from(prop),
+            )
+            .to_string()
+        } else {
+            "".to_string()
+        }
+    }
+
     /// Returns the [VariantStrValue] of a property on a node, or the default value if the property doesn't
     /// exist on the node.
     /// If the node itself doesn't exist, returns [None].
-    fn get_varstr_or_default(prop: &String, node: Option<&GodotNode>) -> Option<VariantStrValue> {
+    fn get_varstr_or_default(prop: &String, node: Option<&impl PropertyGetter>) -> Option<VariantStrValue> {
         // If this node never existed, don't provide a value.
         let Some(node) = node else {
             return None;
         };
-
-        let val = node.properties.get(prop).map_or_else(
+        let val = node.get_property(prop).map_or_else(
             ||
 			// If the property doesn't exist on the node, calculate the default.
-			match &node.type_or_instance {
-				TypeOrInstance::Type(class_name) => ClassDb::singleton()
-					.class_get_property_default_value(
-						&StringName::from(class_name),
-						&StringName::from(prop),
-					)
-					.to_string(),
-				// Instance properties are always set, regardless of the default value, so this is always empty
-				_ => "".to_string(),
+			match &node.get_type_or_instance() {
+				TypeOrInstance::Type(class_name) => Self::get_classdb_default_value(class_name, prop),
+				TypeOrInstance::Instance(class_name) => match node.is_subresource() {
+					true => Self::get_classdb_default_value(class_name, prop),
+                    // Instance properties are always set on Nodes, regardless of the default value, so this is going to be unused.
+					false => "".to_string(),
+				},
 			},
             // Otherwise, get the value from the property.
             |val| val.get_value(),
@@ -301,8 +517,8 @@ impl Differ {
     async fn get_property_diff(
         &self,
         prop: &String,
-        old_node: Option<&GodotNode>,
-        new_node: Option<&GodotNode>,
+        old_node: Option<&impl PropertyGetter>,
+        new_node: Option<&impl PropertyGetter>,
         old_scene: Option<&GodotScene>,
         new_scene: Option<&GodotScene>,
         before: &HistoryRef,

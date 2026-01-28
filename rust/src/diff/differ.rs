@@ -14,13 +14,14 @@ use godot::{
 use tracing::instrument;
 
 use crate::{
-    diff::{resource_differ::ResourceDiff, scene_differ::SceneDiff, text_differ::TextDiff},
+    diff::{resource_differ::BinaryResourceDiff, scene_differ::{SceneDiff, TextResourceDiff}, text_differ::TextDiff},
     fs::{file_utils::FileSystemEvent, file_utils::FileContent},
     helpers::{branch::BranchState, utils::ToShortForm},
     interop::godot_accessors::PatchworkEditorAccessor,
     project::{
         branch_db::{BranchDb, HistoryRef},
     },
+    project::project::Project,
 };
 
 /// The type of change that occurred in a diff.
@@ -39,8 +40,10 @@ pub enum ChangeType {
 pub enum Diff {
     /// A scene file diff.
     Scene(SceneDiff),
+    /// A text resource diff.
+    TextResourceDiff(TextResourceDiff),
     /// A resource file diff.
-    Resource(ResourceDiff),
+    BinaryResource(BinaryResourceDiff),
     /// A text file diff.
     Text(TextDiff),
 }
@@ -266,17 +269,31 @@ impl Differ {
                     FileContent::Scene(s) => Some(s),
                     _ => None,
                 };
-                // This is a scene file, so use a scene diff
-                diffs.push(Diff::Scene(
-                    self.get_scene_diff(&path, old_scene, new_scene, before, after)
+
+
+                let resource_type = match (old_scene, new_scene) {
+                    (None, Some(scene)) => scene.resource_type.clone(),
+                    (Some(scene), None) => scene.resource_type.clone(),
+                    (_, Some(scene)) => scene.resource_type.clone(),
+                    (_, _) => "".to_string(),
+                };
+                if resource_type == "PackedScene" {
+                    diffs.push(Diff::Scene(
+                        self.get_scene_diff(&path, old_scene, new_scene, before, after)
                         .await,
-                ));
+                    ));
+                } else {
+                    diffs.push(Diff::TextResourceDiff(
+                        self.get_text_resource_diff(&path, old_scene, new_scene, before, after)
+                        .await,
+                    ));
+                }
             } else if matches!(old_file_content, FileContent::Binary(_))
                 || matches!(new_file_content, FileContent::Binary(_))
             {
                 // This is a binary file, so use a resource diff
-                diffs.push(Diff::Resource(
-                    self.get_resource_diff(
+                diffs.push(Diff::BinaryResource(
+                    self.get_binary_resource_diff(
                         &path,
                         change_type,
                         old_file_content,

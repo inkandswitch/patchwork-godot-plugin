@@ -4,22 +4,23 @@ use crate::{
     diff::differ::{ChangeType, Differ}, fs::file_utils::FileContent, helpers::utils::ToShortForm, project::branch_db::HistoryRef
 };
 
+
 #[derive(Clone, Debug)]
-pub struct ResourceDiff {
+pub struct BinaryResourceDiff {
     pub path: String,
     pub change_type: ChangeType,
     pub old_resource: Option<Variant>,
     pub new_resource: Option<Variant>,
 }
 
-impl ResourceDiff {
+impl BinaryResourceDiff {
     pub fn new(
         path: String,
         change_type: ChangeType,
         old_resource: Option<Variant>,
         new_resource: Option<Variant>,
-    ) -> ResourceDiff {
-        ResourceDiff {
+    ) -> BinaryResourceDiff {
+        BinaryResourceDiff {
             path,
             change_type,
             old_resource,
@@ -29,7 +30,7 @@ impl ResourceDiff {
 }
 
 impl Differ {
-    pub(super) async fn get_resource_diff(
+    pub(super) async fn get_binary_resource_diff(
         &self,
         path: &String,
         change_type: ChangeType,
@@ -37,8 +38,8 @@ impl Differ {
         new_content: &FileContent,
         before: &HistoryRef,
         after: &HistoryRef
-    ) -> ResourceDiff {
-        ResourceDiff::new(
+    ) -> BinaryResourceDiff {
+        BinaryResourceDiff::new(
             path.clone(),
             change_type,
             self.get_resource(path, old_content, before).await,
