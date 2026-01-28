@@ -178,7 +178,7 @@ impl ToGodot for SubResourceDiff {
             "change_type": self.change_type.to_godot(),
             "sub_resource_id": self.sub_resource_id.to_godot(),
             "resource_type": self.resource_type.to_godot(),
-            "changed_properties": self.changed_properties.to_godot(),
+            "changed_props": self.changed_properties.to_godot(),
         }
     }
 }

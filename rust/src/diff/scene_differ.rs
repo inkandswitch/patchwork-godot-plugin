@@ -301,7 +301,7 @@ impl Differ<'_> {
             );
         }
 
-        let mut sub_resource_diffs = Vec::new();
+        let mut changed_sub_resources = Vec::new();
         // Diff each node
         for sub_resource_id in &sub_resource_ids {
             let old_sub_resource = old_scene.as_ref().and_then(|s| s.sub_resources.get(sub_resource_id));
@@ -313,9 +313,9 @@ impl Differ<'_> {
                 continue;
             };
 
-            sub_resource_diffs.push(diff);
+            changed_sub_resources.push(diff);
         }
-        let mut changed_main_resource = self.get_sub_resource_diff(&"".to_string(), old_scene.and_then(|s| s.main_resource.as_ref()), new_scene.and_then(|s| s.main_resource.as_ref()), old_scene, new_scene);
+        let changed_main_resource = self.get_sub_resource_diff(&"".to_string(), old_scene.and_then(|s| s.main_resource.as_ref()), new_scene.and_then(|s| s.main_resource.as_ref()), old_scene, new_scene);
 
         TextResourceDiff::new(
             path.clone(),
@@ -325,7 +325,7 @@ impl Differ<'_> {
                 (Some(_), None) => ChangeType::Removed,
                 (_, _) => ChangeType::Modified,
             },
-            sub_resource_diffs,
+            changed_sub_resources,
             changed_main_resource,
         )
 
