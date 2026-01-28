@@ -15,17 +15,17 @@ use automerge::ChangeHash;
 use futures::channel::oneshot::Cancellation;
 use futures::{Stream, StreamExt};
 use samod::{ConcurrencyConfig, DocHandle, DocumentId, Repo};
-use tokio::select;
-use tokio::sync::{Mutex, Notify, broadcast, mpsc, oneshot, watch};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tokio_stream::wrappers::UnboundedReceiverStream;
-use tokio_util::sync::CancellationToken;
-use tracing::instrument;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
+use tokio::select;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::{Mutex, Notify, broadcast, mpsc, oneshot, watch};
+use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_util::sync::CancellationToken;
+use tracing::instrument;
 
 /// The main driver for the project.
 /// Hooks together all the various controllers.
@@ -48,6 +48,9 @@ pub struct DriverInner {
     safe_to_update_editor: AtomicBool,
     token: CancellationToken,
 
+    // internal synchronization
+    requested_checkout: Arc<Mutex<Option<DocumentId>>>,
+
     // subtasks
     repo: Repo,
     #[allow(unused)]
@@ -67,7 +70,8 @@ pub struct DriverInner {
 impl Drop for Driver {
     fn drop(&mut self) {
         self.token.cancel();
-        self.repo.stop();
+        // just use the default executor for this one I think?
+        futures::executor::block_on(self.repo.stop());
     }
 }
 
@@ -172,7 +176,7 @@ impl Driver {
         let peer_watcher = Arc::new(PeerWatcher::new(repo.clone()));
         let sync_automerge_to_fs = SyncAutomergeToFileSystem::new(branch_db.clone());
         let sync_fs_to_automerge = SyncFileSystemToAutomerge::new(branch_db.clone());
-       
+
         let metadata_handle = match &metadata_id {
             // If we're expecting an existing ID, try and fetch it.
             Some(id) => {
@@ -182,15 +186,12 @@ impl Driver {
                 handle
             }
             // If we need to make a new ID, make a doc and check in the initial state of the filesystem.
-            None => {
-                branch_db.create_metadata_doc().await
-            }
+            None => branch_db.create_metadata_doc().await,
         };
 
         // The document watcher will auto-ingest the provided metadata handle.
         let document_watcher =
             DocumentWatcher::new(repo.clone(), branch_db.clone(), metadata_handle).await;
-            
 
         // If this is a new project (i.e. we earlier made a metadata doc), check in the files.
         // This has to go after the document watcher ingests the metadata doc, of course.
@@ -212,25 +213,26 @@ impl Driver {
         let this = Some(Driver {
             file_changes_rx,
             inner: Arc::new(DriverInner {
-                token: token.clone(),
                 main_thread_block,
                 file_changes_tx,
                 ref_tx,
                 safe_to_update_editor: AtomicBool::new(false),
+                token: token.clone(),
+                requested_checkout: Arc::new(Mutex::new(None)),
                 repo: repo.clone(),
                 connection,
                 branch_db,
                 peer_watcher,
-                document_watcher,
                 change_ingester,
+                document_watcher,
                 sync_automerge_to_fs,
                 sync_fs_to_automerge,
                 // differ,
             }),
             repo,
-            token
+            token,
         });
-        
+
         // Spawn off the sync task
         let inner_clone = this.as_ref().unwrap().inner.clone();
         tokio::spawn(async move {
@@ -265,6 +267,15 @@ impl Driver {
                 connected
             }
         }
+    }
+
+    /// Request the sync task to checkout the latest ref on a branch the next opportunity.
+    /// This will only work once Godot is safe to update.
+    // TODO (Lilith): This is broken for immediately checked-out branches.
+    // We should instead allow request_checkout to poll for other branches that haven't loaded in yet.
+    pub async fn request_checkout(&self, branch: &DocumentId) {
+        let mut req = self.inner.requested_checkout.lock().await;
+        *req = Some(branch.clone());
     }
 
     async fn get_metadata_handle(
@@ -308,7 +319,7 @@ impl Driver {
                         );
                         return None;
                     }
-                    Err(e) => {
+                    Err(_) => {
                         tracing::error!(
                             "Can't start the driver; the repo was immediately stopped!"
                         );
@@ -319,31 +330,50 @@ impl Driver {
         }
     }
 
-    pub fn merge_branch(
-        &mut self,
-        source_branch_doc_id: DocumentId,
-        target_branch_doc_id: DocumentId,
-    ) {
-        // TODO
+    pub async fn fork_branch(&self, name: String, branch: &DocumentId) {
+        if let Some(id) = self.inner.branch_db.fork_branch(name, branch).await {
+            self.request_checkout(&id).await;
+        }
     }
 
-    pub fn create_merge_preview_branch_between(
-        &mut self,
-        source_branch_doc_id: DocumentId,
-        target_branch_doc_id: DocumentId,
-    ) {
-        // TODO (Lilith)
+    pub async fn merge_branch(&self, source: &DocumentId, target: &DocumentId) {
+        self.inner.branch_db.merge_branch(source, target).await;
+        self.inner.branch_db.delete_branch(source).await;
+        self.request_checkout(target).await;
     }
 
-    pub fn create_revert_preview_branch_for(
-        &mut self,
-        branch_doc_id: DocumentId,
-        revert_to: Vec<ChangeHash>,
-    ) {
-        // TODO (Lilith)
+    pub async fn discard_current_branch(&self) {
+        let Some(checked_out_ref) = self.get_checked_out_ref().await else {
+            return;
+        };
+
+        let Some(branch_state) = self.get_branch_state(&checked_out_ref.branch).await else {
+            return;
+        };
+
+        let Some(fork_info) = &branch_state.fork_info else {
+            return;
+        };
+        self.inner
+            .branch_db
+            .delete_branch(&branch_state.doc_handle.document_id().clone())
+            .await;
+
+        self.request_checkout(&fork_info.forked_from).await;
     }
 
-    pub fn delete_branch(&mut self, branch_doc_id: DocumentId) {
+    pub async fn create_merge_preview_branch(&self, source: &DocumentId, target: &DocumentId) {
+        if let Some(id) = self
+            .inner
+            .branch_db
+            .create_merge_preview_branch(source, target)
+            .await
+        {
+            self.request_checkout(&id).await;
+        }
+    }
+
+    pub fn create_revert_preview_branch(&mut self, ref_: &HistoryRef) {
         // TODO (Lilith)
     }
 
@@ -375,7 +405,7 @@ impl Driver {
             .branch_db
             .get_metadata_state()
             .await
-            .map(|(id, _)| id)
+            .map(|(handle, _)| handle.document_id().clone())
     }
 
     pub async fn get_main_branch(&self) -> Option<DocumentId> {
@@ -400,13 +430,19 @@ impl Driver {
         Some(state.lock().await.clone())
     }
 
+    pub async fn get_branch_children(&self, id: &DocumentId) -> Vec<DocumentId> {
+        self.inner.branch_db.get_branch_children(id).await
+    }
+
     pub async fn get_checked_out_ref(&self) -> Option<HistoryRef> {
-        let checked_out_ref = self.inner.branch_db.get_checked_out_ref_mut().await;
+        let checked_out_ref = self.inner.branch_db.get_checked_out_ref_mut();
         return checked_out_ref.read().await.clone();
     }
 
     pub fn set_safe_to_update_editor(&self, safe: bool) {
-        self.inner.safe_to_update_editor.store(safe, Ordering::Relaxed);
+        self.inner
+            .safe_to_update_editor
+            .store(safe, Ordering::Relaxed);
     }
 
     // awkward
@@ -445,7 +481,13 @@ impl DriverInner {
 
     #[instrument(skip_all)]
     async fn sync(&self) {
-        let old_checked_out_ref = self.branch_db.get_checked_out_ref_mut().await.read().await.clone();
+        tracing::trace!("Syncing...");
+        let old_checked_out_ref = self
+            .branch_db
+            .get_checked_out_ref_mut()
+            .read()
+            .await
+            .clone();
         // Ensure we block the main thread inside of Rust while checking out a ref.
         // Very important to not allow Godot to explode while we're writing files!
         {
@@ -463,12 +505,55 @@ impl DriverInner {
             self.change_ingester.request_ingestion();
         }
 
-        let new_checked_out_ref = self.branch_db.get_checked_out_ref_mut().await.read().await.clone();
+        let new_checked_out_ref = self
+            .branch_db
+            .get_checked_out_ref_mut()
+            .read()
+            .await
+            .clone();
 
         // If we've changed branches, send the new checked out ref.
-        if new_checked_out_ref.as_ref().map(|r| &r.branch) != old_checked_out_ref.as_ref().map(|r| &r.branch) {
+        if new_checked_out_ref.as_ref().map(|r| &r.branch)
+            != old_checked_out_ref.as_ref().map(|r| &r.branch)
+        {
             self.ref_tx.send(new_checked_out_ref).unwrap();
         }
+        tracing::trace!("Done with sync.");
+    }
+
+    async fn get_ref_for_sync(&self) -> Option<HistoryRef> {
+        let mut requested_checkout = self.requested_checkout.lock().await;
+
+        // The logic here:
+        // - If we have a requested checkout that is valid, use that, and clear it
+        // - If the requested checkout is invalid or empty, use the branch from the currently checked out ref
+        // - If we don't have anything currently checked out, default to main.
+        let req_branch = requested_checkout.clone();
+        if let Some(requested_branch) = req_branch {
+            if let Some(latest) = self
+                .branch_db
+                .get_latest_ref_on_branch(&requested_branch)
+                .await
+            {
+                requested_checkout.take(); // clear it
+                return Some(latest);
+            }
+        }
+
+        let current_ref = self.branch_db.get_checked_out_ref_mut();
+        let current_ref = current_ref.read().await;
+        if let Some(current_ref) = current_ref.clone() {
+            return Some(current_ref);
+        }
+        if let Some(main_branch) = self.branch_db.get_main_branch().await {
+            if let Some(ref_) = self.branch_db.get_latest_ref_on_branch(&main_branch).await {
+                return Some(ref_);
+            }
+        }
+        tracing::error!(
+            "No metadata doc checked out, or otherwise couldn't get main branch. Skipping checkout!"
+        );
+        return None;
     }
 
     /// If our current ref is out-of-date, try and check out a new ref.
@@ -482,39 +567,10 @@ impl DriverInner {
         // find any actual changes.
         // Maybe that's OK, we need to profile to see if it's a problem.
 
-        let goal_ref = {
-            let current_ref_lock = self.branch_db.get_checked_out_ref_mut().await;
-            let current_ref_guard = current_ref_lock.read().await;
-
-            let branch = match current_ref_guard.as_ref() {
-                Some(r) => r.branch.clone(),
-                None => {
-                    // If we didn't find a current ref, nothing is checked out.
-                    // Let's fix that by checking out the main branch.
-                    let Some(main_branch) = self.branch_db.get_main_branch().await else {
-                        tracing::error!(
-                            "No metadata doc checked out, or otherwise couldn't get main branch. Skipping sync!"
-                        );
-                        return Vec::new();
-                    };
-                    main_branch
-                }
-            };
-            let Some(goal_ref) = self.branch_db.get_latest_ref_on_branch(&branch).await
-            else {
-                tracing::error!("Couldn't get the goal ref for branch {}", branch);
-                return Vec::new();
-            };
-            goal_ref
-            // guard dropped here
-        };
-        // TODO (Lilith): minor problem, the checked out ref could change between these lines when the guard is dropped.
-        // That said, uhhhh I think that's fine? We're already syncing, so other sync methods shouldn't affect it.
-        // If we're doing some branch edits, like a merge or revert preview or something, that could mean we
-        // never checkout our desired ref... but we need to rethink this for branch swapping anyways.
-        // For branch swapping, we either need to checkout a ref elsewhere during a merge or something and prevent sync.
-        // Or, we could set a request_checkout tokio::Watch here on the driver that will check out a branch at the next opportunity.
-        self.sync_automerge_to_fs.checkout_ref(goal_ref).await
+        if let Some(goal_ref) = self.get_ref_for_sync().await {
+            self.sync_automerge_to_fs.checkout_ref(goal_ref).await
+        } else {
+            Vec::new()
+        }
     }
-
 }

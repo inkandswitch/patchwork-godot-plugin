@@ -144,13 +144,6 @@ impl DocumentWatcherInner {
                 },
                 is_main: h.document_id().to_string() == meta.main_doc_id,
                 created_by: branch.created_by.clone(),
-                merged_into: match &branch.merged_into {
-                    Some(merged_into) => match DocumentId::from_str(&merged_into) {
-                        Ok(merged_into) => Some(merged_into),
-                        Err(_) => None,
-                    },
-                    None => None,
-                },
                 revert_info: match &branch.reverted_to {
                     Some(reverted_to) => Some(BranchStateRevertInfo {
                         reverted_to: reverted_to
@@ -222,7 +215,7 @@ impl DocumentWatcherInner {
         .await
         .unwrap();
         self.branch_db
-            .set_metadata_state(handle.document_id().clone(), meta.clone())
+            .set_metadata_state(handle, meta.clone())
             .await;
         // check if there are new branches that haven't loaded yet
         for (branch_id_str, _) in meta.branches.iter() {

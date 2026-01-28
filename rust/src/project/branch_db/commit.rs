@@ -9,7 +9,7 @@ use crate::{
     helpers::{
         doc_utils::SimpleDocReader,
         utils::{
-            ChangeType, ChangedFile, CommitMetadata, commit_with_attribution_and_timestamp,
+            ChangeType, ChangedFile, CommitMetadata, commit_with_metadata,
             heads_to_vec_string,
         },
     },
@@ -162,7 +162,7 @@ impl BranchDb {
                     });
                 }
 
-                commit_with_attribution_and_timestamp(
+                commit_with_metadata(
                     tx,
                     &CommitMetadata {
                         username: username.clone(),
@@ -239,7 +239,7 @@ impl BranchDb {
             h.with_document(|d| {
                 let mut tx = d.transaction();
                 let _ = tx.put(ROOT, "content", content);
-                commit_with_attribution_and_timestamp(
+                commit_with_metadata(
                     tx,
                     &CommitMetadata {
                         username: username,

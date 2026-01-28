@@ -23,23 +23,21 @@ use crate::{
 // TODO: Ideally this is actually a child of a new project submodule...
 // that's so that it doesn't need pub(super) to acess private fields of
 // itself.
+
 // TODO (Lilith): Figure out if there's a reasonable way to reduce blocking in this file.
+// In general I kind of hate this, but I guess a sync/async divide is never going to look pretty.
 impl ProjectViewModel for Project {
     fn has_project(&self) -> bool {
         self.driver.blocking_lock().is_some()
     }
 
     fn get_project_id(&self) -> Option<DocumentId> {
-        let driver = self.driver.clone();
-        self.runtime
-            .block_on(self.runtime.spawn(async move {
-                let driver = driver.lock().await;
-                if driver.is_none() {
-                    return None;
-                }
-                driver.as_ref().unwrap().get_metadata_doc().await
-            }))
-            .unwrap()
+        self.with_driver_blocking(|driver| async move {
+            if driver.is_none() {
+                return None;
+            }
+            driver.as_ref().unwrap().get_metadata_doc().await
+        })
     }
 
     fn new_project(&mut self) {
@@ -77,40 +75,41 @@ impl ProjectViewModel for Project {
 
     fn set_user_name(&self, name: String) {
         PatchworkConfigAccessor::set_user_value("user_name", &name);
-        let driver = self.driver.clone();
-        self.runtime
-            .block_on(self.runtime.spawn(async move {
-                let mut driver = driver.lock().await;
-                if driver.is_none() {
-                    return;
-                }
-                driver.as_mut().unwrap().set_username(Some(name)).await
-            }))
-            .unwrap();
+        self.with_driver_blocking(|driver| async move {
+            if driver.is_none() {
+                return;
+            }
+            driver.as_ref().unwrap().set_username(Some(name)).await
+        });
     }
 
     fn can_create_merge_preview_branch(&self) -> bool {
-        // TODO (Lilith): implement
-        return false;
-        // match self.get_checked_out_branch_state() {
-        //     Some(branch_state) => !branch_state.is_main,
-        //     _ => false,
-        // }
+        match self.get_checked_out_branch_state() {
+            Some(branch_state) => !branch_state.is_main,
+            _ => false,
+        }
     }
 
     fn create_merge_preview_branch(&mut self) {
-        // TODO (Lilith): implement
-        return;
-        // let Some(checked_out_branch) = self.get_checked_out_branch_state() else {
-        //     return;
-        // };
-        // let Some(fork_info) = &checked_out_branch.fork_info else {
-        //     return;
-        // };
-        // self.create_merge_preview_branch_between(
-        //     checked_out_branch.doc_handle.document_id().clone(),
-        //     fork_info.forked_from.clone(),
-        // );
+        let Some(checked_out_branch) = self.get_checked_out_branch_state() else {
+            return;
+        };
+        let Some(fork_info) = &checked_out_branch.fork_info else {
+            return;
+        };
+
+        let source = checked_out_branch.doc_handle.document_id().clone();
+        let target = fork_info.forked_from.clone();
+        self.with_driver_blocking(|driver| async move {
+            if driver.is_none() {
+                return;
+            }
+            driver
+                .as_ref()
+                .unwrap()
+                .create_merge_preview_branch(&source, &target)
+                .await;
+        });
     }
 
     fn can_create_revert_preview_branch(&self, head: ChangeHash) -> bool {
@@ -150,73 +149,92 @@ impl ProjectViewModel for Project {
     }
 
     fn is_merge_preview_branch_active(&self) -> bool {
-        // TODO (Lilith): implement
-        return false;
-        // let branch_state = self.get_checked_out_branch_state();
-        // match branch_state {
-        //     Some(state) => state.merge_info.is_some(),
-        //     _ => false,
-        // }
+        let branch_state = self.get_checked_out_branch_state();
+        match branch_state {
+            Some(state) => state.merge_info.is_some(),
+            _ => false,
+        }
     }
 
     fn is_safe_to_merge(&self) -> bool {
-        // TODO (Lilith): implement
-        return false;
-        // let Some(current_branch) = self.get_checked_out_branch_state() else {
-        //     return false;
-        // };
-        // let Some(merge_info) = current_branch.merge_info.as_ref() else {
-        //     return false;
-        // };
-        // let Some(fork_info) = current_branch.fork_info.as_ref() else {
-        //     return false;
-        // };
+        let Some(current_branch) = self.get_checked_out_branch_state() else {
+            return false;
+        };
+        let Some(merge_info) = current_branch.merge_info.as_ref() else {
+            return false;
+        };
+        let Some(fork_info) = current_branch.fork_info.as_ref() else {
+            return false;
+        };
 
-        // let source_branch = self.branch_states.get(&fork_info.forked_from);
-        // let dest_branch = self.branch_states.get(&merge_info.merge_into);
+        let forked_from = fork_info.forked_from.clone();
+        let merge_into = merge_info.merge_into.clone();
+        let Some((source_branch, dest_branch)) = self.with_driver_blocking(|driver| async move {
+            if driver.is_none() {
+                return None;
+            }
+            let source_branch = driver
+                .as_ref()
+                .unwrap()
+                .get_branch_state(&forked_from)
+                .await;
+            let dest_branch = driver.as_ref().unwrap().get_branch_state(&merge_into).await;
+            Some((source_branch, dest_branch))
+        }) else {
+            return false;
+        };
 
-        // let Some(dest_branch) = dest_branch else {
-        //     return false;
-        // };
+        let Some(dest_branch) = dest_branch else {
+            return false;
+        };
 
-        // source_branch.is_some_and(|s| {
-        //     s.fork_info
-        //         .as_ref()
-        //         .is_some_and(|i| i.forked_at == dest_branch.synced_heads)
-        // })
+        source_branch.is_some_and(|s| {
+            s.fork_info
+                .as_ref()
+                .is_some_and(|i| i.forked_at == dest_branch.synced_heads)
+        })
     }
 
     fn confirm_preview_branch(&mut self) {
-        // TODO (Lilith): implement
-        return;
-        // let Some(branch_state) = self.get_checked_out_branch_state().cloned() else {
-        //     return;
-        // };
-        // let Some(fork_info) = &branch_state.fork_info else {
-        //     return;
-        // };
-        // if let Some(revert_info) = &branch_state.revert_info {
-        //     self.delete_branch(branch_state.doc_handle.document_id().clone());
-        //     self.checkout_branch(fork_info.forked_from.clone());
-        //     self.revert_to_heads(revert_info.reverted_to.clone());
-        // } else if let Some(merge_info) = branch_state.merge_info {
-        //     self.merge_branch(
-        //         branch_state.doc_handle.document_id().clone(),
-        //         merge_info.merge_into,
-        //     )
-        // }
+        let Some(branch_state) = self.get_checked_out_branch_state() else {
+            return;
+        };
+        let Some(fork_info) = &branch_state.fork_info else {
+            return;
+        };
+        if let Some(revert_info) = &branch_state.revert_info {
+            // TODO (Lilith): Implement
+            // self.delete_branch(branch_state.doc_handle.document_id().clone());
+            // self.checkout_branch(fork_info.forked_from.clone());
+            // self.revert_to_heads(revert_info.reverted_to.clone());
+        } else if let Some(merge_info) = branch_state.merge_info {
+            let source = branch_state.doc_handle.document_id().clone();
+            let target = merge_info.merge_into;
+            self.with_driver_blocking(|driver| async move {
+                if driver.is_none() {
+                    return;
+                }
+                driver
+                    .as_ref()
+                    .unwrap()
+                    .merge_branch(&source, &target)
+                    .await;
+            });
+        }
     }
     fn discard_preview_branch(&mut self) {
-        // TODO (Lilith): implement
-        return;
-        // let Some(branch_state) = self.get_checked_out_branch_state().cloned() else {
-        //     return;
-        // };
-        // let Some(fork_info) = &branch_state.fork_info else {
-        //     return;
-        // };
-        // self.delete_branch(branch_state.doc_handle.document_id().clone());
-        // self.checkout_branch(fork_info.forked_from.clone());
+        let Some(branch_state) = self.get_checked_out_branch_state() else {
+            return;
+        };
+        let Some(fork_info) = &branch_state.fork_info else {
+            return;
+        };
+        self.with_driver_blocking(|driver| async move {
+            if driver.is_none() {
+                return;
+            }
+            driver.as_ref().unwrap().discard_current_branch().await;
+        });
     }
 
     fn get_branch_history(&self) -> Vec<ChangeHash> {
@@ -302,48 +320,35 @@ impl ProjectViewModel for Project {
     }
 
     fn get_branch(&self, id: &DocumentId) -> Option<impl BranchViewModel + use<>> {
-        let driver = self.driver.clone();
         let id = id.clone();
-        let state = self
-            .runtime
-            .block_on(self.runtime.spawn(async move {
-                let driver = driver.lock().await;
-                if driver.is_none() {
-                    return None;
-                }
-                driver.as_ref().unwrap().get_branch_state(&id).await
-            }))
-            .unwrap();
-        let Some(state) = state else {
+
+        let Some((state, mut children)) = self.with_driver_blocking(|driver| async move {
+            if driver.is_none() {
+                return None;
+            }
+            let Some(state) = driver.as_ref().unwrap().get_branch_state(&id).await else {
+                return None;
+            };
+            let children = driver.as_ref().unwrap().get_branch_children(&id).await;
+            Some((state, children))
+        }) else {
             return None;
         };
 
-        // TODO (Lilith): implement
-        // let mut children = self
-        //     .branch_states
-        //     .values()
-        //     .filter(|b| {
-        //         b.fork_info
-        //             .as_ref()
-        //             .is_some_and(|i| i.forked_from == id.clone())
-        //     })
-        //     .map(|b| b.doc_handle.document_id().clone())
-        //     .collect::<Vec<DocumentId>>();
-
-        // children.sort_by(|a, b| {
-        //     let a_state = self.branch_states.get(&a);
-        //     let b_state = self.branch_states.get(&b);
-        //     let Some(a_state) = a_state else {
-        //         return std::cmp::Ordering::Less;
-        //     };
-        //     let Some(b_state) = b_state else {
-        //         return std::cmp::Ordering::Greater;
-        //     };
-        //     a_state
-        //         .name
-        //         .to_lowercase()
-        //         .cmp(&b_state.name.to_lowercase())
-        // });
+        children.sort_by(|a, b| {
+            let a_state = self.get_branch(a);
+            let b_state = self.get_branch(b);
+            let Some(a_state) = a_state else {
+                return std::cmp::Ordering::Less;
+            };
+            let Some(b_state) = b_state else {
+                return std::cmp::Ordering::Greater;
+            };
+            a_state
+                .get_name()
+                .to_lowercase()
+                .cmp(&b_state.get_name().to_lowercase())
+        });
 
         Some(BranchWrapper {
             state: state.clone(),
@@ -382,74 +387,31 @@ impl ProjectViewModel for Project {
         self.get_branch(&id.branch)
     }
 
-    #[instrument(skip(self), fields(name = ?name), level = tracing::Level::INFO)]
     fn create_branch(&mut self, name: String) {
-        // TODO (Lilith): implement
-        return;
-        // println!("");
-        // tracing::info!("******** CREATE BRANCH");
-        // println!("");
-        // let source_branch_doc_id = match &self.get_checked_out_branch_state() {
-        //     Some(branch_state) => branch_state.doc_handle.document_id(),
-        //     None => {
-        //         panic!("couldn't create branch, no checked out branch");
-        //     }
-        // };
-
-        // self.driver_input_tx
-        //     .unbounded_send(InputEvent::CreateBranch {
-        //         name,
-        //         source_branch_doc_id: source_branch_doc_id.clone(),
-        //     })
-        //     .unwrap();
-
-        // // TODO: do we want to set this? or let _process set it?
-        // self.checked_out_branch_state =
-        //     CheckedOutBranchState::NothingCheckedOut(Some(source_branch_doc_id.clone()));
-        // // self.checked_out_branch_state = CheckedOutBranchState::NothingCheckedOut(None);
+        let Some(branch_state) = self.get_checked_out_branch_state() else {
+            return;
+        };
+        self.with_driver_blocking(|driver| async move {
+            if driver.is_none() {
+                return;
+            }
+            driver
+                .as_ref()
+                .unwrap()
+                .fork_branch(name, branch_state.doc_handle.document_id()).await;
+        });
     }
 
     fn checkout_branch(&mut self, branch_doc_id: DocumentId) {
-        // TODO (Lilith): implement
-        return;
-        // let current_branch = match &self.checked_out_branch_state {
-        //     CheckedOutBranchState::CheckedOut(doc_id, _) => Some(doc_id.clone()),
-        //     CheckedOutBranchState::CheckingOut(doc_id, _) => {
-        //         tracing::error!(
-        //             "**@#%@#%!@#%#@!*** CHECKING OUT BRANCH WHILE STILL CHECKING OUT?!?!?! {:?}",
-        //             doc_id
-        //         );
-        //         Some(doc_id.clone())
-        //     }
-        //     CheckedOutBranchState::NothingCheckedOut(current_branch_id) => {
-        //         tracing::warn!("Checking out a branch while not checked out on any branch????");
-        //         current_branch_id.clone()
-        //     }
-        // };
-        // let target_branch_state = match self.branch_states.get(&branch_doc_id) {
-        //     Some(branch_state) => branch_state,
-        //     None => panic!("couldn't checkout branch, branch doc id not found"),
-        // };
-        // println!("");
-        // tracing::debug!("******** CHECKOUT: {:?}\n", target_branch_state.name);
-        // println!("");
-
-        // if target_branch_state.synced_heads
-        //     == target_branch_state
-        //         .doc_handle
-        //         .with_document(|d| d.get_heads())
-        // {
-        //     self.checked_out_branch_state =
-        //         CheckedOutBranchState::CheckedOut(branch_doc_id.clone(), current_branch.clone());
-        //     self.just_checked_out_new_branch = true;
-        // } else {
-        //     tracing::debug!(
-        //         "checked out branch {:?} has unsynced heads",
-        //         target_branch_state.name
-        //     );
-        //     self.checked_out_branch_state =
-        //         CheckedOutBranchState::CheckingOut(branch_doc_id.clone(), current_branch.clone());
-        // }
+        self.with_driver_blocking(|driver| async move {
+            if driver.is_none() {
+                return;
+            }
+            driver
+                .as_ref()
+                .unwrap()
+                .request_checkout(&branch_doc_id).await;
+        });
     }
 
     fn get_change(&self, hash: ChangeHash) -> Option<&impl ChangeViewModel> {

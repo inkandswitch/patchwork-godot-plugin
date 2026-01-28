@@ -66,7 +66,7 @@ pub struct BranchDb {
     username: Arc<Mutex<Option<String>>>,
     binary_states: Arc<Mutex<HashMap<DocumentId, BinaryDocState>>>,
     branch_states: Arc<Mutex<HashMap<DocumentId, Arc<Mutex<BranchState>>>>>, // might be too much locking
-    metadata_state: Arc<Mutex<Option<(DocumentId, BranchesMetadataDoc)>>>,
+    metadata_state: Arc<Mutex<Option<(DocHandle, BranchesMetadataDoc)>>>,
 
     // The checked out ref is the ref that the filesystem is currently synced with.
     // Has a separate lock because of its importance; it needs to be locked while we're prepping a commit or checking out stuff
@@ -102,19 +102,19 @@ impl BranchDb {
     }
 
     /// Get the mutable checked out ref for locking.
-    pub async fn get_checked_out_ref_mut(&self) -> Arc<RwLock<Option<HistoryRef>>> {
+    pub fn get_checked_out_ref_mut(&self) -> Arc<RwLock<Option<HistoryRef>>> {
         return self.checked_out_ref.clone();
     }
 
-    pub async fn get_metadata_state(&self) -> Option<(DocumentId, BranchesMetadataDoc)> {
+    pub async fn get_metadata_state(&self) -> Option<(DocHandle, BranchesMetadataDoc)> {
         // This is a needlessly expensive operation; we should consider allowing reference introspection via external lockers.
         // And/or improve clone perf by reducing string usage in BranchesMetadataDoc.
         self.metadata_state.lock().await.clone()
     }
 
-    pub async fn set_metadata_state(&self, id: DocumentId, state: BranchesMetadataDoc) {
+    pub async fn set_metadata_state(&self, handle: DocHandle, state: BranchesMetadataDoc) {
         let mut st = self.metadata_state.lock().await;
-        *st = Some((id, state));
+        *st = Some((handle, state));
     }
 
     pub async fn has_branch(&self, id: &DocumentId) -> bool {

@@ -107,7 +107,7 @@ pub struct CommitMetadata {
 	pub is_setup: Option<bool>
 }
 
-pub(crate) fn commit_with_attribution_and_timestamp(tx: Transaction, metadata: &CommitMetadata) {
+pub(crate) fn commit_with_metadata(tx: Transaction, metadata: &CommitMetadata) {
     let timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()

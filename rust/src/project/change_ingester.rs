@@ -143,11 +143,9 @@ impl ChangeIngesterInner {
     }
 
     /// Gets the changes from the current branch and returns it.
-    // TODO (Lilith): This is MISERABLY slow due to the with_document.
-    // Maybe figure out a way to factor that out.
     #[tracing::instrument(skip_all)]
     async fn get_changes(&self) -> Vec<CommitInfo> {
-        let checked_out = self.branch_db.get_checked_out_ref_mut().await;
+        let checked_out = self.branch_db.get_checked_out_ref_mut();
         let checked_out = checked_out.read().await;
         let Some(checked_out) = checked_out.as_ref() else {
             tracing::info!("Can't get changes; nothing checked out!");

@@ -25,18 +25,23 @@ impl FormatTime for CompactTime {
 }
 static mut M_FILE_WRITER_MUTEX: Option<WorkerGuard> = None;
 pub fn initialize_tracing() {
-
     let file_appender = tracing_appender::rolling::daily(get_user_dir(), "patchwork.log");
     let (non_blocking_file_writer, _guard) = tracing_appender::non_blocking(file_appender);
 	// if the mutex gets dropped, the file writer will be closed, so we need to keep it alive
 	unsafe{M_FILE_WRITER_MUTEX = Some(_guard);}
     println!("!!! Logging to {:?}/patchwork.log", get_user_dir());
+
+    let console_layer = console_subscriber::ConsoleLayer::builder()
+        .with_default_env()
+        .spawn();
     let stdout_layer = tracing_subscriber::fmt::layer()
         .with_timer(CompactTime)
         .compact()
         // .with_span_events(FmtSpan::ENTER | FmtSpan::CLOSE)
         .with_writer(CustomStdoutWriter::custom_stdout)
-        .with_filter(EnvFilter::new("trace")
+        .with_filter(EnvFilter::new("info")
+            // .add_directive("tokio=trace".parse().unwrap())
+            // .add_directive("runtime=trace".parse().unwrap())
             .add_directive("patchwork_rust_core=trace".parse().unwrap())
             .add_directive("samod=info".parse().unwrap())
             .add_directive("samod_core=info".parse().unwrap()));
@@ -49,6 +54,8 @@ pub fn initialize_tracing() {
         .add_directive("samod=info".parse().unwrap())
 		.add_directive("samod_core=info".parse().unwrap()));
     if let Err(e) = tracing_subscriber::registry()
+        // tokio-console
+        .with(console_layer)
         // stdout writer
         .with(stdout_layer)
         // we want a file writer too

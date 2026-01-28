@@ -29,7 +29,7 @@ impl SyncAutomergeToFileSystem {
     #[instrument(skip_all)]
     pub async fn checkout_ref(&self, goal_ref: HistoryRef) -> Vec<FileSystemEvent> {
         // Ensure that there's no way anything can grab the ref while we're trying to write it
-        let r = self.branch_db.get_checked_out_ref_mut().await;
+        let r = self.branch_db.get_checked_out_ref_mut();
         let mut checked_out_ref = r.write().await;
 
         if checked_out_ref.as_ref().is_some_and(|r| r == &goal_ref) {

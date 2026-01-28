@@ -1,7 +1,10 @@
 use crate::diff::differ::ProjectDiff;
 use crate::fs::file_utils::FileSystemEvent;
+use crate::helpers::branch::BranchState;
 use crate::helpers::utils::{CommitInfo, summarize_changes};
-use crate::interop::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
+use crate::interop::godot_accessors::{
+    EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor,
+};
 use crate::project::branch_db::HistoryRef;
 use crate::project::driver::Driver;
 use crate::project::main_thread_block::MainThreadBlock;
@@ -9,13 +12,14 @@ use crate::project::project_api::ChangeViewModel;
 use automerge::ChangeHash;
 use futures::future::join_all;
 use samod::DocumentId;
-use tokio::sync::{Mutex, watch};
+use tracing::instrument;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
 use std::{collections::HashMap, str::FromStr};
 use tokio::runtime::Runtime;
+use tokio::sync::{Mutex, MutexGuard, OwnedMutexGuard, watch};
 
 /// Manages the state and operations of a Patchwork project within Godot.
 /// Its API is exposed to GDScript via the GodotProject struct.
@@ -80,8 +84,8 @@ impl Project {
     fn ingest_changes(&mut self, changes: Vec<CommitInfo>) {
         tracing::info!("Ingesting changes...");
 
-		self.history.clear();
-		self.changes.clear();
+        self.history.clear();
+        self.changes.clear();
 
         // Consume changes into self.changes
         for change in changes {
@@ -89,7 +93,7 @@ impl Project {
             self.changes.insert(change.hash, change);
         }
     }
-    
+
     pub fn get_cached_diff(&self, before: HistoryRef, after: HistoryRef) -> ProjectDiff {
         self.diff_cache
             .borrow_mut()
@@ -102,7 +106,7 @@ impl Project {
         self.diff_cache.borrow_mut().clear();
     }
 
-	// Do not run this on anything except the main thread!
+    // Do not run this on anything except the main thread!
     pub fn safe_to_update_godot() -> bool {
         return !(EditorFilesystemAccessor::is_scanning()
             || PatchworkEditorAccessor::is_editor_importing()
@@ -191,7 +195,7 @@ impl Project {
             tracing::error!("Could not start the driver!");
             return;
         }
-        
+
         let driver = self.driver.blocking_lock();
         self.changes_rx = Some(driver.as_ref().unwrap().get_changes_rx());
         self.checked_out_ref_rx = Some(driver.as_ref().unwrap().get_ref_rx());
@@ -201,23 +205,63 @@ impl Project {
         self.driver.blocking_lock().take();
     }
 
+    pub(super) fn get_checked_out_branch_state(&self) -> Option<BranchState> {
+        self.with_driver_blocking(|driver| async move {
+            if driver.is_none() {
+                return None;
+            }
+            let branch_state = match driver.as_ref().unwrap().get_checked_out_ref().await {
+                Some(id) => driver.as_ref().unwrap().get_branch_state(&id.branch).await,
+                None => None,
+            };
+            branch_state.clone()
+        })
+    }
+
+    /// Jank utility function to lock on the driver and run on a different thread.
+    /// Allows us to easily block on async code when we need the driver.
+    pub(super) fn with_driver_blocking<F, Fut, R>(&self, f: F) -> R
+    where
+        F: FnOnce(OwnedMutexGuard<Option<Driver>>) -> Fut + Send + 'static,
+        Fut: Future<Output = R> + Send + 'static,
+        R: Send + 'static,
+    {
+        let driver = self.driver.clone();
+
+        self.runtime
+            .block_on(self.runtime.spawn(async move {
+                let driver = driver.lock_owned().await;
+                f(driver).await
+            }))
+            .unwrap()
+    }
+
+    #[instrument(skip_all)]
     pub fn process(&mut self, _delta: f64) -> (Vec<FileSystemEvent>, Vec<GodotProjectSignal>) {
+        tracing::trace!("Running project process...");
         let fs_changes = {
             let mut driver_guard = self.driver.blocking_lock();
             if driver_guard.is_none() {
                 return (Vec::new(), Vec::new());
             }
             // Run the blocking sync
-            driver_guard.as_ref().unwrap().set_safe_to_update_editor(Self::safe_to_update_godot());
+            driver_guard
+                .as_ref()
+                .unwrap()
+                .set_safe_to_update_editor(Self::safe_to_update_godot());
             let block = self.main_thread_block.clone();
-            self.runtime.block_on(self.runtime.spawn(async move {
-                block.checkpoint().await;
-            })).unwrap();
+            tracing::trace!("Blocking for dependents...");
+            self.runtime
+                .block_on(self.runtime.spawn(async move {
+                    block.checkpoint().await;
+                }))
+                .unwrap();
+            tracing::trace!("Done blocking.");
 
             // Consume any modified files to send to Godot
             driver_guard.as_mut().unwrap().get_filesystem_changes()
         };
-        
+
         let mut signals = Vec::new();
 
         // Ingest changes if the driver produced a new changeset
@@ -227,25 +271,26 @@ impl Project {
                 rx.mark_unchanged();
                 signals.push(GodotProjectSignal::ChangesIngested);
                 Some(rx.borrow().clone())
-            }
-            else {
+            } else {
                 None
             }
         };
-        
+
         if let Some(changes) = changes {
             self.ingest_changes(changes);
         }
 
         // Check to see if we need to produce a CheckedOutBranch signal
-        let rx = self.checked_out_ref_rx.as_ref().unwrap();
+        let rx = self.checked_out_ref_rx.as_mut().unwrap();
         if rx.has_changed().unwrap_or(false) {
             signals.push(GodotProjectSignal::CheckedOutBranch);
+            rx.mark_unchanged();
         }
 
         // TODO (Lilith): VERY IMPORTANT, set the patchwork config branch ID here!!!
         // So that we save the branch ID for future checkouts.
 
+        tracing::trace!("Done with process.");
         (fs_changes, signals)
     }
 }

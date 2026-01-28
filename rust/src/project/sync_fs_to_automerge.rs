@@ -79,7 +79,7 @@ impl SyncFileSystemToAutomerge {
     #[instrument(skip_all)]
     pub async fn commit(&self) -> bool {
         // Because we always change the checked out ref after committing, we need to lock this in write mode.
-        let r = self.branch_db.get_checked_out_ref_mut().await;
+        let r = self.branch_db.get_checked_out_ref_mut();
         let mut checked_out_ref = r.write().await;
 
         let mut pending_changes = self.pending_changes.lock().await;
@@ -126,7 +126,7 @@ impl SyncFileSystemToAutomerge {
     /// Makes the commit on the currently checked-out branch, and checks out the new heads.
     pub async fn checkin(&self) {
         // Because we always change the checked out ref after committing, we need to lock this in write mode.
-        let r = self.branch_db.get_checked_out_ref_mut().await;
+        let r = self.branch_db.get_checked_out_ref_mut();
         let mut checked_out_ref = r.write().await;
 
         if checked_out_ref.is_none() {

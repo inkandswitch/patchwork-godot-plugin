@@ -1,6 +1,6 @@
 use std::{path::PathBuf, str::FromStr};
 
-use samod::DocumentId;
+use samod::{DocHandle, DocumentId};
 use tracing::instrument;
 
 use crate::project::branch_db::{BranchDb, HistoryRef};
@@ -83,5 +83,20 @@ impl BranchDb {
             return None;
         };
         Some(state.lock().await.name.clone())
+    }
+
+    pub async fn get_branch_children(&self, id: &DocumentId) -> Vec<DocumentId> {
+        let states = self.branch_states.lock().await;
+        let mut result = Vec::new();
+
+        for (bid, state) in states.iter() {
+            let state = state.lock().await;
+            if let Some(fork_info) = &state.fork_info {
+                if &fork_info.forked_from == id {
+                    result.push(bid.clone());
+                }
+            }
+        }
+        result
     }
 }
