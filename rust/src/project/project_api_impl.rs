@@ -334,8 +334,7 @@ impl ProjectViewModel for Project {
 
         Some(BranchWrapper {
             state: state.clone(),
-            // children,
-            children: Vec::new(),
+            children,
         })
     }
 
