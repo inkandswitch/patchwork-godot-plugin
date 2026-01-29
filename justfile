@@ -134,12 +134,19 @@ build-godot profile: _link-godot
     fi
 
 # Build the Rust plugin binaries.
-_build-plugin architecture profile:
-    cargo build --profile="{{profile}}" --target="{{architecture}}"
+_build-plugin architecture profile tracing_support:
+    #!/usr/bin/env sh
+    if [[ {{tracing_support}} = "tokio-console" ]] ; then
+        export RUSTFLAGS="--cfg tokio_unstable"
+        cargo build --profile="{{profile}}" --target="{{architecture}}" --features "tokio-console"
+    else
+        cargo build --profile="{{profile}}" --target="{{architecture}}"
+    fi
 
 # Build the multi-arch target for MacOS.
 [parallel]
-_build-plugin-all-macos profile: (_build-plugin "aarch64-apple-darwin" profile) (_build-plugin "x86_64-apple-darwin" profile) _make-plugin-dir
+_build-plugin-all-macos profile tracing_support: (_build-plugin "aarch64-apple-darwin" profile tracing_support) \
+        (_build-plugin "x86_64-apple-darwin" profile tracing_support) _make-plugin-dir
     mkdir -p build/patchwork/bin
 
     # Copy the entire macos directory to get the Resources framework directory
@@ -153,7 +160,7 @@ _build-plugin-all-macos profile: (_build-plugin "aarch64-apple-darwin" profile) 
     # TODO: Perhaps sign here instead of in github actions?
 
 [parallel]
-_build-plugin-single-arch architecture profile: (_build-plugin architecture profile) _make-plugin-dir
+_build-plugin-single-arch architecture profile tracing_support: (_build-plugin architecture profile tracing_support) _make-plugin-dir
     #!/usr/bin/env sh
     # set -euo pipefail
     mkdir -p build/patchwork/bin
@@ -235,11 +242,12 @@ _configure-patchwork: _make-plugin-dir
 # Build the plugin and output it to the plugin build dir. For MacOS multi-arch, use architecture=all-apple-darwin to build all architectures.
 [parallel]
 [arg('profile', pattern='release|debug')]
-build-patchwork profile architecture=(default_arch): _configure-patchwork _link-public
+[arg('tracing_support', pattern='none|tokio-console')]
+build-patchwork profile architecture=(default_arch) tracing_support="none": _configure-patchwork _link-public
     #!/usr/bin/env sh
     # set -euxo pipefail
     if [[ "{{architecture}}" = "all-apple-darwin" ]] ; then
-        just _build-plugin-all-macos "{{profile}}"
+        just _build-plugin-all-macos "{{profile}}" "{{tracing_support}}"
         exit 0
     fi
 
@@ -248,7 +256,7 @@ build-patchwork profile architecture=(default_arch): _configure-patchwork _link-
         profile="release_debug"
     fi
     
-    just _build-plugin-single-arch "{{architecture}}" "$profile"
+    just _build-plugin-single-arch "{{architecture}}" "$profile" "{{tracing_support}}"
 
 # Reset the Godot repository, removing the linked module and resetting the repo state.
 clean-godot:
@@ -348,16 +356,18 @@ _write-url project url: (_link-project project)
 [arg('project', pattern='moddable-platformer|threadbare')]
 [arg('patchwork_profile', pattern='release|debug')]
 [arg('godot_profile', pattern='release|debug|sani')]
-prepare project="moddable-platformer" patchwork_profile="release" godot_profile="release" server_url="":\
-        (_link-project project) (build-godot godot_profile) (build-patchwork patchwork_profile) (_write-url project server_url)
+[arg('tracing_support', pattern='none|tokio-console')]
+prepare project="moddable-platformer" patchwork_profile="release" godot_profile="release" server_url="" tracing_support="none": \
+        (_link-project project) (build-godot godot_profile) (build-patchwork patchwork_profile default_arch tracing_support) (_write-url project server_url)
 
 
 # Launch a project with Godot. Available projects are threadbare, moddable-platformer.
 [arg('project', pattern='moddable-platformer|threadbare')]
 [arg('patchwork_profile', pattern='release|debug')]
 [arg('godot_profile', pattern='release|debug|sani')]
-launch project="moddable-platformer" patchwork_profile="release" godot_profile="release" server_url="": \
-        (prepare project patchwork_profile godot_profile server_url)
+[arg('tracing_support', pattern='none|tokio-console')]
+launch project="moddable-platformer" patchwork_profile="release" godot_profile="release" server_url="" tracing_support="none": \
+        (prepare project patchwork_profile godot_profile server_url tracing_support)
     #!/usr/bin/env sh
     # set -euxo pipefail
     

@@ -94,7 +94,7 @@ impl TextDiff {
     }
 }
 
-impl Differ<'_> {
+impl Differ {
     pub(super) fn get_text_diff(
         &self,
         path: &String,
