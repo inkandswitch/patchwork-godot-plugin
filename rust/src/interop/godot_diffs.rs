@@ -8,12 +8,12 @@ use godot::obj::Singleton;
 
 use crate::{
     diff::{
-        differ::{ChangeType, Diff, ProjectDiff},
+        differ::{ChangeType, ContentLoader, Diff, ProjectDiff},
         resource_differ::BinaryResourceDiff,
         scene_differ::{NodeDiff, PropertyDiff, SceneDiff, SubResourceDiff, TextResourceDiff},
         text_differ::{TextDiff, TextDiffHunk, TextDiffLine},
     },
-    interop::godot_helpers::{GodotConvertExt, ToGodotExt},
+    interop::godot_helpers::{GodotConvertExt, ToGodotExt}, project::branch_db::HistoryRef,
 };
 
 impl GodotConvert for TextDiffLine {
@@ -95,188 +95,95 @@ impl ToGodot for ChangeType {
     }
 }
 
-impl GodotConvert for Diff {
-    type Via = VarDictionary;
+
+trait DiffToGodot{
+    fn to_dict(&self, content_loader: &impl ContentLoader, old_ref: &HistoryRef, new_ref: &HistoryRef) -> VarDictionary;
 }
 
-impl ToGodot for Diff {
-    type Pass = ByValue;
-    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
+
+impl DiffToGodot for Diff {
+    fn to_dict(&self, content_loader: &impl ContentLoader, old_ref: &HistoryRef, new_ref: &HistoryRef) -> VarDictionary {
         match self {
-            Diff::Scene(diff) => diff.to_godot(),
-            Diff::TextResourceDiff(diff) => diff.to_godot(),
-            Diff::BinaryResource(diff) => diff.to_godot(),
-            Diff::Text(diff) => diff.to_godot(),
+            Diff::Scene(diff) => diff.to_dict(content_loader, old_ref, new_ref),
+            Diff::TextResourceDiff(diff) => diff.to_dict(content_loader, old_ref, new_ref),
+            Diff::BinaryResource(diff) => diff.to_dict(content_loader, old_ref, new_ref),
+            Diff::Text(diff) => diff.to_dict(content_loader, old_ref, new_ref),
         }
     }
 }
 
-impl GodotConvert for ProjectDiff {
-    type Via = VarDictionary;
+impl DiffToGodot for BinaryResourceDiff {
+    fn to_dict(&self, content_loader: &impl ContentLoader, old_ref: &HistoryRef, new_ref: &HistoryRef) -> VarDictionary {
+        vdict! {
+            "change_type": self.change_type.to_godot(),
+            "new_resource": self.new_content.as_ref().map(|v| content_loader.get_resource(v, old_ref)).unwrap_or(Variant::nil()),
+            "old_resource": self.old_content.as_ref().map(|v| content_loader.get_resource(v, new_ref)).unwrap_or(Variant::nil()),
+        }
+    }
 }
 
-impl ToGodot for ProjectDiff {
-    type Pass = ByValue;
-    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
+impl DiffToGodot for TextDiff {
+    fn to_dict(&self, _content_loader: &impl ContentLoader, _old_ref: &HistoryRef, _new_ref: &HistoryRef) -> VarDictionary {
+        return self.to_godot();
+    }
+}
+
+impl DiffToGodot for SceneDiff {
+    fn to_dict(&self, content_loader: &impl ContentLoader, old_ref: &HistoryRef, new_ref: &HistoryRef) -> VarDictionary {
+        vdict! {
+            "change_type": self.change_type.to_godot(),
+            "changed_nodes": self.changed_nodes.iter().map(|node| node.to_dict(content_loader, old_ref, new_ref)).collect::<Array<VarDictionary>>(),
+            "diff_type": "scene_changed"
+        }
+    }
+}
+
+impl DiffToGodot for PropertyDiff {
+    fn to_dict(&self, content_loader: &impl ContentLoader, old_ref: &HistoryRef, new_ref: &HistoryRef) -> VarDictionary {
+        let is_script = self.name == "script";
+        vdict! {
+            "name": self.name.to_godot(),
+            "change_type": self.change_type.to_godot(),
+            "new_value": self.new_value.as_ref().map(|v| content_loader.get_prop_value(v, is_script, new_ref)).unwrap_or(Variant::nil()),
+            "old_value": self.old_value.as_ref().map(|v| content_loader.get_prop_value(v, is_script, old_ref)).unwrap_or(Variant::nil()),
+        }
+    }
+}
+
+impl DiffToGodot for HashMap<String, PropertyDiff> {
+    fn to_dict(&self, content_loader: &impl ContentLoader, old_ref: &HistoryRef, new_ref: &HistoryRef) -> VarDictionary {
         let mut dict = vdict! {};
-        for diff in &self.file_diffs {
-            dict.set(
-                match diff {
-                    Diff::Scene(scene_diff) => scene_diff.path.clone(),
-                    Diff::TextResourceDiff(scene_diff) => scene_diff.path.clone(),
-                    Diff::BinaryResource(resource_diff) => resource_diff.path.clone(),
-                    Diff::Text(text_diff) => text_diff.path.clone(),
-                }
-                .to_godot(),
-                diff.to_godot(),
-            )
+        for (name, diff) in self {
+            dict.set(name.clone(), diff.to_dict(content_loader, old_ref, new_ref));
         }
         dict
     }
 }
 
-impl GodotConvert for SceneDiff {
-    type Via = VarDictionary;
-}
 
-impl ToGodot for SceneDiff {
-    type Pass = ByValue;
-    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
-        vdict! {
-            "change_type": self.change_type.to_godot(),
-            "changed_nodes": self.changed_nodes.to_godot(),
-			"diff_type": "scene_changed"
-        }
-    }
-}
-
-impl GodotConvert for TextResourceDiff {
-    type Via = VarDictionary;
-}
-
-impl ToGodot for TextResourceDiff {
-    type Pass = ByValue;
-    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
-        vdict! {
-            "change_type": self.change_type.to_godot(),
-            "resource_type": self.resource_type.to_godot(),
-            "changed_sub_resources": self.changed_sub_resources.to_godot(),
-            "changed_main_resource": self.changed_main_resource.as_ref().map(|s| s.to_godot().to_variant()).unwrap_or(Variant::nil()),
-            "diff_type": "text_resource_changed",
-        }
-    }
-}
-
-impl GodotConvert for SubResourceDiff {
-    type Via = VarDictionary;
-}
-
-impl ToGodot for SubResourceDiff {
-    type Pass = ByValue;
-    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
+impl DiffToGodot for SubResourceDiff {
+    fn to_dict(&self, content_loader: &impl ContentLoader, old_ref: &HistoryRef, new_ref: &HistoryRef) -> VarDictionary {
         vdict! {
             "change_type": self.change_type.to_godot(),
             "sub_resource_id": self.sub_resource_id.to_godot(),
             "resource_type": self.resource_type.to_godot(),
-            "changed_props": self.changed_properties.to_godot(),
+            "changed_props": self.changed_properties.iter().map(|(name, diff)| vdict! {
+                "name": name.to_godot(),
+                "change_type": diff.change_type.to_godot(),
+            }).collect::<Array<VarDictionary>>(),
         }
+        
     }
 }
 
-impl GodotConvertExt for Vec<SubResourceDiff> {
-    type Via = Array<VarDictionary>;
-}
-
-impl ToGodotExt for Vec<SubResourceDiff> {
-    type Pass = ByValue;
-    fn _to_godot(&self) -> Array<VarDictionary> {
-        self.iter()
-            .map(|s| s.to_godot())
-            .collect::<Array<VarDictionary>>()
-    }
-    fn _to_variant(&self) -> Variant {
-        self._to_godot().to_variant()
-    }
-}
-
-impl GodotConvertExt for Vec<NodeDiff> {
-    type Via = Array<VarDictionary>;
-}
-
-impl ToGodotExt for Vec<NodeDiff> {
-    type Pass = ByValue;
-    fn _to_godot(&self) -> Array<VarDictionary> {
-        self.iter()
-            .map(|s| s.to_godot())
-            .collect::<Array<VarDictionary>>()
-    }
-    fn _to_variant(&self) -> Variant {
-        self._to_godot().to_variant()
-    }
-}
-
-impl GodotConvert for NodeDiff {
-    type Via = VarDictionary;
-}
-
-impl ToGodot for NodeDiff {
-    type Pass = ByValue;
-    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
+impl DiffToGodot for TextResourceDiff {
+    fn to_dict(&self, content_loader: &impl ContentLoader, old_ref: &HistoryRef, new_ref: &HistoryRef) -> VarDictionary {
         vdict! {
             "change_type": self.change_type.to_godot(),
-            "changed_props": self.changed_properties.to_godot(),
-            "node_path": self.node_path.to_godot(),
-            "type": self.node_type.to_godot()
-        }
-    }
-}
-
-impl GodotConvertExt for HashMap<String, PropertyDiff> {
-    type Via = VarDictionary;
-}
-
-impl ToGodotExt for HashMap<String, PropertyDiff> {
-    type Pass = ByValue;
-    fn _to_godot(&self) -> VarDictionary {
-        let mut dict = vdict! {};
-        for (name, diff) in self {
-            dict.set(name.clone(), diff.to_godot());
-        }
-        dict
-    }
-    fn _to_variant(&self) -> Variant {
-        self._to_godot().to_variant()
-    }
-}
-
-impl GodotConvert for PropertyDiff {
-    type Via = VarDictionary;
-}
-
-impl ToGodot for PropertyDiff {
-    type Pass = ByValue;
-    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
-        vdict! {
-            "change_type": self.change_type.to_godot(),
-            "name": self.name.to_godot(),
-            "new_value": self.new_value.clone().unwrap_or(Variant::nil()),
-            "old_value": self.old_value.clone().unwrap_or(Variant::nil()),
-        }
-    }
-}
-
-impl GodotConvert for BinaryResourceDiff {
-    type Via = VarDictionary;
-}
-
-impl ToGodot for BinaryResourceDiff {
-    type Pass = ByValue;
-    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
-        vdict! {
-            "change_type": self.change_type.to_godot(),
-            "new_resource": self.new_resource.clone().unwrap_or(Variant::nil()),
-            "old_resource": self.old_resource.clone().unwrap_or(Variant::nil()),
-			"diff_type": "resource_changed"
+            "resource_type": self.resource_type.to_godot(),
+            "changed_sub_resources": self.changed_sub_resources.iter().map(|s| s.to_dict(content_loader)).collect::<Array<VarDictionary>>(),
+            "changed_main_resource": self.changed_main_resource.as_ref().map(|s| s.to_dict(content_loader)).unwrap_or(Variant::nil()),
+            "diff_type": "text_resource_changed",
         }
     }
 }

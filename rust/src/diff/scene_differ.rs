@@ -9,7 +9,7 @@ use godot::{
 };
 
 use crate::{
-    diff::differ::{ChangeType, Differ},
+    diff::differ::{ChangeType, ContentLoader, Differ, VariantStrValue},
     parser::godot_parser::{
         ExternalResourceNode, GodotNode, GodotScene, OrderedProperty, SubResourceNode, TypeOrInstance
     },
@@ -150,31 +150,6 @@ impl PropertyDiff {
             change_type,
             old_value,
             new_value,
-        }
-    }
-}
-
-/// The different types of Godot-recognized string values that can be stored in a Variant.
-#[derive(PartialEq, Debug, Clone)]
-enum VariantStrValue {
-    /// A normal string that doesn't refer to a resource.
-    Variant(String),
-    /// A Godot resource path string.
-    ResourcePath(String),
-    /// A Godot sub-resource identifier string.
-    SubResourceID(String),
-    /// A Godot external resource identifier string (id, path)
-    ExtResourceID(String, String),
-}
-
-/// Implement the to_string method for this enum
-impl std::fmt::Display for VariantStrValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            VariantStrValue::Variant(s) => write!(f, "{}", s),
-            VariantStrValue::ResourcePath(s) => write!(f, "Resource({})", s),
-            VariantStrValue::SubResourceID(s) => write!(f, "SubResource({})", s),
-            VariantStrValue::ExtResourceID(id, _path) => write!(f, "ExtResource({})", id),
         }
     }
 }
@@ -683,55 +658,6 @@ impl Differ {
         }
     }
 
-    /// Returns the value of a given prop, within a given scene.
-    /// Normally, it's a String. If it's a (non-script) ExtResource or ResourcePath,
-    /// it loads and returns the resource content as a Variant.
-    async fn get_prop_value(
-        &self,
-        prop_value: &VariantStrValue,
-        scene: Option<&GodotScene>,
-        is_old: bool,
-        is_script: bool,
-        before: &HistoryRef,
-        after: &HistoryRef,
-    ) -> Variant {
-        // Prevent loading script files during the diff and creating issues for the editor
-        if is_script {
-            return "<Script changed>".to_variant();
-        }
-        let path;
-        match prop_value {
-            VariantStrValue::Variant(variant) => {
-                return str_to_var(variant);
-            }
-            VariantStrValue::SubResourceID(sub_resource_id) => {
-                // We currently don't support displaying deep subresource diffs, so just inform of a change.
-                return format!("<SubResource {} changed>", sub_resource_id).to_variant();
-            }
-            VariantStrValue::ResourcePath(resource_path) => {
-                path = resource_path;
-            }
-            VariantStrValue::ExtResourceID(ext_resource_id, _path) => {
-                let p = scene.and_then(|scene| {
-                    scene
-                        .ext_resources
-                        .get(ext_resource_id)
-                        .map(|ext_resource| &ext_resource.path)
-                });
-                let Some(p) = p else {
-                    return "<ExtResource not found>".to_variant();
-                };
-                path = p;
-            }
-        }
-
-        let Some(resource) = self.load_ext_resource(&path, if is_old { before } else { after }).await
-        else {
-            return "<ExtResource load failed>".to_variant();
-        };
-
-        return resource;
-    }
 
     /// Populates [node_ids], [ext_resource_ids], and [sub_resource_ids] from the
     /// given scene.

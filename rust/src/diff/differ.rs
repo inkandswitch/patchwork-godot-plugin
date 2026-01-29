@@ -6,10 +6,7 @@ use std::{
 
 use automerge::ChangeHash;
 use godot::{
-    builtin::{GString, Variant},
-    classes::{ResourceLoader, resource_loader::CacheMode},
-    meta::ToGodot,
-    obj::Singleton,
+    builtin::{GString, Variant}, classes::{ResourceLoader, resource_loader::CacheMode}, global::str_to_var, meta::ToGodot, obj::Singleton
 };
 use tracing::instrument;
 
@@ -64,16 +61,37 @@ pub struct Differ {
     branch_db: BranchDb,
 }
 
-impl Differ {
-    /// Creates a new [Differ].
-    pub fn new(branch_db: BranchDb) -> Self {
-        Self {
-            branch_db,
-            loaded_ext_resources: RefCell::new(HashMap::new()),
+
+/// The different types of Godot-recognized string values that can be stored in a Variant.
+#[derive(PartialEq, Debug, Clone)]
+pub enum VariantStrValue {
+    /// A normal string that doesn't refer to a resource.
+    Variant(String),
+    /// A Godot resource path string.
+    ResourcePath(String),
+    /// A Godot sub-resource identifier string.
+    SubResourceID(String),
+    /// A Godot external resource identifier string (id, path)
+    ExtResourceID(String, String),
+}
+
+
+/// Implement the to_string method for this enum
+impl std::fmt::Display for VariantStrValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VariantStrValue::Variant(s) => write!(f, "{}", s),
+            VariantStrValue::ResourcePath(s) => write!(f, "Resource({})", s),
+            VariantStrValue::SubResourceID(s) => write!(f, "SubResource({})", s),
+            VariantStrValue::ExtResourceID(id, _path) => write!(f, "ExtResource({})", id),
         }
     }
+}
 
-    /// Saves and imports a temp resource at a given path for the specified heads.
+pub trait ContentLoader {
+    fn get_branch_db(&self) -> &BranchDb;
+    fn get_loaded_ext_resources(&self) -> &RefCell<HashMap<String, Variant>>;
+    
     async fn get_resource_at_ref(
         &self,
         path: &String,
@@ -98,7 +116,7 @@ impl Differ {
     }
 
     /// Creates a temporary resource from file content at a given path.
-    pub(super) async fn create_temp_resource_from_content(
+    async fn create_temp_resource_from_content(
         &self,
         path: &str,
         content: &FileContent,
@@ -108,7 +126,7 @@ impl Differ {
         let temp_dir = format!("res://.patchwork/temp_{}/", temp_id);
         let temp_path = path.replace("res://", &temp_dir);
         if let Err(e) = content
-            .write(&self.branch_db.globalize_path(&temp_path))
+            .write(&self.get_branch_db().globalize_path(&temp_path))
             .await
         {
             tracing::error!("error writing file to temp path: {:?}", e);
@@ -123,7 +141,7 @@ impl Differ {
                     import_file_content.replace(r#"uid=uid://[^\n]+"#, "uid=uid://<invalid>");
                 // write the import file content to the temp path
                 let import_file_path: String = format!("{}.import", temp_path);
-                let _ = FileContent::String(import_file_content).write(&self.branch_db.globalize_path(&import_file_path));
+                let _ = FileContent::String(import_file_content).write(&self.get_branch_db().globalize_path(&import_file_path));
 
                 let res = PatchworkEditorAccessor::import_and_load_resource(&temp_path);
                 if res.is_nil() {
@@ -145,7 +163,7 @@ impl Differ {
     }
 
     /// Gets the file content at a given path for the specified heads.
-    pub(super) async fn get_file_at_ref(
+    async fn get_file_at_ref(
         &self,
         path: &String,
         ref_: &HistoryRef,
@@ -153,7 +171,7 @@ impl Differ {
         let mut ret: Option<FileContent> = None;
         {
             let Some(files) = self
-                .branch_db
+                .get_branch_db()
                 .get_files_at_ref(ref_, &HashSet::from_iter(vec![path.clone()]))
                 .await
             else {
@@ -177,12 +195,12 @@ impl Differ {
     }
 
     /// Loads an ExtResource given a path, using a cache.
-    pub(super) async fn load_ext_resource(
+    async fn load_ext_resource(
         &self,
         path: &String,
         ref_: &HistoryRef,
     ) -> Option<Variant> {
-        if let Some(resource) = self.loaded_ext_resources.borrow().get(path) {
+        if let Some(resource) = self.get_loaded_ext_resources().borrow().get(path) {
             return Some(resource.clone());
         }
 
@@ -198,10 +216,94 @@ impl Differ {
             return None;
         };
 
-        self.loaded_ext_resources
+        self.get_loaded_ext_resources()
             .borrow_mut()
             .insert(path.clone(), resource.clone());
         Some(resource)
+    }
+
+    /// Returns the value of a given prop, within a given scene.
+    /// Normally, it's a String. If it's a (non-script) ExtResource or ResourcePath,
+    /// it loads and returns the resource content as a Variant.
+    async fn get_prop_value(
+        &self,
+        prop_value: &VariantStrValue,
+        is_script: bool,
+        hist_ref: &HistoryRef,
+    ) -> Variant {
+        // Prevent loading script files during the diff and creating issues for the editor
+        if is_script {
+            return "<Script changed>".to_variant();
+        }
+        let path;
+        match prop_value {
+            VariantStrValue::Variant(variant) => {
+                return str_to_var(variant);
+            }
+            VariantStrValue::SubResourceID(sub_resource_id) => {
+                // We currently don't support displaying deep subresource diffs, so just inform of a change.
+                return format!("<SubResource {} changed>", sub_resource_id).to_variant();
+            }
+            VariantStrValue::ResourcePath(resource_path) => {
+                path = resource_path;
+            }
+            VariantStrValue::ExtResourceID(ext_resource_id, _path) => {
+                path = _path;
+            }
+        }
+
+        let Some(resource) = self.load_ext_resource(&path, hist_ref).await
+        else {
+            return "<ExtResource load failed>".to_variant();
+        };
+
+        return resource;
+    }
+
+    async fn get_resource(
+        &self,
+        path: &String,
+        content: &FileContent,
+        ref_: &HistoryRef,
+    ) -> Option<Variant> {
+        let import_path = format!("{}.import", path);
+        let import_file_content = match content {
+            FileContent::Deleted => None,
+            _ => self
+                .get_file_at_ref(&import_path, ref_).await
+                // TODO (Lilith): make this work
+                // try at current heads 
+                // .or(self.get_file_at(&import_path, None)),
+        };
+
+        self.create_temp_resource_from_content(
+            &path,
+            content,
+            &ref_.heads.first().to_short_form(),
+            import_file_content.as_ref(),
+        ).await
+    }
+
+}
+
+
+impl ContentLoader for Differ {
+    fn get_branch_db(&self) -> &BranchDb {
+        &self.branch_db
+    }
+    fn get_loaded_ext_resources(&self) -> &RefCell<HashMap<String, Variant>> {
+        &self.loaded_ext_resources
+    }
+}
+
+
+impl Differ {
+    /// Creates a new [Differ].
+    pub fn new(branch_db: BranchDb) -> Self {
+        Self {
+            branch_db,
+            loaded_ext_resources: RefCell::new(HashMap::new()),
+        }
     }
 
     /// Computes the diff between the two sets of heads.
