@@ -106,7 +106,7 @@ impl ChangeIngesterInner {
             // since we're past the duration with no other requests, the counter resets.
             *last_ingest = (now, 0);
         }
-        self.changes_tx.send(self.get_changes().await).unwrap();
+        self.changes_tx.send_replace(self.get_changes().await);
         last_ingest.1 += 1;
     }
 

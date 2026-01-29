@@ -170,9 +170,7 @@ impl Project {
             },
             None => None,
         };
-
-        // TODO (Lilith): Add support back for initially checking out a branch; probably once we're syncing
-        // let checked_out_branch_doc_id = PatchworkConfigAccessor::get_project_value("checked_out_branch_doc_id", "");
+        
         tracing::info!(
             "Starting GodotProject with metadata doc id: {:?}",
             metadata_id
@@ -183,24 +181,28 @@ impl Project {
         let block = self.main_thread_block.clone();
 
         // TODO: Don't block on main thread for checkin
-        *self.driver.blocking_lock() = self
+        let (driver, metadata) = self
             .runtime
             .block_on(
                 // I think it's correct to spawn this on a different task explicitly, because block_on runs the future on the current thread, not a worker thread.
                 spawn_named_on("Create driver", self.runtime.handle(), async move {
-                    Driver::new(block, server_url, project_dir, username, storage_dir, metadata_id).await
+                    let driver = Driver::new(block, server_url, project_dir, username, storage_dir, metadata_id).await;
+                    let metadata = driver.as_ref().unwrap().get_metadata_doc().await;
+                    (driver, metadata)
                 }),
             )
             .unwrap();
 
-        if self.driver.blocking_lock().is_none() {
+        let Some(driver) = driver else {
             tracing::error!("Could not start the driver!");
             return;
-        }
+        };
 
-        let driver = self.driver.blocking_lock();
-        self.changes_rx = Some(driver.as_ref().unwrap().get_changes_rx());
-        self.checked_out_ref_rx = Some(driver.as_ref().unwrap().get_ref_rx());
+        PatchworkConfigAccessor::set_project_value("project_doc_id", &metadata.expect("Driver started, but metadata null!").to_string());
+        self.changes_rx = Some(driver.get_changes_rx());
+        self.checked_out_ref_rx = Some(driver.get_ref_rx());
+        
+        *self.driver.blocking_lock() = Some(driver);
     }
 
     pub fn stop(&mut self) {
@@ -289,12 +291,11 @@ impl Project {
         // Check to see if we need to produce a CheckedOutBranch signal
         let rx = self.checked_out_ref_rx.as_mut().unwrap();
         if rx.has_changed().unwrap_or(false) {
+            let doc_id = rx.borrow().clone().map(|r| r.branch.to_string()).unwrap_or("".to_string());
+            PatchworkConfigAccessor::set_project_value("checked_out_branch_doc_id", &doc_id);
             signals.push(GodotProjectSignal::CheckedOutBranch);
             rx.mark_unchanged();
         }
-
-        // TODO (Lilith): VERY IMPORTANT, set the patchwork config branch ID here!!!
-        // So that we save the branch ID for future checkouts.
 
         tracing::trace!("Done with process.");
         (fs_changes, signals)

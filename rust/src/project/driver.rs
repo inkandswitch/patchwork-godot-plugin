@@ -517,6 +517,7 @@ impl DriverInner {
         if new_checked_out_ref.as_ref().map(|r| &r.branch)
             != old_checked_out_ref.as_ref().map(|r| &r.branch)
         {
+            self.change_ingester.request_ingestion();
             self.ref_tx.send(new_checked_out_ref).unwrap();
         }
         tracing::trace!("Done with sync.");
