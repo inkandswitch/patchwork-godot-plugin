@@ -237,7 +237,7 @@ impl Project {
             .block_on(spawn_named_on(name, self.runtime.handle(), async move {
                 tracing::trace!("Starting block on {name_clone}...");
                 let driver = driver.lock_owned().await;
-                let res =f(driver).await;
+                let res = f(driver).await;
                 tracing::trace!("Finishing block on {name_clone}!");
                 return res;
             }))

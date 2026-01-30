@@ -225,81 +225,74 @@ impl ProjectViewModel for Project {
     }
 
     fn get_sync_status(&self) -> SyncStatus {
-        // TODO (Lilith): implement
-        return SyncStatus::Unknown;
-        // if !self.has_project() {
-        //     // We have no reason to be connected, therefore just mark it as OK.
-        //     return SyncStatus::UpToDate;
-        // }
+        if !self.has_project() {
+            // We have no reason to be connected, therefore just mark it as OK.
+            return SyncStatus::UpToDate;
+        }
 
-        // let Some(info) = &self.sync_server_connection_info else {
-        //     return SyncStatus::Unknown;
-        // };
-        // let Some(branch) = self.get_checked_out_branch_state() else {
-        //     return SyncStatus::Unknown;
-        // };
-        // let Some(status) = info.docs.get(&branch.doc_handle.document_id()) else {
-        //     return SyncStatus::Unknown;
-        // };
-        // let is_connected = info.last_received.is_some();
-        // if status
-        //     .last_acked_heads
-        //     .as_ref()
-        //     .is_some_and(|s| s == &branch.synced_heads)
-        // {
-        //     if is_connected {
-        //         return SyncStatus::UpToDate;
-        //     }
-        //     return SyncStatus::Disconnected(0);
-        // }
+        let Some((info, ref_)) = self.with_driver_blocking("Print sync debug", |driver| async move {
+            let info = driver.as_ref()?.get_connection_info().await?;
+            let ref_ = driver.as_ref()?.get_checked_out_ref().await?;
+            Some((info, ref_))
+        }) else {
+            return SyncStatus::Unknown;
+        };
+        
+        let Some(branch) = self.get_checked_out_branch_state() else {
+            return SyncStatus::Unknown;
+        };
+        let Some(status) = info.docs.get(&branch.doc_handle.document_id()) else {
+            return SyncStatus::Unknown;
+        };
+        let is_connected = info.last_received.is_some();
+        if status
+            .last_acked_heads
+            .as_ref()
+            .is_some_and(|s| *s == ref_.heads)
+        {
+            if is_connected {
+                return SyncStatus::UpToDate;
+            }
+            return SyncStatus::Disconnected(0);
+        }
 
-        // if is_connected {
-        //     return SyncStatus::Syncing;
-        // }
+        if is_connected {
+            return SyncStatus::Syncing;
+        }
 
-        // let unsynced_count = self.changes.iter().filter(|(_hash, c)| !c.synced).count();
+        let unsynced_count = self.changes.iter().filter(|(_hash, c)| !c.synced).count();
 
-        // return SyncStatus::Disconnected(unsynced_count);
+        return SyncStatus::Disconnected(unsynced_count);
     }
 
     fn print_sync_debug(&self) {
-        // TODO (Lilith): implement
-        return;
-        // if !self.is_started() {
-        //     return;
-        // }
-        // let Some(info) = &self.sync_server_connection_info else {
-        //     tracing::debug!("Sync info UNAVAILABLE!!!");
-        //     return;
-        // };
-        // let is_connected = info.last_received.is_some();
+        if !self.has_project() {
+            return;
+        }
+        let info = self.with_driver_blocking("Print sync debug", |driver| async move {
+            driver.as_ref()?.get_connection_info().await
+        });
+        let Some(info) = info else {
+            tracing::debug!("Sync info UNAVAILABLE!!!");
+            return;
+        };
+        let is_connected = info.last_received.is_some();
 
-        // // fn time(t: Option<SystemTime>) -> String {
-        // //     let Some(t) = t else {
-        // //         return "-".to_string()
-        // //     };
-        // //     human_readable_timestamp(t
-        // //         .duration_since(UNIX_EPOCH)
-        // //         .unwrap()
-        // //         .as_millis()
-        // //         .try_into().unwrap())
-        // // }
+        tracing::debug!("Sync info ===========================");
+        tracing::debug!("is connected: {is_connected}");
+        tracing::debug!("last received: {:?}", info.last_received);
+        tracing::debug!("last sent: {:?}", info.last_sent);
 
-        // tracing::debug!("Sync info ===========================");
-        // tracing::debug!("is connected: {is_connected}");
-        // tracing::debug!("last received: {:?}", info.last_received);
-        // tracing::debug!("last sent: {:?}", info.last_sent);
-
-        // if let Some(branch) = self.get_checked_out_branch_state() {
-        //     if let Some(status) = info.docs.get(&branch.doc_handle.document_id()) {
-        //         tracing::debug!("\t{}:", branch.name);
-        //         tracing::debug!("\tacked heads: {:?}", status.last_acked_heads);
-        //         tracing::debug!("\tsent heads: {:?}", status.last_sent_heads);
-        //         tracing::debug!("\tlast sent: {:?}", status.last_sent);
-        //         tracing::debug!("\tlast sent: {:?}", status.last_received);
-        //     }
-        // }
-        // tracing::debug!("=====================================");
+        if let Some(branch) = self.get_checked_out_branch_state() {
+            if let Some(status) = info.docs.get(&branch.doc_handle.document_id()) {
+                tracing::debug!("\t{}:", branch.name);
+                tracing::debug!("\tacked heads: {:?}", status.last_acked_heads);
+                tracing::debug!("\tsent heads: {:?}", status.last_sent_heads);
+                tracing::debug!("\tlast sent: {:?}", status.last_sent);
+                tracing::debug!("\tlast sent: {:?}", status.last_received);
+            }
+        }
+        tracing::debug!("=====================================");
     }
 
     fn get_branch(&self, id: &DocumentId) -> Option<impl BranchViewModel + use<>> {

@@ -15,7 +15,7 @@ use crate::project::sync_fs_to_automerge::SyncFileSystemToAutomerge;
 use automerge::ChangeHash;
 use futures::channel::oneshot::Cancellation;
 use futures::{Stream, StreamExt};
-use samod::{ConcurrencyConfig, DocHandle, DocumentId, Repo};
+use samod::{ConcurrencyConfig, ConnectionInfo, DocHandle, DocumentId, Repo};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -438,6 +438,10 @@ impl Driver {
     pub async fn get_checked_out_ref(&self) -> Option<HistoryRef> {
         let checked_out_ref = self.inner.branch_db.get_checked_out_ref_mut();
         return checked_out_ref.read().await.clone();
+    }
+
+    pub async fn get_connection_info(&self) -> Option<ConnectionInfo> {
+        self.inner.peer_watcher.get_server_info()
     }
 
     pub fn set_safe_to_update_editor(&self, safe: bool) {
