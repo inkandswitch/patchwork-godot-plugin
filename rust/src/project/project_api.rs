@@ -1,7 +1,9 @@
+use std::collections::{HashMap, HashSet};
+
 use automerge::ChangeHash;
 use samod::DocumentId;
 
-use crate::{diff::differ::ProjectDiff};
+use crate::{diff::differ::ProjectDiff, fs::file_utils::FileContent, project::branch_db::HistoryRef};
 
 /// Represents synchronization status for a project.
 pub enum SyncStatus {
@@ -80,6 +82,11 @@ pub trait ProjectViewModel {
 	fn get_diff(&self, selected_hash: ChangeHash) -> Option<impl DiffViewModel>;
 	/// Get a [DiffViewModel] for the current branch against its fork, or [None] if the current branch is main.
 	fn get_default_diff(&self) -> Option<impl DiffViewModel>;
+	/// Get the file at a given history reference.
+	fn get_file_at_ref(&self, path: &String, ref_: &HistoryRef) -> Option<FileContent>;
+	/// Get the files at a given history reference, with optional filters.
+	fn get_files_at_ref(&self, ref_: &HistoryRef, filters: &HashSet<String>) -> Option<HashMap<String, FileContent>>;
+	
 }
 
 /// API surface for a Change exposed to the UI.

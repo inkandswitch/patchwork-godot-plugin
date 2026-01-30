@@ -1,5 +1,6 @@
 use crate::fs::file_utils::{FileContent, FileSystemEvent};
 use crate::interop::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
+use crate::project::branch_db::HistoryRef;
 use crate::project::driver::Driver;
 use crate::project::project::{GodotProjectSignal, Project};
 use crate::project::project_api::{BranchViewModel, ProjectViewModel};
@@ -432,6 +433,15 @@ impl GodotProject {
 	fn clear_diff_cache(&self) {
 		self.project.clear_diff_cache();
 	}
+
+	pub fn get_file_at_ref(&self, path: &String, ref_: &HistoryRef) -> Option<FileContent> {
+		self.project.get_file_at_ref(path, ref_)
+	}
+
+	pub fn get_files_at_ref(&self, ref_: &HistoryRef, filters: &HashSet<String>) -> Option<HashMap<String, FileContent>> {
+		self.project.get_files_at_ref(ref_, filters)
+	}
+
 }
 
 

@@ -1,23 +1,20 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{collections::{HashMap, HashSet}, time::{SystemTime, UNIX_EPOCH}};
 
 use automerge::ChangeHash;
 use samod::DocumentId;
 use tracing::instrument;
 
 use crate::{
-    diff::differ::ProjectDiff,
-    helpers::utils::{
+    diff::differ::ProjectDiff, fs::file_utils::FileContent, helpers::utils::{
         BranchWrapper, CommitInfo, DiffWrapper, exact_human_readable_timestamp,
         human_readable_timestamp,
-    },
-    interop::godot_accessors::PatchworkConfigAccessor,
-    project::{
+    }, interop::godot_accessors::PatchworkConfigAccessor, project::{
         branch_db::HistoryRef,
         project::Project,
         project_api::{
             BranchViewModel, ChangeViewModel, DiffViewModel, ProjectViewModel, SyncStatus,
         },
-    },
+    }
 };
 
 // TODO: Ideally this is actually a child of a new project submodule...
@@ -490,6 +487,22 @@ impl ProjectViewModel for Project {
                 change.get_summary(),
                 change.get_human_timestamp()
             ),
+        })
+    }
+
+    fn get_file_at_ref(&self, path: &String, ref_: &HistoryRef) -> Option<FileContent> {
+        let path = path.clone();
+        let ref_ = ref_.clone();
+        self.with_driver_blocking("Get file at ref", |driver| async move {
+            driver.as_ref()?.get_file_at_ref(&path, &ref_).await
+        })
+    }
+
+    fn get_files_at_ref(&self, ref_: &HistoryRef, filters: &HashSet<String>) -> Option<HashMap<String, FileContent>> {
+        let ref_ = ref_.clone();
+        let filters = filters.clone();
+        self.with_driver_blocking("Get files at ref", |driver| async move {
+            driver.as_ref()?.get_files_at_ref(&ref_, &filters).await
         })
     }
 }
