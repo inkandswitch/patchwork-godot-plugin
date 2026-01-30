@@ -43,6 +43,8 @@ public:
 	static void progress_task_step_bg(const String &p_task, int p_step = -1);
 	static void progress_end_task_bg(const String &p_task);
 	static Ref<ResourceImporter> get_importer_by_name(const String &p_name);
+	static String import_and_save_resource_to_temp(const String &p_path);
+
 	static Ref<Resource> import_and_load_resource(const String &p_path);
 	static Vector<String> get_unsaved_files();
 

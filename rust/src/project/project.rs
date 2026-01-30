@@ -116,18 +116,9 @@ impl Project {
     }
 
     pub fn get_diff(&self, before: HistoryRef, after: HistoryRef) -> ProjectDiff {
-        let Some(driver) = self.driver.blocking_lock().as_ref() else {
-            return ProjectDiff::default();
-        };
-        ProjectDiff::default()
-
-        // TODO (Lilith): make this code work; ProjectDiff includes variants which can't be pushed across threads
-        // TODO: these can get expensive; propagate a spinner to the UI
-        // self.runtime.block_on(
-        // 	self.runtime.spawn(async move {
-        // 		driver.get_diff(&before, &after).await
-        // 	}).await.unwrap()
-        // )
+        self.with_driver_blocking("Get diff", |driver| async move {
+            driver.as_ref().unwrap().get_diff(&before, &after).await
+        })
     }
 
     pub fn start(&mut self) {

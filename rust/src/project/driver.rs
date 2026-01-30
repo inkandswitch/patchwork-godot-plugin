@@ -1,4 +1,4 @@
-use crate::diff::differ::ProjectDiff;
+use crate::diff::differ::{Differ, ProjectDiff};
 use crate::fs::file_utils::FileSystemEvent;
 use crate::helpers::branch::{self, BranchState};
 use crate::helpers::spawn_utils::spawn_named;
@@ -63,9 +63,7 @@ pub struct DriverInner {
     document_watcher: DocumentWatcher,
     sync_automerge_to_fs: SyncAutomergeToFileSystem,
     sync_fs_to_automerge: SyncFileSystemToAutomerge,
-    // TODO (Lilith): Currently the differ is broken because it can't be sent across threads due to the Variant cache.
-    // Figure out a way to fix that. One option is maybe a global singleton cache only on one thread? Or just killing Variants in the differ, which is ideal.
-    // differ: Differ,
+    differ: Differ,
 }
 
 impl Drop for Driver {
@@ -208,7 +206,7 @@ impl Driver {
 
         let change_ingester = ChangeIngester::new(peer_watcher.clone(), branch_db.clone());
         change_ingester.request_ingestion();
-        // let differ = Differ::new(branch_db.clone());
+        let differ = Differ::new(branch_db.clone());
 
         // At this point, if we loaded an existing project, we may not have checked it out yet.
         // We'll discover that while processing updates, and check it out then.
@@ -234,7 +232,7 @@ impl Driver {
                 document_watcher,
                 sync_automerge_to_fs,
                 sync_fs_to_automerge,
-                // differ,
+                differ,
             }),
             repo,
             token,
@@ -403,8 +401,8 @@ impl Driver {
     }
 
     pub async fn get_diff(&self, before: &HistoryRef, after: &HistoryRef) -> ProjectDiff {
-        // self.differ.get_diff(before, after).await
-        ProjectDiff::default()
+        self.inner.differ.get_diff(before, after).await
+        // ProjectDiff::default()
     }
 
     pub async fn get_metadata_doc(&self) -> Option<DocumentId> {

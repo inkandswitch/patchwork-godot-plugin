@@ -1,7 +1,7 @@
 use godot::builtin::Variant;
 
 use crate::{
-    diff::differ::{ChangeType, Differ}, fs::file_utils::FileContent, helpers::utils::ToShortForm, project::branch_db::HistoryRef
+    diff::{differ::{ChangeType, Differ}, scene_differ::VariantValue}, fs::file_utils::FileContent, helpers::utils::ToShortForm, project::branch_db::HistoryRef
 };
 
 
@@ -9,16 +9,16 @@ use crate::{
 pub struct BinaryResourceDiff {
     pub path: String,
     pub change_type: ChangeType,
-    pub old_resource: Option<Variant>,
-    pub new_resource: Option<Variant>,
+    pub old_resource: Option<VariantValue>,
+    pub new_resource: Option<VariantValue>,
 }
 
 impl BinaryResourceDiff {
     pub fn new(
         path: String,
         change_type: ChangeType,
-        old_resource: Option<Variant>,
-        new_resource: Option<Variant>,
+        old_resource: Option<VariantValue>,
+        new_resource: Option<VariantValue>,
     ) -> BinaryResourceDiff {
         BinaryResourceDiff {
             path,
@@ -52,22 +52,12 @@ impl Differ {
         path: &String,
         content: &FileContent,
         ref_: &HistoryRef,
-    ) -> Option<Variant> {
-        let import_path = format!("{}.import", path);
-        let import_file_content = match content {
-            FileContent::Deleted => None,
-            _ => self
-                .get_file_at_ref(&import_path, ref_).await
-                // TODO (Lilith): make this work
-                // try at current heads 
-                // .or(self.get_file_at(&import_path, None)),
-        };
+    ) -> Option<VariantValue> {
 
-        self.create_temp_resource_from_content(
-            &path,
-            content,
-            &ref_.heads.first().to_short_form(),
-            import_file_content.as_ref(),
-        ).await
+        let Some(load_path) = self.start_load_ext_resource(path, ref_, Some(content)).await
+        else {
+            return None;
+        };
+        Some(VariantValue::LazyLoadData(path.clone(), load_path))
     }
 }

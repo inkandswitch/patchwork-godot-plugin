@@ -6,3 +6,4 @@ mod patchwork_config;
 mod godot_diffs;
 mod text_differ_view;
 mod diff_inspector_section;
+mod lazy_load_token;

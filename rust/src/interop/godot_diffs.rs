@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use godot::{
-    builtin::{Array, GString, VarDictionary, Variant, vdict},
-    meta::{ByValue, GodotConvert, ToArg, ToGodot},
+    builtin::{Array, GString, VarDictionary, Variant, vdict}, global::str_to_var, meta::{ByValue, GodotConvert, ToArg, ToGodot}
 };
 use godot::obj::Singleton;
 
@@ -10,10 +9,10 @@ use crate::{
     diff::{
         differ::{ChangeType, Diff, ProjectDiff},
         resource_differ::BinaryResourceDiff,
-        scene_differ::{NodeDiff, PropertyDiff, SceneDiff, SubResourceDiff, TextResourceDiff},
+        scene_differ::{NodeDiff, PropertyDiff, SceneDiff, SubResourceDiff, TextResourceDiff, VariantValue},
         text_differ::{TextDiff, TextDiffHunk, TextDiffLine},
     },
-    interop::godot_helpers::{GodotConvertExt, ToGodotExt},
+    interop::{godot_helpers::{GodotConvertExt, ToGodotExt}, lazy_load_token::LazyLoadToken},
 };
 
 impl GodotConvert for TextDiffLine {
@@ -253,14 +252,33 @@ impl GodotConvert for PropertyDiff {
     type Via = VarDictionary;
 }
 
+impl GodotConvert for VariantValue {
+    type Via = Variant;
+}
+
+impl ToGodot for VariantValue {
+    type Pass = ByValue;
+    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
+        match self {
+            VariantValue::Variant(s) => str_to_var(s),
+            VariantValue::LazyLoadData(original_path, load_path) => 
+                LazyLoadToken::new(load_path.clone(), Some(original_path.clone()))
+                // TODO (Nikita): make the GUI do this, right now we're just loading them immediately here
+                .bind_mut()
+                .get_resource()
+                .to_variant(),
+        }
+    }
+}
+
 impl ToGodot for PropertyDiff {
     type Pass = ByValue;
     fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
         vdict! {
             "change_type": self.change_type.to_godot(),
             "name": self.name.to_godot(),
-            "new_value": self.new_value.clone().unwrap_or(Variant::nil()),
-            "old_value": self.old_value.clone().unwrap_or(Variant::nil()),
+            "new_value": self.new_value.as_ref().map(|v| v.to_godot()).unwrap_or(Variant::nil()),
+            "old_value": self.old_value.as_ref().map(|v| v.to_godot()).unwrap_or(Variant::nil()),
         }
     }
 }
@@ -274,8 +292,8 @@ impl ToGodot for BinaryResourceDiff {
     fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
         vdict! {
             "change_type": self.change_type.to_godot(),
-            "new_resource": self.new_resource.clone().unwrap_or(Variant::nil()),
-            "old_resource": self.old_resource.clone().unwrap_or(Variant::nil()),
+            "new_resource": self.new_resource.as_ref().map(|v| v.to_godot()).unwrap_or(Variant::nil()),
+            "old_resource": self.old_resource.as_ref().map(|v| v.to_godot()).unwrap_or(Variant::nil()),
 			"diff_type": "resource_changed"
         }
     }
