@@ -422,13 +422,6 @@ String PatchworkEditor::import_and_save_resource_to_temp(const String &p_path) {
 	ERR_FAIL_COND_V_MSG(err != OK, {}, "Failed to load import file at path " + import_path);
 	// get the importer name
 	;
-	HashMap<StringName, Variant> params;
-	String importer_name = import_file->get_value("remap", "importer");
-	Vector<String> param_keys = _get_section_keys(import_file, "params");
-	for (auto &param_key : param_keys) {
-		auto param_value = import_file->get_value("params", param_key);
-		params[param_key] = param_value;
-	}
 	String import_base_path = import_file->get_value("remap", "path", "");
 	if (import_base_path.is_empty()) {
 		// iterate through the remap keys, find one that begins with 'path'
@@ -440,11 +433,27 @@ String PatchworkEditor::import_and_save_resource_to_temp(const String &p_path) {
 			}
 		}
 	}
+	err = import_and_save_resource(p_path, FileAccess::get_file_as_string(import_path), import_base_path);
+	ERR_FAIL_COND_V_MSG(err != OK, {}, "Failed to import resource at path " + p_path);
+	return import_base_path;
+}
+
+
+Error PatchworkEditor::import_and_save_resource(const String &p_path, const String &import_file_content, const String &import_base_path) {
 	String base_dir = import_base_path.get_base_dir();
-	String ext = import_base_path.get_extension();
-	String file = import_base_path.get_file();
-	String file_without_ext = file.get_slice(".", 0) + "." + file.get_slice(".", 1);
-	import_base_path = base_dir.path_join(file_without_ext);
+	HashMap<StringName, Variant> params;
+
+	Ref<ConfigFile> import_file;
+	import_file.instantiate();
+
+	Error err = import_file->parse(import_file_content);
+	ERR_FAIL_COND_V_MSG(err != OK, err, "Failed to parse import file content");
+	String importer_name = import_file->get_value("remap", "importer");
+	Vector<String> param_keys = _get_section_keys(import_file, "params");
+	for (auto &param_key : param_keys) {
+		auto param_value = import_file->get_value("params", param_key);
+		params[param_key] = param_value;
+	}
 
 	// make dir recursive
 	DirAccess::make_dir_recursive_absolute(base_dir);
@@ -461,18 +470,12 @@ String PatchworkEditor::import_and_save_resource_to_temp(const String &p_path) {
 		}
 	}
 
-	err = importer->import(ResourceUID::INVALID_ID, p_path, import_base_path, params, &import_variants, &import_options, &metadata);
-	ERR_FAIL_COND_V_MSG(err != OK, {}, "Failed to import resource at path " + p_path);
-	return import_base_path;
-
+	return importer->import(ResourceUID::INVALID_ID, p_path, import_base_path, params, &import_variants, &import_options, &metadata);
 }
 
-Ref<Resource> PatchworkEditor::import_and_load_resource(const String &p_path) {
-	auto import_base_path = import_and_save_resource_to_temp(p_path);
-	// load the resource
-	if (import_base_path.is_empty()) {
-		return nullptr;
-	}
+Ref<Resource> PatchworkEditor::import_and_load_resource(const String &p_path, const String &import_file_content, const String &import_base_path) {
+	Error err = import_and_save_resource(p_path, import_file_content, import_base_path);
+	ERR_FAIL_COND_V_MSG(err != OK, nullptr, "Failed to import resource at path " + p_path);
 	return ResourceLoader::load(import_base_path, "", ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP);
 }
 
@@ -701,7 +704,8 @@ void PatchworkEditor::_bind_methods() {
 
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_importer_by_name", "name"), &PatchworkEditor::get_importer_by_name);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("import_and_save_resource_to_temp", "path"), &PatchworkEditor::import_and_save_resource_to_temp);
-	ClassDB::bind_static_method(get_class_static(), D_METHOD("import_and_load_resource", "path"), &PatchworkEditor::import_and_load_resource);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("import_and_load_resource", "path", "import_file_content", "import_base_path"), &PatchworkEditor::import_and_load_resource);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("import_and_save_resource", "path", "import_file_content", "import_base_path"), &PatchworkEditor::import_and_save_resource);
 
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("save_all_scenes_and_scripts"), &PatchworkEditor::save_all_scenes_and_scripts);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("save_all_scripts"), &PatchworkEditor::save_all_scripts);
