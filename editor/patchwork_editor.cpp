@@ -412,7 +412,7 @@ inline Vector<String> _get_section_keys(const Ref<ConfigFile> &p_config_file, co
 #endif
 }
 
-Ref<Resource> PatchworkEditor::import_and_load_resource(const String &p_path) {
+String PatchworkEditor::import_and_save_resource_to_temp(const String &p_path) {
 	// get the import path
 	auto import_path = p_path + ".import";
 	// load the import file
@@ -463,10 +463,17 @@ Ref<Resource> PatchworkEditor::import_and_load_resource(const String &p_path) {
 
 	err = importer->import(ResourceUID::INVALID_ID, p_path, import_base_path, params, &import_variants, &import_options, &metadata);
 	ERR_FAIL_COND_V_MSG(err != OK, {}, "Failed to import resource at path " + p_path);
+	return import_base_path;
+
+}
+
+Ref<Resource> PatchworkEditor::import_and_load_resource(const String &p_path) {
+	auto import_base_path = import_and_save_resource_to_temp(p_path);
 	// load the resource
-	auto res = ResourceLoader::load(p_path, "", ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &err);
-	ERR_FAIL_COND_V_MSG(err != OK, {}, "Failed to load resource at path " + import_base_path);
-	return res;
+	if (import_base_path.is_empty()) {
+		return nullptr;
+	}
+	return ResourceLoader::load(import_base_path, "", ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP);
 }
 
 void PatchworkEditor::save_all_scenes_and_scripts() {
@@ -693,6 +700,7 @@ void PatchworkEditor::_bind_methods() {
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_recursive_dir_list", "dir", "wildcards", "absolute", "rel"), &PatchworkEditor::get_recursive_dir_list);
 
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("get_importer_by_name", "name"), &PatchworkEditor::get_importer_by_name);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("import_and_save_resource_to_temp", "path"), &PatchworkEditor::import_and_save_resource_to_temp);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("import_and_load_resource", "path"), &PatchworkEditor::import_and_load_resource);
 
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("save_all_scenes_and_scripts"), &PatchworkEditor::save_all_scenes_and_scripts);

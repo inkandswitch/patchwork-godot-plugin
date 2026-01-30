@@ -87,16 +87,6 @@ func update_property_editor(editor_property) -> void:
 	editor_property.update_property()
 	editor_property._update_editor_property_status()
 
-func getDeletedNodes() -> Array:
-	return deleted_nodes
-
-func getAddedNodes() -> Array:
-	return added_nodes
-
-func getChangedNodes() -> Array:
-	return changed_nodes
-
-
 func get_diff_stylebox(color: Color) -> StyleBoxTexture:
 	var stylebox: StyleBoxTexture = StyleBoxTexture.new()
 	stylebox.texture = diff_stylebox_tex
@@ -541,6 +531,53 @@ func add_node_diff(file_section: DiffInspectorSection, file_path: String, node_d
 		pop_node_sections(key, child_map[key], file_section, file_path)
 
 
+func add_text_resource_diff(inspector_section: DiffInspectorSection, changed_sub_resources: Array, changed_main_resource: Dictionary) -> void:
+	inspector_section.get_vbox().add_child(HSeparator.new())
+	if changed_main_resource is Dictionary and changed_main_resource.size() > 0:
+		add_sub_resource_diff(inspector_section, changed_main_resource["change_type"], changed_main_resource["sub_resource_id"], changed_main_resource["resource_type"], changed_main_resource["changed_props"])
+
+	for sub_resource in changed_sub_resources:
+		var change_type = sub_resource["change_type"]
+		var sub_resource_id = sub_resource["sub_resource_id"]
+		var sub_resource_type = sub_resource["resource_type"]
+		var changed_properties = sub_resource["changed_props"]
+		add_sub_resource_diff(inspector_section, change_type, sub_resource_id, sub_resource_type, changed_properties)
+
+func add_sub_resource_diff(inspector_section: DiffInspectorSection, change_type: String, sub_resource_id: String, sub_resource_type: String, changed_properties: Dictionary) -> void:
+	if (changed_properties.size() == 0 and change_type == "modified"):
+		print("!!! no prop diffs for ", sub_resource_id, " with type ", change_type)
+		return
+	var color: Color = modified_color
+	var subresource_label = sub_resource_id
+	if subresource_label.is_empty():
+		subresource_label = "Main (" + sub_resource_type + ")"
+	if change_type == "added":
+		color = added_color
+		subresource_label += " (Added)"
+	elif change_type == "removed":
+		color = removed_color
+		subresource_label += " (Deleted)"
+	elif change_type == "modified":
+		color = modified_color
+		subresource_label += " (Modified)"
+
+	var i = 0
+	var child_section: DiffInspectorSection = DiffInspectorSection.new()
+	var fake_node: MissingResource = MissingResource.new()
+	fake_node.original_class = sub_resource_type
+	child_section.setup(sub_resource_id, subresource_label, fake_node, color, true, 1, 2)
+	child_section.set_type(change_type)
+	var vbox = child_section.get_vbox()
+	vbox.add_child(HSeparator.new())
+	# get the length of the prop_diffs dictionary
+	for prop_name in changed_properties.keys():
+		if i > 0:
+			var divider = HSeparator.new()
+			vbox.add_child(divider)
+		add_PropertyDiffResult(child_section, changed_properties[prop_name], sub_resource_type)
+		i += 1
+	inspector_section.get_vbox().add_child(child_section)
+
 
 
 func add_FileDiffResult(file_path: String, file_diff: Dictionary) -> void:
@@ -580,6 +617,11 @@ func add_FileDiffResult(file_path: String, file_diff: Dictionary) -> void:
 		var text_diff = file_diff["text_diff"]
 		add_text_diff(inspector_section, text_diff)
 		inspector_section.connect("box_clicked", self._on_text_box_clicked)
+	elif type == "text_resource_changed":
+		var changed_sub_resources = file_diff["changed_sub_resources"]
+		var changed_main_resource = file_diff["changed_main_resource"]
+		add_text_resource_diff(inspector_section, changed_sub_resources, changed_main_resource)
+		inspector_section.connect("box_clicked", self._on_resource_box_clicked)
 	elif type == "scene_changed":
 		var node_diffs: Array = file_diff["changed_nodes"]
 		node_diffs.sort_custom(func(a, b): return a["node_path"] < b["node_path"])
