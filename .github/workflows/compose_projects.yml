@@ -38,7 +38,7 @@ jobs:
             lfs: false
     steps:
       - name: Checkout project
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ matrix.project.repo }}
           ref: ${{ matrix.project.ref }}
@@ -55,10 +55,11 @@ jobs:
         shell: sh
         run: |
           mkdir -p ${{ matrix.project.name }}/addons/patchwork
-          cp -r patchwork-godot-plugin/* ${{ matrix.project.name }}/addons/patchwork
+          cp -r patchwork-godot-plugin/. ${{ matrix.project.name }}/addons/patchwork
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
+          include-hidden-files: true
           name: ${{ matrix.project.name }}-with-patchwork
           path: |
             ${{ matrix.project.name }}
