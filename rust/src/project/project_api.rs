@@ -82,6 +82,8 @@ pub trait ProjectViewModel {
 	fn get_diff(&self, selected_hash: ChangeHash) -> Option<impl DiffViewModel>;
 	/// Get a [DiffViewModel] for the current branch against its fork, or [None] if the current branch is main.
 	fn get_default_diff(&self) -> Option<impl DiffViewModel>;
+
+	fn get_current_ref(&self) -> Option<HistoryRef>;
 	/// Get the file at a given history reference.
 	fn get_file_at_ref(&self, path: &String, ref_: &HistoryRef) -> Option<FileContent>;
 	/// Get the files at a given history reference, with optional filters.

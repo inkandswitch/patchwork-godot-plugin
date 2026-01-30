@@ -490,6 +490,12 @@ impl ProjectViewModel for Project {
         })
     }
 
+    fn get_current_ref(&self) -> Option<HistoryRef> {
+        self.with_driver_blocking("Get current ref", |driver| async move {
+            driver.as_ref()?.get_checked_out_ref().await
+        })
+    }
+
     fn get_file_at_ref(&self, path: &String, ref_: &HistoryRef) -> Option<FileContent> {
         let path = path.clone();
         let ref_ = ref_.clone();

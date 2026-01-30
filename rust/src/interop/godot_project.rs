@@ -335,6 +335,14 @@ impl GodotProject {
 		Variant::from(diff_view_model_to_dict(&diff))
 	}
 
+	#[func]
+	fn get_current_ref_string(&self) -> String {
+		let Some(ref_) = self.project.get_current_ref() else {
+			return "".to_string();
+		};
+		ref_.to_string()
+	}
+
     #[func]
     pub fn get_singleton() -> Gd<Self> {
         Engine::singleton()
@@ -432,6 +440,10 @@ impl GodotProject {
 	// bit of a hack to clear the diff cache when UI is loaded, to facilitate debugging
 	fn clear_diff_cache(&self) {
 		self.project.clear_diff_cache();
+	}
+
+	pub fn get_current_ref(&self) -> Option<HistoryRef> {
+		self.project.get_current_ref()
 	}
 
 	pub fn get_file_at_ref(&self, path: &String, ref_: &HistoryRef) -> Option<FileContent> {
