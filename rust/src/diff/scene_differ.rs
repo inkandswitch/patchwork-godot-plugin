@@ -124,17 +124,17 @@ pub struct PropertyDiff {
     /// The change type of the property.
     pub change_type: ChangeType,
     /// The old value of the property, if it existed.
-    pub old_value: Option<Variant>,
+    pub old_value: Option<VariantValue>,
     /// The new value of the property, if it still exists.
-    pub new_value: Option<Variant>,
+    pub new_value: Option<VariantValue>,
 }
 
 impl PropertyDiff {
     pub fn new(
         name: String,
         change_type: ChangeType,
-        old_value: Option<Variant>,
-        new_value: Option<Variant>,
+        old_value: Option<VariantValue>,
+        new_value: Option<VariantValue>,
     ) -> Self {
         PropertyDiff {
             name,
@@ -156,6 +156,13 @@ enum VariantStrValue {
     SubResourceID(String),
     /// A Godot external resource identifier string.
     ExtResourceID(String),
+}
+
+
+#[derive(Clone, Debug)]
+pub enum VariantValue {
+    Variant(String),
+    LazyLoadData(String, String),
 }
 
 /// Implement the to_string method for this enum
@@ -695,19 +702,20 @@ impl Differ {
         is_script: bool,
         before: &HistoryRef,
         after: &HistoryRef,
-    ) -> Variant {
+    ) -> VariantValue {
         // Prevent loading script files during the diff and creating issues for the editor
         if is_script {
-            return "<Script changed>".to_variant();
+            return VariantValue::Variant("<Script changed>".to_string());
         }
         let path;
         match prop_value {
             VariantStrValue::Variant(variant) => {
-                return str_to_var(variant);
+                return VariantValue::Variant(variant.clone());
             }
             VariantStrValue::SubResourceID(sub_resource_id) => {
+                // TODO: add this for scene diffs; for scene diffs we want to display the subresource diffs as child nodes of the parent node.
                 // We currently don't support displaying deep subresource diffs, so just inform of a change.
-                return format!("<SubResource {} changed>", sub_resource_id).to_variant();
+                return VariantValue::Variant(format!("<SubResource {} changed>", sub_resource_id));
             }
             VariantStrValue::ResourcePath(resource_path) => {
                 path = resource_path;
@@ -720,18 +728,18 @@ impl Differ {
                         .map(|ext_resource| &ext_resource.path)
                 });
                 let Some(p) = p else {
-                    return "<ExtResource not found>".to_variant();
+                    return VariantValue::Variant("<ExtResource not found>".to_string());
                 };
                 path = p;
             }
         }
 
-        let Some(resource) = self.load_ext_resource(&path, if is_old { before } else { after }).await
+        let Some(load_path) = self.start_load_ext_resource(&path, if is_old { before } else { after }, None).await
         else {
-            return "<ExtResource load failed>".to_variant();
+            return VariantValue::Variant(format!("<ExtResource {} load failed>", path));
         };
 
-        return resource;
+        return VariantValue::LazyLoadData(path.clone(), load_path);
     }
 
     /// Populates [node_ids], [ext_resource_ids], and [sub_resource_ids] from the
