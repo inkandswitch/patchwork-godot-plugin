@@ -7,7 +7,7 @@ use regex::Regex;
 use std::{collections::{HashMap, HashSet}, fmt::Display};
 use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator};
 
-use crate::helpers::doc_utils::SimpleDocReader;
+use crate::{helpers::doc_utils::SimpleDocReader, project::branch_db::{HistoryRef, HistoryRefPath}};
 
 const UNIQUE_SCENE_ID_UNASSIGNED: i32 = 0;
 fn hydrate_nodes<D: ReadDoc>(
@@ -331,6 +331,12 @@ impl GodotScene {
 	}
 
     pub fn serialize(&self) -> String {
+        self.serialize_with_ext_resource_override(None, false)
+    }
+
+    // helper for the patchwork_resource_loader to serialize the scene at a given history ref for loading
+    pub fn serialize_with_ext_resource_override(&self, history_ref: Option<&HistoryRef>, remove_uid_in_ext_resources: bool) -> String {
+
         let mut output = String::new();
 
         if self.resource_type != "PackedScene" {
@@ -361,12 +367,22 @@ impl GodotScene {
                 "[ext_resource type=\"{}\"",
                 resource.resource_type
             ));
-            if let Some(uid) = &resource.uid {
+            if !remove_uid_in_ext_resources && let Some(uid) = &resource.uid {
                 output.push_str(&format!(" uid=\"{}\"", uid));
             }
+            let path = if let Some(history_ref) = history_ref {
+                if !history_ref.is_valid() {
+                    tracing::error!("History ref is not valid, can't rename dependencies!");
+                    resource.path.clone()
+                } else {
+                    HistoryRefPath::make_path_string(history_ref, &resource.path).unwrap_or(resource.path.clone())
+                }
+            } else {
+                resource.path.clone()
+            };
             output.push_str(&format!(
                 " path=\"{}\" id=\"{}\"]\n",
-                resource.path, resource.id
+                path, resource.id
             ));
         }
 
