@@ -4,7 +4,7 @@ use std::{
 
 use automerge::ChangeHash;
 use godot::{
-    builtin::{GString, Variant}, classes::{ResourceLoader, resource_loader::CacheMode}, global, meta::ToGodot, obj::Singleton
+    builtin::{GString, Variant}, classes::{ResourceLoader, resource_loader::CacheMode}, global, meta::ToGodot, obj::{EngineEnum, Singleton}
 };
 use tokio::sync::Mutex;
 use tracing::instrument;
@@ -68,13 +68,13 @@ impl Differ {
         &self,
         path: &String,
         ref_: &HistoryRef
-    ) -> Option<String> {
-        let history_ref_path = HistoryRefPath::make_path_string(ref_, path).ok()?;
+    ) -> Result<String, String> {
+        let history_ref_path = HistoryRefPath::make_path_string(ref_, path).map_err(|_| "Invalid history ref path".to_string())?;
 
-        if ResourceLoader::singleton().load_threaded_request(&history_ref_path) == global::Error::OK {
-            return Some(history_ref_path);
-        }
-        None
+        return match ResourceLoader::singleton().load_threaded_request(&history_ref_path) {
+            global::Error::OK => Ok(history_ref_path),
+            e => Err(format!("load_threaded_request failed ({})", e.as_str().to_string())),
+        };
     }
 
     /// Computes the diff between the two sets of heads.

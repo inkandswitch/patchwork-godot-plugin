@@ -715,7 +715,7 @@ impl Differ {
             VariantStrValue::SubResourceID(sub_resource_id) => {
                 // TODO: add this for scene diffs; for scene diffs we want to display the subresource diffs as child nodes of the parent node.
                 // We currently don't support displaying deep subresource diffs, so just inform of a change.
-                return VariantValue::Variant(format!("<SubResource {} changed>", sub_resource_id));
+                return VariantValue::Variant(format!("\"<SubResource {} changed>\"", sub_resource_id));
             }
             VariantStrValue::ResourcePath(resource_path) => {
                 path = resource_path;
@@ -728,18 +728,16 @@ impl Differ {
                         .map(|ext_resource| &ext_resource.path)
                 });
                 let Some(p) = p else {
-                    return VariantValue::Variant("<ExtResource not found>".to_string());
+                    return VariantValue::Variant("\"<ExtResource not found>\"".to_string());
                 };
                 path = p;
             }
         }
 
-        let Some(load_path) = self.start_load_ext_resource(&path, if is_old { before } else { after }).await
-        else {
-            return VariantValue::Variant(format!("<ExtResource {} load failed>", path));
-        };
-
-        return VariantValue::LazyLoadData(path.clone(), load_path);
+        match self.start_load_ext_resource(&path, if is_old { before } else { after }).await{
+            Ok(load_path) => VariantValue::LazyLoadData(path.clone(), load_path),
+            Err(e) => VariantValue::Variant(format!("\"<ExtResource {} load failed ({})>\"", path, e)),
+        }
     }
 
     /// Populates [node_ids], [ext_resource_ids], and [sub_resource_ids] from the
