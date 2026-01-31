@@ -65,15 +65,6 @@ impl PatchworkEditorAccessor {
         ).to::<godot::global::Error>()
     }
 
-    pub fn import_and_save_resource_to_temp(path: &str) -> String {
-        ClassDb::singleton().class_call_static(
-            "PatchworkEditor",
-            "import_and_save_resource_to_temp",
-            &[path.to_variant()],
-        )
-        .to::<String>()
-    }
-
     pub fn is_editor_importing() -> bool {
         return ClassDb::singleton()
             .class_call_static("PatchworkEditor", "is_editor_importing", &[])

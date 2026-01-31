@@ -44,7 +44,6 @@ public:
 	static void progress_end_task_bg(const String &p_task);
 	static Ref<ResourceImporter> get_importer_by_name(const String &p_name);
 	// TODO: remove this once the resource loader is working
-	static String import_and_save_resource_to_temp(const String &p_path);
 	static Error import_and_save_resource(const String &p_path, const String &import_file_content, const String &import_base_path);
 
 	static Ref<Resource> import_and_load_resource(const String &p_path, const String &import_file_content, const String &import_base_path);
