@@ -345,7 +345,7 @@ func create_new_branch() -> void:
 
 	var branch_name_input = LineEdit.new()
 	branch_name_input.placeholder_text = "Branch name"
-	branch_name_input.text = GodotProject.get_user_name() + "'s remix"
+	branch_name_input.text = GodotProject.get_user_name() + "'s Branch"
 	dialog.add_child(branch_name_input)
 
 	# Not scaling these values because they display correctly at 1x-2x scale
@@ -568,7 +568,7 @@ func update_action_buttons():
 	if !main_branch or !current_branch: return
 	if main_branch.id == current_branch.id:
 		merge_button.disabled = true
-		merge_button.tooltip_text = "Can't merge main because it's not a remix of another branch"
+		merge_button.tooltip_text = "Can't merge main because it's not a branch of another branch"
 	else:
 		merge_button.disabled = false
 		merge_button.tooltip_text = ""
