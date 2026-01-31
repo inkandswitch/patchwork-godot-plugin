@@ -734,7 +734,7 @@ impl Differ {
             }
         }
 
-        let Some(load_path) = self.start_load_ext_resource(&path, if is_old { before } else { after }, None).await
+        let Some(load_path) = self.start_load_ext_resource(&path, if is_old { before } else { after }).await
         else {
             return VariantValue::Variant(format!("<ExtResource {} load failed>", path));
         };

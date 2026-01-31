@@ -50,11 +50,11 @@ impl Differ {
     async fn get_resource(
         &self,
         path: &String,
-        content: &FileContent,
+        _content: &FileContent,
         ref_: &HistoryRef,
     ) -> Option<VariantValue> {
 
-        let Some(load_path) = self.start_load_ext_resource(path, ref_, Some(content)).await
+        let Some(load_path) = self.start_load_ext_resource(path, ref_).await
         else {
             return None;
         };
