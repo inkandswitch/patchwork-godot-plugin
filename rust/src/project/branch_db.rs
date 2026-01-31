@@ -98,7 +98,7 @@ impl FromStr for HistoryRef {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, PartialEq)]
 pub struct HistoryRefPath {
     pub ref_: HistoryRef,
     pub path: String,
@@ -152,7 +152,7 @@ impl FromStr for HistoryRefPath {
         let path = if let Some(pos) = path.find(":/") {
             let uri_scheme = &path[..pos];
             // check if the previous characters before this were valid alphanumeric characters
-            if is_valid_uri_scheme(uri_scheme) && path.len() >= pos+2 && &path[pos+2..pos+3] != "/" {
+            if is_valid_uri_scheme(uri_scheme) && path.len() > pos+2 && &path[pos+2..pos+3] != "/" {
                 // otherwise fix the path
                 format!("{}://{}", uri_scheme.to_string(), path[pos+2..].to_string())
             } else{
