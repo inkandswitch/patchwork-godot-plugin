@@ -85,11 +85,19 @@ impl Differ {
             return ProjectDiff::default();
         }
 
+        // TODO: refactor `get_changed_file_content_between_refs` to not globalize the paths so we don't have to re-localize them here
         // Get the set of new file content that has changed
         let Some(new_file_contents) = self
             .branch_db
             .get_changed_file_content_between_refs(Some(before), after, false)
             .await
+            .and_then(|events| Some(events.into_iter().map(|event| {
+                match event {
+                    FileSystemEvent::FileCreated(path, content) => (self.branch_db.localize_path(&path), content, ChangeType::Added),
+                    FileSystemEvent::FileModified(path, content) => (self.branch_db.localize_path(&path), content, ChangeType::Modified),
+                    FileSystemEvent::FileDeleted(path) => (self.branch_db.localize_path(&path), FileContent::Deleted, ChangeType::Removed),
+                }
+            }).collect::<Vec<(String, FileContent, ChangeType)>>()))
         else {
             // Something went wrong
             return ProjectDiff::default();
@@ -97,11 +105,7 @@ impl Differ {
 
         let changed_filter: HashSet<String> = new_file_contents
             .iter()
-            .map(|event| match event {
-                FileSystemEvent::FileCreated(path, _) => path.to_string_lossy().to_string(),
-                FileSystemEvent::FileModified(path, _) => path.to_string_lossy().to_string(),
-                FileSystemEvent::FileDeleted(path) => path.to_string_lossy().to_string(),
-            })
+            .map(|event| event.0.clone())
             .collect::<HashSet<String>>();
 
         // We do need to compare the new files to the old files, so grab the old contents with a filter
@@ -116,19 +120,9 @@ impl Differ {
 
         let mut diffs: Vec<Diff> = vec![];
 
-        for event in &new_file_contents {
-            let (path, new_file_content, change_type) = match event {
-                FileSystemEvent::FileCreated(path, content) => (path, content, ChangeType::Added),
-                FileSystemEvent::FileModified(path, content) => {
-                    (path, content, ChangeType::Modified)
-                }
-                FileSystemEvent::FileDeleted(path) => {
-                    (path, &FileContent::Deleted, ChangeType::Removed)
-                }
-            };
-            let path = path.to_string_lossy().to_string();
+        for (path, new_file_content, change_type) in &new_file_contents {
             let old_file_content = old_file_contents
-                .get(&path)
+                .get(path)
                 .unwrap_or(&FileContent::Deleted);
 
             if matches!(old_file_content, FileContent::Scene(_))
@@ -168,7 +162,7 @@ impl Differ {
                 diffs.push(Diff::BinaryResource(
                     self.get_binary_resource_diff(
                         &path,
-                        change_type,
+                        change_type.clone(),
                         old_file_content,
                         new_file_content,
                         before,
@@ -182,7 +176,7 @@ impl Differ {
                 // This is a text file, so do a text diff.
                 diffs.push(Diff::Text(self.get_text_diff(
                     &path,
-                    change_type,
+                    change_type.clone(),
                     old_file_content,
                     new_file_content,
                 )));
