@@ -124,13 +124,22 @@ build-godot profile: _link-godot
     #!/usr/bin/env sh
     # set -euxo pipefail
     cd "build/godot"
+    EXTRA_BUILD_FLAGS=""
+    # check for macos; if yes, add `generate_bundle=yes`
+    if [[ "{{os()}}" = "macos" ]] ; then
+        EXTRA_BUILD_FLAGS="generate_bundle=yes"
+        # check for the .cargo/.devidentity file; if it exists, add `bundle_sign_identity=<contents>`
+        if [ -f .cargo/.devidentity ]; then
+            EXTRA_BUILD_FLAGS="$EXTRA_BUILD_FLAGS bundle_sign_identity=$(cat .cargo/.devidentity)"
+        fi
+    fi
     # TODO: figure out a way to see if scons actually needs a run, since this takes forever even when built
     if [[ {{profile}} = "release" ]] ; then
-        scons dev_build=no debug_symbols=no target=editor deprecated=yes minizip=yes compiledb=yes metal=no module_text_server_fb_enabled=yes
+        scons dev_build=no debug_symbols=no target=editor deprecated=yes minizip=yes compiledb=yes metal=no module_text_server_fb_enabled=yes $EXTRA_BUILD_FLAGS
     elif [[ {{profile}} = "sani" ]] ; then
-        scons dev_build=yes target=editor compiledb=yes deprecated=yes minizip=yes tests=yes use_asan=yes metal=no module_text_server_fb_enabled=yes
+        scons dev_build=yes target=editor compiledb=yes deprecated=yes minizip=yes tests=yes use_asan=yes metal=no module_text_server_fb_enabled=yes $EXTRA_BUILD_FLAGS
     else
-        scons dev_build=yes target=editor compiledb=yes deprecated=yes minizip=yes tests=yes metal=no module_text_server_fb_enabled=yes
+        scons dev_build=yes target=editor compiledb=yes deprecated=yes minizip=yes tests=yes metal=no module_text_server_fb_enabled=yes $EXTRA_BUILD_FLAGS
     fi
 
 # Build the Rust plugin binaries.
@@ -146,6 +155,7 @@ _build-plugin architecture profile tracing_support:
 # Sign macOS plugin binaries using the identity from .cargo/.devidentity (one line, plain text).
 @_sign-macos-plugin:
     #!/usr/bin/env sh
+    # set -euxo pipefail
 
     # check for CI env variable, if it is set, skip signing
     if [ "$CI" = "1" ]; then
@@ -425,11 +435,18 @@ launch project="moddable-platformer" patchwork_profile="release" godot_profile="
             echo "If you think this OS should be supported, please open an issue on Github with your use-case and system details."
             exit 1 ;;
     esac
-    
-    if [[ {{godot_profile}} = "release" ]] ; then
-        godot_path="build/godot/bin/godot.$platform.editor.$arch$ext"
+    if [[ "{{os()}}" = "macos" ]] ; then
+        if [[ {{godot_profile}} = "release" ]] ; then
+            godot_path="build/godot/bin/godot_macos_editor.app/Contents/MacOS/Godot"
+        else
+            godot_path="build/godot/bin/godot_macos_editor_dev.app/Contents/MacOS/Godot"
+        fi
     else
-        godot_path="build/godot/bin/godot.$platform.editor.dev.$arch$ext"
+        if [[ {{godot_profile}} = "release" ]] ; then
+            godot_path="build/godot/bin/godot.$platform.editor.$arch$ext"
+        else
+            godot_path="build/godot/bin/godot.$platform.editor.dev.$arch$ext"
+        fi
     fi
 
     $godot_path -e --path "build/{{project}}"

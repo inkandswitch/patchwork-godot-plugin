@@ -21,7 +21,7 @@
             "type": "lldb",
             "request": "launch",
             "program": "",
-            "osx": { "program": "${workspaceFolder}/build/godot/bin/godot.macos.editor.arm64" },
+            "osx": { "program": "${workspaceFolder}/build/godot/bin/godot_macos_editor.app/Contents/MacOS/Godot" },
             "windows": { "program": "${workspaceFolder}/build/godot/bin/godot.windows.editor.x86_64.exe" },
             "linux": { "program": "${workspaceFolder}/build/godot/bin/godot.linux.editor.x86_64" },
             "args": [
@@ -41,7 +41,7 @@
             "type": "lldb",
             "request": "launch",
             "program": "",
-            "osx": { "program": "${workspaceFolder}/build/godot/bin/godot.macos.editor.dev.arm64" },
+            "osx": { "program": "build/godot/bin/godot_macos_editor_dev.app/Contents/MacOS/Godot" },
             "windows": { "program": "${workspaceFolder}/build/godot/bin/godot.windows.editor.dev.x86_64.exe" },
             "linux": { "program": "${workspaceFolder}/build/godot/bin/godot.linux.editor.dev.x86_64" },
             "args": [
@@ -61,7 +61,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "",
-            "osx": { "program": "${workspaceFolder}/build/godot/bin/godot.macos.editor.arm64" },
+            "osx": { "program": "${workspaceFolder}/build/godot/bin/godot_macos_editor.app/Contents/MacOS/Godot" },
             "windows": { "program": "${workspaceFolder}/build/godot/bin/godot.windows.editor.x86_64.exe" },
             "linux": { "program": "${workspaceFolder}/build/godot/bin/godot.linux.editor.x86_64" },
             "args": [
@@ -80,7 +80,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "",
-            "osx": { "program": "${workspaceFolder}/build/godot/bin/godot.macos.editor.dev.arm64" },
+            "osx": { "program": "build/godot/bin/godot_macos_editor_dev.app/Contents/MacOS/Godot" },
             "windows": { "program": "${workspaceFolder}/build/godot/bin/godot.windows.editor.dev.x86_64.exe" },
             "linux": { "program": "${workspaceFolder}/build/godot/bin/godot.linux.editor.dev.x86_64" },
             "args": [
@@ -98,7 +98,7 @@
             "name": "macOS: Launch moddable-platformer",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/godot/bin/godot.macos.editor.arm64",
+            "program": "${workspaceFolder}/build/godot/bin/godot_macos_editor.app/Contents/MacOS/Godot",
             "args": [
                 "-e",
                 "--path",
@@ -116,7 +116,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "",
-            "osx": { "program": "${workspaceFolder}/build/godot/bin/godot.macos.editor.dev.arm64" },
+            "osx": { "program": "build/godot/bin/godot_macos_editor_dev.app/Contents/MacOS/Godot" },
             "windows": { "program": "${workspaceFolder}/build/godot/bin/godot.windows.editor.dev.x86_64.exe" },
             "linux": { "program": "${workspaceFolder}/build/godot/bin/godot.linux.editor.dev.x86_64" },
             "args": [
@@ -134,7 +134,7 @@
             "name": "Linux: Launch moddable-platformer",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/godot/bin/godot.macos.editor.arm64",
+            "program": "${workspaceFolder}/build/godot/bin/godot_macos_editor.app/Contents/MacOS/Godot",
             "args": [
                 "-e",
                 "--path",
@@ -151,7 +151,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "",
-            "osx": { "program": "${workspaceFolder}/build/godot/bin/godot.macos.editor.dev.arm64" },
+            "osx": { "program": "build/godot/bin/godot_macos_editor_dev.app/Contents/MacOS/Godot" },
             "windows": { "program": "${workspaceFolder}/build/godot/bin/godot.windows.editor.dev.x86_64.exe" },
             "linux": { "program": "${workspaceFolder}/build/godot/bin/godot.linux.editor.dev.x86_64" },
             "args": [
