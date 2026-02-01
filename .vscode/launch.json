@@ -165,5 +165,46 @@
             "preLaunchTask": "Build: Prepare moddable-platformer (Debug)",
             "MIMode": "gdb"
         },
+        {
+            "name": "lldb-dap: Launch moddable-platformer",
+            "type": "lldb-dap",
+            "request": "launch",
+            "program": "",
+            "osx": { "program": "${workspaceFolder}/build/godot/bin/godot_macos_editor.app/Contents/MacOS/Godot" },
+            "windows": { "program": "${workspaceFolder}/build/godot/bin/godot.windows.editor.x86_64.exe" },
+            "linux": { "program": "${workspaceFolder}/build/godot/bin/godot.linux.editor.x86_64" },
+            "args": [
+                "-e",
+                "--path",
+                "${workspaceFolder}/build/moddable-platformer",
+            ],
+			"console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+			"initCommands": [
+				"command script import ${workspaceFolder}/build/GodotFormatters/godot_formatters",
+			],
+            "preLaunchTask": "Build: Prepare moddable-platformer (Release)"
+        },
+        {
+            "name": "lldb-dap: Launch moddable-platformer (dev)",
+            "type": "lldb-dap",
+            "request": "launch",
+            "program": "",
+            "osx": { "program": "build/godot/bin/godot_macos_editor_dev.app/Contents/MacOS/Godot" },
+            "windows": { "program": "${workspaceFolder}/build/godot/bin/godot.windows.editor.dev.x86_64.exe" },
+            "linux": { "program": "${workspaceFolder}/build/godot/bin/godot.linux.editor.dev.x86_64" },
+            "args": [
+                "-e",
+                "--path",
+                "${workspaceFolder}/build/moddable-platformer",
+            ],
+			"console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+			"initCommands": [
+				"command script import ${workspaceFolder}/build/GodotFormatters/godot_formatters",
+			],
+            // "preLaunchTask": "Build: Prepare moddable-platformer (Debug)"
+        },
+
     ]
 }
