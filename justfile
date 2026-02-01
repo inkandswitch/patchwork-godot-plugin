@@ -143,6 +143,32 @@ _build-plugin architecture profile tracing_support:
         cargo build --profile="{{profile}}" --target="{{architecture}}"
     fi
 
+# Sign macOS plugin binaries using the identity from .cargo/.devidentity (one line, plain text).
+@_sign-macos-plugin:
+    #!/usr/bin/env sh
+
+    # check for CI env variable, if it is set, skip signing
+    if [ "$CI" = "1" ]; then
+        echo "Skipping macOS plugin signing on CI"
+        exit 0
+    fi
+
+    if [ ! -f .cargo/.devidentity ]; then
+        echo "**** No development identity file found; if you want to enable code signing, create a .cargo/.devidentity file with your dev ID."
+        echo "**** Example: echo 'Developer ID Application: Your Name (TEAMID)' > .cargo/.devidentity"
+        echo "**** HINT: use 'security find-identity -p codesigning -v' to find your dev ID."
+        exit 0
+    fi
+    identity=$(cat .cargo/.devidentity)
+    framework="build/patchwork/bin/libpatchwork_rust_core.macos.framework"
+    if [ ! -d "$framework" ]; then
+        exit 0
+    fi
+    for dylib in "$framework"/*.dylib; do
+        [ -f "$dylib" ] && codesign -s "$identity" -f "$dylib"
+    done
+    codesign --deep -s "$identity" -f "$framework"
+
 # Build the multi-arch target for MacOS.
 [parallel]
 _build-plugin-all-macos profile tracing_support: (_build-plugin "aarch64-apple-darwin" profile tracing_support) \
@@ -157,7 +183,8 @@ _build-plugin-all-macos profile tracing_support: (_build-plugin "aarch64-apple-d
     lipo -create -output build/patchwork/bin/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.dylib \
         target/aarch64-apple-darwin/{{profile}}/libpatchwork_rust_core.dylib \
         target/x86_64-apple-darwin/{{profile}}/libpatchwork_rust_core.dylib
-    # TODO: Perhaps sign here instead of in github actions?
+
+    just _sign-macos-plugin
 
 [parallel]
 _build-plugin-single-arch architecture profile tracing_support: (_build-plugin architecture profile tracing_support) _make-plugin-dir
@@ -182,6 +209,7 @@ _build-plugin-single-arch architecture profile tracing_support: (_build-plugin a
     if [ -f "target/{{architecture}}/{{profile}}/libpatchwork_rust_core.dylib" ] ; then
         cp "target/{{architecture}}/{{profile}}/libpatchwork_rust_core.dylib" \
             build/patchwork/bin/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.dylib
+        just _sign-macos-plugin
     fi
     
     if [ -f "target/{{architecture}}/{{profile}}/patchwork_rust_core.pdb" ] ; then
