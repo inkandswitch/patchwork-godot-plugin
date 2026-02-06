@@ -1,12 +1,15 @@
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::{fmt::Display};
 use automerge::{ChangeHash};
-use godot::classes::ClassDb;
+use godot::classes::{ClassDb, ResourceLoader};
 use godot::global::str_to_var;
+use indexmap::IndexMap;
 use samod::{DocumentId};
 use godot::meta::{ArgPassing, ByValue, GodotType, ToArg};
 use godot::{prelude::*, meta::ToGodot, meta::GodotConvert};
 use crate::fs::file_utils::FileContent;
+use crate::parser::godot_parser::GodotScene;
 use crate::project::project_api::{BranchViewModel, ChangeViewModel, DiffViewModel, SyncStatus};
 use crate::helpers::utils::{ChangedFile};
 use godot::builtin::Variant;
@@ -247,14 +250,62 @@ impl ToRealFloat for RealT {
     }
 }   
 
+trait ResourceGetter {
+    fn get_resource(&self, uid: Option<&str>, path: &str) -> Option<Gd<Resource>>;
+    fn get_sub_resource(&self, id: &str) -> Option<Gd<Resource>>;
+    fn get_ext_resource(&self, id: &str) -> Option<Gd<Resource>>;
+}
+
+struct DefaultResourceGetter;
+
+fn default_get_resource(uid: Option<&str>, path: &str) -> Option<Gd<Resource>> {
+    if let Some(uid) = uid {
+        ResourceLoader::singleton().load(uid)
+    } else {
+        ResourceLoader::singleton().load(path)
+    }
+}
+
+impl ResourceGetter for DefaultResourceGetter {
+    fn get_resource(&self, uid: Option<&str>, path: &str) -> Option<Gd<Resource>> {
+        default_get_resource(uid, path)
+    }
+    fn get_sub_resource(&self, id: &str) -> Option<Gd<Resource>> {
+        None
+    }
+    fn get_ext_resource(&self, id: &str) -> Option<Gd<Resource>> {
+        None
+    }
+}
+
+impl ResourceGetter for GodotScene {
+    fn get_resource(&self, uid: Option<&str>, path: &str) -> Option<Gd<Resource>> {
+        default_get_resource(uid, path)
+    }
+    fn get_sub_resource(&self, id: &str) -> Option<Gd<Resource>> {
+        let sub_resource = self.sub_resources.get(id)?;
+        let mut res = ClassDb::singleton().instantiate(sub_resource.resource_type.as_str()).try_to::<Gd<Resource>>().ok()?;
+        for (key, value) in sub_resource.properties.iter() {
+            res.set(key.as_str(), &VariantVal::from_str(value.value.as_str()).ok()?.to_godot_with_resource_getter(self));
+        }
+        Some(res)
+    }
+    fn get_ext_resource(&self, id: &str) -> Option<Gd<Resource>> {
+        let (uid, path) = self.ext_resources.get(id).map(|r| (r.uid.clone(), r.path.clone()))?;
+        default_get_resource(uid.as_deref(), path.as_str())
+    }
+}
+
 impl GodotConvert for VariantVal {
     type Via = Variant;
 }
 
+trait ToGodotWithResourceGetter {
+    fn to_godot_with_resource_getter(&self, resource_getter: &dyn ResourceGetter) -> Variant;
+}
 
-impl ToGodot for VariantVal {
-    type Pass = ByValue;
-    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
+impl ToGodotWithResourceGetter for VariantVal {
+    fn to_godot_with_resource_getter(&self, resource_getter: &dyn ResourceGetter) -> Variant {
         match self {
             VariantVal::Nil => Variant::nil(),
             VariantVal::Bool(b) => Variant::from(*b),
@@ -294,7 +345,7 @@ impl ToGodot for VariantVal {
                 let obj = instance.try_to::<Gd<godot::classes::Object>>();
                 if let Ok(mut obj) = obj {
                     for (key, value) in properties {
-                        obj.set(key.as_str(), &value.to_godot());
+                        obj.set(key.as_str(), &value.to_godot_with_resource_getter(resource_getter));
                     }
                     obj.to_variant()
                 } else {
@@ -304,28 +355,36 @@ impl ToGodot for VariantVal {
             VariantVal::Callable => str_to_var("Callable()"), // godot-rust doesn't expose a way to construct a default callable.
             VariantVal::Signal => str_to_var("Signal()"), // godot-rust doesn't expose a way to construct a default signal.
             VariantVal::Dictionary(dict_type, map) => {
-                if let Some((key_type, value_type)) = dict_type {
-                    // TODO
-                    Variant::nil()
-                } else {
-                    let mut dict = vdict! {};
-                    for (key, value) in map {
-                        dict.set(key.to_godot(), value.to_godot());
+                let mut dict = if let Some((key_type, value_type)) = dict_type {
+                    if let Ok(val) = str_to_var(format!("Dictionary[{}, {}]()", key_type.to_string(), value_type.to_string()).as_str()).try_to::<VarDictionary>(){
+                        val
+                    } else {
+                        vdict! {}
                     }
-                    dict.to_variant()                
-				}
+                } else {
+                    vdict! {}
+                };
+                for (key, value) in map {
+                    dict.set(key.to_godot_with_resource_getter(resource_getter), value.to_godot_with_resource_getter(resource_getter));
+                }
+                dict.to_variant()                
+
             },
             VariantVal::Array(type_, array) => {
-                if let Some(type_) = type_ {
-                    // TODO
-                    Variant::nil()
-                } else {
-                    let mut godot_array = varray! {};
-                    for value in array {
-                        godot_array.push(&value.to_godot().to_variant());
+                let mut godot_array = if let Some(type_) = type_ {
+                    if let Ok(val) = str_to_var(format!("Array[{}]()", type_.to_string()).as_str()).try_to::<VarArray>(){
+                        val
+                    } else {
+                        array![]
                     }
-                    godot_array.to_variant()
+                } else {
+                    array![]
+                };
+                for value in array {
+                    godot_array.push(&value.to_godot_with_resource_getter(resource_getter).to_variant());
                 }
+                godot_array.to_variant()
+
             }
             VariantVal::PackedByteArray(bytes) => PackedByteArray::from(bytes.as_slice()).to_variant(),
             VariantVal::PackedInt32Array(array) => PackedInt32Array::from(array.as_slice()).to_variant(),
@@ -337,10 +396,16 @@ impl ToGodot for VariantVal {
             VariantVal::PackedVector3Array(array) => array.iter().map(|(x, y, z)| Vector3::new(x.to_real(), y.to_real(), z.to_real())).collect::<PackedVector3Array>().to_variant(),
             VariantVal::PackedColorArray(array) => array.iter().map(|(r, g, b, a)| Color::from_rgba(r.to_real(), g.to_real(), b.to_real(), a.to_real())).collect::<PackedColorArray>().to_variant(),
             VariantVal::PackedVector4Array(array) => array.iter().map(|(x, y, z, w)| Vector4::new(x.to_real(), y.to_real(), z.to_real(), w.to_real())).collect::<PackedVector4Array>().to_variant(),
-            // TODO: this.
-            VariantVal::Resource(uid, path) => Variant::nil(),
-            VariantVal::SubResource(s) => Variant::nil(),
-            VariantVal::ExtResource(id, uid, path) => Variant::nil(),
+            VariantVal::Resource(uid, path) => resource_getter.get_resource(uid.as_deref(), path.as_str()).to_variant(),
+            VariantVal::SubResource(id) => resource_getter.get_sub_resource(id).to_variant(),
+            VariantVal::ExtResource(id) =>  resource_getter.get_ext_resource(id).to_variant(),
         }
+    }
+}
+
+impl ToGodot for VariantVal {
+    type Pass = ByValue;
+    fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
+        self.to_godot_with_resource_getter(&DefaultResourceGetter)
     }
 }

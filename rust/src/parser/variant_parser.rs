@@ -6,9 +6,8 @@ use std::{
 use indexmap::IndexMap;
 
 use base64::Engine;
-use godot::{builtin::*, meta::ToGodot, prelude::GodotConvert};
 use lexical::{NumberFormatBuilder, WriteFloatOptions};
-use num_traits::{Zero, Float};
+use num_traits::{Float};
 
 const REALT_IS_DOUBLE: bool = false;
 
@@ -100,7 +99,7 @@ pub fn format_float_for_variant<T: Float + FormatFloatLexical>(value: T) -> Stri
 }
 
 /// Float for variant output: use format_float_for_variant then append ".0" if result looks like an integer (Godot rule).
-fn format_float_rtos_fix<T: Float + FormatFloatLexical>(value: T, compat: bool) -> String {
+fn rtos_fix_impl<T: Float + FormatFloatLexical>(value: T, compat: bool) -> String {
     if value.is_zero() {
         return "0".to_string();
     }
@@ -117,11 +116,28 @@ fn format_float_rtos_fix<T: Float + FormatFloatLexical>(value: T, compat: bool) 
         s
     }
 }
+trait RTosFix {
+    fn rtos_fix(&self, compat: bool) -> String;
+}
 
-fn format_float_rtos_fix_for_RealT(value: &RealT, compat: bool) -> String {
-    match value {
-        RealT::F32(f) => format_float_rtos_fix(*f, compat),
-        RealT::F64(f) => format_float_rtos_fix(*f, compat),
+impl RTosFix for RealT {
+    fn rtos_fix(&self, compat: bool) -> String {
+        match self {
+            RealT::F32(f) => rtos_fix_impl(*f, compat),
+            RealT::F64(f) => rtos_fix_impl(*f, compat),
+        }
+    }
+}
+
+impl RTosFix for f32 {
+    fn rtos_fix(&self, compat: bool) -> String {
+        rtos_fix_impl(*self, compat)
+    }
+}
+
+impl RTosFix for f64 {
+    fn rtos_fix(&self, compat: bool) -> String {
+        rtos_fix_impl(*self, compat)
     }
 }
 
@@ -147,7 +163,7 @@ pub enum ElemType {
     Identifier(String),
     Resource(Option<String>, String),
     SubResource(String),
-    ExtResource(String, Option<String>, Option<String>),
+    ExtResource(String),
 }
 
 #[derive(Clone, Debug)]
@@ -206,7 +222,7 @@ pub enum VariantVal {
 
     Resource(Option<String>, String),
     SubResource(String),
-    ExtResource(String, Option<String>, Option<String>),
+    ExtResource(String),
 }
 
 impl PartialEq for ElemType {
@@ -215,7 +231,7 @@ impl PartialEq for ElemType {
             (ElemType::Identifier(a), ElemType::Identifier(b)) => a == b,
             (ElemType::Resource(a, b), ElemType::Resource(c, d)) => a == c && b == d,
             (ElemType::SubResource(a), ElemType::SubResource(b)) => a == b,
-            (ElemType::ExtResource(a, b, c), ElemType::ExtResource(d, e, f)) => a == d && b == e && c == f,
+            (ElemType::ExtResource(a), ElemType::ExtResource(b)) => a == b,
             _ => false,
         }
     }
@@ -232,12 +248,8 @@ impl std::hash::Hash for ElemType {
                 b.hash(state);
             }
             ElemType::SubResource(s) => s.hash(state),
-            ElemType::ExtResource(a, b, c) => {
+            ElemType::ExtResource(a) => {
                 a.hash(state);
-                if let Some(b) = b {
-                    b.hash(state);
-                }
-                c.hash(state);
             }
         }
     }
@@ -338,7 +350,7 @@ impl PartialEq for VariantVal {
             }),
             (Resource(ua, pa), Resource(ub, pb)) => (ua, pa) == (ub, pb),
             (SubResource(a), SubResource(b)) => a == b,
-            (ExtResource(ia, ua, pa), ExtResource(ib, ub, pb)) => (ia, ua, pa) == (ib, ub, pb),
+            (ExtResource(ia), ExtResource(ib)) => ia == ib,
             _ => false,
         }
     }
@@ -417,7 +429,7 @@ impl std::hash::Hash for VariantVal {
             }),
             VariantVal::Resource(u, p) => (u, p).hash(state),
             VariantVal::SubResource(s) => s.hash(state),
-            VariantVal::ExtResource(i, u, p) => (i, u, p).hash(state),
+            VariantVal::ExtResource(id) => id.hash(state),
             VariantVal::Transform2d(a0, a1, a2) => {
                 (a0.0.to_f64().to_bits(), a0.1.to_f64().to_bits(), a1.0.to_f64().to_bits(), a1.1.to_f64().to_bits(), a2.0.to_f64().to_bits(), a2.1.to_f64().to_bits()).hash(state);
             }
@@ -472,17 +484,8 @@ enum Token {
     Eof,
 }
 
-fn is_ascii_alpha(c: char) -> bool {
-    c.is_ascii_alphabetic()
-}
 fn is_underscore(c: char) -> bool {
     c == '_'
-}
-fn is_digit(c: char) -> bool {
-    c.is_ascii_digit()
-}
-fn is_hex_digit(c: char) -> bool {
-    c.is_ascii_hexdigit()
 }
 
 fn stor_fix(s: &str) -> Option<f64> {
@@ -601,7 +604,7 @@ impl<'a> Lexer<'a> {
                     let mut hex = String::new();
                     loop {
                         match self.get_char() {
-                            Some(ch) if is_hex_digit(ch) => hex.push(ch),
+                            Some(ch) if ch.is_ascii_hexdigit() => hex.push(ch),
                             other => {
                                 if let Some(c) = other {
                                     self.put_back(c);
@@ -628,18 +631,18 @@ impl<'a> Lexer<'a> {
                 '-' => {
                     let next = self.get_char();
                     match next {
-                        Some(c) if is_digit(c) => {
+                        Some(c) if c.is_ascii_digit() => {
                             self.put_back(c);
                             self.put_back('-');
                             Ok(self.parse_number()?)
                         }
-                        Some(c) if is_ascii_alpha(c) || is_underscore(c) => {
+                        Some(c) if c.is_ascii_alphabetic() || is_underscore(c) => {
                             // Identifier like -inf, inf_neg (Godot allows minus-prefix for these)
                             let mut token_text = String::from("-");
                             let mut cur = c;
                             let mut first = true;
                             loop {
-                                if is_ascii_alpha(cur) || is_underscore(cur) || (!first && is_digit(cur)) {
+                                if cur.is_ascii_alphabetic() || is_underscore(cur) || (!first && cur.is_ascii_digit()) {
                                     token_text.push(cur);
                                     first = false;
                                     cur = match self.get_char() {
@@ -662,16 +665,16 @@ impl<'a> Lexer<'a> {
                         }
                     }
                 }
-                c if is_digit(c) => {
+                c if c.is_ascii_digit() => {
                     self.put_back(c);
                     Ok(self.parse_number()?)
                 }
-                c if is_ascii_alpha(c) || is_underscore(c) => {
+                c if c.is_ascii_alphabetic() || is_underscore(c) => {
                     let mut token_text = String::new();
                     let mut cur = c;
                     let mut first = true;
                     loop {
-                        if is_ascii_alpha(cur) || is_underscore(cur) || (!first && is_digit(cur)) {
+                        if cur.is_ascii_alphabetic() || is_underscore(cur) || (!first && cur.is_ascii_digit()) {
                             token_text.push(cur);
                             first = false;
                             cur = match self.get_char() {
@@ -751,7 +754,7 @@ impl<'a> Lexer<'a> {
                 None => break,
             };
             match (reading_int, c) {
-                (true, c) if is_digit(c) => token_text.push(c),
+                (true, c) if c.is_ascii_digit() => token_text.push(c),
                 (true, '.') => {
                     token_text.push(c);
                     reading_int = false;
@@ -762,7 +765,7 @@ impl<'a> Lexer<'a> {
                     reading_int = false;
                     is_float = true;
                 }
-                (false, c) if is_digit(c) => token_text.push(c),
+                (false, c) if c.is_ascii_digit() => token_text.push(c),
                 (false, 'e' | 'E') => {
                     token_text.push(c);
                     is_float = true;
@@ -788,27 +791,6 @@ impl<'a> Lexer<'a> {
 }
 
 
-enum ResourceGetterError{
-    Unimplemented,
-    NotFound,
-    InvalidFormat,
-}
-
-trait ResourceGetter{
-    fn get_sub_resource_type_and_properties(&self, id: &str) -> Result<(String, IndexMap<String, String>), ResourceGetterError>;
-    fn get_ext_resource_uid_and_path(&self, id: &str) -> Result<(Option<String>, String), ResourceGetterError>;
-}
-
-struct DefaultResourceGetter{}
-
-impl ResourceGetter for DefaultResourceGetter {
-    fn get_sub_resource_type_and_properties(&self, id: &str) -> Result<(String, IndexMap<String, String>), ResourceGetterError> {
-        Err(ResourceGetterError::Unimplemented)
-    }
-    fn get_ext_resource_uid_and_path(&self, id: &str) -> Result<(Option<String>, String), ResourceGetterError> {
-        Err(ResourceGetterError::Unimplemented)
-    }
-}
 
 // -----------------------------------------------------------------------------
 // Parser — recursive descent, mirrors parse_value / _parse_dictionary / _parse_array
@@ -818,16 +800,14 @@ impl ResourceGetter for DefaultResourceGetter {
 struct Parser<'a> {
     lexer: Lexer<'a>,
     current: Option<Token>,
-    resource_getter: &'a dyn ResourceGetter,
     realt_is_double: bool,
 }
 
 impl<'a> Parser<'a> {
-    fn new(s: &'a str, resource_getter: &'a dyn ResourceGetter, realt_is_double: bool) -> Self {
+    fn new(s: &'a str, realt_is_double: bool) -> Self {
         Parser {
             lexer: Lexer::new(s),
             current: None,
-            resource_getter,
             realt_is_double,
         }
     }
@@ -1444,12 +1424,8 @@ impl<'a> Parser<'a> {
                     Token::Str(id) => id.clone(),
                     _ => return Err(VariantParseError("Expected string or identifier for ExtResource".into())),
                 };
-                let (uid, path) = match self.resource_getter.get_ext_resource_uid_and_path(&id_str) {
-                    Ok((uid, path)) => (uid, Some(path)),
-                    Err(_) => (None, None)
-                };
                 self.expect(")")?;
-                Ok(VariantVal::ExtResource(id_str, uid, path))
+                Ok(VariantVal::ExtResource(id_str))
             }
             _ => unreachable!(),
         }
@@ -1485,7 +1461,7 @@ impl<'a> Parser<'a> {
             Ok(VariantVal::String(s)) => Ok(ElemType::Identifier(s)),
             Ok(VariantVal::Resource(uid, path)) => Ok(ElemType::Resource(uid, path)),
             Ok(VariantVal::SubResource(s)) => Ok(ElemType::SubResource(s)),
-            Ok(VariantVal::ExtResource(id, uid, path)) => Ok(ElemType::ExtResource(id, uid, path)),
+            Ok(VariantVal::ExtResource(id)) => Ok(ElemType::ExtResource(id)),
             _ => Err(VariantParseError("Expected identifier for type".into())),
         }
     }
@@ -1549,8 +1525,8 @@ impl<'a> Parser<'a> {
 // -----------------------------------------------------------------------------
 
 impl VariantVal{
-    fn parse_variant(s: &str, resource_getter: &dyn ResourceGetter) -> Result<Self, VariantParseError> {
-        let mut parser = Parser::new(s.trim(), resource_getter, REALT_IS_DOUBLE);
+    fn parse_variant(s: &str) -> Result<Self, VariantParseError> {
+        let mut parser = Parser::new(s.trim(), REALT_IS_DOUBLE);
         let first = parser.advance()?;
         if matches!(first, Token::Eof) {
             return Err(VariantParseError("Expected value".into()));
@@ -1568,7 +1544,7 @@ impl FromStr for VariantVal {
     type Err = VariantParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::parse_variant(s, &DefaultResourceGetter{})
+        Self::parse_variant(s)
     }
 }
 
@@ -1585,7 +1561,7 @@ impl Display for ElemType {
                 None => write!(f, "Resource(\"{}\")", path),
             },
             ElemType::SubResource(s) => write!(f, "SubResource(\"{}\")", s),
-            ElemType::ExtResource(id, _, _) => write!(f, "ExtResource(\"{}\")", id),
+            ElemType::ExtResource(id) => write!(f, "ExtResource(\"{}\")", id),
         }
     }
 }
@@ -1604,24 +1580,24 @@ impl VariantVal {
             Nil => write!(f, "null"),
             Bool(b) => write!(f, "{}", if *b { "true" } else { "false" }),
             Int(i) => write!(f, "{}", i),
-            Float(x) => write!(f, "{}", format_float_rtos_fix(*x, compat)),
+            Float(x) => write!(f, "{}", rtos_fix_impl(*x, compat)),
             String(s) => write!(f, "\"{}\"", escape_string_for_variant(s)),
-            Vector2(x, y) => write!(f, "Vector2({}, {})", format_float_rtos_fix_for_RealT(x, compat), format_float_rtos_fix_for_RealT(y, compat)),
+            Vector2(x, y) => write!(f, "Vector2({}, {})", x.rtos_fix(compat), y.rtos_fix(compat)),
             Vector2i(x, y) => write!(f, "Vector2i({}, {})", x, y),
-            Rect2(p, sz) => write!(f, "Rect2({}, {}, {}, {})", format_float_rtos_fix_for_RealT(&p.0, compat), format_float_rtos_fix_for_RealT(&p.1, compat), format_float_rtos_fix_for_RealT(&sz.0, compat), format_float_rtos_fix_for_RealT(&sz.1, compat)),
+            Rect2(p, sz) => write!(f, "Rect2({}, {}, {}, {})", p.0.rtos_fix(compat), p.1.rtos_fix(compat), sz.0.rtos_fix(compat), sz.1.rtos_fix(compat)),
             Rect2i((px, py), (sx, sy)) => write!(f, "Rect2i({}, {}, {}, {})", px, py, sx, sy),
-            Vector3(x, y, z) => write!(f, "Vector3({}, {}, {})", format_float_rtos_fix_for_RealT(x, compat), format_float_rtos_fix_for_RealT(y, compat), format_float_rtos_fix_for_RealT(z, compat)),
+            Vector3(x, y, z) => write!(f, "Vector3({}, {}, {})", x.rtos_fix(compat), y.rtos_fix(compat), z.rtos_fix(compat)),
             Vector3i(x, y, z) => write!(f, "Vector3i({}, {}, {})", x, y, z),
-            Transform2d(c0, c1, c2) => write!(f, "Transform2D({}, {}, {}, {}, {}, {})", format_float_rtos_fix_for_RealT(&c0.0, compat), format_float_rtos_fix_for_RealT(&c0.1, compat), format_float_rtos_fix_for_RealT(&c1.0, compat), format_float_rtos_fix_for_RealT(&c1.1, compat), format_float_rtos_fix_for_RealT(&c2.0, compat), format_float_rtos_fix_for_RealT(&c2.1, compat)),
-            Vector4(x, y, z, w) => write!(f, "Vector4({}, {}, {}, {})", format_float_rtos_fix_for_RealT(x, compat), format_float_rtos_fix_for_RealT(y, compat), format_float_rtos_fix_for_RealT(z, compat), format_float_rtos_fix_for_RealT(w, compat)),
+            Transform2d(c0, c1, c2) => write!(f, "Transform2D({}, {}, {}, {}, {}, {})", c0.0.rtos_fix(compat), c0.1.rtos_fix(compat), c1.0.rtos_fix(compat), c1.1.rtos_fix(compat), c2.0.rtos_fix(compat), c2.1.rtos_fix(compat)),
+            Vector4(x, y, z, w) => write!(f, "Vector4({}, {}, {}, {})", x.rtos_fix(compat), y.rtos_fix(compat), z.rtos_fix(compat), w.rtos_fix(compat)),
             Vector4i(x, y, z, w) => write!(f, "Vector4i({}, {}, {}, {})", x, y, z, w),
-            Plane((nx, ny, nz), d) => write!(f, "Plane({}, {}, {}, {})", format_float_rtos_fix_for_RealT(nx, compat), format_float_rtos_fix_for_RealT(ny, compat), format_float_rtos_fix_for_RealT(nz, compat), format_float_rtos_fix_for_RealT(d, compat)),
-            Quaternion(x, y, z, w) => write!(f, "Quaternion({}, {}, {}, {})", format_float_rtos_fix_for_RealT(x, compat), format_float_rtos_fix_for_RealT(y, compat), format_float_rtos_fix_for_RealT(z, compat), format_float_rtos_fix_for_RealT(w, compat)),
-            Aabb(p, s) => write!(f, "AABB({}, {}, {}, {}, {}, {})", format_float_rtos_fix_for_RealT(&p.0, compat), format_float_rtos_fix_for_RealT(&p.1, compat), format_float_rtos_fix_for_RealT(&p.2, compat), format_float_rtos_fix_for_RealT(&s.0, compat), format_float_rtos_fix_for_RealT(&s.1, compat), format_float_rtos_fix_for_RealT(&s.2, compat)),
-            Basis(r0, r1, r2) => write!(f, "Basis({}, {}, {}, {}, {}, {}, {}, {}, {})", format_float_rtos_fix_for_RealT(&r0.0, compat), format_float_rtos_fix_for_RealT(&r0.1, compat), format_float_rtos_fix_for_RealT(&r0.2, compat), format_float_rtos_fix_for_RealT(&r1.0, compat), format_float_rtos_fix_for_RealT(&r1.1, compat), format_float_rtos_fix_for_RealT(&r1.2, compat), format_float_rtos_fix_for_RealT(&r2.0, compat), format_float_rtos_fix_for_RealT(&r2.1, compat), format_float_rtos_fix_for_RealT(&r2.2, compat)),
-            Transform3d((r0, r1, r2), o) => write!(f, "Transform3D({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})", format_float_rtos_fix_for_RealT(&r0.0, compat), format_float_rtos_fix_for_RealT(&r0.1, compat), format_float_rtos_fix_for_RealT(&r0.2, compat), format_float_rtos_fix_for_RealT(&r1.0, compat), format_float_rtos_fix_for_RealT(&r1.1, compat), format_float_rtos_fix_for_RealT(&r1.2, compat), format_float_rtos_fix_for_RealT(&r2.0, compat), format_float_rtos_fix_for_RealT(&r2.1, compat), format_float_rtos_fix_for_RealT(&r2.2, compat), format_float_rtos_fix_for_RealT(&o.0, compat), format_float_rtos_fix_for_RealT(&o.1, compat), format_float_rtos_fix_for_RealT(&o.2, compat)),
-            Projection(c0, c1, c2, c3) => write!(f, "Projection({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})", format_float_rtos_fix_for_RealT(&c0.0, compat), format_float_rtos_fix_for_RealT(&c0.1, compat), format_float_rtos_fix_for_RealT(&c0.2, compat), format_float_rtos_fix_for_RealT(&c0.3, compat), format_float_rtos_fix_for_RealT(&c1.0, compat), format_float_rtos_fix_for_RealT(&c1.1, compat), format_float_rtos_fix_for_RealT(&c1.2, compat), format_float_rtos_fix_for_RealT(&c1.3, compat), format_float_rtos_fix_for_RealT(&c2.0, compat), format_float_rtos_fix_for_RealT(&c2.1, compat), format_float_rtos_fix_for_RealT(&c2.2, compat), format_float_rtos_fix_for_RealT(&c2.3, compat), format_float_rtos_fix_for_RealT(&c3.0, compat), format_float_rtos_fix_for_RealT(&c3.1, compat), format_float_rtos_fix_for_RealT(&c3.2, compat), format_float_rtos_fix_for_RealT(&c3.3, compat)),
-            Color(r, g, b, a) => write!(f, "Color({}, {}, {}, {})", format_float_rtos_fix(*r, compat), format_float_rtos_fix(*g, compat), format_float_rtos_fix(*b, compat), format_float_rtos_fix(*a, compat)),
+            Plane((nx, ny, nz), d) => write!(f, "Plane({}, {}, {}, {})", nx.rtos_fix(compat), ny.rtos_fix(compat), nz.rtos_fix(compat), d.rtos_fix(compat)),
+            Quaternion(x, y, z, w) => write!(f, "Quaternion({}, {}, {}, {})", x.rtos_fix(compat), y.rtos_fix(compat), z.rtos_fix(compat), w.rtos_fix(compat)),
+            Aabb(p, s) => write!(f, "AABB({}, {}, {}, {}, {}, {})", p.0.rtos_fix(compat), p.1.rtos_fix(compat), p.2.rtos_fix(compat), s.0.rtos_fix(compat), s.1.rtos_fix(compat), s.2.rtos_fix(compat)),
+            Basis(r0, r1, r2) => write!(f, "Basis({}, {}, {}, {}, {}, {}, {}, {}, {})", r0.0.rtos_fix(compat), r0.1.rtos_fix(compat), r0.2.rtos_fix(compat), r1.0.rtos_fix(compat), r1.1.rtos_fix(compat), r1.2.rtos_fix(compat), r2.0.rtos_fix(compat), r2.1.rtos_fix(compat), r2.2.rtos_fix(compat)),
+            Transform3d((r0, r1, r2), o) => write!(f, "Transform3D({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})", r0.0.rtos_fix(compat), r0.1.rtos_fix(compat), r0.2.rtos_fix(compat), r1.0.rtos_fix(compat), r1.1.rtos_fix(compat), r1.2.rtos_fix(compat), r2.0.rtos_fix(compat), r2.1.rtos_fix(compat), r2.2.rtos_fix(compat), o.0.rtos_fix(compat), o.1.rtos_fix(compat), o.2.rtos_fix(compat)),
+            Projection(c0, c1, c2, c3) => write!(f, "Projection({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})", c0.0.rtos_fix(compat), c0.1.rtos_fix(compat), c0.2.rtos_fix(compat), c0.3.rtos_fix(compat), c1.0.rtos_fix(compat), c1.1.rtos_fix(compat), c1.2.rtos_fix(compat), c1.3.rtos_fix(compat), c2.0.rtos_fix(compat), c2.1.rtos_fix(compat), c2.2.rtos_fix(compat), c2.3.rtos_fix(compat), c3.0.rtos_fix(compat), c3.1.rtos_fix(compat), c3.2.rtos_fix(compat), c3.3.rtos_fix(compat)),
+            Color(r, g, b, a) => write!(f, "Color({}, {}, {}, {})", rtos_fix_impl(*r, compat), rtos_fix_impl(*g, compat), rtos_fix_impl(*b, compat), rtos_fix_impl(*a, compat)),
             StringName(s) => write!(f, "&\"{}\"", escape_string_for_variant(s)),
             NodePath(s) => write!(f, "NodePath(\"{}\")", escape_string_for_variant(s)),
             Rid(id) => if id.is_empty() { write!(f, "RID()") } else { write!(f, "RID({})", id) },
@@ -1721,7 +1697,7 @@ impl VariantVal {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}", format_float_rtos_fix(*x, compat))?;
+                    write!(f, "{}", x.rtos_fix(compat))?;
                 }
                 write!(f, ")")
             }
@@ -1731,7 +1707,7 @@ impl VariantVal {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}", format_float_rtos_fix(*x, compat))?;
+                    write!(f, "{}", x.rtos_fix(compat))?;
                 }
                 write!(f, ")")
             }
@@ -1751,7 +1727,7 @@ impl VariantVal {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}, {}", format_float_rtos_fix_for_RealT(x, compat), format_float_rtos_fix_for_RealT(y, compat))?;
+                    write!(f, "{}, {}", x.rtos_fix(compat), y.rtos_fix(compat))?;
                 }
                 write!(f, ")")
             }
@@ -1761,7 +1737,7 @@ impl VariantVal {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}, {}, {}", format_float_rtos_fix_for_RealT(x, compat), format_float_rtos_fix_for_RealT(y, compat), format_float_rtos_fix_for_RealT(z, compat))?;
+                    write!(f, "{}, {}, {}", x.rtos_fix(compat), y.rtos_fix(compat), z.rtos_fix(compat))?;
                 }
                 write!(f, ")")
             }
@@ -1771,7 +1747,7 @@ impl VariantVal {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}, {}, {}, {}", format_float_rtos_fix_for_RealT(x, compat), format_float_rtos_fix_for_RealT(y, compat), format_float_rtos_fix_for_RealT(z, compat), format_float_rtos_fix_for_RealT(w, compat))?;
+                    write!(f, "{}, {}, {}, {}", x.rtos_fix(compat), y.rtos_fix(compat), z.rtos_fix(compat), w.rtos_fix(compat))?;
                 }
                 write!(f, ")")
             }
@@ -1781,7 +1757,7 @@ impl VariantVal {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}, {}, {}, {}", format_float_rtos_fix_for_RealT(r, compat), format_float_rtos_fix_for_RealT(g, compat), format_float_rtos_fix_for_RealT(b, compat), format_float_rtos_fix_for_RealT(a, compat))?;
+                    write!(f, "{}, {}, {}, {}", r.rtos_fix(compat), g.rtos_fix(compat), b.rtos_fix(compat), a.rtos_fix(compat))?;
                 }
                 write!(f, ")")
             }
@@ -1793,7 +1769,7 @@ impl VariantVal {
                 }
             }
             SubResource(id) => write!(f, "SubResource(\"{}\")", escape_string_for_variant(id)),
-            ExtResource(id, _, _) => {
+            ExtResource(id) => {
                 write!(f, "ExtResource(\"{}\")", escape_string_for_variant(id))
             }
         }
@@ -2033,7 +2009,7 @@ mod tests {
             ("SubResource(\"foo\")", VariantVal::SubResource("foo".into()), true),
             (
                 "ExtResource(\"1_ffe31\")",
-                VariantVal::ExtResource("1_ffe31".into(), None, None),
+                VariantVal::ExtResource("1_ffe31".into()),
                 true,
             ),
         ]
