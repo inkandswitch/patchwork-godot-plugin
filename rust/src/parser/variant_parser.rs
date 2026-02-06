@@ -10,6 +10,8 @@ use godot::{builtin::*, meta::ToGodot, prelude::GodotConvert};
 use lexical::{NumberFormatBuilder, WriteFloatOptions};
 use num_traits::{Zero, Float};
 
+const REALT_IS_DOUBLE: bool = false;
+
 
 // -----------------------------------------------------------------------------
 // Parse error
@@ -116,6 +118,13 @@ fn format_float_rtos_fix<T: Float + FormatFloatLexical>(value: T, compat: bool) 
     }
 }
 
+fn format_float_rtos_fix_for_RealT(value: &RealT, compat: bool) -> String {
+    match value {
+        RealT::F32(f) => format_float_rtos_fix(*f, compat),
+        RealT::F64(f) => format_float_rtos_fix(*f, compat),
+    }
+}
+
 /// Escape string for variant text (multiline style: only \ and ").
 fn escape_string_for_variant(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -138,7 +147,7 @@ pub enum ElemType {
     Identifier(String),
     Resource(Option<String>, String),
     SubResource(String),
-    ExtResource(String, Option<String>, String),
+    ExtResource(String, Option<String>, Option<String>),
 }
 
 #[derive(Clone, Debug)]
@@ -197,7 +206,7 @@ pub enum VariantVal {
 
     Resource(Option<String>, String),
     SubResource(String),
-    ExtResource(String, Option<String>, String),
+    ExtResource(String, Option<String>, Option<String>),
 }
 
 impl PartialEq for ElemType {
@@ -778,20 +787,48 @@ impl<'a> Lexer<'a> {
     }
 }
 
+
+enum ResourceGetterError{
+    Unimplemented,
+    NotFound,
+    InvalidFormat,
+}
+
+trait ResourceGetter{
+    fn get_sub_resource_type_and_properties(&self, id: &str) -> Result<(String, IndexMap<String, String>), ResourceGetterError>;
+    fn get_ext_resource_uid_and_path(&self, id: &str) -> Result<(Option<String>, String), ResourceGetterError>;
+}
+
+struct DefaultResourceGetter{}
+
+impl ResourceGetter for DefaultResourceGetter {
+    fn get_sub_resource_type_and_properties(&self, id: &str) -> Result<(String, IndexMap<String, String>), ResourceGetterError> {
+        Err(ResourceGetterError::Unimplemented)
+    }
+    fn get_ext_resource_uid_and_path(&self, id: &str) -> Result<(Option<String>, String), ResourceGetterError> {
+        Err(ResourceGetterError::Unimplemented)
+    }
+}
+
 // -----------------------------------------------------------------------------
 // Parser — recursive descent, mirrors parse_value / _parse_dictionary / _parse_array
 // -----------------------------------------------------------------------------
 
+
 struct Parser<'a> {
     lexer: Lexer<'a>,
     current: Option<Token>,
+    resource_getter: &'a dyn ResourceGetter,
+    realt_is_double: bool,
 }
 
 impl<'a> Parser<'a> {
-    fn new(s: &'a str) -> Self {
+    fn new(s: &'a str, resource_getter: &'a dyn ResourceGetter, realt_is_double: bool) -> Self {
         Parser {
             lexer: Lexer::new(s),
             current: None,
+            resource_getter,
+            realt_is_double,
         }
     }
 
@@ -957,6 +994,14 @@ impl<'a> Parser<'a> {
         Ok(args)
     }
 
+    fn real_t_from_f64(&self, f: f64) -> RealT {
+        if self.realt_is_double {
+            RealT::F64(f)
+        } else {
+            RealT::F32(f as f32)
+        }
+    }
+
     fn parse_construct_int(&mut self, count: usize) -> Result<Vec<i32>, VariantParseError> {
         let reals = self.parse_construct_real(count)?;
         reals
@@ -978,7 +1023,7 @@ impl<'a> Parser<'a> {
 
         if id == "Vector2" {
             let a = self.parse_construct_real(2)?;
-            return Ok(VariantVal::Vector2(RealT::F64(a[0]), RealT::F64(a[1])));
+            return Ok(VariantVal::Vector2(self.real_t_from_f64(a[0]), self.real_t_from_f64(a[1])));
         }
         if id == "Vector2i" {
             let a = self.parse_construct_int(2)?;
@@ -987,8 +1032,8 @@ impl<'a> Parser<'a> {
         if id == "Rect2" {
             let a = self.parse_construct_real(4)?;
             return Ok(VariantVal::Rect2(
-                (RealT::F64(a[0]), RealT::F64(a[1])),
-                (RealT::F64(a[2]), RealT::F64(a[3])),
+                (self.real_t_from_f64(a[0]), self.real_t_from_f64(a[1])),
+                (self.real_t_from_f64(a[2]), self.real_t_from_f64(a[3])),
             ));
         }
         if id == "Rect2i" {
@@ -997,7 +1042,7 @@ impl<'a> Parser<'a> {
         }
         if id == "Vector3" {
             let a = self.parse_construct_real(3)?;
-            return Ok(VariantVal::Vector3(RealT::F64(a[0]), RealT::F64(a[1]), RealT::F64(a[2])));
+            return Ok(VariantVal::Vector3(self.real_t_from_f64(a[0]), self.real_t_from_f64(a[1]), self.real_t_from_f64(a[2])));
         }
         if id == "Vector3i" {
             let a = self.parse_construct_int(3)?;
@@ -1006,10 +1051,10 @@ impl<'a> Parser<'a> {
         if id == "Vector4" {
             let a = self.parse_construct_real(4)?;
             return Ok(VariantVal::Vector4(
-                RealT::F64(a[0]),
-                RealT::F64(a[1]),
-                RealT::F64(a[2]),
-                RealT::F64(a[3]),
+                self.real_t_from_f64(a[0]),
+                self.real_t_from_f64(a[1]),
+                self.real_t_from_f64(a[2]),
+                self.real_t_from_f64(a[3]),
             ));
         }
         if id == "Vector4i" {
@@ -1019,79 +1064,79 @@ impl<'a> Parser<'a> {
         if id == "Transform2D" || id == "Matrix32" {
             let a = self.parse_construct_real(6)?;
             return Ok(VariantVal::Transform2d(
-                (RealT::F64(a[0]), RealT::F64(a[1])),
-                (RealT::F64(a[2]), RealT::F64(a[3])),
-                (RealT::F64(a[4]), RealT::F64(a[5])),
+                (self.real_t_from_f64(a[0]), self.real_t_from_f64(a[1])),
+                (self.real_t_from_f64(a[2]), self.real_t_from_f64(a[3])),
+                (self.real_t_from_f64(a[4]), self.real_t_from_f64(a[5])),
             ));
         }
         if id == "Plane" {
             let a = self.parse_construct_real(4)?;
             return Ok(VariantVal::Plane(
-                (RealT::F64(a[0]), RealT::F64(a[1]), RealT::F64(a[2])),
-                RealT::F64(a[3]),
+                (self.real_t_from_f64(a[0]), self.real_t_from_f64(a[1]), self.real_t_from_f64(a[2])),
+                self.real_t_from_f64(a[3]),
             ));
         }
         if id == "Quaternion" || id == "Quat" {
             let a = self.parse_construct_real(4)?;
             return Ok(VariantVal::Quaternion(
-                RealT::F64(a[0]),
-                RealT::F64(a[1]),
-                RealT::F64(a[2]),
-                RealT::F64(a[3]),
+                self.real_t_from_f64(a[0]),
+                self.real_t_from_f64(a[1]),
+                self.real_t_from_f64(a[2]),
+                self.real_t_from_f64(a[3]),
             ));
         }
         if id == "AABB" || id == "Rect3" {
             let a = self.parse_construct_real(6)?;
             return Ok(VariantVal::Aabb(
-                (RealT::F64(a[0]), RealT::F64(a[1]), RealT::F64(a[2])),
-                (RealT::F64(a[3]), RealT::F64(a[4]), RealT::F64(a[5])),
+                (self.real_t_from_f64(a[0]), self.real_t_from_f64(a[1]), self.real_t_from_f64(a[2])),
+                (self.real_t_from_f64(a[3]), self.real_t_from_f64(a[4]), self.real_t_from_f64(a[5])),
             ));
         }
         if id == "Basis" || id == "Matrix3" {
             let a = self.parse_construct_real(9)?;
             return Ok(VariantVal::Basis(
-                (RealT::F64(a[0]), RealT::F64(a[1]), RealT::F64(a[2])),
-                (RealT::F64(a[3]), RealT::F64(a[4]), RealT::F64(a[5])),
-                (RealT::F64(a[6]), RealT::F64(a[7]), RealT::F64(a[8])),
+                (self.real_t_from_f64(a[0]), self.real_t_from_f64(a[1]), self.real_t_from_f64(a[2])),
+                (self.real_t_from_f64(a[3]), self.real_t_from_f64(a[4]), self.real_t_from_f64(a[5])),
+                (self.real_t_from_f64(a[6]), self.real_t_from_f64(a[7]), self.real_t_from_f64(a[8])),
             ));
         }
         if id == "Transform3D" || id == "Transform" {
             let a = self.parse_construct_real(12)?;
             return Ok(VariantVal::Transform3d(
                 (
-                    (RealT::F64(a[0]), RealT::F64(a[1]), RealT::F64(a[2])),
-                    (RealT::F64(a[3]), RealT::F64(a[4]), RealT::F64(a[5])),
-                    (RealT::F64(a[6]), RealT::F64(a[7]), RealT::F64(a[8])),
+                    (self.real_t_from_f64(a[0]), self.real_t_from_f64(a[1]), self.real_t_from_f64(a[2])),
+                    (self.real_t_from_f64(a[3]), self.real_t_from_f64(a[4]), self.real_t_from_f64(a[5])),
+                    (self.real_t_from_f64(a[6]), self.real_t_from_f64(a[7]), self.real_t_from_f64(a[8])),
                 ),
-                (RealT::F64(a[9]), RealT::F64(a[10]), RealT::F64(a[11])),
+                (self.real_t_from_f64(a[9]), self.real_t_from_f64(a[10]), self.real_t_from_f64(a[11])),
             ));
         }
         if id == "Projection" {
             let a = self.parse_construct_real(16)?;
             return Ok(VariantVal::Projection(
                 (
-                    RealT::F64(a[0]),
-                    RealT::F64(a[1]),
-                    RealT::F64(a[2]),
-                    RealT::F64(a[3]),
+                    self.real_t_from_f64(a[0]),
+                    self.real_t_from_f64(a[1]),
+                    self.real_t_from_f64(a[2]),
+                    self.real_t_from_f64(a[3]),
                 ),
                 (
-                    RealT::F64(a[4]),
-                    RealT::F64(a[5]),
-                    RealT::F64(a[6]),
-                    RealT::F64(a[7]),
+                    self.real_t_from_f64(a[4]),
+                    self.real_t_from_f64(a[5]),
+                    self.real_t_from_f64(a[6]),
+                    self.real_t_from_f64(a[7]),
                 ),
                 (
-                    RealT::F64(a[8]),
-                    RealT::F64(a[9]),
-                    RealT::F64(a[10]),
-                    RealT::F64(a[11]),
+                    self.real_t_from_f64(a[8]),
+                    self.real_t_from_f64(a[9]),
+                    self.real_t_from_f64(a[10]),
+                    self.real_t_from_f64(a[11]),
                 ),
                 (
-                    RealT::F64(a[12]),
-                    RealT::F64(a[13]),
-                    RealT::F64(a[14]),
-                    RealT::F64(a[15]),
+                    self.real_t_from_f64(a[12]),
+                    self.real_t_from_f64(a[13]),
+                    self.real_t_from_f64(a[14]),
+                    self.real_t_from_f64(a[15]),
                 ),
             ));
         }
@@ -1225,7 +1270,7 @@ impl<'a> Parser<'a> {
             if a.len() % 2 != 0 {
                 return Err(VariantParseError("PackedVector2Array requires even number of components".into()));
             }
-            let pairs: Vec<_> = a.chunks(2).map(|c| (RealT::F64(c[0]), RealT::F64(c[1]))).collect();
+            let pairs: Vec<_> = a.chunks(2).map(|c| (self.real_t_from_f64(c[0]), self.real_t_from_f64(c[1]))).collect();
             return Ok(VariantVal::PackedVector2Array(pairs));
         }
         if id == "PackedVector3Array" || id == "PoolVector3Array" || id == "Vector3Array" {
@@ -1235,7 +1280,7 @@ impl<'a> Parser<'a> {
             }
             let triples: Vec<_> = a
                 .chunks(3)
-                .map(|c| (RealT::F64(c[0]), RealT::F64(c[1]), RealT::F64(c[2])))
+                .map(|c| (self.real_t_from_f64(c[0]), self.real_t_from_f64(c[1]), self.real_t_from_f64(c[2])))
                 .collect();
             return Ok(VariantVal::PackedVector3Array(triples));
         }
@@ -1246,7 +1291,7 @@ impl<'a> Parser<'a> {
             }
             let quads: Vec<_> = a
                 .chunks(4)
-                .map(|c| (RealT::F64(c[0]), RealT::F64(c[1]), RealT::F64(c[2]), RealT::F64(c[3])))
+                .map(|c| (self.real_t_from_f64(c[0]), self.real_t_from_f64(c[1]), self.real_t_from_f64(c[2]), self.real_t_from_f64(c[3])))
                 .collect();
             return Ok(VariantVal::PackedVector4Array(quads));
         }
@@ -1257,7 +1302,7 @@ impl<'a> Parser<'a> {
             }
             let quads: Vec<_> = a
                 .chunks(4)
-                .map(|c| (RealT::F64(c[0]), RealT::F64(c[1]), RealT::F64(c[2]), RealT::F64(c[3])))
+                .map(|c| (self.real_t_from_f64(c[0]), self.real_t_from_f64(c[1]), self.real_t_from_f64(c[2]), self.real_t_from_f64(c[3])))
                 .collect();
             return Ok(VariantVal::PackedColorArray(quads));
         }
@@ -1395,52 +1440,13 @@ impl<'a> Parser<'a> {
                 Ok(VariantVal::SubResource(id_str))
             }
             "ExtResource" => {
-                let (id_str, path, uid) = match &t {
-                    Token::Str(path) => {
-                        let path = path.clone();
-                        let next = self.advance()?;
-                        if matches!(next, Token::ParenClose) {
-                            (String::new(), path, None)
-                        } else if matches!(next, Token::Comma) {
-                            let t2 = self.advance()?;
-                            match &t2 {
-                                Token::Str(uid_or_path) => {
-                                    let uid_or_path = uid_or_path.clone();
-                                    let (uid, path) = if uid_or_path.starts_with("uid://") {
-                                        (Some(uid_or_path), String::new())
-                                    } else {
-                                        (None, uid_or_path)
-                                    };
-                                    (String::new(), path, uid)
-                                }
-                                _ => return Err(VariantParseError("Expected string".into())),
-                            }
-                        } else {
-                            return Err(VariantParseError("Expected ',' or ')'".into()));
-                        }
-                    }
-                    Token::Identifier(id_str) => {
-                        let id_str = id_str.clone();
-                        self.expect(",")?;
-                        let t2 = self.advance()?;
-                        let path = match &t2 {
-                            Token::Str(p) => p.clone(),
-                            _ => return Err(VariantParseError("Expected path string".into())),
-                        };
-                        let tok = self.get_token()?.clone();
-                        let uid =  if matches!(tok, Token::Comma) {
-                                self.advance()?;
-                                let t3 = self.advance()?;
-                                match &t3 {
-                                    Token::Str(u) if u.starts_with("uid://") => Some(u.clone()),
-                                    _ => None,
-                                }
-                            } else {
-                                None
-                            } ;
-                        (id_str, path, uid)
-                    }
+                let id_str = match &t {
+                    Token::Str(id) => id.clone(),
                     _ => return Err(VariantParseError("Expected string or identifier for ExtResource".into())),
+                };
+                let (uid, path) = match self.resource_getter.get_ext_resource_uid_and_path(&id_str) {
+                    Ok((uid, path)) => (uid, Some(path)),
+                    Err(_) => (None, None)
                 };
                 self.expect(")")?;
                 Ok(VariantVal::ExtResource(id_str, uid, path))
@@ -1542,11 +1548,9 @@ impl<'a> Parser<'a> {
 // FromStr
 // -----------------------------------------------------------------------------
 
-impl FromStr for VariantVal {
-    type Err = VariantParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut parser = Parser::new(s.trim());
+impl VariantVal{
+    fn parse_variant(s: &str, resource_getter: &dyn ResourceGetter) -> Result<Self, VariantParseError> {
+        let mut parser = Parser::new(s.trim(), resource_getter, REALT_IS_DOUBLE);
         let first = parser.advance()?;
         if matches!(first, Token::Eof) {
             return Err(VariantParseError("Expected value".into()));
@@ -1557,6 +1561,14 @@ impl FromStr for VariantVal {
             return Err(VariantParseError("Unexpected trailing input".into()));
         }
         Ok(value)
+    }
+}
+
+impl FromStr for VariantVal {
+    type Err = VariantParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse_variant(s, &DefaultResourceGetter{})
     }
 }
 
@@ -1594,22 +1606,22 @@ impl VariantVal {
             Int(i) => write!(f, "{}", i),
             Float(x) => write!(f, "{}", format_float_rtos_fix(*x, compat)),
             String(s) => write!(f, "\"{}\"", escape_string_for_variant(s)),
-            Vector2(x, y) => write!(f, "Vector2({}, {})", format_float_rtos_fix(x.to_f64(), compat), format_float_rtos_fix(y.to_f64(), compat)),
+            Vector2(x, y) => write!(f, "Vector2({}, {})", format_float_rtos_fix_for_RealT(x, compat), format_float_rtos_fix_for_RealT(y, compat)),
             Vector2i(x, y) => write!(f, "Vector2i({}, {})", x, y),
-            Rect2(p, sz) => write!(f, "Rect2({}, {}, {}, {})", format_float_rtos_fix(p.0.to_f64(), compat), format_float_rtos_fix(p.1.to_f64(), compat), format_float_rtos_fix(sz.0.to_f64(), compat), format_float_rtos_fix(sz.1.to_f64(), compat)),
+            Rect2(p, sz) => write!(f, "Rect2({}, {}, {}, {})", format_float_rtos_fix_for_RealT(&p.0, compat), format_float_rtos_fix_for_RealT(&p.1, compat), format_float_rtos_fix_for_RealT(&sz.0, compat), format_float_rtos_fix_for_RealT(&sz.1, compat)),
             Rect2i((px, py), (sx, sy)) => write!(f, "Rect2i({}, {}, {}, {})", px, py, sx, sy),
-            Vector3(x, y, z) => write!(f, "Vector3({}, {}, {})", format_float_rtos_fix(x.to_f64(), compat), format_float_rtos_fix(y.to_f64(), compat), format_float_rtos_fix(z.to_f64(), compat)),
+            Vector3(x, y, z) => write!(f, "Vector3({}, {}, {})", format_float_rtos_fix_for_RealT(x, compat), format_float_rtos_fix_for_RealT(y, compat), format_float_rtos_fix_for_RealT(z, compat)),
             Vector3i(x, y, z) => write!(f, "Vector3i({}, {}, {})", x, y, z),
-            Transform2d(c0, c1, c2) => write!(f, "Transform2D({}, {}, {}, {}, {}, {})", format_float_rtos_fix(c0.0.to_f64(), compat), format_float_rtos_fix(c0.1.to_f64(), compat), format_float_rtos_fix(c1.0.to_f64(), compat), format_float_rtos_fix(c1.1.to_f64(), compat), format_float_rtos_fix(c2.0.to_f64(), compat), format_float_rtos_fix(c2.1.to_f64(), compat)),
-            Vector4(x, y, z, w) => write!(f, "Vector4({}, {}, {}, {})", format_float_rtos_fix(x.to_f64(), compat), format_float_rtos_fix(y.to_f64(), compat), format_float_rtos_fix(z.to_f64(), compat), format_float_rtos_fix(w.to_f64(), compat)),
+            Transform2d(c0, c1, c2) => write!(f, "Transform2D({}, {}, {}, {}, {}, {})", format_float_rtos_fix_for_RealT(&c0.0, compat), format_float_rtos_fix_for_RealT(&c0.1, compat), format_float_rtos_fix_for_RealT(&c1.0, compat), format_float_rtos_fix_for_RealT(&c1.1, compat), format_float_rtos_fix_for_RealT(&c2.0, compat), format_float_rtos_fix_for_RealT(&c2.1, compat)),
+            Vector4(x, y, z, w) => write!(f, "Vector4({}, {}, {}, {})", format_float_rtos_fix_for_RealT(x, compat), format_float_rtos_fix_for_RealT(y, compat), format_float_rtos_fix_for_RealT(z, compat), format_float_rtos_fix_for_RealT(w, compat)),
             Vector4i(x, y, z, w) => write!(f, "Vector4i({}, {}, {}, {})", x, y, z, w),
-            Plane((nx, ny, nz), d) => write!(f, "Plane({}, {}, {}, {})", format_float_rtos_fix(nx.to_f64(), compat), format_float_rtos_fix(ny.to_f64(), compat), format_float_rtos_fix(nz.to_f64(), compat), format_float_rtos_fix(d.to_f64(), compat)),
-            Quaternion(x, y, z, w) => write!(f, "Quaternion({}, {}, {}, {})", format_float_rtos_fix(x.to_f64(), compat), format_float_rtos_fix(y.to_f64(), compat), format_float_rtos_fix(z.to_f64(), compat), format_float_rtos_fix(w.to_f64(), compat)),
-            Aabb(p, s) => write!(f, "AABB({}, {}, {}, {}, {}, {})", format_float_rtos_fix(p.0.to_f64(), compat), format_float_rtos_fix(p.1.to_f64(), compat), format_float_rtos_fix(p.2.to_f64(), compat), format_float_rtos_fix(s.0.to_f64(), compat), format_float_rtos_fix(s.1.to_f64(), compat), format_float_rtos_fix(s.2.to_f64(), compat)),
-            Basis(r0, r1, r2) => write!(f, "Basis({}, {}, {}, {}, {}, {}, {}, {}, {})", format_float_rtos_fix(r0.0.to_f64(), compat), format_float_rtos_fix(r0.1.to_f64(), compat), format_float_rtos_fix(r0.2.to_f64(), compat), format_float_rtos_fix(r1.0.to_f64(), compat), format_float_rtos_fix(r1.1.to_f64(), compat), format_float_rtos_fix(r1.2.to_f64(), compat), format_float_rtos_fix(r2.0.to_f64(), compat), format_float_rtos_fix(r2.1.to_f64(), compat), format_float_rtos_fix(r2.2.to_f64(), compat)),
-            Transform3d((r0, r1, r2), o) => write!(f, "Transform3D({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})", format_float_rtos_fix(r0.0.to_f64(), compat), format_float_rtos_fix(r0.1.to_f64(), compat), format_float_rtos_fix(r0.2.to_f64(), compat), format_float_rtos_fix(r1.0.to_f64(), compat), format_float_rtos_fix(r1.1.to_f64(), compat), format_float_rtos_fix(r1.2.to_f64(), compat), format_float_rtos_fix(r2.0.to_f64(), compat), format_float_rtos_fix(r2.1.to_f64(), compat), format_float_rtos_fix(r2.2.to_f64(), compat), format_float_rtos_fix(o.0.to_f64(), compat), format_float_rtos_fix(o.1.to_f64(), compat), format_float_rtos_fix(o.2.to_f64(), compat)),
-            Projection(c0, c1, c2, c3) => write!(f, "Projection({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})", format_float_rtos_fix(c0.0.to_f64(), compat), format_float_rtos_fix(c0.1.to_f64(), compat), format_float_rtos_fix(c0.2.to_f64(), compat), format_float_rtos_fix(c0.3.to_f64(), compat), format_float_rtos_fix(c1.0.to_f64(), compat), format_float_rtos_fix(c1.1.to_f64(), compat), format_float_rtos_fix(c1.2.to_f64(), compat), format_float_rtos_fix(c1.3.to_f64(), compat), format_float_rtos_fix(c2.0.to_f64(), compat), format_float_rtos_fix(c2.1.to_f64(), compat), format_float_rtos_fix(c2.2.to_f64(), compat), format_float_rtos_fix(c2.3.to_f64(), compat), format_float_rtos_fix(c3.0.to_f64(), compat), format_float_rtos_fix(c3.1.to_f64(), compat), format_float_rtos_fix(c3.2.to_f64(), compat), format_float_rtos_fix(c3.3.to_f64(), compat)),
-            Color(r, g, b, a) => write!(f, "Color({}, {}, {}, {})", format_float_rtos_fix(*r as f64, compat), format_float_rtos_fix(*g as f64, compat), format_float_rtos_fix(*b as f64, compat), format_float_rtos_fix(*a as f64, compat)),
+            Plane((nx, ny, nz), d) => write!(f, "Plane({}, {}, {}, {})", format_float_rtos_fix_for_RealT(nx, compat), format_float_rtos_fix_for_RealT(ny, compat), format_float_rtos_fix_for_RealT(nz, compat), format_float_rtos_fix_for_RealT(d, compat)),
+            Quaternion(x, y, z, w) => write!(f, "Quaternion({}, {}, {}, {})", format_float_rtos_fix_for_RealT(x, compat), format_float_rtos_fix_for_RealT(y, compat), format_float_rtos_fix_for_RealT(z, compat), format_float_rtos_fix_for_RealT(w, compat)),
+            Aabb(p, s) => write!(f, "AABB({}, {}, {}, {}, {}, {})", format_float_rtos_fix_for_RealT(&p.0, compat), format_float_rtos_fix_for_RealT(&p.1, compat), format_float_rtos_fix_for_RealT(&p.2, compat), format_float_rtos_fix_for_RealT(&s.0, compat), format_float_rtos_fix_for_RealT(&s.1, compat), format_float_rtos_fix_for_RealT(&s.2, compat)),
+            Basis(r0, r1, r2) => write!(f, "Basis({}, {}, {}, {}, {}, {}, {}, {}, {})", format_float_rtos_fix_for_RealT(&r0.0, compat), format_float_rtos_fix_for_RealT(&r0.1, compat), format_float_rtos_fix_for_RealT(&r0.2, compat), format_float_rtos_fix_for_RealT(&r1.0, compat), format_float_rtos_fix_for_RealT(&r1.1, compat), format_float_rtos_fix_for_RealT(&r1.2, compat), format_float_rtos_fix_for_RealT(&r2.0, compat), format_float_rtos_fix_for_RealT(&r2.1, compat), format_float_rtos_fix_for_RealT(&r2.2, compat)),
+            Transform3d((r0, r1, r2), o) => write!(f, "Transform3D({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})", format_float_rtos_fix_for_RealT(&r0.0, compat), format_float_rtos_fix_for_RealT(&r0.1, compat), format_float_rtos_fix_for_RealT(&r0.2, compat), format_float_rtos_fix_for_RealT(&r1.0, compat), format_float_rtos_fix_for_RealT(&r1.1, compat), format_float_rtos_fix_for_RealT(&r1.2, compat), format_float_rtos_fix_for_RealT(&r2.0, compat), format_float_rtos_fix_for_RealT(&r2.1, compat), format_float_rtos_fix_for_RealT(&r2.2, compat), format_float_rtos_fix_for_RealT(&o.0, compat), format_float_rtos_fix_for_RealT(&o.1, compat), format_float_rtos_fix_for_RealT(&o.2, compat)),
+            Projection(c0, c1, c2, c3) => write!(f, "Projection({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})", format_float_rtos_fix_for_RealT(&c0.0, compat), format_float_rtos_fix_for_RealT(&c0.1, compat), format_float_rtos_fix_for_RealT(&c0.2, compat), format_float_rtos_fix_for_RealT(&c0.3, compat), format_float_rtos_fix_for_RealT(&c1.0, compat), format_float_rtos_fix_for_RealT(&c1.1, compat), format_float_rtos_fix_for_RealT(&c1.2, compat), format_float_rtos_fix_for_RealT(&c1.3, compat), format_float_rtos_fix_for_RealT(&c2.0, compat), format_float_rtos_fix_for_RealT(&c2.1, compat), format_float_rtos_fix_for_RealT(&c2.2, compat), format_float_rtos_fix_for_RealT(&c2.3, compat), format_float_rtos_fix_for_RealT(&c3.0, compat), format_float_rtos_fix_for_RealT(&c3.1, compat), format_float_rtos_fix_for_RealT(&c3.2, compat), format_float_rtos_fix_for_RealT(&c3.3, compat)),
+            Color(r, g, b, a) => write!(f, "Color({}, {}, {}, {})", format_float_rtos_fix(*r, compat), format_float_rtos_fix(*g, compat), format_float_rtos_fix(*b, compat), format_float_rtos_fix(*a, compat)),
             StringName(s) => write!(f, "&\"{}\"", escape_string_for_variant(s)),
             NodePath(s) => write!(f, "NodePath(\"{}\")", escape_string_for_variant(s)),
             Rid(id) => if id.is_empty() { write!(f, "RID()") } else { write!(f, "RID({})", id) },
@@ -1709,7 +1721,7 @@ impl VariantVal {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}", format_float_rtos_fix(*x as f64, compat))?;
+                    write!(f, "{}", format_float_rtos_fix(*x, compat))?;
                 }
                 write!(f, ")")
             }
@@ -1739,7 +1751,7 @@ impl VariantVal {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}, {}", format_float_rtos_fix(x.to_f64(), compat), format_float_rtos_fix(y.to_f64(), compat))?;
+                    write!(f, "{}, {}", format_float_rtos_fix_for_RealT(x, compat), format_float_rtos_fix_for_RealT(y, compat))?;
                 }
                 write!(f, ")")
             }
@@ -1749,7 +1761,7 @@ impl VariantVal {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}, {}, {}", format_float_rtos_fix(x.to_f64(), compat), format_float_rtos_fix(y.to_f64(), compat), format_float_rtos_fix(z.to_f64(), compat))?;
+                    write!(f, "{}, {}, {}", format_float_rtos_fix_for_RealT(x, compat), format_float_rtos_fix_for_RealT(y, compat), format_float_rtos_fix_for_RealT(z, compat))?;
                 }
                 write!(f, ")")
             }
@@ -1759,7 +1771,7 @@ impl VariantVal {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}, {}, {}, {}", format_float_rtos_fix(x.to_f64(), compat), format_float_rtos_fix(y.to_f64(), compat), format_float_rtos_fix(z.to_f64(), compat), format_float_rtos_fix(w.to_f64(), compat))?;
+                    write!(f, "{}, {}, {}, {}", format_float_rtos_fix_for_RealT(x, compat), format_float_rtos_fix_for_RealT(y, compat), format_float_rtos_fix_for_RealT(z, compat), format_float_rtos_fix_for_RealT(w, compat))?;
                 }
                 write!(f, ")")
             }
@@ -1769,7 +1781,7 @@ impl VariantVal {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}, {}, {}, {}", format_float_rtos_fix(r.to_f64(), compat), format_float_rtos_fix(g.to_f64(), compat), format_float_rtos_fix(b.to_f64(), compat), format_float_rtos_fix(a.to_f64(), compat))?;
+                    write!(f, "{}, {}, {}, {}", format_float_rtos_fix_for_RealT(r, compat), format_float_rtos_fix_for_RealT(g, compat), format_float_rtos_fix_for_RealT(b, compat), format_float_rtos_fix_for_RealT(a, compat))?;
                 }
                 write!(f, ")")
             }
@@ -1790,7 +1802,7 @@ impl VariantVal {
 
 impl Display for VariantVal {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.value_to_string_write(f, false)
+        self.value_to_string_write(f, true)
     }
 }
 
@@ -2019,14 +2031,11 @@ mod tests {
                 true,
             ),
             ("SubResource(\"foo\")", VariantVal::SubResource("foo".into()), true),
-            // (
-            //     "ExtResource(\"res://bar.tres\")",
-            //     VariantVal::ExtResource("".into(), None, "res://bar.tres".into()),
-            // ),
-            // (
-            //     "ExtResource(id, \"res://bar.tres\")",
-            //     VariantVal::ExtResource("id".into(), None, "res://bar.tres".into()),
-            // ),
+            (
+                "ExtResource(\"1_ffe31\")",
+                VariantVal::ExtResource("1_ffe31".into(), None, None),
+                true,
+            ),
         ]
     }
 

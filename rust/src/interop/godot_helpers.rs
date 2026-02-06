@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::{fmt::Display};
 use automerge::{ChangeHash};
+use godot::classes::ClassDb;
 use godot::global::str_to_var;
 use samod::{DocumentId};
 use godot::meta::{ArgPassing, ByValue, GodotType, ToArg};
@@ -289,16 +290,18 @@ impl ToGodot for VariantVal {
             VariantVal::NodePath(s) => NodePath::from(s).to_variant(),
             VariantVal::Rid(s) => Variant::from(s.as_str()),
             VariantVal::Object(type_, properties) => {
-                // TODO:
-                Variant::nil()
-                // let mut dict = vdict! {};
-                // for (key, value) in properties {
-                //     dict.set(key.to_godot(), value.to_godot());
-                // }
-                // dict.to_variant()
+                let instance = ClassDb::singleton().instantiate(type_.as_str());
+                let obj = instance.try_to::<Gd<godot::classes::Object>>();
+                if let Ok(mut obj) = obj {
+                    for (key, value) in properties {
+                        obj.set(key.as_str(), &value.to_godot());
+                    }
+                    obj.to_variant()
+                } else {
+                    Variant::nil()
+                }
             },
             VariantVal::Callable => str_to_var("Callable()"), // godot-rust doesn't expose a way to construct a default callable.
-            // same here
             VariantVal::Signal => str_to_var("Signal()"), // godot-rust doesn't expose a way to construct a default signal.
             VariantVal::Dictionary(dict_type, map) => {
                 if let Some((key_type, value_type)) = dict_type {
