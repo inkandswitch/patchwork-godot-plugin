@@ -27,36 +27,6 @@ impl Display for VariantParseError {
 
 impl std::error::Error for VariantParseError {}
 
-// -----------------------------------------------------------------------------
-// RealT (f32/f64 for Godot real_t)
-// -----------------------------------------------------------------------------
-
-#[derive(Clone, Debug)]
-pub enum RealT {
-    F32(f32),
-    F64(f64),
-}
-
-impl RealT {
-    pub fn to_f32(&self) -> f32 {
-        match self {
-            RealT::F32(f) => *f,
-            RealT::F64(f) => *f as f32,
-        }
-    }
-    pub fn to_f64(&self) -> f64 {
-        match self {
-            RealT::F32(f) => *f as f64,
-            RealT::F64(f) => *f,
-        }
-    }
-}
-
-impl From<f64> for RealT {
-    fn from(f: f64) -> Self {
-        RealT::F64(f)
-    }
-}
 
 // -----------------------------------------------------------------------------
 // Float formatting (Godot rtos_fix / num_scientific via lexical Grisu2)
@@ -120,15 +90,6 @@ trait RTosFix {
     fn rtos_fix(&self, compat: bool) -> String;
 }
 
-impl RTosFix for RealT {
-    fn rtos_fix(&self, compat: bool) -> String {
-        match self {
-            RealT::F32(f) => rtos_fix_impl(*f, compat),
-            RealT::F64(f) => rtos_fix_impl(*f, compat),
-        }
-    }
-}
-
 impl RTosFix for f32 {
     fn rtos_fix(&self, compat: bool) -> String {
         rtos_fix_impl(*self, compat)
@@ -140,6 +101,54 @@ impl RTosFix for f64 {
         rtos_fix_impl(*self, compat)
     }
 }
+
+
+// -----------------------------------------------------------------------------
+// RealT (f32/f64 for Godot real_t)
+// -----------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub enum RealT {
+    F32(f32),
+    F64(f64),
+}
+
+impl RealT {
+    pub fn to_f32(&self) -> f32 {
+        match self {
+            RealT::F32(f) => *f,
+            RealT::F64(f) => *f as f32,
+        }
+    }
+    pub fn to_f64(&self) -> f64 {
+        match self {
+            RealT::F32(f) => *f as f64,
+            RealT::F64(f) => *f,
+        }
+    }
+}
+
+impl From<f64> for RealT {
+    fn from(f: f64) -> Self {
+        RealT::F64(f)
+    }
+}
+
+impl From<f32> for RealT {
+    fn from(f: f32) -> Self {
+        RealT::F32(f)
+    }
+}
+
+impl RTosFix for RealT {
+    fn rtos_fix(&self, compat: bool) -> String {
+        match self {
+            RealT::F32(f) => rtos_fix_impl(*f, compat),
+            RealT::F64(f) => rtos_fix_impl(*f, compat),
+        }
+    }
+}
+
 
 /// Escape string for variant text (multiline style: only \ and ").
 fn escape_string_for_variant(s: &str) -> String {
@@ -1819,6 +1828,7 @@ mod tests {
             ("false", VariantVal::Bool(false), true),
             ("123", VariantVal::Int(123), true),
             ("123.456", VariantVal::Float(123.456), true),
+            ("1.5707964", VariantVal::Float(1.5707964), true),
             // scientific notation
             ("1.23456e+10", VariantVal::Float(1.23456e+10), true),
             ("1.23456e-10", VariantVal::Float(1.23456e-10), true),
@@ -1935,6 +1945,11 @@ mod tests {
                 true,
             ),
             (
+                "PackedByteArray(0, 0, 0, 0, 0)",
+                VariantVal::PackedByteArray(vec![0, 0, 0, 0, 0]),
+                false,
+            ),
+            (
                 "PackedByteArray(\"AAAAAAA=\")",
                 VariantVal::PackedByteArray(vec![0, 0, 0, 0, 0]),
                 true,
@@ -2026,5 +2041,35 @@ mod tests {
                 assert_eq!(expected.to_string_compat(false).unwrap(), input, "input: {:?}", input);
             }
         }
+    }
+
+    /// Writer and parser Variant::FLOAT (mirrors Godot test_variant.h).
+    /// Variant::FLOAT is always 64-bit (f64). Tests max finite double write/parse round-trip.
+    #[test]
+    fn test_writer_and_parser_float() {
+        // Maximum non-infinity double-precision float (same as C++ test).
+        let a64: f64 = f64::MAX;
+        let a64_str = VariantVal::Float(a64).to_string_compat(true).unwrap();
+
+        assert_eq!(a64_str, "1.7976931348623157e+308", "Writes in scientific notation.");
+        assert_ne!(a64_str, "inf", "Should not overflow.");
+        assert_ne!(a64_str, "nan", "The result should be defined.");
+
+        // Parse back; loses precision in string form but round-trip value is correct.
+        let variant_parsed: VariantVal = a64_str.parse().expect("parse max float");
+        let float_parsed = match &variant_parsed {
+            VariantVal::Float(f) => *f,
+            _ => panic!("expected Float, got {:?}", variant_parsed),
+        };
+        let expected: f64 = 1.797693134862315708145274237317e+308;
+        assert_eq!(float_parsed.to_bits(), expected.to_bits(), "Should parse back.");
+
+        // Approximation of Googol with double-precision float.
+        let variant_parsed: VariantVal = "1.0e+100".parse().expect("parse 1.0e+100");
+        let float_parsed = match &variant_parsed {
+            VariantVal::Float(f) => *f,
+            _ => panic!("expected Float, got {:?}", variant_parsed),
+        };
+        assert_eq!(float_parsed, 1.0e+100, "Should match the double literal.");
     }
 }
