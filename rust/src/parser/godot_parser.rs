@@ -7,7 +7,7 @@ use regex::Regex;
 use std::{collections::{HashMap, HashSet}, fmt::Display};
 use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator};
 
-use crate::{helpers::doc_utils::SimpleDocReader, project::branch_db::{HistoryRef, HistoryRefPath}};
+use crate::{helpers::doc_utils::SimpleDocReader, parser::parser_defs::OrderedProperty, project::branch_db::{HistoryRef, HistoryRefPath}};
 
 const UNIQUE_SCENE_ID_UNASSIGNED: i32 = 0;
 fn hydrate_nodes<D: ReadDoc>(
@@ -110,21 +110,6 @@ impl Display for TypeOrInstance {
             TypeOrInstance::Instance(instance_id) => write!(f, "{}", instance_id),
         }
     }
-}
-
-#[derive(Debug, Clone, Hydrate, Reconcile, PartialEq, Eq)]
-pub struct OrderedProperty {
-    pub value: String,
-    pub order: i64,
-}
-
-impl OrderedProperty {
-    pub fn new(value: String, order: i64) -> Self {
-        Self { value, order }
-    }
-	pub fn get_value(&self) -> String {
-		self.value.clone()
-	}
 }
 
 #[derive(Debug, Clone, Hydrate, Reconcile, PartialEq, Eq)]

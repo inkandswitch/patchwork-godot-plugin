@@ -3,8 +3,9 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     diff::differ::{ChangeType, Differ},
     parser::godot_parser::{
-        ExternalResourceNode, GodotNode, GodotScene, OrderedProperty, SubResourceNode, TypeOrInstance
+        ExternalResourceNode, GodotNode, GodotScene, SubResourceNode, TypeOrInstance
     },
+    parser::parser_defs::OrderedProperty,
     project::branch_db::HistoryRef,
 };
 

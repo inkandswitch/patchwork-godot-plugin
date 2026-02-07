@@ -14,7 +14,7 @@ use crate::project::project_api::{BranchViewModel, ChangeViewModel, DiffViewMode
 use crate::helpers::utils::{ChangedFile};
 use godot::builtin::Variant;
 
-use crate::parser::variant_parser::{VariantVal, RealT};
+use crate::parser::parser_defs::{VariantVal, RealT};
 
 pub trait GodotConvertExt {
     /// The type through which `Self` is represented in Godot.
