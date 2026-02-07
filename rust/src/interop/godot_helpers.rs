@@ -409,3 +409,9 @@ impl ToGodot for VariantVal {
         self.to_godot_with_resource_getter(&DefaultResourceGetter)
     }
 }
+
+// assert to check that Variant::Type::VARIANT_MAX is still 39
+#[test]
+fn test_variant_max() {
+    assert_eq!(VariantType::MAX.ord, 39);
+}
