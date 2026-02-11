@@ -3,6 +3,7 @@ use std::{
     str::FromStr,
 };
 
+use std::collections::VecDeque;
 use indexmap::IndexMap;
 
 use base64::Engine;
