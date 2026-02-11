@@ -203,7 +203,7 @@
 			"initCommands": [
 				"command script import ${workspaceFolder}/build/GodotFormatters/godot_formatters",
 			],
-            // "preLaunchTask": "Build: Prepare moddable-platformer (Debug)"
+            "preLaunchTask": "Build: Prepare moddable-platformer (Debug)"
         },
 
     ]
