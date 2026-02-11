@@ -78,15 +78,7 @@ fn rtos_fix_impl<T: Float + FormatFloatLexical>(value: T, compat: bool) -> Strin
     if compat && value.is_infinite() && value.is_sign_negative() {
         return "inf_neg".to_string();
     }
-    let s = format_float_for_variant(value);
-    if s == "inf" || s == "-inf" || s == "nan" {
-        return s;
-    }
-    if !s.contains('.') && !s.contains('e') && !s.contains('E') {
-        format!("{}.0", s)
-    } else {
-        s
-    }
+    format_float_for_variant(value)
 }
 trait RTosFix {
     fn rtos_fix(&self, compat: bool) -> String;
@@ -220,27 +212,26 @@ fn parse_color_hex(hex: &str) -> Result<(f32, f32, f32, f32), VariantParseError>
 
 struct Lexer<'a> {
     chars: std::str::Chars<'a>,
-    saved: Option<char>,
+    saved: VecDeque<char>,
 }
 
 impl<'a> Lexer<'a> {
     fn new(s: &'a str) -> Self {
         Lexer {
             chars: s.chars(),
-            saved: None,
+            saved: VecDeque::new(),
         }
     }
 
     fn get_char(&mut self) -> Option<char> {
-        if let Some(c) = self.saved.take() {
+        if let Some(c) = self.saved.pop_front() {
             return Some(c);
         }
         self.chars.next()
     }
 
     fn put_back(&mut self, c: char) {
-        debug_assert!(self.saved.is_none());
-        self.saved = Some(c);
+        self.saved.push_back(c);
     }
 
     fn next_token(&mut self) -> Result<Token, VariantParseError> {
@@ -302,8 +293,8 @@ impl<'a> Lexer<'a> {
                     let next = self.get_char();
                     match next {
                         Some(c) if c.is_ascii_digit() => {
-                            self.put_back(c);
                             self.put_back('-');
+                            self.put_back(c);
                             Ok(self.parse_number()?)
                         }
                         Some(c) if c.is_ascii_alphabetic() || is_underscore(c) => {
@@ -1250,7 +1241,14 @@ impl VariantVal {
             Nil => write!(f, "null"),
             Bool(b) => write!(f, "{}", if *b { "true" } else { "false" }),
             Int(i) => write!(f, "{}", i),
-            Float(x) => write!(f, "{}", rtos_fix_impl(*x, compat)),
+            Float(x) => write!(f, "{}", {
+                let s = rtos_fix_impl(*x, compat);
+                if s == "inf" || s == "-inf" || s == "nan" || s == "inf_neg" || s.contains('.') || s.contains('e') || s.contains('E') {
+                    s
+                } else {
+                    format!("{}.0", s)
+                }
+            }),
             String(s) => write!(f, "\"{}\"", escape_string_for_variant(s)),
             Vector2(x, y) => write!(f, "Vector2({}, {})", x.rtos_fix(compat), y.rtos_fix(compat)),
             Vector2i(x, y) => write!(f, "Vector2i({}, {})", x, y),
@@ -1483,11 +1481,13 @@ mod tests {
         object_props.insert("bar".into(), Box::new(VariantVal::Int(123)));
 
         vec![
+            ("Vector2(-1, -2)", VariantVal::Vector2(RealT::F32(-1.0), RealT::F32(-2.0)), true),
             ("null", VariantVal::Nil, true),
             ("nil", VariantVal::Nil, false),
             ("true", VariantVal::Bool(true), true),
             ("false", VariantVal::Bool(false), true),
             ("123", VariantVal::Int(123), true),
+            ("123.0", VariantVal::Float(123.0), true),
             ("123.456", VariantVal::Float(123.456), true),
             ("1.5707964", VariantVal::Float(1.5707964), true),
             // scientific notation
@@ -1502,19 +1502,19 @@ mod tests {
             ("#ff000080", VariantVal::Color(1.0, 0.0, 0.0, 128.0 / 255.0), false),
             ("#f00", VariantVal::Color(1.0, 0.0, 0.0, 1.0), false), // 3-digit (Godot Color::html)
             ("#f008", VariantVal::Color(1.0, 0.0, 0.0, 8.0 / 15.0), false), // 4-digit
-            ("Vector2(1.0, 2.0)", VariantVal::Vector2(RealT::F64(1.0), RealT::F64(2.0)), true),
+            ("Vector2(1, 2)", VariantVal::Vector2(RealT::F32(1.0), RealT::F32(2.0)), true),
             ("Vector2i(1, 2)", VariantVal::Vector2i(1, 2), true),
-            ("Rect2(0, 0, 10.0, 10.0)", VariantVal::Rect2(
+            ("Rect2(0, 0, 10, 10)", VariantVal::Rect2(
                 (RealT::F64(0.0), RealT::F64(0.0)),
                 (RealT::F64(10.0), RealT::F64(10.0)),
             ), true     ),
             ("Rect2i(0, 0, 10, 10)", VariantVal::Rect2i((0, 0), (10, 10)), true ),
-            ("Vector3(1.0, 2.0, 3.0)", VariantVal::Vector3(RealT::F64(1.0), RealT::F64(2.0), RealT::F64(3.0)), true),
+            ("Vector3(1, 2, 3)", VariantVal::Vector3(RealT::F64(1.0), RealT::F64(2.0), RealT::F64(3.0)), true),
             ("Vector3i(1, 2, 3)", VariantVal::Vector3i(1, 2, 3), true ),
-            ("Vector4(1.0, 2.0, 3.0, 4.0)", VariantVal::Vector4(RealT::F64(1.0), RealT::F64(2.0), RealT::F64(3.0), RealT::F64(4.0)), true ),
+            ("Vector4(1, 2, 3, 4)", VariantVal::Vector4(RealT::F64(1.0), RealT::F64(2.0), RealT::F64(3.0), RealT::F64(4.0)), true ),
             ("Vector4i(1, 2, 3, 4)", VariantVal::Vector4i(1, 2, 3, 4), true ),
             (
-                "Transform2D(1.0, 0, 0, 1.0, 0, 0)",
+                "Transform2D(1, 0, 0, 1, 0, 0)",
                 VariantVal::Transform2d(
                     (RealT::F64(1.0), RealT::F64(0.0)),
                     (RealT::F64(0.0), RealT::F64(1.0)),
@@ -1522,25 +1522,25 @@ mod tests {
                 ),
                 true,
             ),
-            ("Plane(1.0, 0, 0, 0)", VariantVal::Plane(
+            ("Plane(1, 0, 0, 0)", VariantVal::Plane(
                 (RealT::F64(1.0), RealT::F64(0.0), RealT::F64(0.0)),
                 RealT::F64(0.0),
             ), true),
-            ("Quaternion(1.0, 0, 0, 0)", VariantVal::Quaternion(
+            ("Quaternion(1, 0, 0, 0)", VariantVal::Quaternion(
                 RealT::F64(1.0),
                 RealT::F64(0.0),
                 RealT::F64(0.0),
                 RealT::F64(0.0),
             ), true),
             (
-                "AABB(0, 0, 0, 1.0, 1.0, 1.0)",
+                "AABB(0, 0, 0, 1, 1, 1)",
                 VariantVal::Aabb(
                     (RealT::F64(0.0), RealT::F64(0.0), RealT::F64(0.0)),
                     (RealT::F64(1.0), RealT::F64(1.0), RealT::F64(1.0)),
                 ), true
             ),
             (
-                "Basis(1.0, 0, 0, 0, 1.0, 0, 0, 0, 1.0)",
+                "Basis(1, 0, 0, 0, 1, 0, 0, 0, 1)",
                 VariantVal::Basis(
                     (RealT::F64(1.0), RealT::F64(0.0), RealT::F64(0.0)),
                     (RealT::F64(0.0), RealT::F64(1.0), RealT::F64(0.0)),
@@ -1549,7 +1549,7 @@ mod tests {
                 true,
             ),
             (
-                "Transform3D(1.0, 0, 0, 0, 1.0, 0, 0, 0, 1.0, 0, 0, 0)",
+                "Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)",
                 VariantVal::Transform3d(
                     (
                         (RealT::F64(1.0), RealT::F64(0.0), RealT::F64(0.0)),
@@ -1561,7 +1561,7 @@ mod tests {
                 true,
             ),
             (
-                "Color(1.0, 0, 0, 1.0)",
+                "Color(1, 0, 0, 1)",
                 VariantVal::Color(1.0, 0.0, 0.0, 1.0),
                 true,
             ),
@@ -1626,12 +1626,12 @@ mod tests {
                 true,
             ),
             (
-                "PackedFloat32Array(1.0, 2.0, 3.0)",
+                "PackedFloat32Array(1, 2, 3)",
                 VariantVal::PackedFloat32Array(vec![1.0, 2.0, 3.0]),
                 true,
             ),
             (
-                "PackedFloat64Array(1.0, 2.0, 3.0)",
+                "PackedFloat64Array(1, 2, 3)",
                 VariantVal::PackedFloat64Array(vec![1.0, 2.0, 3.0]),
                 true,
             ),
@@ -1641,7 +1641,7 @@ mod tests {
                 true,
             ),
             (
-                "PackedVector2Array(1.0, 2.0, 3.0, 4.0)",
+                "PackedVector2Array(1, 2, 3, 4)",
                 VariantVal::PackedVector2Array(vec![
                     (RealT::F64(1.0), RealT::F64(2.0)),
                     (RealT::F64(3.0), RealT::F64(4.0)),
@@ -1649,7 +1649,7 @@ mod tests {
                 true,
             ),
             (
-                "PackedVector3Array(1.0, 2.0, 3.0, 4.0, 5.0, 6.0)",
+                "PackedVector3Array(1, 2, 3, 4, 5, 6)",
                 VariantVal::PackedVector3Array(vec![
                     (RealT::F64(1.0), RealT::F64(2.0), RealT::F64(3.0)),
                     (RealT::F64(4.0), RealT::F64(5.0), RealT::F64(6.0)),
@@ -1657,7 +1657,7 @@ mod tests {
                 true,
             ),
             (
-                "PackedVector4Array(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0)",
+                "PackedVector4Array(1, 2, 3, 4, 5, 6, 7, 8)",
                 VariantVal::PackedVector4Array(vec![
                     (RealT::F64(1.0), RealT::F64(2.0), RealT::F64(3.0), RealT::F64(4.0)),
                     (RealT::F64(5.0), RealT::F64(6.0), RealT::F64(7.0), RealT::F64(8.0)),
@@ -1665,7 +1665,7 @@ mod tests {
                 true,
             ),
             (
-                "PackedColorArray(1.0, 0, 0, 1.0, 0, 1.0, 0, 1.0)",
+                "PackedColorArray(1, 0, 0, 1, 0, 1, 0, 1)",
                 VariantVal::PackedColorArray(vec![
                     (RealT::F64(1.0), RealT::F64(0.0), RealT::F64(0.0), RealT::F64(1.0)),
                     (RealT::F64(0.0), RealT::F64(1.0), RealT::F64(0.0), RealT::F64(1.0)),
