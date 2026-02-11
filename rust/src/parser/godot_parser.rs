@@ -4,10 +4,10 @@ use automerge::{
 use autosurgeon::{Hydrate, HydrateError, Prop, Reconcile, ReadDoc, Reconciler};
 use rand::Rng;
 use regex::Regex;
-use std::{collections::{HashMap, HashSet}, fmt::Display};
+use std::{collections::{HashMap, HashSet}, fmt::Display, str::FromStr};
 use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator};
 
-use crate::{helpers::doc_utils::SimpleDocReader, parser::parser_defs::OrderedProperty, project::branch_db::{HistoryRef, HistoryRefPath}};
+use crate::{helpers::doc_utils::SimpleDocReader, parser::parser_defs::{OrderedProperty, VariantVal}, project::branch_db::{HistoryRef, HistoryRefPath}};
 
 const UNIQUE_SCENE_ID_UNASSIGNED: i32 = 0;
 fn hydrate_nodes<D: ReadDoc>(
@@ -532,7 +532,7 @@ impl GodotScene {
         sorted_props
             .sort_by(|(_, property_a), (_, property_b)| property_a.order.cmp(&property_b.order));
         for (key, property) in sorted_props {
-            output.push_str(&format!("{} = {}\n", key, property.value));
+            output.push_str(&format!("{} = {}\n", key, property.value.to_string_compat(self.format <= 3).unwrap_or("null ; error serializing value".to_string())));
         }
 
         // Always add a blank line after a node's properties
@@ -662,10 +662,14 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                                 if let Some(value_capture) = m.captures.get(i + 1) {
                                     if let Ok(value) = value_capture.node.utf8_text(content_bytes) {
                                         let key = text.to_string();
+                                        let value = VariantVal::from_str(&value).unwrap_or_else(|error| {
+                                            tracing::error!("Error parsing value '{}': {}", value, error);
+                                            VariantVal::Nil
+                                        });
 										properties.push((
 											key,
 											OrderedProperty {
-												value: value.to_string(),
+												value,
 												order: properties.len() as i64,
 											},
 										));

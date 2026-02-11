@@ -1,24 +1,32 @@
+use std::{collections::HashMap, fmt::{Display, Formatter}};
+
 use autosurgeon::{Hydrate, Reconcile};
 
-use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
 
 
-#[derive(Debug, Clone, Hydrate, Reconcile, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hydrate, Reconcile, PartialEq, Eq, Hash)]
 pub struct OrderedProperty {
-    pub value: String,
+    pub value: VariantVal,
     pub order: i64,
 }
 
 impl OrderedProperty {
-    pub fn new(value: String, order: i64) -> Self {
+    pub fn new(value: VariantVal, order: i64) -> Self {
         Self { value, order }
     }
-	pub fn get_value(&self) -> String {
+	pub fn get_value(&self) -> VariantVal {
 		self.value.clone()
 	}
 }
 
-#[derive(Clone, Debug)]
+impl Display for OrderedProperty{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.value.fmt(f)
+    }
+}
+
+#[derive(Clone, Debug, Hydrate, Reconcile, PartialEq, Serialize, Deserialize)]
 pub enum RealT {
     F32(f32),
     F64(f64),
@@ -51,7 +59,7 @@ impl From<f32> for RealT {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hydrate, Reconcile, Serialize, Deserialize)]
 pub enum ElemType {
     Identifier(String),
     Resource(Option<String>, String),
@@ -92,7 +100,7 @@ impl std::hash::Hash for ElemType {
 }
 
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hydrate, Reconcile, Serialize, Deserialize)]
 pub enum VariantVal {
     Nil,
     Bool(bool),
@@ -127,14 +135,14 @@ pub enum VariantVal {
     StringName(String),
     NodePath(String),
     Rid(String),
-    Object(String, IndexMap<String, Box<VariantVal>>),
+    Object(String, HashMap<String, OrderedProperty>),
     Callable,
     Signal,
     Dictionary(
-        Option<(Box<ElemType>, Box<ElemType>)>,
-        IndexMap<Box<VariantVal>, Box<VariantVal>>,
+        Option<(ElemType, ElemType)>,
+        Vec<(OrderedProperty, OrderedProperty)>,
     ),
-    Array(Option<Box<ElemType>>, Vec<Box<VariantVal>>),
+    Array(Option<ElemType>, Vec<OrderedProperty>),
     PackedByteArray(Vec<u8>),
     PackedInt32Array(Vec<i32>),
     PackedInt64Array(Vec<i64>),

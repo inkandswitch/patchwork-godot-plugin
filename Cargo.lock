@@ -166,8 +166,7 @@ dependencies = [
 [[package]]
 name = "autosurgeon"
 version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87b6547a9a35fbf5e5b1305a56c42196ae2cfb456897f1cab97d4829f1096550"
+source = "git+https://github.com/nikitalita/autosurgeon.git?branch=with-tuples#7946da4fa575bf6d53c803d95d49c8c07440e3b5"
 dependencies = [
  "automerge",
  "autosurgeon-derive",
@@ -178,8 +177,7 @@ dependencies = [
 [[package]]
 name = "autosurgeon-derive"
 version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f99b54090e5aca6915313efcf065f9873c9ca9d39c875cfc956f30523075d49f"
+source = "git+https://github.com/nikitalita/autosurgeon.git?branch=with-tuples#7946da4fa575bf6d53c803d95d49c8c07440e3b5"
 dependencies = [
  "proc-macro2",
  "quote",

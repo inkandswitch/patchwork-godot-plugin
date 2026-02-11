@@ -2,10 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     diff::differ::{ChangeType, Differ},
-    parser::godot_parser::{
+    parser::{godot_parser::{
         ExternalResourceNode, GodotNode, GodotScene, SubResourceNode, TypeOrInstance
-    },
-    parser::parser_defs::OrderedProperty,
+    }, parser_defs::{OrderedProperty, VariantVal}},
     project::branch_db::HistoryRef,
 };
 
@@ -117,17 +116,17 @@ pub struct PropertyDiff {
     /// The change type of the property.
     pub change_type: ChangeType,
     /// The old value of the property, if it existed.
-    pub old_value: Option<VariantValue>,
+    pub old_value: Option<DiffVariantValue>,
     /// The new value of the property, if it still exists.
-    pub new_value: Option<VariantValue>,
+    pub new_value: Option<DiffVariantValue>,
 }
 
 impl PropertyDiff {
     pub fn new(
         name: String,
         change_type: ChangeType,
-        old_value: Option<VariantValue>,
-        new_value: Option<VariantValue>,
+        old_value: Option<DiffVariantValue>,
+        new_value: Option<DiffVariantValue>,
     ) -> Self {
         PropertyDiff {
             name,
@@ -138,43 +137,15 @@ impl PropertyDiff {
     }
 }
 
-/// The different types of Godot-recognized string values that can be stored in a Variant.
-#[derive(PartialEq, Debug)]
-enum VariantStrValue {
-    /// A normal string that doesn't refer to a resource.
-    Variant(String),
-    /// A Godot resource path string.
-    ResourcePath(String),
-    /// A Godot sub-resource identifier string.
-    SubResourceID(String),
-    /// A Godot external resource identifier string.
-    ExtResourceID(String),
-    /// A default value for a property
-    DefaultValue(TypeOrInstance, String),
-}
-
 
 #[derive(Clone, Debug)]
-pub enum VariantValue {
+pub enum DiffVariantValue {
     /// A normal variant string
-    Variant(String),
+    Variant(VariantVal),
     /// Type/instance name, property name
     DefaultValue(TypeOrInstance, String),
     /// original path, load path
     LazyLoadData(String, String),
-}
-
-/// Implement the to_string method for this enum
-impl std::fmt::Display for VariantStrValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            VariantStrValue::Variant(s) => write!(f, "{}", s),
-            VariantStrValue::ResourcePath(s) => write!(f, "Resource({})", s),
-            VariantStrValue::SubResourceID(s) => write!(f, "SubResource({})", s),
-            VariantStrValue::ExtResourceID(s) => write!(f, "ExtResource({})", s),
-            VariantStrValue::DefaultValue(_,_) => write!(f, "<default_value>"),
-        }
-    }
 }
 
 trait PropertyGetter {
@@ -481,17 +452,15 @@ impl Differ {
     }
 
 
-    /// Returns the [VariantStrValue] of a property on a node, or the default value if the property doesn't
-    /// exist on the node.
-    /// If the node itself doesn't exist, returns [None].
-    fn get_varstr_or_default(prop: &String, node: Option<&impl PropertyGetter>) -> Option<VariantStrValue> {
+    /// Returns the [VariantVal] of a property on a node, or None if the node doesn't exist or the property doesn't exist on the node.
+    fn get_variant_or_none<'a>(prop: &'a String, node: Option<&'a impl PropertyGetter>) -> Option<&'a VariantVal> {
         // If this node never existed, don't provide a value.
         let Some(node) = node else {
             return None;
         };
         match node.get_property(prop) {
-            Some(val) => Some(Self::get_varstr_value(val.get_value())),
-            None => Some(VariantStrValue::DefaultValue(node.get_type_or_instance(), prop.clone())),
+            Some(val) => Some(&val.value),
+            None => None,
         }
     }
 
@@ -512,23 +481,28 @@ impl Differ {
             return None;
         };
 
-        // Slightly weird hack: Diff against the default instead of the normal property.
-        let old_value = Self::get_varstr_or_default(prop, old_node);
-        let new_value = Self::get_varstr_or_default(prop, new_node);
+        let old_value = Self::get_variant_or_none(prop, old_node);
+        let new_value = Self::get_variant_or_none(prop, new_node);
 
         // Skip in case of no changes
-        if !self.did_prop_change(old_value.as_ref(), new_value.as_ref(), old_scene, new_scene) {
+        if !self.did_prop_change(old_value, new_value, old_scene, new_scene) {
             return None;
         }
 
         // Expensive: Load any ext resources and turn them into Variants
         let old = match &old_value {
             Some(v) => Some(self.get_prop_value(v, old_scene, true, prop == "script", before, after).await),
-            None => None,
+            None => match old_node {
+                Some(node) => Some(DiffVariantValue::DefaultValue(node.get_type_or_instance(), prop.clone())),
+                None => None,
+            },
         };
-        let new = match &old_value {
+        let new = match &new_value {
             Some(v) => Some(self.get_prop_value(v, new_scene, false, prop == "script", before, after).await),
-            None => None,
+            None => match new_node {
+                Some(node) => Some(DiffVariantValue::DefaultValue(node.get_type_or_instance(), prop.clone())),
+                None => None,
+            },
         };
 
         return Some(PropertyDiff::new(
@@ -578,11 +552,9 @@ impl Differ {
                 return false;
             };
 
-            let old_prop = Self::get_varstr_value(old_prop.get_value());
-            let new_prop = Self::get_varstr_value(new_prop.get_value());
             if self.did_prop_change(
-                Some(&old_prop),
-                Some(&new_prop),
+                Some(&old_prop.value),
+                Some(&new_prop.value),
                 Some(old_scene),
                 Some(new_scene),
             ) {
@@ -615,8 +587,8 @@ impl Differ {
     /// Check to see if a property has changed, including deep lookups of subresources and shallow lookup of extresources.
     fn did_prop_change(
         &self,
-        old_value: Option<&VariantStrValue>,
-        new_value: Option<&VariantStrValue>,
+        old_value: Option<&VariantVal>,
+        new_value: Option<&VariantVal>,
         old_scene: Option<&GodotScene>,
         new_scene: Option<&GodotScene>,
     ) -> bool {
@@ -638,8 +610,8 @@ impl Differ {
         match (old_value, new_value) {
             // Deeply lookup subresources
             (
-                VariantStrValue::SubResourceID(old_value),
-                VariantStrValue::SubResourceID(new_value),
+                VariantVal::SubResource(old_value),
+                VariantVal::SubResource(new_value),
             ) => self.did_sub_resource_change(
                 old_scene.sub_resources.get(old_value),
                 new_scene.sub_resources.get(new_value),
@@ -648,22 +620,18 @@ impl Differ {
             ),
             // Shallowly lookup extresource references
             (
-                VariantStrValue::ExtResourceID(old_value),
-                VariantStrValue::ExtResourceID(new_value),
+                VariantVal::ExtResource(old_value),
+                VariantVal::ExtResource(new_value),
             ) => self.did_ext_resource_reference_change(
                 old_scene.ext_resources.get(old_value),
                 new_scene.ext_resources.get(new_value),
             ),
-            // No special lookup needed for regular Variants (definitely) or ResourcePaths (I think?)
+            // No special lookup needed for regular Variants (definitely) or ResourcePaths
             (
-                VariantStrValue::ResourcePath(old_value),
-                VariantStrValue::ResourcePath(new_value),
-            ) => old_value != new_value,
-            (VariantStrValue::Variant(old_value), VariantStrValue::Variant(new_value)) => {
-                old_value != new_value
-            }
-            // If the types are different, we've for sure changed
-            _ => true,
+                VariantVal::Resource(old_uid, old_path),
+                VariantVal::Resource(new_uid, new_path),
+            ) => old_uid != new_uid || old_path != new_path,
+            (default_a, default_b) => default_a != default_b,
         }
     }
 
@@ -672,31 +640,28 @@ impl Differ {
     /// it loads and returns the resource content as a Variant.
     async fn get_prop_value(
         &self,
-        prop_value: &VariantStrValue,
+        prop_value: &VariantVal,
         scene: Option<&GodotScene>,
         is_old: bool,
         is_script: bool,
         before: &HistoryRef,
         after: &HistoryRef,
-    ) -> VariantValue {
+    ) -> DiffVariantValue {
         // Prevent loading script files during the diff and creating issues for the editor
         if is_script {
-            return VariantValue::Variant("<Script changed>".to_string());
+            return DiffVariantValue::Variant(VariantVal::String("<Script changed>".to_string()));
         }
         let path;
         match prop_value {
-            VariantStrValue::Variant(variant) => {
-                return VariantValue::Variant(variant.clone());
-            }
-            VariantStrValue::SubResourceID(sub_resource_id) => {
+            VariantVal::SubResource(sub_resource_id) => {
                 // TODO: add this for scene diffs; for scene diffs we want to display the subresource diffs as child nodes of the parent node.
                 // We currently don't support displaying deep subresource diffs, so just inform of a change.
-                return VariantValue::Variant(format!("\"<SubResource {} changed>\"", sub_resource_id));
+                return DiffVariantValue::Variant(VariantVal::String(format!("\"<SubResource {} changed>\"", sub_resource_id)));
             }
-            VariantStrValue::ResourcePath(resource_path) => {
+            VariantVal::Resource(_, resource_path) => {
                 path = resource_path;
             }
-            VariantStrValue::ExtResourceID(ext_resource_id) => {
+            VariantVal::ExtResource(ext_resource_id) => {
                 let p = scene.and_then(|scene| {
                     scene
                         .ext_resources
@@ -704,18 +669,18 @@ impl Differ {
                         .map(|ext_resource| &ext_resource.path)
                 });
                 let Some(p) = p else {
-                    return VariantValue::Variant("\"<ExtResource not found>\"".to_string());
+                    return DiffVariantValue::Variant(VariantVal::String("\"<ExtResource not found>\"".to_string()));
                 };
                 path = p;
             }
-            VariantStrValue::DefaultValue(type_or_instance, prop) => {
-                return VariantValue::DefaultValue(type_or_instance.clone(), prop.clone());
+            default => {
+                return DiffVariantValue::Variant(default.clone());
             }
         }
 
         match self.start_load_ext_resource(&path, if is_old { before } else { after }).await{
-            Ok(load_path) => VariantValue::LazyLoadData(path.clone(), load_path),
-            Err(e) => VariantValue::Variant(format!("\"<ExtResource {} load failed ({})>\"", path, e)),
+            Ok(load_path) => DiffVariantValue::LazyLoadData(path.clone(), load_path),
+            Err(e) => DiffVariantValue::Variant(VariantVal::String(format!("\"<ExtResource {} load failed ({})>\"", path, e))),
         }
     }
 
@@ -738,37 +703,4 @@ impl Differ {
         }
     }
 
-    /// Parse a prop_value string into a [VariantStrValue] enum.
-    // Ideally, the parser would do this for us... but for now, we're doing it ourselves.
-    fn get_varstr_value(prop_value: String) -> VariantStrValue {
-        if prop_value.starts_with("Resource(")
-            || prop_value.starts_with("SubResource(")
-            || prop_value.starts_with("ExtResource(")
-        {
-            let mut id = prop_value
-                .split("(\"")
-                .nth(1)
-                .unwrap()
-                .split("\")")
-                .nth(0)
-                .unwrap()
-                .trim()
-                .to_string();
-            if prop_value.contains("SubResource(") {
-                return VariantStrValue::SubResourceID(id);
-            } else if prop_value.contains("ExtResource(") {
-                return VariantStrValue::ExtResourceID(id);
-            } else {
-                // 4.5 and above started writing `Resource(uid, path)` instead of `Resource(path)`, so we need to handle that here.
-                // if this is a Resource() with the format "Resource(uid, path)", we need to extract the path
-                if id.contains("\", \"") {
-                    // discard the uid
-                    id = id.split("\", \"").nth(1).unwrap().trim().to_string();
-                }
-                return VariantStrValue::ResourcePath(id);
-            }
-        }
-        // normal variant string
-        return VariantStrValue::Variant(prop_value);
-    }
 }

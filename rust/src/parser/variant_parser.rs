@@ -1,16 +1,14 @@
 use std::{
+    collections::{HashMap, VecDeque},
     fmt::{Display, Formatter},
     str::FromStr,
 };
 
-use std::collections::VecDeque;
-use indexmap::IndexMap;
-
 use base64::Engine;
 use lexical::{NumberFormatBuilder, WriteFloatOptions};
-use num_traits::{Float};
+use num_traits::Float;
 
-use crate::parser::parser_defs::{ElemType, RealT, VariantVal};
+use crate::parser::parser_defs::{ElemType, OrderedProperty, RealT, VariantVal};
 
 const REALT_IS_DOUBLE: bool = false;
 
@@ -532,8 +530,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_dictionary_body(&mut self) -> Result<IndexMap<Box<VariantVal>, Box<VariantVal>>, VariantParseError> {
-        let mut map = IndexMap::new();
+    fn parse_dictionary_body(&mut self) -> Result<Vec<(OrderedProperty, OrderedProperty)>, VariantParseError> {
+        let mut pairs = Vec::new();
+        let mut order = 0i64;
         loop {
             let tok = self.advance()?;
             if matches!(tok, Token::CurlyClose) {
@@ -549,7 +548,11 @@ impl<'a> Parser<'a> {
                 return Err(VariantParseError("Unexpected EOF while parsing dictionary".into()));
             }
             let val = self.parse_value(val_tok)?;
-            map.insert(Box::new(key), Box::new(val));
+            pairs.push((
+                OrderedProperty::new(key, order),
+                OrderedProperty::new(val, order),
+            ));
+            order += 1;
             let next = self.get_token()?;
             if matches!(next, Token::CurlyClose) {
                 continue;
@@ -559,16 +562,17 @@ impl<'a> Parser<'a> {
             }
             self.advance()?; // consume comma
         }
-        Ok(map)
+        Ok(pairs)
     }
 
     fn parse_dictionary(&mut self) -> Result<VariantVal, VariantParseError> {
-        let map = self.parse_dictionary_body()?;
-        Ok(VariantVal::Dictionary(None, map))
+        let pairs = self.parse_dictionary_body()?;
+        Ok(VariantVal::Dictionary(None, pairs))
     }
 
-    fn parse_array_body(&mut self) -> Result<Vec<Box<VariantVal>>, VariantParseError> {
+    fn parse_array_body(&mut self) -> Result<Vec<OrderedProperty>, VariantParseError> {
         let mut arr = Vec::new();
+        let mut order = 0i64;
         loop {
             if matches!(self.get_token()?, Token::BracketClose) {
                 break;
@@ -578,7 +582,8 @@ impl<'a> Parser<'a> {
                 return Err(VariantParseError("Unexpected EOF while parsing array".into()));
             }
             let val = self.parse_value(tok)?;
-            arr.push(Box::new(val));
+            arr.push(OrderedProperty::new(val, order));
+            order += 1;
             let next = self.get_token()?;
             if matches!(next, Token::BracketClose) {
                 break;
@@ -1018,7 +1023,8 @@ impl<'a> Parser<'a> {
             _ => return Err(VariantParseError("Expected identifier with type of object".into())),
         };
         self.expect(",")?;
-        let mut props = IndexMap::new();
+        let mut props = HashMap::new();
+        let mut order = 0i64;
         loop {
             let key_tok = self.advance()?;
             if matches!(key_tok, Token::ParenClose) {
@@ -1034,7 +1040,8 @@ impl<'a> Parser<'a> {
             self.expect(":")?;
             let val_tok = self.advance()?;
             let val = self.parse_value(val_tok)?;
-            props.insert(key, Box::new(val));
+            props.insert(key, OrderedProperty::new(val, order));
+            order += 1;
             let next = self.get_token()?;
             if matches!(next, Token::ParenClose) {
                 continue;
@@ -1109,9 +1116,9 @@ impl<'a> Parser<'a> {
         self.expect("]")?;
         self.expect("(")?;
         self.expect("{")?;
-        let map = self.parse_dictionary_body()?;
+        let pairs = self.parse_dictionary_body()?;
         self.expect(")")?;
-        Ok(VariantVal::Dictionary(Some((Box::new(key_type), Box::new(val_type))), map))
+        Ok(VariantVal::Dictionary(Some((key_type, val_type)), pairs))
     }
     fn parse_type_identifier(&mut self, s: &str) -> Result<ElemType, VariantParseError> {
         let id = if s == "Resource" || s == "SubResource" || s == "ExtResource" {
@@ -1141,7 +1148,7 @@ impl<'a> Parser<'a> {
         let arr = self.parse_array_body()?;
         self.expect("]")?;
         self.expect(")")?;
-        Ok(VariantVal::Array(Some(Box::new(elem_type)), arr))
+        Ok(VariantVal::Array(Some(elem_type), arr))
     }
 
     fn parse_packed_byte_array(&mut self) -> Result<VariantVal, VariantParseError> {
@@ -1278,23 +1285,26 @@ impl VariantVal {
                         write!(f, ", ")?;
                     }
                     first = false;
-                    write!(f, "\"{}\": {}", escape_string_for_variant(k), v)?;
+                    write!(f, "\"{}\": ", escape_string_for_variant(k))?;
+                    v.value.value_to_string_write(f, compat)?;
                 }
                 write!(f, ")")
             }
             Callable => write!(f, "Callable()"),
             Signal => write!(f, "Signal()"),
-            Dictionary(typed, map) => {
+            Dictionary(typed, pairs) => {
                 if let Some((key_type, value_type)) = typed {
-                    write!(f, "Dictionary[{}, {}](", key_type.to_string(), value_type.to_string())?;
+                    write!(f, "Dictionary[{}, {}](", key_type, value_type)?;
                 }
                 write!(f, "{{")?;
-                let size = map.len();
+                let size = pairs.len();
                 if size > 0 {
                     write!(f, "\n")?;
                 }
-                for (i, (key, value)) in map.iter().enumerate() {
-                    write!(f, "{}: {}", key.to_string_compat(compat)?, value.to_string_compat(compat)?)?;
+                for (i, (key, value)) in pairs.iter().enumerate() {
+                    key.value.value_to_string_write(f, compat)?;
+                    write!(f, ": ")?;
+                    value.value.value_to_string_write(f, compat)?;
                     if i < size - 1 {
                         write!(f, ",")?;
                     }
@@ -1307,15 +1317,15 @@ impl VariantVal {
                 Ok(())
             }
             Array(elem_type, arr) => {
-                if let Some(elem_type) = elem_type {
-                    write!(f, "Array[{}](", elem_type.to_string())?;
+                if let Some(et) = elem_type {
+                    write!(f, "Array[{}](", et)?;
                 }
                 write!(f, "[")?;
                 for (i, v) in arr.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}", v)?;
+                    v.value.value_to_string_write(f, compat)?;
                 }
                 write!(f, "]")?;
                 if elem_type.is_some() {
@@ -1455,31 +1465,33 @@ impl Display for VariantVal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use indexmap::IndexMap;
+    use std::collections::HashMap;
 
     fn test_cases() -> Vec<(&'static str, VariantVal, bool)> {
-        let mut map_dict = IndexMap::new();
-        map_dict.insert(
-            Box::new(VariantVal::String("foo".into())),
-            Box::new(VariantVal::String("bar".into())),
-        );
-        map_dict.insert(
-            Box::new(VariantVal::String("baz".into())),
-            Box::new(VariantVal::Int(123)),
-        );
+        let map_dict = vec![
+            (
+                OrderedProperty::new(VariantVal::String("foo".into()), 0),
+                OrderedProperty::new(VariantVal::String("bar".into()), 0),
+            ),
+            (
+                OrderedProperty::new(VariantVal::String("baz".into()), 1),
+                OrderedProperty::new(VariantVal::Int(123), 1),
+            ),
+        ];
 
-        let mut map_typed_dict = IndexMap::new();
-        map_typed_dict.insert(
-            Box::new(VariantVal::String("foo".into())),
-            Box::new(VariantVal::Int(123)),
-        );
-        map_typed_dict.insert(
-            Box::new(VariantVal::String("baz".into())),
-            Box::new(VariantVal::Int(456)),
-        );
+        let map_typed_dict = vec![
+            (
+                OrderedProperty::new(VariantVal::String("foo".into()), 0),
+                OrderedProperty::new(VariantVal::Int(123), 0),
+            ),
+            (
+                OrderedProperty::new(VariantVal::String("baz".into()), 1),
+                OrderedProperty::new(VariantVal::Int(456), 1),
+            ),
+        ];
 
-        let mut object_props = IndexMap::new();
-        object_props.insert("bar".into(), Box::new(VariantVal::Int(123)));
+        let mut object_props = HashMap::new();
+        object_props.insert("bar".into(), OrderedProperty::new(VariantVal::Int(123), 0));
 
         vec![
             ("Vector2(-1, -2)", VariantVal::Vector2(RealT::F32(-1.0), RealT::F32(-2.0)), true),
@@ -1582,26 +1594,32 @@ mod tests {
                 VariantVal::Array(
                     None,
                     vec![
-                        Box::new(VariantVal::Int(1)),
-                        Box::new(VariantVal::Int(2)),
-                        Box::new(VariantVal::Int(3)),
+                        OrderedProperty::new(VariantVal::Int(1), 0),
+                        OrderedProperty::new(VariantVal::Int(2), 1),
+                        OrderedProperty::new(VariantVal::Int(3), 2),
                     ],
                 ),
                 true,
             ),
             (
                 "Dictionary[String, int]({\n\"foo\": 123,\n\"baz\": 456\n})",
-                VariantVal::Dictionary(Some((Box::new(ElemType::Identifier("String".into())), Box::new(ElemType::Identifier("int".into())))), map_typed_dict),
+                VariantVal::Dictionary(
+                    Some((
+                        ElemType::Identifier("String".into()),
+                        ElemType::Identifier("int".into()),
+                    )),
+                    map_typed_dict,
+                ),
                 true,
             ),
             (
                 "Array[int]([1, 2, 3])",
                 VariantVal::Array(
-                    Some(Box::new(ElemType::Identifier("int".into()))),
+                    Some(ElemType::Identifier("int".into())),
                     vec![
-                        Box::new(VariantVal::Int(1)),
-                        Box::new(VariantVal::Int(2)),
-                        Box::new(VariantVal::Int(3)),
+                        OrderedProperty::new(VariantVal::Int(1), 0),
+                        OrderedProperty::new(VariantVal::Int(2), 1),
+                        OrderedProperty::new(VariantVal::Int(3), 2),
                     ],
                 ),
                 true,

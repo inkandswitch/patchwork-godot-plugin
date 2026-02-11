@@ -286,7 +286,7 @@ impl ResourceGetter for GodotScene {
         let sub_resource = self.sub_resources.get(id)?;
         let mut res = ClassDb::singleton().instantiate(sub_resource.resource_type.as_str()).try_to::<Gd<Resource>>().ok()?;
         for (key, value) in sub_resource.properties.iter() {
-            res.set(key.as_str(), &VariantVal::from_str(value.value.as_str()).ok()?.to_godot_with_resource_getter(self));
+            res.set(key.as_str(), &value.value.to_godot_with_resource_getter(self));
         }
         Some(res)
     }
@@ -345,7 +345,7 @@ impl ToGodotWithResourceGetter for VariantVal {
                 let obj = instance.try_to::<Gd<godot::classes::Object>>();
                 if let Ok(mut obj) = obj {
                     for (key, value) in properties {
-                        obj.set(key.as_str(), &value.to_godot_with_resource_getter(resource_getter));
+                        obj.set(key.as_str(), &value.value.to_godot_with_resource_getter(resource_getter));
                     }
                     obj.to_variant()
                 } else {
@@ -365,7 +365,7 @@ impl ToGodotWithResourceGetter for VariantVal {
                     vdict! {}
                 };
                 for (key, value) in map {
-                    dict.set(key.to_godot_with_resource_getter(resource_getter), value.to_godot_with_resource_getter(resource_getter));
+                    dict.set(key.value.to_godot_with_resource_getter(resource_getter), value.value.to_godot_with_resource_getter(resource_getter));
                 }
                 dict.to_variant()                
 
@@ -381,7 +381,7 @@ impl ToGodotWithResourceGetter for VariantVal {
                     array![]
                 };
                 for value in array {
-                    godot_array.push(&value.to_godot_with_resource_getter(resource_getter).to_variant());
+                    godot_array.push(&value.value.to_godot_with_resource_getter(resource_getter).to_variant());
                 }
                 godot_array.to_variant()
 

@@ -1,7 +1,7 @@
 use godot::builtin::Variant;
 
 use crate::{
-    diff::{differ::{ChangeType, Differ}, scene_differ::VariantValue}, fs::file_utils::FileContent, helpers::utils::ToShortForm, project::branch_db::HistoryRef
+    diff::{differ::{ChangeType, Differ}, scene_differ::DiffVariantValue}, fs::file_utils::FileContent, helpers::utils::ToShortForm, parser::parser_defs::VariantVal, project::branch_db::HistoryRef
 };
 
 
@@ -9,16 +9,16 @@ use crate::{
 pub struct BinaryResourceDiff {
     pub path: String,
     pub change_type: ChangeType,
-    pub old_resource: Option<VariantValue>,
-    pub new_resource: Option<VariantValue>,
+    pub old_resource: Option<DiffVariantValue>,
+    pub new_resource: Option<DiffVariantValue>,
 }
 
 impl BinaryResourceDiff {
     pub fn new(
         path: String,
         change_type: ChangeType,
-        old_resource: Option<VariantValue>,
-        new_resource: Option<VariantValue>,
+        old_resource: Option<DiffVariantValue>,
+        new_resource: Option<DiffVariantValue>,
     ) -> BinaryResourceDiff {
         BinaryResourceDiff {
             path,
@@ -52,14 +52,14 @@ impl Differ {
         path: &String,
         _content: &FileContent,
         ref_: &HistoryRef,
-    ) -> Option<VariantValue> {
+    ) -> Option<DiffVariantValue> {
         if matches!(_content, FileContent::Deleted) {
             return None;
         }
 
         match self.start_load_ext_resource(&path, ref_).await{
-            Ok(load_path) => Some(VariantValue::LazyLoadData(path.clone(), load_path)),
-            Err(e) => Some(VariantValue::Variant(format!("\"<ExtResource {} load failed ({})>\"", path, e))),
+            Ok(load_path) => Some(DiffVariantValue::LazyLoadData(path.clone(), load_path)),
+            Err(e) => Some(DiffVariantValue::Variant(VariantVal::String(format!("\"<ExtResource {} load failed ({})>\"", path, e)))),
         }
 
     }
