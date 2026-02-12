@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use godot::{
-    builtin::{Array, GString, VarDictionary, Variant, vdict}, global::str_to_var, meta::{ByValue, GodotConvert, ToArg, ToGodot}
+    builtin::{Array, GString, VarDictionary, Variant, vdict, StringName}, classes::{ClassDb}, global::str_to_var, meta::{ByValue, GodotConvert, ToArg, ToGodot}
 };
 use godot::obj::Singleton;
 
@@ -12,7 +12,7 @@ use crate::{
         scene_differ::{NodeDiff, PropertyDiff, SceneDiff, SubResourceDiff, TextResourceDiff, VariantValue},
         text_differ::{TextDiff, TextDiffHunk, TextDiffLine},
     },
-    interop::{godot_helpers::{GodotConvertExt, ToGodotExt}, lazy_load_token::LazyLoadToken},
+    interop::{godot_helpers::{GodotConvertExt, ToGodotExt}, lazy_load_token::LazyLoadToken}, parser::godot_parser::TypeOrInstance,
 };
 
 impl GodotConvert for TextDiffLine {
@@ -256,11 +256,35 @@ impl GodotConvert for VariantValue {
     type Via = Variant;
 }
 
+fn get_classdb_default_value(class_name: &String, prop: &String) -> String {
+    if (ClassDb::singleton().is_instance_valid() && ClassDb::singleton().class_exists(class_name)) {
+        ClassDb::singleton()
+        .class_get_property_default_value(
+            &StringName::from(class_name),
+            &StringName::from(prop),
+        )
+        .to_string()
+    } else {
+        "".to_string()
+    }
+}
 impl ToGodot for VariantValue {
     type Pass = ByValue;
     fn to_godot(&self) -> ToArg<'_, Self::Via, Self::Pass> {
         match self {
             VariantValue::Variant(s) => str_to_var(s),
+            VariantValue::DefaultValue(type_or_instance, property_name) => {
+                let default_value = match type_or_instance {
+                    TypeOrInstance::Type(class_name) => get_classdb_default_value(class_name, property_name),
+                    // TODO: we have to get the class of the root instance node; right now this is likely going to be something like `ExtResource("foo")`
+                    TypeOrInstance::Instance(instance) => "".to_string(),
+                };
+                if default_value.is_empty() {
+                    "<default_value>".to_string().to_variant()
+                } else {
+                    str_to_var(&default_value)
+                }
+            }
             VariantValue::LazyLoadData(original_path, load_path) => 
                 LazyLoadToken::new(load_path.clone(), Some(original_path.clone()))
                 // TODO (Nikita): make the GUI do this, right now we're just loading them immediately here

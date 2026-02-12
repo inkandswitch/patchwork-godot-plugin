@@ -1,18 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
-use godot::{
-    builtin::{StringName, Variant},
-    classes::ClassDb,
-    global::str_to_var,
-    meta::ToGodot,
-    obj::Singleton,
-};
-
 use crate::{
     diff::differ::{ChangeType, Differ},
     parser::godot_parser::{
-        ExternalResourceNode, GodotNode, GodotScene, OrderedProperty, SubResourceNode, TypeOrInstance
+        ExternalResourceNode, GodotNode, GodotScene, SubResourceNode, TypeOrInstance
     },
+    parser::parser_defs::OrderedProperty,
     project::branch_db::HistoryRef,
 };
 
@@ -156,12 +149,18 @@ enum VariantStrValue {
     SubResourceID(String),
     /// A Godot external resource identifier string.
     ExtResourceID(String),
+    /// A default value for a property
+    DefaultValue(TypeOrInstance, String),
 }
 
 
 #[derive(Clone, Debug)]
 pub enum VariantValue {
+    /// A normal variant string
     Variant(String),
+    /// Type/instance name, property name
+    DefaultValue(TypeOrInstance, String),
+    /// original path, load path
     LazyLoadData(String, String),
 }
 
@@ -173,6 +172,7 @@ impl std::fmt::Display for VariantStrValue {
             VariantStrValue::ResourcePath(s) => write!(f, "Resource({})", s),
             VariantStrValue::SubResourceID(s) => write!(f, "SubResource({})", s),
             VariantStrValue::ExtResourceID(s) => write!(f, "ExtResource({})", s),
+            VariantStrValue::DefaultValue(_,_) => write!(f, "<default_value>"),
         }
     }
 }
@@ -480,18 +480,6 @@ impl Differ {
         }
     }
 
-    fn get_classdb_default_value(class_name: &String, prop: &String) -> String {
-        if (ClassDb::singleton().is_instance_valid() && ClassDb::singleton().class_exists(class_name)) {
-            ClassDb::singleton()
-            .class_get_property_default_value(
-                &StringName::from(class_name),
-                &StringName::from(prop),
-            )
-            .to_string()
-        } else {
-            "".to_string()
-        }
-    }
 
     /// Returns the [VariantStrValue] of a property on a node, or the default value if the property doesn't
     /// exist on the node.
@@ -501,22 +489,10 @@ impl Differ {
         let Some(node) = node else {
             return None;
         };
-        let val = node.get_property(prop).map_or_else(
-            ||
-			// If the property doesn't exist on the node, calculate the default.
-			match &node.get_type_or_instance() {
-				TypeOrInstance::Type(class_name) => Self::get_classdb_default_value(class_name, prop),
-				TypeOrInstance::Instance(class_name) => match node.is_subresource() {
-					true => Self::get_classdb_default_value(class_name, prop),
-                    // Instance properties are always set on Nodes, regardless of the default value, so this is going to be unused.
-					false => "".to_string(),
-				},
-			},
-            // Otherwise, get the value from the property.
-            |val| val.get_value(),
-        );
-
-        Some(Self::get_varstr_value(val))
+        match node.get_property(prop) {
+            Some(val) => Some(Self::get_varstr_value(val.get_value())),
+            None => Some(VariantStrValue::DefaultValue(node.get_type_or_instance(), prop.clone())),
+        }
     }
 
     /// Returns a [PropertyDiff] comparing the old property value versus the new one.
@@ -715,7 +691,7 @@ impl Differ {
             VariantStrValue::SubResourceID(sub_resource_id) => {
                 // TODO: add this for scene diffs; for scene diffs we want to display the subresource diffs as child nodes of the parent node.
                 // We currently don't support displaying deep subresource diffs, so just inform of a change.
-                return VariantValue::Variant(format!("<SubResource {} changed>", sub_resource_id));
+                return VariantValue::Variant(format!("\"<SubResource {} changed>\"", sub_resource_id));
             }
             VariantStrValue::ResourcePath(resource_path) => {
                 path = resource_path;
@@ -728,18 +704,19 @@ impl Differ {
                         .map(|ext_resource| &ext_resource.path)
                 });
                 let Some(p) = p else {
-                    return VariantValue::Variant("<ExtResource not found>".to_string());
+                    return VariantValue::Variant("\"<ExtResource not found>\"".to_string());
                 };
                 path = p;
             }
+            VariantStrValue::DefaultValue(type_or_instance, prop) => {
+                return VariantValue::DefaultValue(type_or_instance.clone(), prop.clone());
+            }
         }
 
-        let Some(load_path) = self.start_load_ext_resource(&path, if is_old { before } else { after }, None).await
-        else {
-            return VariantValue::Variant(format!("<ExtResource {} load failed>", path));
-        };
-
-        return VariantValue::LazyLoadData(path.clone(), load_path);
+        match self.start_load_ext_resource(&path, if is_old { before } else { after }).await{
+            Ok(load_path) => VariantValue::LazyLoadData(path.clone(), load_path),
+            Err(e) => VariantValue::Variant(format!("\"<ExtResource {} load failed ({})>\"", path, e)),
+        }
     }
 
     /// Populates [node_ids], [ext_resource_ids], and [sub_resource_ids] from the

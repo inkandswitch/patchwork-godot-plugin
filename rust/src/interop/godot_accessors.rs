@@ -49,21 +49,12 @@ pub struct PatchworkEditorAccessor {}
 
 #[allow(dead_code)] // entire API might not be used yet
 impl PatchworkEditorAccessor {
-    pub fn import_and_load_resource(path: &str) -> Variant {
+    pub fn import_and_save_resource(path: &str, import_file_content: &str, import_base_path: &str) -> godot::global::Error {
         ClassDb::singleton().class_call_static(
             "PatchworkEditor",
-            "import_and_load_resource",
-            &[path.to_variant()],
-        )
-    }
-
-    pub fn import_and_save_resource_to_temp(path: &str) -> String {
-        ClassDb::singleton().class_call_static(
-            "PatchworkEditor",
-            "import_and_save_resource_to_temp",
-            &[path.to_variant()],
-        )
-        .to::<String>()
+            "import_and_save_resource",
+            &[path.to_variant(), import_file_content.to_variant(), import_base_path.to_variant()],
+        ).to::<godot::global::Error>()
     }
 
     pub fn is_editor_importing() -> bool {

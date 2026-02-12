@@ -1,5 +1,6 @@
 use crate::fs::file_utils::{FileContent, FileSystemEvent};
 use crate::interop::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
+use crate::project::branch_db::HistoryRef;
 use crate::project::driver::Driver;
 use crate::project::project::{GodotProjectSignal, Project};
 use crate::project::project_api::{BranchViewModel, ProjectViewModel};
@@ -334,6 +335,14 @@ impl GodotProject {
 		Variant::from(diff_view_model_to_dict(&diff))
 	}
 
+	#[func]
+	fn get_current_ref_string(&self) -> String {
+		let Some(ref_) = self.project.get_current_ref() else {
+			return "".to_string();
+		};
+		ref_.to_string()
+	}
+
     #[func]
     pub fn get_singleton() -> Gd<Self> {
         Engine::singleton()
@@ -432,6 +441,19 @@ impl GodotProject {
 	fn clear_diff_cache(&self) {
 		self.project.clear_diff_cache();
 	}
+
+	pub fn get_current_ref(&self) -> Option<HistoryRef> {
+		self.project.get_current_ref()
+	}
+
+	pub fn get_file_at_ref(&self, path: &String, ref_: &HistoryRef) -> Option<FileContent> {
+		self.project.get_file_at_ref(path, ref_)
+	}
+
+	pub fn get_files_at_ref(&self, ref_: &HistoryRef, filters: &HashSet<String>) -> Option<HashMap<String, FileContent>> {
+		self.project.get_files_at_ref(ref_, filters)
+	}
+
 }
 
 

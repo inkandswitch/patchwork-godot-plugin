@@ -7,6 +7,7 @@
     "rust-lang.rust-analyzer",
     "tamasfe.even-better-toml",
     "nefrob.vscode-just-syntax",
+    "llvm-vs-code-extensions.lldb-dap"
     // TODO: enable this once they implement a project picker
     // "geequlim.godot-tools"
   ]

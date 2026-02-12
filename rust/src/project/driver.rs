@@ -1,5 +1,5 @@
 use crate::diff::differ::{Differ, ProjectDiff};
-use crate::fs::file_utils::FileSystemEvent;
+use crate::fs::file_utils::{FileContent, FileSystemEvent};
 use crate::helpers::branch::{self, BranchState};
 use crate::helpers::spawn_utils::spawn_named;
 use crate::helpers::utils::{CommitInfo, CommitMetadata};
@@ -16,6 +16,7 @@ use automerge::ChangeHash;
 use futures::channel::oneshot::Cancellation;
 use futures::{Stream, StreamExt};
 use samod::{ConcurrencyConfig, ConnectionInfo, DocHandle, DocumentId, Repo};
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -446,6 +447,18 @@ impl Driver {
         self.inner
             .safe_to_update_editor
             .store(safe, Ordering::Relaxed);
+    }
+
+    pub async fn get_file_at_ref(&self, path: &String, ref_: &HistoryRef) -> Option<FileContent> {
+        let res = self.inner.branch_db.get_files_at_ref(ref_, &HashSet::from_iter(vec![path.clone()])).await;
+        if let Some(files) = res {
+            return files.get(path).cloned();
+        }
+        None
+    }
+
+    pub async fn get_files_at_ref(&self, ref_: &HistoryRef, filters: &HashSet<String>) -> Option<HashMap<String, FileContent>> {
+        self.inner.branch_db.get_files_at_ref(ref_, filters).await
     }
 
     // awkward

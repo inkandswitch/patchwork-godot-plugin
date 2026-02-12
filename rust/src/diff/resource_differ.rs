@@ -50,14 +50,17 @@ impl Differ {
     async fn get_resource(
         &self,
         path: &String,
-        content: &FileContent,
+        _content: &FileContent,
         ref_: &HistoryRef,
     ) -> Option<VariantValue> {
-
-        let Some(load_path) = self.start_load_ext_resource(path, ref_, Some(content)).await
-        else {
+        if matches!(_content, FileContent::Deleted) {
             return None;
-        };
-        Some(VariantValue::LazyLoadData(path.clone(), load_path))
+        }
+
+        match self.start_load_ext_resource(&path, ref_).await{
+            Ok(load_path) => Some(VariantValue::LazyLoadData(path.clone(), load_path)),
+            Err(e) => Some(VariantValue::Variant(format!("\"<ExtResource {} load failed ({})>\"", path, e))),
+        }
+
     }
 }
