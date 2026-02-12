@@ -399,10 +399,8 @@ impl<'a> Lexer<'a> {
 
     fn parse_number(&mut self) -> Result<Token, VariantParseError> {
         let mut token_text = String::new();
-        let mut neg = false;
         let first = self.get_char();
         if first == Some('-') {
-            neg = true;
             token_text.push('-');
         } else if let Some(c) = first {
             token_text.push(c);
@@ -617,7 +615,7 @@ impl<'a> Parser<'a> {
                 break;
             }
             let f = match &t {
-                Token::Number { int, float } => *float,
+                Token::Number { int: _, float } => *float,
                 Token::Identifier(id) => {
                     stor_fix(id).ok_or_else(|| VariantParseError("Expected float in constructor".into()))?
                 }

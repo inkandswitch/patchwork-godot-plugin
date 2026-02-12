@@ -1,5 +1,5 @@
 use godot::{
-    builtin::{GString, PackedStringArray, Variant},
+    builtin::{GString, PackedStringArray},
     classes::{ClassDb, EditorInterface, Object},
     meta::ToGodot,
     obj::Gd,

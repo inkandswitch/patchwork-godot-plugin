@@ -1,7 +1,5 @@
-use godot::builtin::Variant;
-
 use crate::{
-    diff::{differ::{ChangeType, Differ}, scene_differ::VariantValue}, fs::file_utils::FileContent, helpers::utils::ToShortForm, project::branch_db::HistoryRef
+    diff::{differ::{ChangeType, Differ}, scene_differ::VariantValue}, fs::file_utils::FileContent, project::branch_db::history_ref::HistoryRef
 };
 
 

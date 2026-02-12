@@ -4,7 +4,6 @@ use std::{fmt::Display};
 use automerge::{ChangeHash};
 use godot::classes::{ClassDb, ResourceLoader};
 use godot::global::str_to_var;
-use indexmap::IndexMap;
 use samod::{DocumentId};
 use godot::meta::{ArgPassing, ByValue, GodotType, ToArg};
 use godot::{prelude::*, meta::ToGodot, meta::GodotConvert};
@@ -231,22 +230,15 @@ impl ToGodotExt for Vec<ChangedFile> {
 	}
 }
 
+// NOTE::: If we want to support godot-rust's double-precision feature flag, we must define our own feature flag,
+// and convert with to_f64 in these impls.
 trait ToRealFloat {
-    // if the godot package is compiled with double-precision, this will return a f64, otherwise a f32.
-    #[cfg(not(feature = "double-precision"))] // feature check to see if double-precision is enabled.
     fn to_real(&self) -> f32;
-    #[cfg(feature = "double-precision")]
-    fn to_real(&self) -> f64;
 }
 
 impl ToRealFloat for RealT {
-    #[cfg(not(feature = "double-precision"))]
     fn to_real(&self) -> f32 {
         self.to_f32()
-    }
-    #[cfg(feature = "double-precision")]
-    fn to_real(&self) -> f64 {
-        self.to_f64()
     }
 }   
 
@@ -270,10 +262,10 @@ impl ResourceGetter for DefaultResourceGetter {
     fn get_resource(&self, uid: Option<&str>, path: &str) -> Option<Gd<Resource>> {
         default_get_resource(uid, path)
     }
-    fn get_sub_resource(&self, id: &str) -> Option<Gd<Resource>> {
+    fn get_sub_resource(&self, _id: &str) -> Option<Gd<Resource>> {
         None
     }
-    fn get_ext_resource(&self, id: &str) -> Option<Gd<Resource>> {
+    fn get_ext_resource(&self, _id: &str) -> Option<Gd<Resource>> {
         None
     }
 }

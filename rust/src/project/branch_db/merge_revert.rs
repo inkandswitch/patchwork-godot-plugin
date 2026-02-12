@@ -1,15 +1,14 @@
 use automerge::{Automerge, ROOT, transaction::Transactable};
-use autosurgeon::{hydrate, reconcile};
 use samod::DocumentId;
 use tracing::instrument;
 
 use crate::{
     helpers::{
-        branch::{Branch, BranchesMetadataDoc, ForkInfo, MergeInfo},
+        branch::{Branch, ForkInfo, MergeInfo},
         doc_utils::SimpleDocReader,
         utils::{CommitMetadata, MergeMetadata, commit_with_metadata},
     },
-    project::branch_db::{BranchDb, branch},
+    project::branch_db::{BranchDb},
 };
 
 impl BranchDb {

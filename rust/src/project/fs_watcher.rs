@@ -13,7 +13,7 @@ use notify_debouncer_mini::{DebouncedEvent, new_debouncer_opt};
 use tokio::{
     sync::{
         Mutex,
-        mpsc::{self, UnboundedSender},
+        mpsc::{self},
     },
     task::JoinSet,
     time::sleep,
@@ -40,7 +40,7 @@ pub struct FileSystemWatcher {
     watch_path: PathBuf,
     file_hashes: Arc<Mutex<HashMap<PathBuf, Digest>>>,
     branch_db: BranchDb,
-    found_ignored_paths: Arc<Mutex<HashSet<PathBuf>>>
+    found_ignored_paths: Arc<Mutex<HashSet<PathBuf>>>,
 }
 
 impl FileSystemWatcher {
@@ -88,7 +88,8 @@ impl FileSystemWatcher {
     // Initialize the hash map with existing files
     async fn initialize_file_hashes(&self) {
         self.initialize_file_hashes_recur(self.watch_path.clone())
-            .await.unwrap();
+            .await
+            .unwrap();
     }
 
     // Handle file creation and modification events
@@ -170,16 +171,14 @@ impl FileSystemWatcher {
         branch_db: BranchDb,
     ) -> impl Stream<Item = FileSystemEvent> {
         let (notify_tx, notify_rx) = mpsc::unbounded_channel();
-        let globs = branch_db
-            .get_ignore_globs()
-            .iter()
-            .map(|g| g.as_str().to_string())
-            .collect::<Vec<String>>();
-
         let notify_config = Config::default()
             .with_follow_symlinks(false)
             .with_ignore_globs(
-                globs
+                branch_db
+                    .get_ignore_globs()
+                    .iter()
+                    .map(|g| g.as_str().to_string())
+                    .collect::<Vec<String>>(),
             );
 
         let debouncer_config = notify_debouncer_mini::Config::default()

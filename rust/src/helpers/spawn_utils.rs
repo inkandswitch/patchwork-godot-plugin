@@ -18,8 +18,7 @@ where
 }
 
 #[cfg(not(feature = "tokio-console"))]
-#[warn(unused_variables)]
-pub fn spawn_named<F>(name: &str, future: F) -> JoinHandle<F::Output>
+pub fn spawn_named<F>(_name: &str, future: F) -> JoinHandle<F::Output>
 where
     F: Future + Send + 'static,
     F::Output: Send + 'static,
@@ -45,7 +44,7 @@ where
 }
 
 #[cfg(not(feature = "tokio-console"))]
-pub fn spawn_named_on<F>(name: &str, runtime: &Handle, future: F) -> JoinHandle<F::Output>
+pub fn spawn_named_on<F>(_name: &str, runtime: &Handle, future: F) -> JoinHandle<F::Output>
 where
     F: Future + Send + 'static,
     F::Output: Send + 'static,

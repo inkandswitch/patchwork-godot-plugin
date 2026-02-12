@@ -1,20 +1,16 @@
-use std::{
-    cell::RefCell, collections::{HashMap, HashSet}, path::PathBuf, str::FromStr, sync::Arc
-};
+use std::
+    collections::HashSet
+;
 
-use automerge::ChangeHash;
 use godot::{
-    builtin::{GString, Variant}, classes::{ResourceLoader, resource_loader::CacheMode}, global, meta::ToGodot, obj::{EngineEnum, Singleton}
+    classes::ResourceLoader, global, obj::{EngineEnum, Singleton}
 };
-use tokio::sync::Mutex;
 use tracing::instrument;
 
 use crate::{
     diff::{resource_differ::BinaryResourceDiff, scene_differ::{SceneDiff, TextResourceDiff}, text_differ::TextDiff},
     fs::file_utils::{FileContent, FileSystemEvent},
-    helpers::{branch::BranchState, utils::ToShortForm},
-    interop::godot_accessors::PatchworkEditorAccessor,
-    project::{branch_db::{BranchDb, HistoryRef, HistoryRefPath}, project::Project},
+    project::branch_db::{BranchDb, history_ref::{HistoryRef, HistoryRefPath}},
 };
 
 /// The type of change that occurred in a diff.
@@ -63,7 +59,7 @@ impl Differ {
         }
     }
 
-    /// Loads an ExtResource given a path, using a cache.
+    /// Loads an ExtResource given a path.
     pub(super) async fn start_load_ext_resource(
         &self,
         path: &String,

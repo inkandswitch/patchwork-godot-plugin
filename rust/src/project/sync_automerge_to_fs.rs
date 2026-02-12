@@ -4,8 +4,8 @@ use futures::future::join_all;
 use tracing::instrument;
 
 use crate::{
-    fs::{file_utils::FileContent, file_utils::FileSystemEvent},
-    project::branch_db::{BranchDb, HistoryRef},
+    fs::file_utils::{FileContent, FileSystemEvent},
+    project::branch_db::{BranchDb, history_ref::HistoryRef},
 };
 
 #[derive(Debug)]

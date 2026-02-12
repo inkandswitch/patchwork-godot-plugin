@@ -17,7 +17,6 @@ doc = false
 
 [features]
 default = []
-automerge_0_6 = []
 tokio-console = ["dep:console-subscriber", "tokio/tracing"]
 
 [dependencies]

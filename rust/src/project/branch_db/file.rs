@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, path::PathBuf};
+use std::{collections::{HashMap, HashSet}};
 
 use automerge::{ObjId, ObjType, ROOT, ReadDoc};
 use samod::DocumentId;

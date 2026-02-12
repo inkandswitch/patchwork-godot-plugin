@@ -1,19 +1,16 @@
-use std::{collections::{HashMap, HashSet}, time::{SystemTime, UNIX_EPOCH}};
+use std::{collections::{HashMap, HashSet}};
 
 use automerge::ChangeHash;
 use samod::DocumentId;
-use tracing::instrument;
 
 use crate::{
     diff::differ::ProjectDiff, fs::file_utils::FileContent, helpers::utils::{
         BranchWrapper, CommitInfo, DiffWrapper, exact_human_readable_timestamp,
         human_readable_timestamp,
     }, interop::godot_accessors::PatchworkConfigAccessor, project::{
-        branch_db::HistoryRef,
-        project::Project,
-        project_api::{
+        branch_db::history_ref::HistoryRef, project::Project, project_api::{
             BranchViewModel, ChangeViewModel, DiffViewModel, ProjectViewModel, SyncStatus,
-        },
+        }
     }
 };
 

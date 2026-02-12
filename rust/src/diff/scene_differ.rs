@@ -2,11 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     diff::differ::{ChangeType, Differ},
-    parser::godot_parser::{
+    parser::{godot_parser::{
         ExternalResourceNode, GodotNode, GodotScene, SubResourceNode, TypeOrInstance
-    },
-    parser::parser_defs::OrderedProperty,
-    project::branch_db::HistoryRef,
+    }, parser_defs::OrderedProperty},
+    project::branch_db::history_ref::HistoryRef,
 };
 
 /// Represents a diff of a scene, with a scene path and a list of changed nodes.
@@ -158,9 +157,9 @@ enum VariantStrValue {
 pub enum VariantValue {
     /// A normal variant string
     Variant(String),
-    /// Type/instance name, property name
+    /// Default value of a variant of shape (type/instance name, property name)
     DefaultValue(TypeOrInstance, String),
-    /// original path, load path
+    /// Lazy loaded variant with of shape (original path, load path). Converted to a LazyLoadToken at usage time.
     LazyLoadData(String, String),
 }
 

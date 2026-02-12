@@ -30,8 +30,7 @@ pub enum FileSystemEvent {
 impl FileContent {
 	// Write file content to disk
 	async fn write_file_content(path: &PathBuf, content: &FileContent) -> std::io::Result<Digest> {
-		// Check if the file exists
-		let mut temp_text: Option<String> = None;
+		let temp_text;
 		// Write the content based on its type
 		let buf: &[u8] = match content {
 			FileContent::String(text) => {

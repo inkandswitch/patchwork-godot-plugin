@@ -1,8 +1,5 @@
-use crate::{project::branch_db::HistoryRef};
 use godot::{classes::{RefCounted, Resource, ResourceLoader, resource_loader::ThreadLoadStatus}, global, obj::Base, prelude::GodotClass};
 use godot::prelude::*;
-use rand::rng;
-use samod::DocumentId;
 
 #[derive(GodotClass, Debug)]
 #[class(base=RefCounted)]

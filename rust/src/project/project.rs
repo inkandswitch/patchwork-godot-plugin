@@ -2,25 +2,22 @@ use crate::diff::differ::ProjectDiff;
 use crate::fs::file_utils::FileSystemEvent;
 use crate::helpers::branch::BranchState;
 use crate::helpers::spawn_utils::spawn_named_on;
-use crate::helpers::utils::{CommitInfo, summarize_changes};
+use crate::helpers::utils::CommitInfo;
 use crate::interop::godot_accessors::{
     EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor,
 };
-use crate::project::branch_db::HistoryRef;
+use crate::project::branch_db::history_ref::HistoryRef;
 use crate::project::driver::Driver;
 use crate::project::main_thread_block::MainThreadBlock;
-use crate::project::project_api::ChangeViewModel;
 use automerge::ChangeHash;
-use futures::future::join_all;
 use samod::DocumentId;
 use tracing::instrument;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::SystemTime;
 use std::{collections::HashMap, str::FromStr};
 use tokio::runtime::Runtime;
-use tokio::sync::{Mutex, MutexGuard, OwnedMutexGuard, watch};
+use tokio::sync::{Mutex, OwnedMutexGuard, watch};
 
 /// Manages the state and operations of a Patchwork project within Godot.
 /// Its API is exposed to GDScript via the GodotProject struct.
@@ -42,7 +39,6 @@ pub struct Project {
     // Tracked changes for the UI
     pub(super) history: Vec<ChangeHash>,
     pub(super) changes: HashMap<ChangeHash, CommitInfo>,
-    last_known_branch: Option<DocumentId>,
 
     // Cached diffs between refs
     pub(super) diff_cache: RefCell<HashMap<(HistoryRef, HistoryRef), ProjectDiff>>,
@@ -77,7 +73,6 @@ impl Project {
             runtime,
             history: Vec::new(),
             changes: HashMap::new(),
-            last_known_branch: None,
             diff_cache: RefCell::new(HashMap::new()),
         }
     }

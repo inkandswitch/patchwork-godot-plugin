@@ -7,7 +7,7 @@ use regex::Regex;
 use std::{collections::{HashMap, HashSet}, fmt::Display};
 use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator};
 
-use crate::{helpers::doc_utils::SimpleDocReader, parser::parser_defs::OrderedProperty, project::branch_db::{HistoryRef, HistoryRefPath}};
+use crate::{helpers::doc_utils::SimpleDocReader, parser::parser_defs::OrderedProperty, project::branch_db::history_ref::{HistoryRef, HistoryRefPath}};
 
 const UNIQUE_SCENE_ID_UNASSIGNED: i32 = 0;
 fn hydrate_nodes<D: ReadDoc>(
@@ -210,7 +210,6 @@ impl<'c> ReadDoc for AutomergeDocAtHeads<'c> {
 		automerge::ReadDoc::object_type(self.doc, obj).ok()
 	}
 
-	#[cfg(not(feature = "automerge_0_6"))]
 	fn map_range<'a, O, R>(&'a self, obj: O, range: R) -> automerge::iter::MapRange<'a>
 	where
 		R: core::ops::RangeBounds<String> + 'a,
@@ -219,31 +218,12 @@ impl<'c> ReadDoc for AutomergeDocAtHeads<'c> {
 	{
 		self.doc.map_range_at(obj, range, self.heads)
 	}
-	#[cfg(feature = "automerge_0_6")]
-	fn map_range<'a, O, R>(&'a self, obj: O, range: R) -> automerge::iter::MapRange<'a, R>
-	where
-		R: core::ops::RangeBounds<String> + 'a,
-		O: AsRef<automerge::ObjId>,
-		R: core::ops::RangeBounds<String>,
-	{
-		self.doc.map_range_at(obj, range, self.heads)
-	}
 
-	#[cfg(not(feature = "automerge_0_6"))]
 	fn list_range<O: AsRef<automerge::ObjId>, R: core::ops::RangeBounds<usize>>(
 		&self,
 		obj: O,
 		range: R,
 	) -> automerge::iter::ListRange<'_> {
-		self.doc.list_range_at(obj, range, self.heads)
-	}
-
-	#[cfg(feature = "automerge_0_6")]
-	fn list_range<O: AsRef<automerge::ObjId>, R: core::ops::RangeBounds<usize>>(
-		&self,
-		obj: O,
-		range: R,
-	) -> automerge::iter::ListRange<'_, R> {
 		self.doc.list_range_at(obj, range, self.heads)
 	}
 
@@ -676,7 +656,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         }
                     }
                 }
-                let mut resource_type: String = "PackedScene".to_string();
+                
                 // GD_RESOURCE HEADER
                 if section_id == "gd_resource" {
                     let load_steps = heading
@@ -705,7 +685,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         }
                     };
 
-                    resource_type = match heading.get("type").cloned() {
+                    let resource_type = match heading.get("type").cloned() {
                         Some(resource_type) => unquote(&resource_type),
                         None => {
                             return Err("Missing required 'type' attribute in gd_resource header"

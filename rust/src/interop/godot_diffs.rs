@@ -257,7 +257,7 @@ impl GodotConvert for VariantValue {
 }
 
 fn get_classdb_default_value(class_name: &String, prop: &String) -> String {
-    if (ClassDb::singleton().is_instance_valid() && ClassDb::singleton().class_exists(class_name)) {
+    if ClassDb::singleton().is_instance_valid() && ClassDb::singleton().class_exists(class_name) {
         ClassDb::singleton()
         .class_get_property_default_value(
             &StringName::from(class_name),
@@ -277,7 +277,7 @@ impl ToGodot for VariantValue {
                 let default_value = match type_or_instance {
                     TypeOrInstance::Type(class_name) => get_classdb_default_value(class_name, property_name),
                     // TODO: we have to get the class of the root instance node; right now this is likely going to be something like `ExtResource("foo")`
-                    TypeOrInstance::Instance(instance) => "".to_string(),
+                    TypeOrInstance::Instance(_) => "".to_string(),
                 };
                 if default_value.is_empty() {
                     "<default_value>".to_string().to_variant()

@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use automerge::{Automerge, ChangeHash, ObjId, ObjType, ROOT, ReadDoc};
+use automerge::{Automerge, ChangeHash, ObjType, ROOT, ReadDoc};
 use autosurgeon::Doc;
-use samod::{DocHandle, DocumentId};
+use samod::{DocHandle};
 
 use crate::{
     fs::file_utils::FileContent,

@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use automerge::ChangeHash;
 use samod::DocumentId;
 
-use crate::{diff::differ::ProjectDiff, fs::file_utils::FileContent, project::branch_db::HistoryRef};
+use crate::{diff::differ::ProjectDiff, fs::file_utils::FileContent, project::branch_db::history_ref::HistoryRef};
 
 /// Represents synchronization status for a project.
 pub enum SyncStatus {

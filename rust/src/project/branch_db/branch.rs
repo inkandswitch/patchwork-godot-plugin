@@ -7,7 +7,7 @@ use tracing::instrument;
 
 use crate::{
     helpers::{
-        branch::{self, Branch, BranchesMetadataDoc, ForkInfo, GodotProjectDoc},
+        branch::{Branch, BranchesMetadataDoc, ForkInfo, GodotProjectDoc},
         utils::{CommitMetadata, commit_with_metadata},
     },
     project::branch_db::{BranchDb, HistoryRef},

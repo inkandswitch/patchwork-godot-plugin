@@ -17,7 +17,7 @@ use uuid::Uuid;
 use crate::fs::file_utils::FileContent;
 use crate::interop::godot_accessors::PatchworkEditorAccessor;
 use crate::interop::godot_project::GodotProject;
-use crate::project::branch_db::{HistoryRef, HistoryRefPath};
+use crate::project::branch_db::history_ref::{HistoryRef, HistoryRefPath};
 
 /// This class allows us to load resources directly from patchwork history.
 /// It is registered as a resource format loader with Godot.

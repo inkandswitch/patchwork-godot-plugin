@@ -1,27 +1,18 @@
 use std::{
-    collections::{HashMap, HashSet}, fmt, path::Path, str::FromStr, time::{SystemTime, UNIX_EPOCH}
+    collections::HashSet, fmt, path::Path, str::FromStr, time::{SystemTime, UNIX_EPOCH}
 };
 
-use crate::{diff::differ::ProjectDiff, helpers::{branch::BranchState, doc_utils::SimpleDocReader}, project::branch_db::HistoryRef};
+use crate::{diff::differ::ProjectDiff, helpers::branch::BranchState};
 use automerge::{
-    Automerge, Change, ChangeHash, Patch, PatchLog, ROOT, ReadDoc, transaction::{CommitOptions, Transaction}
+    Automerge, ChangeHash, Patch, transaction::{CommitOptions, Transaction}
 };
-use samod::{DocHandle, DocumentId};
+use samod::DocumentId;
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
-use tokio::{runtime::{self, Runtime}, task::JoinHandle};
-use tracing::Instrument;
 
 #[inline(always)]
 pub(crate) fn get_automerge_doc_diff(doc: &Automerge, old_heads: &[ChangeHash], new_heads: &[ChangeHash]) -> Vec<Patch> {
-	#[cfg(not(feature = "automerge_0_6"))]
-	{
 		doc.diff(old_heads, new_heads)
-	}
-	#[cfg(feature = "automerge_0_6")]
-	{
-		doc.diff(old_heads, new_heads, automerge::patches::TextRepresentation::String(automerge::TextEncoding::Utf8CodeUnit))
-	}
 }
 
 
