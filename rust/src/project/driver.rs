@@ -51,7 +51,6 @@ pub struct DriverInner {
     requested_checkout: Arc<Mutex<Option<DocumentId>>>,
 
     // subtasks
-    repo: Repo,
     #[allow(unused)]
     connection: RemoteConnection,
     branch_db: BranchDb,
@@ -222,7 +221,6 @@ impl Driver {
                 safe_to_update_editor: AtomicBool::new(false),
                 token: token.clone(),
                 requested_checkout: Arc::new(Mutex::new(None)),
-                repo: repo.clone(),
                 connection,
                 branch_db,
                 peer_watcher,

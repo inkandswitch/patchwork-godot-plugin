@@ -96,10 +96,6 @@ impl HistoryRefPath {
         HistoryRefPath::from_str(path).is_ok()
     }
 
-    pub fn new(ref_: HistoryRef, path: String) -> Self {
-        Self { ref_, path }
-    }
-
     pub fn make_path_string(ref_: &HistoryRef, path: &str) -> Result<String, std::fmt::Error> {
         if !ref_.is_valid() {
             return Err(std::fmt::Error);
