@@ -124,22 +124,65 @@ build-godot profile: _link-godot
     #!/usr/bin/env sh
     # set -euxo pipefail
     cd "build/godot"
+    EXTRA_BUILD_FLAGS=""
+    # check for macos; if yes, add `generate_bundle=yes`
+    if [[ "{{os()}}" = "macos" ]] ; then
+        EXTRA_BUILD_FLAGS="generate_bundle=yes"
+        # check for the .cargo/.devidentity file; if it exists, add `bundle_sign_identity=<contents>`
+        if [ -f .cargo/.devidentity ]; then
+            EXTRA_BUILD_FLAGS="$EXTRA_BUILD_FLAGS bundle_sign_identity=$(cat .cargo/.devidentity)"
+        fi
+    fi
     # TODO: figure out a way to see if scons actually needs a run, since this takes forever even when built
     if [[ {{profile}} = "release" ]] ; then
-        scons dev_build=no debug_symbols=no target=editor deprecated=yes minizip=yes compiledb=yes metal=no module_text_server_fb_enabled=yes
+        scons dev_build=no debug_symbols=no target=editor deprecated=yes minizip=yes compiledb=yes metal=no module_text_server_fb_enabled=yes $EXTRA_BUILD_FLAGS
     elif [[ {{profile}} = "sani" ]] ; then
-        scons dev_build=yes target=editor compiledb=yes deprecated=yes minizip=yes tests=yes use_asan=yes metal=no module_text_server_fb_enabled=yes
+        scons dev_build=yes target=editor compiledb=yes deprecated=yes minizip=yes tests=yes use_asan=yes metal=no module_text_server_fb_enabled=yes $EXTRA_BUILD_FLAGS
     else
-        scons dev_build=yes target=editor compiledb=yes deprecated=yes minizip=yes tests=yes metal=no module_text_server_fb_enabled=yes
+        scons dev_build=yes target=editor compiledb=yes deprecated=yes minizip=yes tests=yes metal=no module_text_server_fb_enabled=yes $EXTRA_BUILD_FLAGS
     fi
 
 # Build the Rust plugin binaries.
-_build-plugin architecture profile:
-    cargo build --profile="{{profile}}" --target="{{architecture}}"
+_build-plugin architecture profile tracing_support:
+    #!/usr/bin/env sh
+    if [[ {{tracing_support}} = "tokio-console" ]] ; then
+        export RUSTFLAGS="--cfg tokio_unstable"
+        cargo build --profile="{{profile}}" --target="{{architecture}}" --features "tokio-console"
+    else
+        cargo build --profile="{{profile}}" --target="{{architecture}}"
+    fi
+
+# Sign macOS plugin binaries using the identity from .cargo/.devidentity (one line, plain text).
+@_sign-macos-plugin:
+    #!/usr/bin/env sh
+    # set -euxo pipefail
+
+    # check for CI env variable, if it is set, skip signing
+    if [ "$CI" = "1" ]; then
+        echo "Skipping macOS plugin signing on CI"
+        exit 0
+    fi
+
+    if [ ! -f .cargo/.devidentity ]; then
+        echo "**** No development identity file found; if you want to enable code signing, create a .cargo/.devidentity file with your dev ID."
+        echo "**** Example: echo 'Developer ID Application: Your Name (TEAMID)' > .cargo/.devidentity"
+        echo "**** HINT: use 'security find-identity -p codesigning -v' to find your dev ID."
+        exit 0
+    fi
+    identity=$(cat .cargo/.devidentity)
+    framework="build/patchwork/bin/libpatchwork_rust_core.macos.framework"
+    if [ ! -d "$framework" ]; then
+        exit 0
+    fi
+    for dylib in "$framework"/*.dylib; do
+        [ -f "$dylib" ] && codesign -s "$identity" -f "$dylib"
+    done
+    codesign --deep -s "$identity" -f "$framework"
 
 # Build the multi-arch target for MacOS.
 [parallel]
-_build-plugin-all-macos profile: (_build-plugin "aarch64-apple-darwin" profile) (_build-plugin "x86_64-apple-darwin" profile) _make-plugin-dir
+_build-plugin-all-macos profile tracing_support: (_build-plugin "aarch64-apple-darwin" profile tracing_support) \
+        (_build-plugin "x86_64-apple-darwin" profile tracing_support) _make-plugin-dir
     mkdir -p build/patchwork/bin
 
     # Copy the entire macos directory to get the Resources framework directory
@@ -150,10 +193,11 @@ _build-plugin-all-macos profile: (_build-plugin "aarch64-apple-darwin" profile) 
     lipo -create -output build/patchwork/bin/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.dylib \
         target/aarch64-apple-darwin/{{profile}}/libpatchwork_rust_core.dylib \
         target/x86_64-apple-darwin/{{profile}}/libpatchwork_rust_core.dylib
-    # TODO: Perhaps sign here instead of in github actions?
+
+    just _sign-macos-plugin
 
 [parallel]
-_build-plugin-single-arch architecture profile: (_build-plugin architecture profile) _make-plugin-dir
+_build-plugin-single-arch architecture profile tracing_support: (_build-plugin architecture profile tracing_support) _make-plugin-dir
     #!/usr/bin/env sh
     # set -euo pipefail
     mkdir -p build/patchwork/bin
@@ -175,6 +219,7 @@ _build-plugin-single-arch architecture profile: (_build-plugin architecture prof
     if [ -f "target/{{architecture}}/{{profile}}/libpatchwork_rust_core.dylib" ] ; then
         cp "target/{{architecture}}/{{profile}}/libpatchwork_rust_core.dylib" \
             build/patchwork/bin/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.dylib
+        just _sign-macos-plugin
     fi
     
     if [ -f "target/{{architecture}}/{{profile}}/patchwork_rust_core.pdb" ] ; then
@@ -235,11 +280,12 @@ _configure-patchwork: _make-plugin-dir
 # Build the plugin and output it to the plugin build dir. For MacOS multi-arch, use architecture=all-apple-darwin to build all architectures.
 [parallel]
 [arg('profile', pattern='release|debug')]
-build-patchwork profile architecture=(default_arch): _configure-patchwork _link-public
+[arg('tracing_support', pattern='none|tokio-console')]
+build-patchwork profile architecture=(default_arch) tracing_support="none": _configure-patchwork _link-public
     #!/usr/bin/env sh
     # set -euxo pipefail
     if [[ "{{architecture}}" = "all-apple-darwin" ]] ; then
-        just _build-plugin-all-macos "{{profile}}"
+        just _build-plugin-all-macos "{{profile}}" "{{tracing_support}}"
         exit 0
     fi
 
@@ -248,7 +294,7 @@ build-patchwork profile architecture=(default_arch): _configure-patchwork _link-
         profile="release_debug"
     fi
     
-    just _build-plugin-single-arch "{{architecture}}" "$profile"
+    just _build-plugin-single-arch "{{architecture}}" "$profile" "{{tracing_support}}"
 
 # Reset the Godot repository, removing the linked module and resetting the repo state.
 clean-godot:
@@ -348,16 +394,18 @@ _write-url project url: (_link-project project)
 [arg('project', pattern='moddable-platformer|threadbare')]
 [arg('patchwork_profile', pattern='release|debug')]
 [arg('godot_profile', pattern='release|debug|sani')]
-prepare project="moddable-platformer" patchwork_profile="release" godot_profile="release" server_url="":\
-        (_link-project project) (build-godot godot_profile) (build-patchwork patchwork_profile) (_write-url project server_url)
+[arg('tracing_support', pattern='none|tokio-console')]
+prepare project="moddable-platformer" patchwork_profile="release" godot_profile="release" server_url="" tracing_support="none": \
+        (_link-project project) (build-godot godot_profile) (build-patchwork patchwork_profile default_arch tracing_support) (_write-url project server_url)
 
 
 # Launch a project with Godot. Available projects are threadbare, moddable-platformer.
 [arg('project', pattern='moddable-platformer|threadbare')]
 [arg('patchwork_profile', pattern='release|debug')]
 [arg('godot_profile', pattern='release|debug|sani')]
-launch project="moddable-platformer" patchwork_profile="release" godot_profile="release" server_url="": \
-        (prepare project patchwork_profile godot_profile server_url)
+[arg('tracing_support', pattern='none|tokio-console')]
+launch project="moddable-platformer" patchwork_profile="release" godot_profile="release" server_url="" tracing_support="none": \
+        (prepare project patchwork_profile godot_profile server_url tracing_support)
     #!/usr/bin/env sh
     # set -euxo pipefail
     
@@ -387,11 +435,18 @@ launch project="moddable-platformer" patchwork_profile="release" godot_profile="
             echo "If you think this OS should be supported, please open an issue on Github with your use-case and system details."
             exit 1 ;;
     esac
-    
-    if [[ {{godot_profile}} = "release" ]] ; then
-        godot_path="build/godot/bin/godot.$platform.editor.$arch$ext"
+    if [[ "{{os()}}" = "macos" ]] ; then
+        if [[ {{godot_profile}} = "release" ]] ; then
+            godot_path="build/godot/bin/godot_macos_editor.app/Contents/MacOS/Godot"
+        else
+            godot_path="build/godot/bin/godot_macos_editor_dev.app/Contents/MacOS/Godot"
+        fi
     else
-        godot_path="build/godot/bin/godot.$platform.editor.dev.$arch$ext"
+        if [[ {{godot_profile}} = "release" ]] ; then
+            godot_path="build/godot/bin/godot.$platform.editor.$arch$ext"
+        else
+            godot_path="build/godot/bin/godot.$platform.editor.dev.$arch$ext"
+        fi
     fi
 
     $godot_path -e --path "build/{{project}}"

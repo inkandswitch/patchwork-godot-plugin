@@ -1,7 +1,8 @@
-use crate::fs::file_utils::FileContent;
+use crate::fs::file_utils::{FileContent, FileSystemEvent};
 use crate::interop::godot_accessors::{EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor};
+use crate::project::branch_db::history_ref::HistoryRef;
+use crate::project::project::{GodotProjectSignal, Project};
 use crate::project::project_api::{BranchViewModel, ProjectViewModel};
-use crate::project::project::{Project, GodotProjectSignal};
 use automerge::ChangeHash;
 use godot::classes::editor_plugin::DockSlot;
 use ::safer_ffi::prelude::*;
@@ -14,13 +15,11 @@ use godot::classes::ResourceLoader;
 use godot::classes::{EditorPlugin, Engine, IEditorPlugin};
 use godot::classes::{DirAccess};
 use godot::prelude::*;
-use godot::prelude::Dictionary;
 use tracing::instrument;
 use std::collections::{HashSet};
 use std::path::PathBuf;
 use std::{collections::HashMap, str::FromStr};
 use crate::interop::godot_helpers::{ToGodotExt, branch_view_model_to_dict, change_view_model_to_dict, diff_view_model_to_dict};
-use crate::fs::file_system_driver::{FileSystemEvent};
 
 // This is the worst thing I've ever done
 // Get the file system
@@ -204,7 +203,7 @@ impl GodotProject {
 	}
 
 	#[func]
-    fn get_sync_status(&self) -> Dictionary {
+    fn get_sync_status(&self) -> VarDictionary {
 		self.project.get_sync_status().to_godot()
 	}
 
@@ -335,6 +334,14 @@ impl GodotProject {
 		Variant::from(diff_view_model_to_dict(&diff))
 	}
 
+	#[func]
+	fn get_current_ref_string(&self) -> String {
+		let Some(ref_) = self.project.get_current_ref() else {
+			return "".to_string();
+		};
+		ref_.to_string()
+	}
+
     #[func]
     pub fn get_singleton() -> Gd<Self> {
         Engine::singleton()
@@ -350,18 +357,18 @@ impl GodotProject {
 			let mut file_created = false;
             let (abs_path, content) = match event {
                 FileSystemEvent::FileCreated(path, content) => {
-					pending_editor_update.added_files.insert(self.project.localize_path(&path.to_string_lossy().to_string()));
+					pending_editor_update.added_files.insert(ProjectSettings::singleton().localize_path(&path.to_string_lossy().to_string()).to_string());
 					file_created = true;
 					(path, content)
 				},
                 FileSystemEvent::FileModified(path, content) => (path, content),
                 FileSystemEvent::FileDeleted(path) => {
-					pending_editor_update.deleted_files.insert(self.project.localize_path(&path.to_string_lossy().to_string()));
+					pending_editor_update.deleted_files.insert(ProjectSettings::singleton().localize_path(&path.to_string_lossy().to_string()).to_string());
 					continue;
 				},
             };
 			files_changed.push(abs_path.to_string_lossy().to_string());
-            let res_path = self.project.localize_path(&abs_path.to_string_lossy().to_string());
+            let res_path = ProjectSettings::singleton().localize_path(&abs_path.to_string_lossy().to_string()).to_string();
             let extension = abs_path.extension().unwrap_or_default().to_string_lossy().to_string().to_ascii_lowercase();
             if extension == "gd" {
 				pending_editor_update.scripts_to_reload.insert(res_path);
@@ -415,7 +422,7 @@ impl GodotProject {
 		if !self.pending_editor_update.any_changes() {
 			return false;
 		}
-		if !Project::safe_to_update_godot(false) {
+		if !Project::safe_to_update_godot() {
 			return false;
 		}
 		self.base_mut().set_process(false);
@@ -433,6 +440,19 @@ impl GodotProject {
 	fn clear_diff_cache(&self) {
 		self.project.clear_diff_cache();
 	}
+
+	pub fn get_current_ref(&self) -> Option<HistoryRef> {
+		self.project.get_current_ref()
+	}
+
+	pub fn get_file_at_ref(&self, path: &String, ref_: &HistoryRef) -> Option<FileContent> {
+		self.project.get_file_at_ref(path, ref_)
+	}
+
+	pub fn get_files_at_ref(&self, ref_: &HistoryRef, filters: &HashSet<String>) -> Option<HashMap<String, FileContent>> {
+		self.project.get_files_at_ref(ref_, filters)
+	}
+
 }
 
 
@@ -441,7 +461,7 @@ impl INode for GodotProject {
     fn init(_base: Base<Node>) -> Self {
         GodotProject {
 			base: _base,
-			project: Project::new(ProjectSettings::singleton().globalize_path("res://").to_string()),
+			project: Project::new(ProjectSettings::singleton().globalize_path("res://").to_string().into()),
 			pending_editor_update: PendingEditorUpdate::default(),
 			reload_project_settings_callable: None
 		}
@@ -464,7 +484,7 @@ impl INode for GodotProject {
     }
 
     fn exit_tree(&mut self) {
-		if self.project.is_started() {
+		if self.project.has_project() {
 			self.project.stop();
 		}
         // Perform typical plugin operations here.
@@ -472,7 +492,7 @@ impl INode for GodotProject {
 
 	#[instrument(target = "patchwork_rust_core::godot_project::outer_process", level = tracing::Level::DEBUG, skip_all)]
     fn process(&mut self, _delta: f64) {
-		if !self.project.is_started() {
+		if !self.project.has_project() {
 			return;
 		}
 		let (updates, signals) = self.project.process(_delta);

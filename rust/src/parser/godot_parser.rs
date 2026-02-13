@@ -7,7 +7,7 @@ use regex::Regex;
 use std::{collections::{HashMap, HashSet}, fmt::Display};
 use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator};
 
-use crate::helpers::doc_utils::SimpleDocReader;
+use crate::{helpers::doc_utils::SimpleDocReader, parser::parser_defs::OrderedProperty, project::branch_db::history_ref::{HistoryRef, HistoryRefPath}};
 
 const UNIQUE_SCENE_ID_UNASSIGNED: i32 = 0;
 fn hydrate_nodes<D: ReadDoc>(
@@ -113,21 +113,6 @@ impl Display for TypeOrInstance {
 }
 
 #[derive(Debug, Clone, Hydrate, Reconcile, PartialEq, Eq)]
-pub struct OrderedProperty {
-    pub value: String,
-    pub order: i64,
-}
-
-impl OrderedProperty {
-    pub fn new(value: String, order: i64) -> Self {
-        Self { value, order }
-    }
-	pub fn get_value(&self) -> String {
-		self.value.clone()
-	}
-}
-
-#[derive(Debug, Clone, Hydrate, Reconcile, PartialEq, Eq)]
 pub struct GodotNode {
     pub id: i32,
     pub name: String,
@@ -225,7 +210,6 @@ impl<'c> ReadDoc for AutomergeDocAtHeads<'c> {
 		automerge::ReadDoc::object_type(self.doc, obj).ok()
 	}
 
-	#[cfg(not(feature = "automerge_0_6"))]
 	fn map_range<'a, O, R>(&'a self, obj: O, range: R) -> automerge::iter::MapRange<'a>
 	where
 		R: core::ops::RangeBounds<String> + 'a,
@@ -234,31 +218,12 @@ impl<'c> ReadDoc for AutomergeDocAtHeads<'c> {
 	{
 		self.doc.map_range_at(obj, range, self.heads)
 	}
-	#[cfg(feature = "automerge_0_6")]
-	fn map_range<'a, O, R>(&'a self, obj: O, range: R) -> automerge::iter::MapRange<'a, R>
-	where
-		R: core::ops::RangeBounds<String> + 'a,
-		O: AsRef<automerge::ObjId>,
-		R: core::ops::RangeBounds<String>,
-	{
-		self.doc.map_range_at(obj, range, self.heads)
-	}
 
-	#[cfg(not(feature = "automerge_0_6"))]
 	fn list_range<O: AsRef<automerge::ObjId>, R: core::ops::RangeBounds<usize>>(
 		&self,
 		obj: O,
 		range: R,
 	) -> automerge::iter::ListRange<'_> {
-		self.doc.list_range_at(obj, range, self.heads)
-	}
-
-	#[cfg(feature = "automerge_0_6")]
-	fn list_range<O: AsRef<automerge::ObjId>, R: core::ops::RangeBounds<usize>>(
-		&self,
-		obj: O,
-		range: R,
-	) -> automerge::iter::ListRange<'_, R> {
 		self.doc.list_range_at(obj, range, self.heads)
 	}
 
@@ -331,6 +296,12 @@ impl GodotScene {
 	}
 
     pub fn serialize(&self) -> String {
+        self.serialize_with_ext_resource_override(None, false)
+    }
+
+    // helper for the patchwork_resource_loader to serialize the scene at a given history ref for loading
+    pub fn serialize_with_ext_resource_override(&self, history_ref: Option<&HistoryRef>, remove_uid_in_ext_resources: bool) -> String {
+
         let mut output = String::new();
 
         if self.resource_type != "PackedScene" {
@@ -361,12 +332,22 @@ impl GodotScene {
                 "[ext_resource type=\"{}\"",
                 resource.resource_type
             ));
-            if let Some(uid) = &resource.uid {
+            if !remove_uid_in_ext_resources && let Some(uid) = &resource.uid {
                 output.push_str(&format!(" uid=\"{}\"", uid));
             }
+            let path = if let Some(history_ref) = history_ref {
+                if !history_ref.is_valid() {
+                    tracing::error!("History ref is not valid, can't rename dependencies!");
+                    resource.path.clone()
+                } else {
+                    HistoryRefPath::make_path_string(history_ref, &resource.path).unwrap_or(resource.path.clone())
+                }
+            } else {
+                resource.path.clone()
+            };
             output.push_str(&format!(
                 " path=\"{}\" id=\"{}\"]\n",
-                resource.path, resource.id
+                path, resource.id
             ));
         }
 
@@ -549,6 +530,10 @@ impl GodotScene {
 		self.nodes.get(&node_id)
 	}
 
+    pub fn get_ext_resource_path(&self, ext_resource_id: &String) -> Option<String> {
+        self.ext_resources.get(ext_resource_id).map(|ext_resource| ext_resource.path.clone())
+    }
+
 }
 
 #[inline]
@@ -671,7 +656,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         }
                     }
                 }
-                let mut resource_type: String = "PackedScene".to_string();
+                
                 // GD_RESOURCE HEADER
                 if section_id == "gd_resource" {
                     let load_steps = heading
@@ -700,7 +685,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         }
                     };
 
-                    resource_type = match heading.get("type").cloned() {
+                    let resource_type = match heading.get("type").cloned() {
                         Some(resource_type) => unquote(&resource_type),
                         None => {
                             return Err("Missing required 'type' attribute in gd_resource header"
@@ -720,7 +705,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 } else if section_id == "resource" {
                     main_resource = Some(SubResourceNode {
                         id: "".to_string(), // Resource sections don't have IDs
-                        resource_type,
+                        resource_type: scene_metadata.as_ref().map(|s| s.resource_type.clone()).unwrap_or("".to_string()),
                         properties: properties.into_iter().collect(),
                         idx: 0,
                     });

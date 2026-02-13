@@ -85,14 +85,37 @@ func _update_ui_on_branch_checked_out():
 func _on_reload_ui_button_pressed():
 	reload_ui.emit()
 
+signal checked_out_branch_loaded()
+
+var checked_out_wait_start_time: int = 0
+
+func _on_checked_out_branch_loaded():
+	checked_out_wait_start_time = 0
+	checked_out_branch_loaded.emit()
+
+func check_wait_timeout():
+	if checked_out_wait_start_time > 0:
+		var elapsed = Time.get_ticks_msec() - checked_out_wait_start_time
+		if elapsed > 60000:
+			printerr("Patchwork: Timeout waiting for checked out branch after %s milliseconds" % elapsed)
+			_on_checked_out_branch_loaded()
+
 # Display a "Loading Patchwork" modal until we receive a checked_out_branch signal, then initialize.
 # Used when creating a new project, manually loading an existing project from ID, or auto-loading
 # an existing project from the project.
 func wait_for_checked_out_branch():
 	if not GodotProject.get_checked_out_branch():
 		task_modal.start_task("Loading Patchwork")
-		await GodotProject.checked_out_branch
+		# GodotProject may have checked out the branch while starting the modal
+		if not GodotProject.get_checked_out_branch():
+			checked_out_wait_start_time = Time.get_ticks_msec()
+			GodotProject.checked_out_branch.connect(self._on_checked_out_branch_loaded, CONNECT_ONE_SHOT)
+			# await our own signal so that we can emit a timeout if necessary
+			await checked_out_branch_loaded
 		task_modal.end_task("Loading Patchwork")
+		if not GodotProject.get_checked_out_branch():
+			printerr("No checked out branch after waiting for checked out branch")
+			return
 	init()
 
 # Asks the user for their username, if there is none stored.
@@ -250,6 +273,7 @@ func _try_init():
 		print("No GodotProject singleton!!!!!!!!")
 
 func _process(delta: float) -> void:
+	check_wait_timeout()
 	if deferred_highlight_update:
 		var c = deferred_highlight_update
 		deferred_highlight_update = null

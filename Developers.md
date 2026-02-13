@@ -45,6 +45,7 @@ project=[moddable-platformer|threadbare] # launch threadbare or moddable-platfor
 patchwork_profile=[release|debug] # whether we should build the rust code with release or debug configuration
 godot_profile=[release|debug|sani] # whether we should build Godot with release, debug, or sani configuration
 server_url=<url> # force embed a server URL into the project. By default, just keeps whatever server URL is already configured in the project.
+tracing_support=[none|tokio-console] # allows a tokio-console to be connected at the default port for debugging
 ```
 
 #### Using Visual Studio Code

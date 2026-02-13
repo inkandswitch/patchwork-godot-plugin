@@ -1,42 +1,22 @@
 use std::{
-    collections::{HashMap, HashSet}, fmt, path::Path, str::FromStr, time::{SystemTime, UNIX_EPOCH}
+    collections::HashSet, fmt, path::Path, str::FromStr, time::{SystemTime, UNIX_EPOCH}
 };
 
-use crate::{diff::differ::ProjectDiff, helpers::{branch::BranchState, doc_utils::SimpleDocReader}};
+use crate::{diff::differ::ProjectDiff, helpers::branch::BranchState};
 use automerge::{
-    Automerge, Change, ChangeHash, Patch, PatchLog, ROOT, ReadDoc, transaction::{CommitOptions, Transaction}
+    Automerge, ChangeHash, Patch, transaction::{CommitOptions, Transaction}
 };
-use samod::{DocHandle, DocumentId};
+use samod::DocumentId;
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
-// These functions are for compatibilities sake, and they will be removed in the future
-#[inline(always)]
-pub(crate) fn get_default_patch_log() -> PatchLog {
-	#[cfg(not(feature = "automerge_0_6"))]
-	{
-		PatchLog::inactive()
-	}
-	#[cfg(feature = "automerge_0_6")]
-	{
-		PatchLog::inactive(automerge::patches::TextRepresentation::String(automerge::TextEncoding::Utf8CodeUnit))
-	}
-}
-
 #[inline(always)]
 pub(crate) fn get_automerge_doc_diff(doc: &Automerge, old_heads: &[ChangeHash], new_heads: &[ChangeHash]) -> Vec<Patch> {
-	#[cfg(not(feature = "automerge_0_6"))]
-	{
 		doc.diff(old_heads, new_heads)
-	}
-	#[cfg(feature = "automerge_0_6")]
-	{
-		doc.diff(old_heads, new_heads, automerge::patches::TextRepresentation::String(automerge::TextEncoding::Utf8CodeUnit))
-	}
 }
 
 
-pub(crate) fn get_changed_files_vec(patches: &Vec<automerge::Patch>) -> Vec<String> {
+pub(crate) fn get_changed_files(patches: &Vec<automerge::Patch>) -> HashSet<String> {
     let mut changed_files = HashSet::new();
 
     // log all patches
@@ -65,47 +45,7 @@ pub(crate) fn get_changed_files_vec(patches: &Vec<automerge::Patch>) -> Vec<Stri
         // tracing::debug!("changed files: {:?}", changed_files);
     }
 
-    return changed_files.iter().cloned().collect::<Vec<String>>();
-}
-
-
-pub(crate) fn get_linked_docs_of_branch(
-    branch_doc_handle: &DocHandle,
-) -> HashMap<String, DocumentId> {
-    // Collect all linked doc IDs from this branch
-    branch_doc_handle.with_document(|d| {
-        let files = match d.get_obj_id(ROOT, "files") {
-            Some(files) => files,
-            None => {
-                tracing::warn!(
-                    "Failed to load files for branch doc {:?}",
-                    branch_doc_handle.document_id()
-                );
-                return HashMap::new();
-            }
-        };
-
-        d.keys(&files)
-            .filter_map(|path| {
-                let file = match d.get_obj_id(&files, &path) {
-                    Some(file) => file,
-                    None => {
-                        tracing::error!("Failed to load linked doc {:?}", path);
-                        return None;
-                    }
-                };
-
-                let url = match d.get_string(&file, "url") {
-                    Some(url) => url,
-                    None => {
-                        return None;
-                    }
-                };
-
-                parse_automerge_url(&url).map(|id| (path.clone(), id))
-            })
-            .collect::<HashMap<String, DocumentId>>()
-    })
+    return changed_files;
 }
 
 pub(crate) fn parse_automerge_url(url: &str) -> Option<DocumentId> {
@@ -118,14 +58,14 @@ pub(crate) fn parse_automerge_url(url: &str) -> Option<DocumentId> {
     DocumentId::from_str(hash).ok()
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct MergeMetadata {
     pub merged_branch_id: DocumentId,
     pub merged_at_heads: Vec<ChangeHash>,
     pub forked_at_heads: Vec<ChangeHash>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub enum ChangeType {
 	Added,
 	Removed,
@@ -142,13 +82,13 @@ impl fmt::Display for ChangeType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ChangedFile {
     pub change_type: ChangeType,
     pub path: String
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct CommitMetadata {
     pub username: Option<String>,
     pub branch_id: Option<DocumentId>,
@@ -160,7 +100,7 @@ pub struct CommitMetadata {
 	pub is_setup: Option<bool>
 }
 
-pub(crate) fn commit_with_attribution_and_timestamp(tx: Transaction, metadata: &CommitMetadata) {
+pub(crate) fn commit_with_metadata(tx: Transaction, metadata: &CommitMetadata) {
     let timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
@@ -186,7 +126,7 @@ pub(crate) fn print_branch_state(message: &str, branch_state: &BranchState) {
 	tracing::trace!("synced heads: {:?}", branch_state.synced_heads);
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CommitInfo {
 	pub hash: ChangeHash,
 	pub timestamp: i64,
@@ -194,27 +134,6 @@ pub struct CommitInfo {
     pub synced: bool,
 	pub summary: String
 }
-
-impl From<&&Change> for CommitInfo {
-	fn from(change: &&Change) -> Self {
-		CommitInfo::from(*change)
-	}
-}
-
-impl From<&Change> for CommitInfo {
-	fn from(change: &Change) -> Self {
-		CommitInfo {
-			hash: change.hash(),
-			timestamp: change.timestamp(),
-			metadata: change.message().and_then(|m| serde_json::from_str::<CommitMetadata>(&m).ok()),
-
-			// set during ingestion
-			synced: false,
-			summary: "".to_string()
-		}
-	}
-}
-
 
 #[derive(Debug)]
 pub struct BranchWrapper {

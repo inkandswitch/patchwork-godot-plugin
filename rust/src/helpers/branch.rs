@@ -39,10 +39,10 @@ pub struct MergeInfo {
 pub struct Branch {
     pub name: String,
     pub id: String,
+    // TODO: this can just be replaced with HistoryRef if we surgeon that up
     pub fork_info: Option<ForkInfo>,
     pub merge_info: Option<MergeInfo>,
 	pub created_by: Option<String>,
-	pub merged_into: Option<String>,
 	pub reverted_to: Option<Vec<String>>,
 }
 
@@ -81,6 +81,4 @@ pub struct BranchState {
 	// These are currently not used by anything, but we want to keep them for later use.
 	#[allow(dead_code)]
 	pub created_by: Option<String>,
-	#[allow(dead_code)]
-	pub merged_into: Option<DocumentId>,
 }

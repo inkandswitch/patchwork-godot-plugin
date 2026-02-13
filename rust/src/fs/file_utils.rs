@@ -5,8 +5,8 @@ use std::path::{PathBuf};
 use std::str;
 use automerge::{Automerge, ChangeHash, ObjType, ReadDoc};
 use automerge::ObjId;
+use md5::Digest;
 use samod::{DocumentId};
-use ya_md5::{Md5Hasher};
 use crate::helpers::doc_utils::SimpleDocReader;
 use crate::helpers::utils::{ToShortForm, parse_automerge_url};
 
@@ -20,11 +20,17 @@ pub enum FileContent {
 	Deleted,
 }
 
+#[derive(Debug)]
+pub enum FileSystemEvent {
+    FileCreated(PathBuf, FileContent),
+    FileModified(PathBuf, FileContent),
+    FileDeleted(PathBuf),
+}
+
 impl FileContent {
 	// Write file content to disk
-	pub fn write_file_content(path: &PathBuf, content: &FileContent) -> std::io::Result<String> {
-		// Check if the file exists
-		let mut _temp_text: Option<String> = None;
+	async fn write_file_content(path: &PathBuf, content: &FileContent) -> std::io::Result<Digest> {
+		let temp_text;
 		// Write the content based on its type
 		let buf: &[u8] = match content {
 			FileContent::String(text) => {
@@ -34,18 +40,18 @@ impl FileContent {
 				data
 			}
 			FileContent::Scene(scene) => {
-				_temp_text = Some(scene.serialize());
-				_temp_text.as_ref().unwrap().as_bytes()
+				temp_text = Some(scene.serialize());
+				temp_text.as_ref().unwrap().as_bytes()
 			}
 			FileContent::Deleted => {
 				return Err(std::io::Error::new(std::io::ErrorKind::Other, "Failed to write file"));
 			}
 		};
-		let hash = Md5Hasher::hash_slice(buf).to_string();
+		let hash = md5::compute(buf);
 		// ensure the directory exists
 		if let Some(dir) = path.parent() {
 			if !dir.exists() {
-				std::fs::create_dir_all(dir)?;
+				tokio::fs::create_dir_all(dir).await?;
 			}
 		}
 		// Open the file with the appropriate mode
@@ -63,8 +69,8 @@ impl FileContent {
 		Ok(hash)
 	}
 
-	pub fn write(&self, path: &PathBuf) -> std::io::Result<String> {
-		FileContent::write_file_content(path, self)
+	pub async fn write(&self, path: &PathBuf) -> std::io::Result<Digest> {
+		FileContent::write_file_content(path, self).await
 	}
 
 	// pub fn from_path(path: &PathBuf) -> Option<FileContent> {
@@ -102,12 +108,12 @@ impl FileContent {
 		FileContent::from_string(string)
 	}
 
-	pub fn to_hash(&self) -> String {
+	pub fn to_hash(&self) -> Digest {
 		match self {
-			FileContent::String(s) => Md5Hasher::hash_slice(s.as_bytes()).to_string(),
-			FileContent::Binary(bytes) => Md5Hasher::hash_slice(bytes.as_slice()).to_string(),
-			FileContent::Scene(scene) => Md5Hasher::hash_slice(scene.serialize().as_bytes()).to_string(),
-			FileContent::Deleted => "".to_string(),
+			FileContent::String(s) => md5::compute(s.as_bytes()),
+			FileContent::Binary(bytes) => md5::compute(bytes.as_slice()),
+			FileContent::Scene(scene) => md5::compute(scene.serialize().as_bytes()),
+			FileContent::Deleted => md5::compute(""),
 		}
 	}
 
@@ -188,35 +194,31 @@ impl Default for &FileContent {
 	}
 }
 
-pub fn calculate_file_hash(path: &PathBuf) -> Option<String> {
+pub async fn calculate_file_hash(path: &PathBuf) -> Option<Digest> {
 	if !path.is_file() {
 		return None;
 	}
 
-	let mut file = match File::open(path) {
+	let mut file = match tokio::fs::read(path).await {
 		Ok(file) => file,
 		Err(_) => return None,
 	};
 
-	match Md5Hasher::hash(&mut file) {
-		Ok(hash) => Some(format!("{}", hash)),
-		Err(_) => None,
-	}
+	return Some(md5::compute(&mut file));
 }
 
 // get the buffer and hash of a file
-pub fn get_buffer_and_hash(path: &PathBuf) -> Result<(Vec<u8>, String), io::Error> {
+pub async fn get_buffer_and_hash(path: &PathBuf) -> Result<(Vec<u8>, Digest), tokio::io::Error> {
 	if !path.is_file() {
 		return Err(io::Error::new(io::ErrorKind::Other, "Not a file"));
 	}
-	let buf = std::fs::read(path);
+	let buf = tokio::fs::read(path).await;
 	if buf.is_err() {
 		return Err(io::Error::new(io::ErrorKind::Other, "Failed to read file"));
 	}
 	let buf = buf.unwrap();
-	let hash = Md5Hasher::hash_slice(&buf);
-	let hash_str = format!("{}", hash);
-	Ok((buf, hash_str))
+	let hash = md5::compute(&buf);
+	Ok((buf, hash))
 }
 
 pub fn is_buf_binary(buf: &[u8]) -> bool {

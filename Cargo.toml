@@ -9,6 +9,7 @@ members = [
 [profile.release_debug]
 inherits = "release"
 opt-level = 0
+strip = "none"
 debug = true
 lto = false
 panic = "abort"
