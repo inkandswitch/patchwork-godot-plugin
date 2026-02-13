@@ -38,22 +38,19 @@ indexmap = "2.13.0"
 uuid = "1.5.0"
 pretty_assertions = "1.4.1"
 similar = { version = "2.4.0", features = ["unicode"] }
-# notify = { version = "8.0.0", features = ["macos_kqueue"] }
-notify = { git = "https://github.com/nikitalita/notify", features = [
+notify = { version = "8.2.0", features = [
   "macos_fsevent",
 ] }
-notify-debouncer-mini = { git = "https://github.com/nikitalita/notify", features = [
+notify-debouncer-mini = { version = "0.7.0", features = [
   "macos_fsevent",
 ] }
 rand = "0.9.2"
-# notify = { path = "/Users/nikita/Workspace/godot-ws/notify/notify", features = ["macos_kqueue"] }
-# notify-debouncer-mini = { path = "/Users/nikita/Workspace/godot-ws/notify/notify-debouncer-mini", features = ["macos_kqueue"] }
-
 
 # patchwork_rust_post_build_script = { path = "patchwork_rust_post_build_script" }
 serde = { version = "1.0", features = ["derive"] }
 md5 = "0.8.0"
 glob = "0.3.1"
+ignore = "0.4.22"
 rlimit = "0.10.2"
 tracing = "0.1.40"
 tracing-appender = "0.2.2"
