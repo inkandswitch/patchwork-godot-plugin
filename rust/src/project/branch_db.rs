@@ -17,7 +17,7 @@ mod file;
 mod util;
 mod merge_revert;
 pub mod history_ref;
-use ignore::gitignore::{Gitignore, GitignoreBuilder};
+use ignore::gitignore::{Gitignore};
 
 /// [BranchDb] is the primary data source for project data.
 /// It stores the project state, and provides a handful of convenient state-manipulation methods for controllers to use.
@@ -50,11 +50,6 @@ impl BranchDb {
             metadata_state: Arc::new(Mutex::new(None)),
             checked_out_ref: Arc::new(RwLock::new(None)),
         }
-    }
-
-
-    pub fn get_ignore_globs(&self) -> Gitignore {
-        (*self.gitignore).clone()
     }
 
     pub fn get_project_dir(&self) -> PathBuf {
