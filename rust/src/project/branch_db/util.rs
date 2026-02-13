@@ -74,7 +74,7 @@ impl BranchDb {
         }
         self.ignore_globs
             .iter()
-            .any(|pattern| pattern.matches(&path.to_string_lossy()))
+            .any(|pattern| pattern.matches(&path.to_string_lossy().replace("\\", "/")))
     }
     
     pub async fn get_branch_name(&self, id: &DocumentId) -> Option<String> {
