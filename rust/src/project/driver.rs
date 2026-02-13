@@ -14,6 +14,7 @@ use crate::project::sync_automerge_to_fs::SyncAutomergeToFileSystem;
 use crate::project::sync_fs_to_automerge::SyncFileSystemToAutomerge;
 use automerge::ChangeHash;
 use futures::StreamExt;
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use samod::{ConcurrencyConfig, ConnectionInfo, DocHandle, DocumentId, Repo};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -72,48 +73,25 @@ impl Drop for Driver {
 }
 
 impl Driver {
-    async fn parse_gitignore(
-        project_dir: &PathBuf,
-        gitignore_path: &PathBuf,
-    ) -> Vec<glob::Pattern> {
-        let mut ignore_globs = Vec::new();
+    const DEFAULT_IGNORE_GLOBS: [&str; 7] = [
+        "**/.DS_Store",
+        "**/thumbs.db",
+        "**/desktop.ini",
+        "**/patchwork.cfg",
+        "**/addons/patchwork*",
+        "**/target/*",
+        "**/.*",
+    ];
 
-        let content = match tokio::fs::read_to_string(gitignore_path).await {
-            Ok(content) => content,
-            Err(_) => {
-                tracing::info!("Couldn't read gitignore file at {:?}", gitignore_path);
-                return ignore_globs;
-            }
-        };
-
-        for line in content.lines() {
-            // trim any comments and whitespace
-            let line = line.trim().split('#').next().unwrap_or_default().trim();
-            if line.is_empty() {
-                continue;
-            }
-            let mut new_line = if line.starts_with("/") {
-                line.to_string()
-            } else {
-                project_dir.join(line).to_string_lossy().to_string()
-            };
-            let new_line = if new_line.ends_with("/") {
-                // just remove the trailing slash
-                new_line.pop();
-                new_line
-            } else {
-                new_line
-            };
-            match glob::Pattern::new(&new_line) {
-                Ok(glob) => ignore_globs.push(glob),
-                Err(e) => tracing::error!(
-                    "Invalid glob while parsing gitignore {:?}! Error: {}",
-                    gitignore_path,
-                    e
-                ),
-            }
+    fn build_gitignore(project_dir: &PathBuf) -> Gitignore {
+        let mut gitignore = GitignoreBuilder::new(project_dir.clone());
+        let _err = gitignore.case_insensitive(true);
+        let _err = gitignore.add(project_dir.join(".gitignore"));
+        let _err = gitignore.add(project_dir.join(".patchworkignore"));
+        for glob in Self::DEFAULT_IGNORE_GLOBS {
+            let _ = gitignore.add_line(None, glob);
         }
-        ignore_globs
+        gitignore.build().unwrap()
     }
 
     /// Creates a new instance of [Driver].
@@ -136,38 +114,10 @@ impl Driver {
             .load()
             .await;
 
-        // Construct the ignore globs, and link in the gitignores
-        let ignore_globs = vec![
-            "**/.DS_Store",
-            "**/thumbs.db",
-            "**/desktop.ini",
-            "**/patchwork.cfg",
-            "**/addons/patchwork*",
-            "**/target/*",
-            "**/.*",
-        ]
-        .iter()
-        .filter_map(|p| glob::Pattern::new(p).ok())
-        .chain(
-            Self::parse_gitignore(&project_path, &project_path.join(".gitignore"))
-                .await
-                .into_iter(),
-        )
-        .chain(
-            Self::parse_gitignore(&project_path, &project_path.join(".patchworkignore"))
-                .await
-                .into_iter(),
-        )
-        .chain(
-            Self::parse_gitignore(&project_path, &project_path.join(".gdignore"))
-                .await
-                .into_iter(),
-        )
-        .collect();
-
         // Start the connection
         let connection = RemoteConnection::new(repo.clone(), server_url);
-        let branch_db = BranchDb::new(repo.clone(), project_path, ignore_globs);
+        let git_ignore: Gitignore = Self::build_gitignore(&project_path);
+        let branch_db = BranchDb::new(repo.clone(), project_path, git_ignore);
         branch_db
             .set_username(if username.trim() == "" {
                 None
@@ -590,5 +540,19 @@ impl DriverInner {
         } else {
             Vec::new()
         }
+    }
+}
+
+// tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_should_ignore_windows_style_paths() {
+        let dir = PathBuf::from("C:\\foo\\bar\\");
+        let gitignore = Driver::build_gitignore(&dir);
+        // ignores windows style paths
+        assert!(gitignore.matched_path_or_any_parents(dir.join(".patchwork\\thingy.txt").as_path(), false).is_ignore());
+        assert!(!gitignore.matched_path_or_any_parents(dir.join("blargh\\baz.txt").as_path(), false).is_ignore());
     }
 }

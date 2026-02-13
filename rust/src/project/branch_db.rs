@@ -17,6 +17,7 @@ mod file;
 mod util;
 mod merge_revert;
 pub mod history_ref;
+use ignore::gitignore::{Gitignore};
 
 /// [BranchDb] is the primary data source for project data.
 /// It stores the project state, and provides a handful of convenient state-manipulation methods for controllers to use.
@@ -24,7 +25,7 @@ pub mod history_ref;
 pub struct BranchDb {
     // Path is immutable, so it can be outside the inner
     project_dir: PathBuf,
-    ignore_globs: Arc<Vec<glob::Pattern>>,
+    gitignore: Arc<Gitignore>,
     repo: Repo,
     
     username: Arc<Mutex<Option<String>>>,
@@ -38,22 +39,17 @@ pub struct BranchDb {
 }
 
 impl BranchDb {
-    pub fn new(repo: Repo, project_dir: PathBuf, ignore_globs: Vec<glob::Pattern>) -> Self {
+    pub fn new(repo: Repo, project_dir: PathBuf, gitignore: Gitignore) -> Self {
         Self {
             project_dir,
             repo,
-            ignore_globs: Arc::new(ignore_globs),
+            gitignore: Arc::new(gitignore),
             username: Arc::new(Mutex::new(None)),
             binary_states: Arc::new(Mutex::new(HashMap::new())),
             branch_states: Arc::new(Mutex::new(HashMap::new())),
             metadata_state: Arc::new(Mutex::new(None)),
             checked_out_ref: Arc::new(RwLock::new(None)),
         }
-    }
-
-
-    pub fn get_ignore_globs(&self) -> Vec<glob::Pattern> {
-        (*self.ignore_globs).clone()
     }
 
     pub fn get_project_dir(&self) -> PathBuf {

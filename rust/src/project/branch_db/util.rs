@@ -72,9 +72,7 @@ impl BranchDb {
         if !path.starts_with(&self.project_dir) {
             return true;
         }
-        self.ignore_globs
-            .iter()
-            .any(|pattern| pattern.matches(&path.to_string_lossy()))
+        self.gitignore.matched_path_or_any_parents(path, path.is_dir()).is_ignore()
     }
     
     pub async fn get_branch_name(&self, id: &DocumentId) -> Option<String> {

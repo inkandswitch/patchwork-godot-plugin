@@ -172,14 +172,7 @@ impl FileSystemWatcher {
     ) -> impl Stream<Item = FileSystemEvent> {
         let (notify_tx, notify_rx) = mpsc::unbounded_channel();
         let notify_config = Config::default()
-            .with_follow_symlinks(false)
-            .with_ignore_globs(
-                branch_db
-                    .get_ignore_globs()
-                    .iter()
-                    .map(|g| g.as_str().to_string())
-                    .collect::<Vec<String>>(),
-            );
+            .with_follow_symlinks(false);
 
         let debouncer_config = notify_debouncer_mini::Config::default()
             .with_timeout(Duration::from_millis(100))
