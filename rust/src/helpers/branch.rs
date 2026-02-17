@@ -47,11 +47,6 @@ pub struct Branch {
 }
 
 #[derive(Debug, Clone)]
-pub struct BinaryDocState {
-    pub doc_handle: Option<DocHandle>, // is null if the binary doc is being requested but not loaded yet
-}
-
-#[derive(Debug, Clone)]
 pub struct BranchStateForkInfo {
     pub forked_from: DocumentId,
     pub forked_at: Vec<ChangeHash>,
@@ -71,9 +66,7 @@ pub struct BranchStateRevertInfo {
 #[derive(Debug, Clone)]
 pub struct BranchState {
     pub name: String,
-    pub doc_handle: DocHandle,
-    pub linked_doc_ids: HashSet<DocumentId>,
-    pub synced_heads: Vec<ChangeHash>,
+    pub id: DocumentId,
     pub fork_info: Option<BranchStateForkInfo>,
     pub merge_info: Option<BranchStateMergeInfo>,
 	pub revert_info: Option<BranchStateRevertInfo>,

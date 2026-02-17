@@ -8,7 +8,7 @@ use crate::{
         doc_utils::SimpleDocReader,
         utils::{CommitMetadata, MergeMetadata, commit_with_metadata},
     },
-    project::branch_db::{BranchDb},
+    project::branch_db::BranchDb,
 };
 
 impl BranchDb {
@@ -21,30 +21,28 @@ impl BranchDb {
         // Not getting the branch state so we don't gotta clone, honestly that was probably simpler though
         let source_name = self.get_branch_name(source).await?;
         let target_name = self.get_branch_name(target).await?;
-        let source_handle = self.get_branch_handle(source).await?;
-        let target_handle = self.get_branch_handle(target).await?;
-        
+
         let source_ref = self.get_latest_ref_on_branch(source).await?;
         let target_ref = self.get_latest_ref_on_branch(target).await?;
 
         let handle = self.repo.create(Automerge::new()).await.unwrap();
         let handle_clone = handle.clone();
 
-        tokio::task::spawn_blocking(move || {
-            source_handle.with_document(|d| {
-                handle_clone.with_document(|preview_doc| {
-                    let _ = preview_doc.merge(d);
-                });
-            });
-
-            target_handle.with_document(|d| {
-                handle_clone.with_document(|preview_doc| {
-                    let _ = preview_doc.merge(d);
-                });
+        self.with_shadow_document(source, async |d| {
+            handle_clone.with_document(|preview_doc| {
+                let _ = preview_doc.merge(d);
             });
         })
         .await
-        .unwrap();
+        .ok()?;
+
+        self.with_shadow_document(target, async |d| {
+            handle_clone.with_document(|preview_doc| {
+                let _ = preview_doc.merge(d);
+            });
+        })
+        .await
+        .ok()?;
 
         let username = self.username.lock().await.clone();
         self.add_branch_to_meta(Branch {
@@ -52,19 +50,11 @@ impl BranchDb {
             id: handle.document_id().to_string(),
             fork_info: Some(ForkInfo {
                 forked_from: source.to_string(),
-                forked_at: source_ref
-                    .heads
-                    .iter()
-                    .map(|h| h.to_string())
-                    .collect(),
+                forked_at: source_ref.heads.iter().map(|h| h.to_string()).collect(),
             }),
             merge_info: Some(MergeInfo {
                 merge_into: target.to_string(),
-                merge_at: target_ref
-                    .heads
-                    .iter()
-                    .map(|h| h.to_string())
-                    .collect(),
+                merge_at: target_ref.heads.iter().map(|h| h.to_string()).collect(),
             }),
             created_by: username.clone(),
             reverted_to: None,
@@ -77,38 +67,29 @@ impl BranchDb {
         let Some(source_state) = self.get_branch_state(source).await else {
             return;
         };
-        let Some(target_state) = self.get_branch_state(target).await else {
+        
+        if source == target {
+            tracing::error!("cannot merge branch into itself!");
             return;
-        };
+        }
 
-        let source_handle = source_state.doc_handle.clone();
-        let target_handle = target_state.doc_handle.clone();
-        tokio::task::spawn_blocking(move || {
-            source_handle.with_document(|d| {
-                target_handle.with_document(|target| {
-                    let _ = target.merge(d);
-                });
-            });
-        });
+        self.with_shadow_document(source, async |source_doc| {
+            self.with_shadow_document(target, async |target_doc| {
+                let _ = target_doc.merge(source_doc);
+            })
+            .await;
+        })
+        .await;
 
         // if the branch has some merge_info we know that it's a merge preview branch
+        // forked_from is the original branch of the preview branch
+        let forked_from = source_state.fork_info.as_ref().unwrap().forked_from.clone();
         let merge_metadata = if source_state.merge_info.is_some() {
-            match self
-                .get_branch_state(&source_state.fork_info.as_ref().unwrap().forked_from)
-                .await
-            {
-                Some(original_state) => {
-                    Some(MergeMetadata {
-                        merged_branch_id: original_state.doc_handle.document_id().clone(),
-                        merged_at_heads: original_state.synced_heads.clone(),
-                        forked_at_heads: original_state
-                            .fork_info
-                            .as_ref()
-                            .unwrap()
-                            .forked_at
-                            .clone(),
-                    })
-                }
+            match self.get_branch_state(&forked_from).await {
+                Some(original_state) => Some(MergeMetadata {
+                    merged_branch_id: forked_from,
+                    forked_at_heads: original_state.fork_info.as_ref().unwrap().forked_at.clone(),
+                }),
                 _ => None,
             }
         } else {
@@ -119,30 +100,26 @@ impl BranchDb {
         let username = self.username.lock().await.clone();
         if let Some(merge_metadata) = merge_metadata {
             let target = target.clone();
-            let target_handle = target_state.doc_handle.clone();
-            tokio::task::spawn_blocking(move || {
-                target_handle.with_document(|d| {
-                    let mut tx = d.transaction();
+            self.with_shadow_document(&target, async |d| {
+                let mut tx = d.transaction();
 
-                    // do a dummy change that we can attach some metadata to
-                    let changed = tx.get_int(&ROOT, "_changed").unwrap_or(0);
-                    let _ = tx.put(ROOT, "_changed", changed + 1);
+                // do a dummy change that we can attach some metadata to
+                let changed = tx.get_int(&ROOT, "_changed").unwrap_or(0);
+                let _ = tx.put(ROOT, "_changed", changed + 1);
 
-                    commit_with_metadata(
-                        tx,
-                        &CommitMetadata {
-                            username: username.clone(),
-                            branch_id: Some(target.clone()),
-                            merge_metadata: Some(merge_metadata),
-                            reverted_to: None,
-                            changed_files: None,
-                            is_setup: Some(false),
-                        },
-                    );
-                });
+                commit_with_metadata(
+                    tx,
+                    &CommitMetadata {
+                        username: username.clone(),
+                        branch_id: Some(target.clone()),
+                        merge_metadata: Some(merge_metadata),
+                        reverted_to: None,
+                        changed_files: None,
+                        is_setup: Some(false),
+                    },
+                );
             })
-            .await
-            .unwrap();
+            .await;
         }
     }
 }

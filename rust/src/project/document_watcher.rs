@@ -72,7 +72,7 @@ impl DocumentWatcherInner {
             select! {
                 _ = stream.next() => {
                     // collapse the rest of the stream, in case multiple futures are ready
-                    while let Some(_) = stream.next().now_or_never().flatten() {}
+                    while let Some(_) = stream.next().now_or_never().flatten() {}                    
                     self.ingest_branch_document(handle.clone()).await;
                 },
                 _ = self.token.cancelled() => {
@@ -99,6 +99,22 @@ impl DocumentWatcherInner {
         }
     }
 
+    // Binary documents are immutable, linked docs that contain binary data.
+    // By tracking them, we ensure BranchDb is aware of them.
+    async fn track_binary_document(&self, doc_id: DocumentId) {
+        let repo = self.repo.clone();
+        let branch_db = self.branch_db.clone();
+        // easy early exit
+        if branch_db.has_binary_doc(&doc_id).await {
+            return;
+        }
+        tokio::task::spawn(async move {
+            let handle = repo.find(doc_id.clone()).await;
+            // this may trigger a reconciliation for a shadow doc
+            branch_db.ingest_binary_doc(doc_id, handle.ok().flatten()).await;
+        });
+    }
+
     #[tracing::instrument(skip_all)]
     async fn ingest_branch_document(&self, handle: DocHandle) {
         let (_, meta) = self.branch_db.get_metadata_state().await.expect(
@@ -114,10 +130,8 @@ impl DocumentWatcherInner {
         let h = handle.clone();
         self.branch_db
             .insert_branch_state_if_not_exists(handle.document_id().clone(), move || BranchState {
+                id: h.document_id().clone(),
                 name: branch.name.clone(),
-                doc_handle: h.clone(),
-                linked_doc_ids: HashSet::new(),
-                synced_heads: Vec::new(),
                 fork_info: match &branch.fork_info {
                     Some(fork_info) => Some(BranchStateForkInfo {
                         forked_from: DocumentId::from_str(&fork_info.forked_from).unwrap(),
@@ -155,18 +169,18 @@ impl DocumentWatcherInner {
             .await;
 
         let h = handle.clone();
-        let linked_docs = tokio::task::spawn_blocking(move || {
+        let (heads, linked_docs) = tokio::task::spawn_blocking(move || {
             // Collect all linked doc IDs from this branch
             h.with_document(|d| {
                 let files = match d.get_obj_id(ROOT, "files") {
                     Some(files) => files,
                     None => {
                         tracing::warn!("Failed to load files for branch doc {:?}", h.document_id());
-                        return HashMap::new();
+                        return (d.get_heads(), HashMap::new());
                     }
                 };
 
-                d.keys(&files)
+                let linked_docs = d.keys(&files)
                     .filter_map(|path| {
                         let file = match d.get_obj_id(&files, &path) {
                             Some(file) => file,
@@ -185,13 +199,20 @@ impl DocumentWatcherInner {
 
                         parse_automerge_url(&url).map(|id| (path.clone(), id))
                     })
-                    .collect::<HashMap<String, DocumentId>>()
+                    .collect::<HashMap<String, DocumentId>>();
+
+                (d.get_heads(), linked_docs)
             })
         })
         .await
         .unwrap();
 
-        self.branch_db.set_linked_docs_for_branch(handle.document_id(), linked_docs.values().cloned().collect()).await;
+        for (_, doc) in &linked_docs {
+            // spawn off a task to track the binary document
+            self.track_binary_document(doc.clone()).await;
+        }
+
+        self.branch_db.update_branch_sync_state(handle, heads, linked_docs.values().cloned().collect()).await;
     }
 
     #[tracing::instrument(skip_all)]

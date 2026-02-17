@@ -52,7 +52,9 @@ pub trait ProjectViewModel {
 	/// Create a new branch, forked off the current branch with the given name.
 	fn create_branch(&mut self, branch_name: String);
 	/// Check out a branch by ID.
-	fn checkout_branch(&mut self, branch: DocumentId);
+	fn checkout_branch(&mut self, branch: &DocumentId);
+	/// Returns true if the branch is loaded (i.e. has all of its binary docs synced).
+	fn is_branch_loaded(&self, branch: &DocumentId) -> bool;
 
 	/// Whether we can begin a merge preview for the current branch into its direct ancestor.
     fn can_create_merge_preview_branch(&self) -> bool;
@@ -127,8 +129,6 @@ pub trait BranchViewModel {
 	fn get_children(&self) -> Vec<DocumentId>;
 	/// Whether the branch is user-exposed for checkout (i.e. isn't a merge or revert preview)
 	fn is_available(&self) -> bool;
-	/// Whether the branch is loaded.
-	fn is_loaded(&self) -> bool;
 	/// If the branch is a revert preview, get the change reversion target. Otherwise, [None]
 	fn get_reverted_to(&self) -> Option<ChangeHash>;
 	/// If the branch is a merge preview, get the target branch. Otherwise, [None]

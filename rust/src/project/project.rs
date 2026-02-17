@@ -198,14 +198,8 @@ impl Project {
     // common utility function within this class
     pub(super) fn get_checked_out_branch_state(&self) -> Option<BranchState> {
         self.with_driver_blocking("Get checked out branch state", |driver| async move {
-            if driver.is_none() {
-                return None;
-            }
-            let branch_state = match driver.as_ref().unwrap().get_checked_out_ref().await {
-                Some(id) => driver.as_ref().unwrap().get_branch_state(&id.branch).await,
-                None => None,
-            };
-            branch_state.clone()
+            let checked_out_ref = driver.as_ref()?.get_branch_db().get_checked_out_ref().await?;
+            driver.as_ref()?.get_branch_db().get_branch_state(&checked_out_ref.branch).await
         })
     }
 
