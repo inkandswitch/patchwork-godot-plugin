@@ -188,23 +188,30 @@ impl BranchDb {
 
             tracing::debug!("Reconcile starting...");
 
-            let tracked_heads = state.last_tracked.clone();
+            // let tracked_heads = state.last_tracked.clone();
             let handle = state.canonical_doc.clone();
 
             let (mut state, new_heads) = handle.with_document(move |d| {
                 // First, create a fork from our heads if we don't have one
                 let shadow_doc = state
                     .shadow_doc
-                    .get_or_insert_with(|| d.fork_at(&tracked_heads).unwrap());
+                    // TODO (Lilith): Once Alex fixes fork_at, use the other line instead
+                    // .get_or_insert_with(|| d.fork_at(&tracked_heads).unwrap());
+                    .get_or_insert_with(|| d.fork());
 
                 // First, fork at tracked heads.
                 // This is important so that if new heads have appeared with unsynced binary docs since
                 // we tried to reconcile, we don't include them.
-                let mut fork = d.fork_at(&tracked_heads).unwrap();
+                
+                // TODO (Lilith): Once Alex fixes fork_at, use the other line instead
+                //let mut fork = d.fork_at(&tracked_heads).unwrap();
+                let mut fork = d.fork();
 
                 // Next, sync our fork with the shadow doc.
                 let _ = fork.merge(shadow_doc).unwrap();
                 let _ = shadow_doc.merge(&mut fork).unwrap();
+
+                // let _ = shadow_doc.merge(d).unwrap();
 
                 // Last, sync our canonical doc with the shadow doc.
                 // We need to ignore the outputted heads, because we may already have unsynced changes in the canonical doc!
@@ -212,6 +219,7 @@ impl BranchDb {
                 let _ = d.merge(shadow_doc).unwrap();
                 (state, d.get_heads())
             });
+            // TODO (Lilith): Figure out a way to ignore canonical heads (use shadow heads?)
             state.last_reconciled = new_heads.clone();
             state.last_tracked = new_heads;
         })
