@@ -3,8 +3,8 @@ use crate::fs::file_utils::{FileContent, FileSystemEvent};
 use crate::helpers::branch::BranchState;
 use crate::helpers::spawn_utils::spawn_named;
 use crate::helpers::utils::CommitInfo;
+use crate::project::branch_db::BranchDb;
 use crate::project::branch_db::history_ref::HistoryRef;
-use crate::project::branch_db::{BranchDb};
 use crate::project::change_ingester::ChangeIngester;
 use crate::project::connection::{RemoteConnection, RemoteConnectionEvent, RemoteConnectionStatus};
 use crate::project::document_watcher::DocumentWatcher;
@@ -294,11 +294,15 @@ impl Driver {
     }
 
     pub async fn discard_current_branch(&self) {
-        let Some(checked_out_ref) = self.get_checked_out_ref().await else {
+        let Some(checked_out_ref) = self.get_branch_db().get_checked_out_ref().await else {
             return;
         };
 
-        let Some(branch_state) = self.get_branch_state(&checked_out_ref.branch).await else {
+        let Some(branch_state) = self
+            .get_branch_db()
+            .get_branch_state(&checked_out_ref.branch)
+            .await
+        else {
             return;
         };
 
@@ -307,7 +311,7 @@ impl Driver {
         };
         self.inner
             .branch_db
-            .delete_branch(&branch_state.doc_handle.document_id().clone())
+            .delete_branch(&branch_state.id)
             .await;
 
         self.request_checkout(&fork_info.forked_from).await;
@@ -367,23 +371,6 @@ impl Driver {
             .map(|(_, doc)| DocumentId::from_str(&doc.main_doc_id).unwrap())
     }
 
-    pub async fn get_branch_name(&self, id: &DocumentId) -> Option<String> {
-        self.inner.branch_db.get_branch_name(id).await
-    }
-
-    pub async fn get_branch_state(&self, id: &DocumentId) -> Option<BranchState> {
-        self.inner.branch_db.get_branch_state(id).await
-    }
-
-    pub async fn get_branch_children(&self, id: &DocumentId) -> Vec<DocumentId> {
-        self.inner.branch_db.get_branch_children(id).await
-    }
-
-    pub async fn get_checked_out_ref(&self) -> Option<HistoryRef> {
-        let checked_out_ref = self.inner.branch_db.get_checked_out_ref_mut();
-        return checked_out_ref.read().await.clone();
-    }
-
     pub async fn get_connection_info(&self) -> Option<ConnectionInfo> {
         self.inner.peer_watcher.get_server_info()
     }
@@ -394,16 +381,8 @@ impl Driver {
             .store(safe, Ordering::Relaxed);
     }
 
-    pub async fn get_file_at_ref(&self, path: &String, ref_: &HistoryRef) -> Option<FileContent> {
-        let res = self.inner.branch_db.get_files_at_ref(ref_, &HashSet::from_iter(vec![path.clone()])).await;
-        if let Some(files) = res {
-            return files.get(path).cloned();
-        }
-        None
-    }
-
-    pub async fn get_files_at_ref(&self, ref_: &HistoryRef, filters: &HashSet<String>) -> Option<HashMap<String, FileContent>> {
-        self.inner.branch_db.get_files_at_ref(ref_, filters).await
+    pub fn get_branch_db(&self) -> BranchDb {
+        self.inner.branch_db.clone()
     }
 
     // awkward
@@ -517,6 +496,10 @@ impl DriverInner {
             if let Some(ref_) = self.branch_db.get_latest_ref_on_branch(&main_branch).await {
                 return Some(ref_);
             }
+            tracing::error!(
+                "Found main branch, but couldn't get the latest ref. Skipping checkout!"
+            );
+            return None;
         }
         tracing::error!(
             "No metadata doc checked out, or otherwise couldn't get main branch. Skipping checkout!"
@@ -552,7 +535,15 @@ mod tests {
         let dir = PathBuf::from("C:\\foo\\bar\\");
         let gitignore = Driver::build_gitignore(&dir);
         // ignores windows style paths
-        assert!(gitignore.matched_path_or_any_parents(dir.join(".patchwork\\thingy.txt").as_path(), false).is_ignore());
-        assert!(!gitignore.matched_path_or_any_parents(dir.join("blargh\\baz.txt").as_path(), false).is_ignore());
+        assert!(
+            gitignore
+                .matched_path_or_any_parents(dir.join(".patchwork\\thingy.txt").as_path(), false)
+                .is_ignore()
+        );
+        assert!(
+            !gitignore
+                .matched_path_or_any_parents(dir.join("blargh\\baz.txt").as_path(), false)
+                .is_ignore()
+        );
     }
 }

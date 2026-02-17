@@ -182,37 +182,26 @@ impl BranchDb {
         self.remove_branch_from_meta(branch.clone()).await;
     }
 
-    pub(super) async fn clone_doc(&self, handle: DocHandle) -> DocHandle {
-        let new_handle = self.repo.create(Automerge::new()).await.unwrap();
-
-        let new_handle_clone = new_handle.clone();
-        tokio::task::spawn_blocking(move || {
-            handle.with_document(|mut main_d| {
-                new_handle_clone
-                    .with_document(|d| d.merge(&mut main_d))
-                    .unwrap();
-            });
-        })
-        .await
-        .unwrap();
-
-        return new_handle;
+    async fn clone_branch(&self, branch: &DocumentId) -> Option<DocHandle> {
+        self.with_shadow_document(branch, async |d| {
+            self.repo.create(d.clone()).await.unwrap()
+        }).await.ok()
     }
 
     // TODO: This would be more versatile if we gave a HistoryRef instead of a branch.
     // That way it might work for reverts too?
     pub async fn fork_branch(&self, name: String, source: &DocumentId) -> Option<DocumentId> {
         tracing::info!("Forking new branch {:?} from source {:?}", name, source);
-        let Some(source_handle) = self.get_branch_handle(source).await else {
-            tracing::error!("Couldn't fork branch; existing source branch doesn't exist!");
-            return None;
-        };
 
         let Some(latest_ref) = self.get_latest_ref_on_branch(source).await else {
             tracing::error!("Couldn't get latest ref on source branch!");
             return None;
         };
-        let new_handle = self.clone_doc(source_handle).await;
+
+        // At the instant which we clone, the new shadow document does NOT exist, but the
+        // canonical document does.
+        // We wait for document_watcher to ingest the metadata handle and start tracking the new branch.
+        let new_handle = self.clone_branch(source).await?;
         let username = self.username.lock().await.clone();
         let id = new_handle.document_id();
 

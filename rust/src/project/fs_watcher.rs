@@ -158,6 +158,7 @@ impl FileSystemWatcher {
         if self.branch_db.should_ignore(&event.path) {
             return None;
         }
+        tracing::debug!("handling filesystem event: {:?}", event.path);
         let result = self.handle_file_event(event.path.clone()).await;
         if let Ok(Some(ret)) = result {
             return Some(ret);
@@ -216,9 +217,7 @@ impl FileSystemWatcher {
                 let Ok(notify_events) = notify_events else {
                     continue;
                 };
-                tracing::debug!("Heard filesystem event list of {:?} items", notify_events.len());
                 for notify_event in notify_events {
-                    tracing::trace!("Heard filesystem event {:?}", notify_event);
                     if let Some(evt) = this.process_notify_event(notify_event).await {
                         yield evt;
                     }

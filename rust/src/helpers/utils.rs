@@ -61,7 +61,6 @@ pub(crate) fn parse_automerge_url(url: &str) -> Option<DocumentId> {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct MergeMetadata {
     pub merged_branch_id: DocumentId,
-    pub merged_at_heads: Vec<ChangeHash>,
     pub forked_at_heads: Vec<ChangeHash>,
 }
 
@@ -100,7 +99,7 @@ pub struct CommitMetadata {
 	pub is_setup: Option<bool>
 }
 
-pub(crate) fn commit_with_metadata(tx: Transaction, metadata: &CommitMetadata) {
+pub(crate) fn commit_with_metadata(tx: Transaction, metadata: &CommitMetadata) -> Option<ChangeHash> {
     let timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
@@ -112,18 +111,7 @@ pub(crate) fn commit_with_metadata(tx: Transaction, metadata: &CommitMetadata) {
         CommitOptions::default()
             .with_message(message)
             .with_time(timestamp),
-    );
-}
-
-pub(crate) fn print_branch_state(message: &str, branch_state: &BranchState) {
-	let last_synced_head = branch_state.synced_heads.last().map(|h| h.to_short_form()).unwrap_or("<NONE>".to_string());
-    tracing::info!(
-        "{}: {:?} - linked docs: {:?}, last synced head: {:?}",
-        &message, branch_state.name, branch_state.linked_doc_ids.len(), last_synced_head
-    );
-	tracing::debug!("branch id: {:?}", branch_state.doc_handle.document_id());
-	tracing::trace!("linked doc ids: {:?}", branch_state.linked_doc_ids);
-	tracing::trace!("synced heads: {:?}", branch_state.synced_heads);
+    ).0
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

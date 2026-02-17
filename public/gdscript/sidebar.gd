@@ -307,7 +307,7 @@ func _on_branch_picker_item_selected(_index: int) -> void:
 	print("Patchwork: Updating UI due to branch picker selection...")
 	update_ui()
 
-	if !selected_branch.is_loaded:
+	if !GodotProject.is_branch_loaded(selected_branch.id):
 		# Show warning dialog that branch is not synced correctly
 		var dialog = AcceptDialog.new()
 		dialog.title = "Branch Not Available"
@@ -714,8 +714,7 @@ func add_branch_to_picker(branch: Dictionary, selected_branch_id: String, indent
 	var branch_index = branch_picker.get_item_count()
 	branch_picker.add_item(label, branch_index)
 
-	# this should not happen, but right now the sync is not working correctly so we need to surface this in the interface
-	if !branch.is_loaded:
+	if !GodotProject.is_branch_loaded(branch.id):
 		branch_picker.set_item_icon(branch_index, load("res://addons/patchwork/public/icons/warning.svg"))
 
 	branch_picker.set_item_metadata(branch_index, branch.id)

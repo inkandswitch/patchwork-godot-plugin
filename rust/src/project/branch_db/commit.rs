@@ -20,6 +20,7 @@ use crate::{
 // Methods related to committing changes to a branch in [BranchDb].
 impl BranchDb {
     /// Commit a list of files from the filesystem, while ensuring they've actually been changed before including them.
+    /// Returns a HistoryRef referring to the new heads. We may or may not have reconciled to the canonical doc at this point.
     pub async fn commit_fs_changes(
         &self,
         files: Vec<(String, FileContent)>,
@@ -27,14 +28,6 @@ impl BranchDb {
         revert: Option<Vec<ChangeHash>>,
         is_checking_in: bool,
     ) -> Option<HistoryRef> {
-        let Some(branch_handle) = self.get_branch_handle(&ref_.branch).await else {
-            tracing::error!(
-                "Could not commit changes; ref doesn't have an associated branch handle! {:?}",
-                ref_
-            );
-            return None;
-        };
-
         tracing::info!("Attempting to commit changes...");
         // Only commit files that have actually changed
         let files = self.filter_changed_files(ref_, files).await;
@@ -69,121 +62,135 @@ impl BranchDb {
             }
         }
 
-        let new_heads = tokio::task::spawn_blocking(move || {
-            branch_handle.with_document(|d| {
-                // We currently only ever save files to the current heads
-                let mut tx = d.transaction();
+        let sync_states = self.branch_sync_states.lock().await;
+        let Some(state_arc) = sync_states.get(&ref_.branch) else {
+            tracing::error!("Sync state doesn't exist for branch; can't commit changes.");
+            return None;
+        };
 
-                let mut changes: Vec<ChangedFile> = Vec::new();
-                let files = tx.get_obj_id(ROOT, "files").unwrap();
+        let mut state = state_arc.lock().await;
 
-                // write text entries to doc
-                for (path, content) in text_entries {
-                    // get existing file url or create new one
-                    let (file_entry, change_type) = match tx.get(&files, &path) {
-                        Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => {
-                            (file_entry, ChangeType::Modified)
-                        }
-                        _ => (
-                            tx.put_object(&files, &path, ObjType::Map).unwrap(),
-                            ChangeType::Added,
-                        ),
-                    };
+        // We always commit to the shadow doc, and later attempt reconciliation.
+        let Some(d) = state.shadow_doc.as_mut() else {
+            tracing::error!("Shadow doc not initialized for branch; can't commit changes.");
+            return None;
+        };
 
-                    changes.push(ChangedFile { path, change_type });
+        let mut tx = d.transaction();
 
-                    // delete url in file entry if it previously had one
-                    if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
-                        let _ = tx.delete(&file_entry, "url");
-                    }
+        let mut changes: Vec<ChangedFile> = Vec::new();
+        let files = tx.get_obj_id(ROOT, "files").unwrap();
 
-                    // delete structured content in file entry if it previously had one
-                    if let Ok(Some((_, _))) = tx.get(&file_entry, "structured_content") {
-                        let _ = tx.delete(&file_entry, "structured_content");
-                    }
-
-                    // either get existing text or create new text
-                    let content_key = match tx.get(&file_entry, "content") {
-                        Ok(Some((automerge::Value::Object(ObjType::Text), content))) => content,
-                        _ => tx
-                            .put_object(&file_entry, "content", ObjType::Text)
-                            .unwrap(),
-                    };
-                    let _ = tx.update_text(&content_key, &content);
+        // write text entries to doc
+        for (path, content) in text_entries {
+            // get existing file url or create new one
+            let (file_entry, change_type) = match tx.get(&files, &path) {
+                Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => {
+                    (file_entry, ChangeType::Modified)
                 }
+                _ => (
+                    tx.put_object(&files, &path, ObjType::Map).unwrap(),
+                    ChangeType::Added,
+                ),
+            };
 
-                // write scene entries to doc
-                for (path, godot_scene) in scene_entries {
-                    // get the change flag
-                    let change_type = match tx.get(&files, &path) {
-                        Ok(Some(_)) => ChangeType::Modified,
-                        _ => ChangeType::Added,
-                    };
+            changes.push(ChangedFile { path, change_type });
 
-                    let scene_file = tx
-                        .get_obj_id(&files, &path)
-                        .unwrap_or_else(|| tx.put_object(&files, &path, ObjType::Map).unwrap());
-                    autosurgeon::reconcile_prop(
-                        &mut tx,
-                        &scene_file,
-                        "structured_content",
-                        godot_scene,
-                    )
-                    .unwrap_or_else(|e| {
-                        tracing::error!("error reconciling scene: {}", e);
-                        panic!("error reconciling scene: {}", e);
-                    });
-                    changes.push(ChangedFile { path, change_type });
-                }
+            // delete url in file entry if it previously had one
+            if let Ok(Some((_, _))) = tx.get(&file_entry, "url") {
+                let _ = tx.delete(&file_entry, "url");
+            }
 
-                // write binary entries to doc
-                for (path, binary_doc_handle) in binary_entries {
-                    // get the change flag
-                    let change_type = match tx.get(&files, &path) {
-                        Ok(Some(_)) => ChangeType::Modified,
-                        _ => ChangeType::Added,
-                    };
+            // delete structured content in file entry if it previously had one
+            if let Ok(Some((_, _))) = tx.get(&file_entry, "structured_content") {
+                let _ = tx.delete(&file_entry, "structured_content");
+            }
 
-                    let file_entry = tx.put_object(&files, &path, ObjType::Map);
-                    let _ = tx.put(
-                        file_entry.unwrap(),
-                        "url",
-                        format!("automerge:{}", &binary_doc_handle.document_id()),
-                    );
+            // either get existing text or create new text
+            let content_key = match tx.get(&file_entry, "content") {
+                Ok(Some((automerge::Value::Object(ObjType::Text), content))) => content,
+                _ => tx
+                    .put_object(&file_entry, "content", ObjType::Text)
+                    .unwrap(),
+            };
+            let _ = tx.update_text(&content_key, &content);
+        }
 
-                    changes.push(ChangedFile { path, change_type });
-                }
+        // write scene entries to doc
+        for (path, godot_scene) in scene_entries {
+            // get the change flag
+            let change_type = match tx.get(&files, &path) {
+                Ok(Some(_)) => ChangeType::Modified,
+                _ => ChangeType::Added,
+            };
 
-                for path in deleted_entries {
-                    let _ = tx.delete(&files, &path);
-                    changes.push(ChangedFile {
-                        path,
-                        change_type: ChangeType::Removed,
-                    });
-                }
+            let scene_file = tx
+                .get_obj_id(&files, &path)
+                .unwrap_or_else(|| tx.put_object(&files, &path, ObjType::Map).unwrap());
+            autosurgeon::reconcile_prop(
+                &mut tx,
+                &scene_file,
+                "structured_content",
+                godot_scene,
+            )
+            .unwrap_or_else(|e| {
+                tracing::error!("error reconciling scene: {}", e);
+                panic!("error reconciling scene: {}", e);
+            });
+            changes.push(ChangedFile { path, change_type });
+        }
 
-                commit_with_metadata(
-                    tx,
-                    &CommitMetadata {
-                        username: username.clone(),
-                        branch_id: Some(branch_handle.document_id().clone()),
-                        merge_metadata: None,
-                        reverted_to: match revert {
-                            Some(revert) => Some(heads_to_vec_string(revert)),
-                            None => None,
-                        },
-                        changed_files: Some(changes),
-                        is_setup: Some(is_checking_in),
-                    },
-                );
+        // write binary entries to doc
+        for (path, binary_doc_handle) in binary_entries {
+            // get the change flag
+            let change_type = match tx.get(&files, &path) {
+                Ok(Some(_)) => ChangeType::Modified,
+                _ => ChangeType::Added,
+            };
 
-                // TODO: I actually have no idea if this works -- do we need a new with_document
-                // to check for new heads?
-                d.get_heads()
-            })
-        })
-        .await
-        .unwrap();
+            let file_entry = tx.put_object(&files, &path, ObjType::Map);
+            let _ = tx.put(
+                file_entry.unwrap(),
+                "url",
+                format!("automerge:{}", &binary_doc_handle.document_id()),
+            );
+
+            changes.push(ChangedFile { path, change_type });
+        }
+
+        for path in deleted_entries {
+            let _ = tx.delete(&files, &path);
+            changes.push(ChangedFile {
+                path,
+                change_type: ChangeType::Removed,
+            });
+        }
+
+        let res = commit_with_metadata(
+            tx,
+            &CommitMetadata {
+                username: username.clone(),
+                branch_id: Some(ref_.branch.clone()),
+                merge_metadata: None,
+                reverted_to: match revert {
+                    Some(revert) => Some(heads_to_vec_string(revert)),
+                    None => None,
+                },
+                changed_files: Some(changes),
+                is_setup: Some(is_checking_in),
+            },
+        );
+
+        let new_heads = d.get_heads();
+
+        assert!(new_heads.get(0) == res.as_ref());
+
+        // Unlock state, then attempt a reconcile.
+        // The reconcile may fail if we are currently syncing binary docs.
+        // That's OK; once the binary doc sync finishes, it will trigger a reconcile to canonical.
+        // In the mean time, we can continue committing to the shadow doc.
+        drop(state);
+        self.try_reconcile_branch(state_arc.clone()).await;
 
         tracing::info!("Committed {} files.", count);
         assert!(new_heads != ref_.heads);

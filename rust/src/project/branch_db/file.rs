@@ -1,10 +1,10 @@
-use std::{collections::{HashMap, HashSet}};
+use std::collections::{HashMap, HashSet};
 
 use automerge::{ObjId, ObjType, ROOT, ReadDoc};
 use samod::DocumentId;
 
 use crate::{
-    fs::{file_utils::FileSystemEvent, file_utils::FileContent},
+    fs::{file_utils::FileContent, file_utils::FileSystemEvent},
     helpers::{doc_utils::SimpleDocReader, utils::get_changed_files},
     project::branch_db::{BranchDb, HistoryRef},
 };
@@ -13,17 +13,16 @@ use crate::{
 impl BranchDb {
     // Utility to check for shared history between refs
     async fn shares_history(&self, earlier_ref: HistoryRef, later_ref: HistoryRef) -> bool {
-        let Some(handle) = self.get_branch_handle(&later_ref.branch).await else {
-            return false;
-        };
-        tokio::task::spawn_blocking(move || {
-            handle.with_document(move |d| {
+        let Ok(res) = self
+            .with_shadow_document(&later_ref.branch, async |d| {
                 d.get_obj_id_at(ROOT, "files", &earlier_ref.heads).is_some()
                     && d.get_obj_id_at(ROOT, "files", &later_ref.heads).is_some()
             })
-        })
-        .await
-        .unwrap()
+            .await
+        else {
+            return false;
+        };
+        return res;
     }
 
     /// Given two refs, checks to see if one is a direct descendant of another.
@@ -84,7 +83,9 @@ impl BranchDb {
                 files
                     .into_iter()
                     .map(|(path, content)| match content {
-                        FileContent::Deleted => FileSystemEvent::FileDeleted(self.globalize_path(&path)),
+                        FileContent::Deleted => {
+                            FileSystemEvent::FileDeleted(self.globalize_path(&path))
+                        }
                         _ => FileSystemEvent::FileCreated(self.globalize_path(&path), content),
                     })
                     .collect(),
@@ -116,22 +117,27 @@ impl BranchDb {
                     _ => {}
                 }
                 if !old_files.contains_key(&path) {
-                    events.push(FileSystemEvent::FileCreated(self.globalize_path(&path), content));
+                    events.push(FileSystemEvent::FileCreated(
+                        self.globalize_path(&path),
+                        content,
+                    ));
                 } else if &content != old_files.get(&path).unwrap() {
-                    events.push(FileSystemEvent::FileModified(self.globalize_path(&path), content));
+                    events.push(FileSystemEvent::FileModified(
+                        self.globalize_path(&path),
+                        content,
+                    ));
                 }
             }
             return Some(events);
         }
 
         let descendent_ref = descendent_ref.unwrap();
-        let handle = self.get_branch_handle(&descendent_ref.branch).await?;
 
         // Get the patches from the later (descendant) ref
         let old_heads = old_ref.heads.clone();
         let new_heads = new_ref.heads.clone();
-        let (patches, old_file_set, curr_file_set) = tokio::task::spawn_blocking(move || {
-            handle.with_document(|d| {
+        let (patches, old_file_set, curr_file_set) = self
+            .with_shadow_document(&descendent_ref.branch, async |d| {
                 let old_files_id: Option<ObjId> = d.get_obj_id_at(ROOT, "files", &old_heads);
                 let curr_files_id = d.get_obj_id_at(ROOT, "files", &new_heads);
                 let old_file_set = if old_files_id.is_none() {
@@ -151,9 +157,8 @@ impl BranchDb {
                 let patches = d.diff(&old_heads, &new_heads);
                 (patches, old_file_set, curr_file_set)
             })
-        })
-        .await
-        .unwrap();
+            .await
+            .ok()?;
 
         // Gather the information of what files changed from the patches.
         let deleted_files: HashSet<_> = old_file_set.difference(&curr_file_set).cloned().collect();
@@ -176,7 +181,9 @@ impl BranchDb {
                 .await?
                 .into_iter()
                 .map(|(path, content)| match content {
-                    FileContent::Deleted => FileSystemEvent::FileDeleted(self.globalize_path(&path)),
+                    FileContent::Deleted => {
+                        FileSystemEvent::FileDeleted(self.globalize_path(&path))
+                    }
                     _ if added_files.contains(&path) => {
                         FileSystemEvent::FileCreated(self.globalize_path(&path), content)
                     }
@@ -193,12 +200,19 @@ impl BranchDb {
                 .collect(),
         )
     }
-    
+
     async fn get_linked_file(&self, doc_id: &DocumentId) -> Option<FileContent> {
-        let state = self.binary_states.lock().await.get(doc_id).cloned();
-        let Some(handle) = state.and_then(|f| f.doc_handle) else {
+        let handle = self
+            .binary_states
+            .lock()
+            .await
+            .get(doc_id)
+            .cloned()
+            .flatten();
+        let Some(handle) = handle else {
             return None;
         };
+
         tokio::task::spawn_blocking(move || {
             handle.with_document(|d| match d.get(ROOT, "content") {
                 Ok(Some((value, _))) if value.is_bytes() => {
@@ -224,11 +238,10 @@ impl BranchDb {
         let mut files = HashMap::new();
         let mut linked_doc_ids = Vec::new();
 
-        let doc_handle = self.get_branch_handle(&desired_ref.branch).await?;
         let filters = filters.clone();
         let desired_ref = desired_ref.clone();
-        let (mut files, linked_doc_ids) = tokio::task::spawn_blocking(move || {
-            doc_handle.with_document(|doc| {
+        let (mut files, linked_doc_ids) = self
+            .with_shadow_document(&desired_ref.branch, async |doc| {
                 let files_obj_id: ObjId = doc
                     .get_at(ROOT, "files", desired_ref.heads.as_ref())
                     .unwrap()
@@ -265,11 +278,10 @@ impl BranchDb {
                         },
                     };
                 }
-            });
-            (files, linked_doc_ids)
-        })
-        .await
-        .unwrap();
+                (files, linked_doc_ids)
+            })
+            .await
+            .ok()?;
 
         for (doc_id, path) in linked_doc_ids {
             let linked_file_content: Option<FileContent> = self.get_linked_file(&doc_id).await;

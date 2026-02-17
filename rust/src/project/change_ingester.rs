@@ -4,6 +4,7 @@ use std::{
 };
 
 use futures::StreamExt;
+use num_traits::ops::checked;
 use tokio::{
     select,
     sync::{Mutex, Notify, watch},
@@ -11,7 +12,10 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    helpers::{spawn_utils::spawn_named, utils::{CommitInfo, CommitMetadata, summarize_changes}},
+    helpers::{
+        spawn_utils::spawn_named,
+        utils::{CommitInfo, CommitMetadata, summarize_changes},
+    },
     project::{branch_db::BranchDb, peer_watcher::PeerWatcher, project_api::ChangeViewModel},
 };
 
@@ -152,42 +156,33 @@ impl ChangeIngesterInner {
             return Vec::new();
         };
 
-        let Some(handle) = self.branch_db.get_branch_handle(&checked_out.branch).await else {        
-            tracing::info!("Can't get the checked out branch handle; something must be wrong");
-            return Vec::new();
-        };
-        let doc_id = handle.document_id();
-
         let last_acked_heads = self
             .peer_watcher
             .get_server_info()
             .as_ref()
-            .and_then(|info| info.docs.get(&doc_id))
+            .and_then(|info| info.docs.get(&checked_out.branch))
             .and_then(|state| state.last_acked_heads.clone());
 
-        let h = handle.clone();
-        let changes = tokio::task::spawn_blocking(move || {
-            h.with_document(move |d| {
-                d.get_changes_meta(&[])
-                    .to_vec()
-                    .iter()
-                    .map(|c| {
-                        CommitInfo {
-                            hash: c.hash,
-                            timestamp: c.timestamp,
-                            metadata: c
-                                .message
-                                .as_ref()
-                                .and_then(|m| serde_json::from_str::<CommitMetadata>(&m).ok()),
-                            synced: false,           // set later
-                            summary: "".to_string(), // set later
-                        }
-                    })
-                    .collect::<Vec<CommitInfo>>()
+        let Some(changes) = self.branch_db.get_branch_changes(&checked_out.branch).await else {
+            tracing::error!("Can't get changes; get_branch_changes failed!");
+            return Vec::new();
+        };
+
+        let changes = changes
+            .into_iter()
+            .map(|c| {
+                CommitInfo {
+                    hash: c.hash,
+                    timestamp: c.timestamp,
+                    metadata: c
+                        .message
+                        .as_ref()
+                        .and_then(|m| serde_json::from_str::<CommitMetadata>(&m).ok()),
+                    synced: false,           // set later
+                    summary: "".to_string(), // set later
+                }
             })
-        })
-        .await
-        .unwrap();
+            .collect::<Vec<CommitInfo>>();
 
         // Check to see what the most recent synced commit is.
         let mut synced_until_index = -1;
@@ -210,7 +205,7 @@ impl ChangeIngesterInner {
             let Some(branch_id) = &metadata.branch_id else {
                 continue;
             };
-            if branch_id != doc_id {
+            if branch_id != &checked_out.branch {
                 continue;
             }
 

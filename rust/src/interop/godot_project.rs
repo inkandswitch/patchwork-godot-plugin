@@ -238,6 +238,14 @@ impl GodotProject {
 	}
 
 	#[func]
+	fn is_branch_loaded(&self, id: String) -> bool {
+		let Ok(id) = DocumentId::from_str(&id) else {
+			return false;
+		};
+		self.project.is_branch_loaded(&id)
+	}
+
+	#[func]
 	fn create_branch(&mut self, name: String) {
 		self.project.create_branch(name);
 	}
@@ -245,7 +253,7 @@ impl GodotProject {
 	#[func]
 	fn checkout_branch(&mut self, id: String) {
 		if let Ok(id) = DocumentId::from_str(&id) {
-		self.project.checkout_branch(id);
+		self.project.checkout_branch(&id);
 		};
 	}
 

@@ -1,9 +1,13 @@
 use std::{path::PathBuf, str::FromStr};
 
+use automerge::{Automerge, ChangeMetadata};
 use samod::{DocHandle, DocumentId};
 use tracing::instrument;
 
-use crate::{helpers::branch::BranchState, project::branch_db::{BranchDb, HistoryRef}};
+use crate::{
+    helpers::branch::BranchState,
+    project::branch_db::{BranchDb, HistoryRef},
+};
 
 // Utility methods for working with [BranchDb].
 impl BranchDb {
@@ -36,19 +40,23 @@ impl BranchDb {
         }
     }
 
-    /// Get the most recent ref on a given branch.
+    /// Get the most recent ref on a given branch (on the shadow doc).
     // TODO (Lilith): This replaces branch_state.synced_heads. Either remove synced_heads,
     // or figure out a way to reliably update it when the heads actually change.
     // In the old system, synced heads was just force-updated every branch update.
-    // Maybe that's enough? Get DocumentWatcher to do it? Then we remove the with_doc call here. 
+    // Maybe that's enough? Get DocumentWatcher to do it? Then we remove the with_doc call here.
     #[instrument(skip_all)]
     pub async fn get_latest_ref_on_branch(&self, branch: &DocumentId) -> Option<HistoryRef> {
-        let handle = self.get_branch_handle(branch).await?;
-        let heads = tokio::task::spawn_blocking(move || handle.with_document(|d| d.get_heads())).await.unwrap();
-        
+        let Ok(heads) = self
+            .with_shadow_document(branch, async |d| d.get_heads())
+            .await
+        else {
+            return None;
+        };
+
         Some(HistoryRef {
             heads,
-            branch: branch.clone()
+            branch: branch.clone(),
         })
     }
 
@@ -72,9 +80,11 @@ impl BranchDb {
         if !path.starts_with(&self.project_dir) {
             return true;
         }
-        self.gitignore.matched_path_or_any_parents(path, path.is_dir()).is_ignore()
+        self.gitignore
+            .matched_path_or_any_parents(path, path.is_dir())
+            .is_ignore()
     }
-    
+
     pub async fn get_branch_name(&self, id: &DocumentId) -> Option<String> {
         let states = self.branch_states.lock().await;
         Some(states.get(id)?.lock().await.name.clone())
@@ -89,9 +99,33 @@ impl BranchDb {
         Some(states.get(id)?.lock().await.clone())
     }
 
-    pub async fn get_branch_handle(&self, id: &DocumentId) -> Option<DocHandle> {
-        let states = self.branch_states.lock().await;
-        Some(states.get(id)?.lock().await.doc_handle.clone())
+    // pub async fn get_branch_handle(&self, id: &DocumentId) -> Option<DocHandle> {
+    //     let states = self.branch_states.lock().await;
+    //     Some(states.get(id)?.lock().await.doc_handle.clone())
+    // }
+
+    /// Run a closure over a mutable reference to our Automerge shadow document for a branch.
+    pub(super) async fn with_shadow_document<F, R>(
+        &self,
+        branch: &DocumentId,
+        f: F,
+    ) -> Result<R, ()>
+    where
+        F: AsyncFnOnce(&mut Automerge) -> R,
+    {
+        let sync_states = self.branch_sync_states.lock().await;
+        let Some(state) = sync_states.get(branch).cloned() else {
+            tracing::error!("Branch not found in sync states! Unable to run with_shadow_document.");
+            return Err(());
+        };
+        // intentionally drop sync_states mutex here so that we can run nested with_shadow_document calls
+        drop(sync_states);
+        let mut state = state.lock().await;
+        let Some(shadow_doc) = state.shadow_doc.as_mut() else {
+            tracing::error!("Shadow document not initialized!");
+            return Err(());
+        };
+        Ok(f(shadow_doc).await)
     }
 
     pub async fn get_branch_children(&self, id: &DocumentId) -> Vec<DocumentId> {
@@ -99,7 +133,8 @@ impl BranchDb {
         let mut result = Vec::new();
 
         for (bid, state) in states.iter() {
-            let state: tokio::sync::MutexGuard<'_, crate::helpers::branch::BranchState> = state.lock().await;
+            let state: tokio::sync::MutexGuard<'_, crate::helpers::branch::BranchState> =
+                state.lock().await;
             if let Some(fork_info) = &state.fork_info {
                 if &fork_info.forked_from == id {
                     result.push(bid.clone());
@@ -107,5 +142,18 @@ impl BranchDb {
             }
         }
         result
+    }
+
+    /// Get ALL change metadata on the current branch document, including those changes made before the document was created.
+    pub async fn get_branch_changes(&self, id: &DocumentId) -> Option<Vec<ChangeMetadata>> {
+        self.with_shadow_document(id, async |d| {
+            d.get_changes_meta(&[])
+                .iter()
+                // this may be slow? we could consider putting it in a struct with only the info we need like CommitInfo.
+                .map(|i| i.clone().into_owned())
+                .collect()
+        })
+        .await
+        .ok()
     }
 }
