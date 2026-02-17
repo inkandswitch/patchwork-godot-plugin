@@ -156,4 +156,29 @@ impl BranchDb {
         .await
         .ok()
     }
+
+    /// Dumps a branch document to disk, at ./.patchwork/DUMP_{id}.bin
+    pub async fn dump_branch_doc(&self, id: &DocumentId) {
+        let path = self.get_project_dir().join("./.patchwork/").join(format!("DUMP_{id}.bin"));
+        let handle = {
+            let states = self.branch_sync_states.lock().await;
+            let Some(state) = states.get(id) else {
+                return;
+            };
+            let state = state.lock().await;
+            state.canonical_doc.clone()
+        };
+        let bytes = tokio::task::spawn_blocking(move || {
+            handle.with_document(|d| {
+                d.save()
+            })
+        }).await.unwrap();
+
+        if let Err(e) = tokio::fs::write(path.clone(), bytes).await {
+            tracing::error!("Error dumping branch {id} to {:?}: {:?}", path, e);
+            return;
+        }
+
+        tracing::info!("Dumped branch {id} to {:?}", path);
+    }
 }

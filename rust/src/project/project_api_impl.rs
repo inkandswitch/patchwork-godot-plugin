@@ -522,6 +522,18 @@ impl ProjectViewModel for Project {
             dr.get_branch_db().is_branch_loaded(&branch).await
         })
     }
+    
+    fn dump_current_branch(&self) {
+        let Some(ref_) = self.get_current_ref() else {
+            return;
+        };
+        self.with_driver_blocking("Dump current branch", |driver| async move {
+            let Some(dr) = driver.as_ref() else {
+                return;
+            };
+            dr.get_branch_db().dump_branch_doc(&ref_.branch).await;
+        });
+    }
 }
 
 impl ChangeViewModel for CommitInfo {

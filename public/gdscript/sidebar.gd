@@ -783,6 +783,7 @@ var context_menu_hash = null
 
 enum HistoryListPopupItem {
 	RESET_TO_COMMIT,
+	DUMP_BRANCH,
 	CREATE_BRANCH_AT_COMMIT
 }
 
@@ -796,13 +797,17 @@ func _on_history_list_popup_id_pressed(index: int) -> void:
 		create_revert_preview_branch(context_menu_hash)
 	elif item == HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT:
 		print("Create remix at change not implemented yet!")
+	elif item == HistoryListPopupItem.DUMP_BRANCH:
+		GodotProject.dump_current_branch()
 
 func setup_history_list_popup() -> void:
 	history_list_popup.clear()
 	# TODO: adjust this when more items are added
-	history_list_popup.max_size.y = 48 * EditorInterface.get_editor_scale()
+	history_list_popup.max_size.y = 60 * EditorInterface.get_editor_scale()
 	history_list_popup.id_pressed.connect(_on_history_list_popup_id_pressed)
 	history_list_popup.add_icon_item(load("res://addons/patchwork/public/icons/undo-redo.svg"), "Reset to here", HistoryListPopupItem.RESET_TO_COMMIT)
+	# TODO: This shouldn't be here. In the UI overhaul, make sure to move this to somewhere better!
+	history_list_popup.add_icon_item(load("res://addons/patchwork/public/icons/undo-redo.svg"), "Dump current branch to disk", HistoryListPopupItem.DUMP_BRANCH)
 	# history_list_popup.add_item("Create remix from here", HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT)
 
 func _on_history_tree_mouse_selected(_at_position: Vector2, button_idx: int) -> void:

@@ -238,6 +238,11 @@ impl GodotProject {
 	}
 
 	#[func]
+	fn dump_current_branch(&self) {
+		self.project.dump_current_branch();
+	}
+
+	#[func]
 	fn is_branch_loaded(&self, id: String) -> bool {
 		let Ok(id) = DocumentId::from_str(&id) else {
 			return false;
