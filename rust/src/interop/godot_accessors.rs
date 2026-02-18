@@ -152,6 +152,14 @@ impl PatchworkEditorAccessor {
             &[],
         );
     }
+
+    pub fn save_all() {
+        ClassDb::singleton().class_call_static(
+            "PatchworkEditor",
+            "save_all_scenes_and_scripts",
+            &[],
+        );
+    }
 }
 
 /// Allows Rust code to access the Godot EditorFilesystem API
