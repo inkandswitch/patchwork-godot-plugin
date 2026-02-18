@@ -80,8 +80,20 @@ impl BranchDb {
         if !path.starts_with(&self.project_dir) {
             return true;
         }
+        // TODO: upstream fix to ignore::gitignore::Gitignore to handle this case.
+        // if the path is equal to the project dir minus a trailing slash, gitignore will fail to strip the root and will assert
+        let is_dir = path.is_dir();
+        if is_dir {
+            let string_path = path.to_string_lossy();
+            let project_dir = self.project_dir.to_string_lossy();    
+            if string_path == project_dir || 
+            (string_path.len() + 1 == project_dir.len() && (project_dir.ends_with("/") || project_dir.ends_with("\\"))) {
+                return false;
+            }
+        };
+
         self.gitignore
-            .matched_path_or_any_parents(path, path.is_dir())
+            .matched_path_or_any_parents(path, is_dir)
             .is_ignore()
     }
 
