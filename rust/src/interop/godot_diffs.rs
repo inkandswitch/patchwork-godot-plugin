@@ -275,9 +275,12 @@ impl ToGodot for VariantValue {
             VariantValue::Variant(s) => str_to_var(s),
             VariantValue::DefaultValue(type_or_instance, property_name) => {
                 let default_value = match type_or_instance {
-                    TypeOrInstance::Type(class_name) => get_classdb_default_value(class_name, property_name),
+                    Some(TypeOrInstance::Type(class_name)) => {
+                        get_classdb_default_value(class_name, property_name)
+                    }
                     // TODO: we have to get the class of the root instance node; right now this is likely going to be something like `ExtResource("foo")`
-                    TypeOrInstance::Instance(_) => "".to_string(),
+                    Some(TypeOrInstance::Instance(_)) => "".to_string(),
+                    None => "".to_string(),
                 };
                 if default_value.is_empty() {
                     "<default_value>".to_string().to_variant()

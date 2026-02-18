@@ -116,7 +116,7 @@ impl Display for TypeOrInstance {
 pub struct GodotNode {
     pub id: i32,
     pub name: String,
-    pub type_or_instance: TypeOrInstance, // a node either has a type or an instance property
+    pub type_or_instance: Option<TypeOrInstance>, // a node may have a type or an instance property
 	pub instance_placeholder: Option<String>,
     pub parent_id: Option<i32>,
 	pub parent_id_path: Option<Vec<i32>>,
@@ -454,7 +454,7 @@ impl GodotScene {
 		// name, type, parent, parent_id_path, owner, owner_uid_path, index, unique_id, node_paths, groups, instance_placeholder, instance
         output.push_str(&format!("[node name=\"{}\"", node.name));
 
-        if let TypeOrInstance::Type(t) = &node.type_or_instance {
+        if let Some(TypeOrInstance::Type(t)) = &node.type_or_instance {
             output.push_str(&format!(" type=\"{}\"", t));
         }
 
@@ -496,7 +496,7 @@ impl GodotScene {
 			output.push_str(&format!(" instance_placeholder={}", instance_placeholder));
 		}
 
-        if let TypeOrInstance::Instance(i) = &node.type_or_instance {
+        if let Some(TypeOrInstance::Instance(i)) = &node.type_or_instance {
             output.push_str(&format!(" instance={}", i));
         }
 
@@ -771,14 +771,11 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
 					let owner_uid_path = heading.get("owner_uid_path").cloned().map(|p| parse_int32_array(&p));
 
                     let type_or_instance = if let Some(type_value) = heading.get("type") {
-                        TypeOrInstance::Type(unquote(&type_value))
+                        Some(TypeOrInstance::Type(unquote(&type_value)))
                     } else if let Some(instance_value) = heading.get("instance") {
-                        TypeOrInstance::Instance(unquote(instance_value))
+                        Some(TypeOrInstance::Instance(unquote(instance_value)))
                     } else {
-                        return Err(format!(
-                            "Missing required 'type' or 'instance' attribute in node section {}",
-                            name
-                        ));
+                        None
                     };
 
                     let node_paths = heading.get("node_paths").cloned().map(|p| unquote(&p));
