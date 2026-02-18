@@ -151,6 +151,7 @@ void PatchworkEditor::save_all_scenes_and_scripts() {
 	save_all_scripts();
 	// save the scenes
 	EditorInterface::get_singleton()->save_all_scenes();
+	EditorNode::get_singleton()->trigger_menu_option(EditorNode::SCENE_SAVE_SCENE, true);
 }
 
 void PatchworkEditor::save_all_scripts() {

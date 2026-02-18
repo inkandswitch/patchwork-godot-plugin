@@ -144,7 +144,8 @@ pub struct GodotProject {
 	base: Base<Node>,
 	project: Project,
 	pending_editor_update: PendingEditorUpdate,
-	reload_project_settings_callable: Option<Callable>
+	reload_project_settings_callable: Option<Callable>,
+	deferred_start: i32
 }
 
 // new API
@@ -476,7 +477,8 @@ impl INode for GodotProject {
 			base: _base,
 			project: Project::new(ProjectSettings::singleton().globalize_path("res://").to_string().into()),
 			pending_editor_update: PendingEditorUpdate::default(),
-			reload_project_settings_callable: None
+			reload_project_settings_callable: None,
+			deferred_start: -1
 		}
     }
 
@@ -493,7 +495,10 @@ impl INode for GodotProject {
 			tracing::info!("Patchwork config has no project id, not autostarting...");
 			return;
 		}
-		self.project.start();
+		// for the autostart, we force save everything.
+		PatchworkEditorAccessor::save_all();
+		// wait some frames before starting
+		self.deferred_start = 3;
     }
 
     fn exit_tree(&mut self) {
@@ -505,6 +510,13 @@ impl INode for GodotProject {
 
 	#[instrument(target = "patchwork_rust_core::godot_project::outer_process", level = tracing::Level::DEBUG, skip_all)]
     fn process(&mut self, _delta: f64) {
+		if self.deferred_start > 0 {
+			self.deferred_start -= 1;
+			if self.deferred_start == 0 {
+				self.project.start();
+			}
+			return;
+		}
 		if !self.project.has_project() {
 			return;
 		}
