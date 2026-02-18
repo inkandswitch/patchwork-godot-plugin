@@ -149,7 +149,7 @@ enum VariantStrValue {
     /// A Godot external resource identifier string.
     ExtResourceID(String),
     /// A default value for a property
-    DefaultValue(TypeOrInstance, String),
+    DefaultValue(Option<TypeOrInstance>, String),
 }
 
 
@@ -158,7 +158,7 @@ pub enum VariantValue {
     /// A normal variant string
     Variant(String),
     /// Default value of a variant of shape (type/instance name, property name)
-    DefaultValue(TypeOrInstance, String),
+    DefaultValue(Option<TypeOrInstance>, String),
     /// Lazy loaded variant with of shape (original path, load path). Converted to a LazyLoadToken at usage time.
     LazyLoadData(String, String),
 }
@@ -179,7 +179,7 @@ impl std::fmt::Display for VariantStrValue {
 trait PropertyGetter {
     fn get_property(&self, prop: &String) -> Option<&OrderedProperty>;
     fn get_properties(&self) -> &HashMap<String, OrderedProperty>;
-    fn get_type_or_instance(&self) -> TypeOrInstance;
+    fn get_type_or_instance(&self) -> Option<TypeOrInstance>;
     fn is_subresource(&self) -> bool;
     fn get_id(&self) -> String;
 }
@@ -191,7 +191,7 @@ impl PropertyGetter for GodotNode {
     fn get_properties(&self) -> &HashMap<String, OrderedProperty> {
         &self.properties
     }
-    fn get_type_or_instance(&self) -> TypeOrInstance {
+    fn get_type_or_instance(&self) -> Option<TypeOrInstance> {
         self.type_or_instance.clone()
     }
     fn is_subresource(&self) -> bool {
@@ -209,8 +209,8 @@ impl PropertyGetter for SubResourceNode {
     fn get_properties(&self) -> &HashMap<String, OrderedProperty> {
         &self.properties
     }
-    fn get_type_or_instance(&self) -> TypeOrInstance {
-        TypeOrInstance::Type(self.resource_type.clone())
+    fn get_type_or_instance(&self) -> Option<TypeOrInstance> {
+        Some(TypeOrInstance::Type(self.resource_type.clone()))
     }
     fn is_subresource(&self) -> bool {
         true
@@ -358,8 +358,8 @@ impl Differ {
         }
 
         let mut changed_properties = HashMap::new();
-        let old_class_name = old_node.map(|n| n.get_type_or_instance().to_string());
-        let new_class_name = new_node.map(|n| n.get_type_or_instance().to_string());
+        let old_class_name = old_node.and_then(|n| n.get_type_or_instance().map(|t| t.to_string()));
+        let new_class_name = new_node.and_then(|n| n.get_type_or_instance().map(|t| t.to_string()));
 
         // Collect all properties from new and old scenes
         let mut props: HashSet<String> = HashSet::new();
@@ -387,7 +387,7 @@ impl Differ {
                 (_, _) => ChangeType::Modified,
             },
             sub_resource_id.clone(),
-            old_class_name.or(new_class_name)?,
+            old_class_name.or(new_class_name).unwrap_or_default(),
             changed_properties,
         ))
     }
@@ -407,8 +407,18 @@ impl Differ {
             return None;
         }
 
-        let old_class_name = old_node.map(|n| Self::get_class_name(&n.get_type_or_instance(), old_scene));
-        let new_class_name = new_node.map(|n| Self::get_class_name(&n.get_type_or_instance(), new_scene));
+        let old_class_name = old_node.map(|n| {
+            n.get_type_or_instance()
+                .as_ref()
+                .map(|t| Self::get_class_name(t, old_scene))
+                .unwrap_or_default()
+        });
+        let new_class_name = new_node.map(|n| {
+            n.get_type_or_instance()
+                .as_ref()
+                .map(|t| Self::get_class_name(t, new_scene))
+                .unwrap_or_default()
+        });
 
         let mut changed_properties = HashMap::new();
 
@@ -455,7 +465,7 @@ impl Differ {
                 (Some(_), None) => old_scene?.get_node_path(node_id),
                 (_, _) => new_scene?.get_node_path(node_id),
             },
-            new_class_name.or(old_class_name)?,
+            new_class_name.or(old_class_name).unwrap_or_default(),
             changed_properties,
         ))
     }
@@ -490,7 +500,10 @@ impl Differ {
         };
         match node.get_property(prop) {
             Some(val) => Some(Self::get_varstr_value(val.get_value())),
-            None => Some(VariantStrValue::DefaultValue(node.get_type_or_instance(), prop.clone())),
+            None => Some(VariantStrValue::DefaultValue(
+                node.get_type_or_instance(),
+                prop.clone(),
+            )),
         }
     }
 
