@@ -37,7 +37,7 @@ pub struct Project {
     pub(super) runtime: Runtime,
 
     // Tracked changes for the UI
-    pub(super) history: Vec<ChangeHash>,
+    pub(super) history: Option<Vec<ChangeHash>>,
     pub(super) changes: HashMap<ChangeHash, CommitInfo>,
 
     // Cached diffs between refs
@@ -71,7 +71,7 @@ impl Project {
             driver: Arc::new(Mutex::new(None)),
             project_dir,
             runtime,
-            history: Vec::new(),
+            history: None,
             changes: HashMap::new(),
             diff_cache: RefCell::new(HashMap::new()),
         }
@@ -80,12 +80,14 @@ impl Project {
     fn ingest_changes(&mut self, changes: Vec<CommitInfo>) {
         tracing::info!("Ingesting changes...");
 
-        self.history.clear();
+        let history = self.history.get_or_insert(Vec::new());
+
+        history.clear();
         self.changes.clear();
 
         // Consume changes into self.changes
         for change in changes {
-            self.history.push(change.hash);
+            history.push(change.hash);
             self.changes.insert(change.hash, change);
         }
     }
@@ -193,6 +195,7 @@ impl Project {
 
     pub fn stop(&mut self) {
         self.driver.blocking_lock().take();
+        self.history = None;
     }
 
     // common utility function within this class
@@ -252,10 +255,10 @@ impl Project {
 
         let mut signals = Vec::new();
 
-        // Ingest changes if the driver produced a new changeset
+        // Ingest changes if the driver produced a new changeset, or if we've never ingested.
         let changes = {
             let rx = self.changes_rx.as_mut().unwrap();
-            if rx.has_changed().unwrap_or(false) {
+            if self.history.is_none() || rx.has_changed().unwrap_or(false) {
                 rx.mark_unchanged();
                 signals.push(GodotProjectSignal::ChangesIngested);
                 Some(rx.borrow().clone())
