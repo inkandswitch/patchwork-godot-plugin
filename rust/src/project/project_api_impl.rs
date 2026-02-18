@@ -215,7 +215,7 @@ impl ProjectViewModel for Project {
     }
 
     fn get_branch_history(&self) -> Vec<ChangeHash> {
-        self.history.clone()
+        self.history.clone().unwrap_or(Vec::new())
     }
 
     fn get_sync_status(&self) -> SyncStatus {
