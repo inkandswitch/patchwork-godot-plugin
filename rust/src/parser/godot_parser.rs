@@ -993,7 +993,14 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                                 // if we have a parent_id_path, get the first element
                                 if let Some(parent_id_path) = &node.parent_id_path && !parent_id_path.is_empty() {
                                     let parent_id = parent_id_path[0];
-                                    nodes.get_mut(&parent_id).unwrap().child_node_ids.push(node.id);
+                                    if let Some(parent_node) = nodes.get_mut(&parent_id) {
+                                        parent_node.child_node_ids.push(node.id);
+                                    } else {
+                                        return Err(format!(
+                                            "Can't find parent node \"{}\" for node \"{}\"",
+                                            parent_path, name
+                                        ))
+                                    }
                                     Some(parent_id)
                                 } else {
                                     return Err(format!(
