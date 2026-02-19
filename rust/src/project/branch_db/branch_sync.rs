@@ -222,6 +222,7 @@ impl BranchDb {
             // TODO (Lilith): Figure out a way to ignore canonical heads (use shadow heads?)
             state.last_reconciled = new_heads.clone();
             state.last_tracked = new_heads;
+            tracing::debug!("Reconcile completed.");
         })
         .await
         .unwrap();
