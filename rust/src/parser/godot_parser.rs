@@ -447,6 +447,11 @@ impl GodotScene {
             output.push_str("]\n");
         }
 
+        // ensure blank line between connections and editable instances
+        if self.connections.len() > 0 && self.editable_instances.len() > 0 {
+            output.push('\n');
+        }
+
         for path in self.editable_instances.iter() {
             output.push_str(&format!("[editable path=\"{}\"]\n", path));
         }
