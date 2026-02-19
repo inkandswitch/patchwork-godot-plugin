@@ -145,12 +145,12 @@ impl PatchworkEditorAccessor {
         );
     }
 
-    pub fn refresh_after_source_change() {
+    pub fn refresh_after_source_change() -> bool {
         ClassDb::singleton().class_call_static(
             "PatchworkEditor",
             "refresh_after_source_change",
             &[],
-        );
+        ).to::<bool>()
     }
 
     pub fn save_all() {

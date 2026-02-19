@@ -209,14 +209,21 @@ void PatchworkEditor::clear_editor_selection() {
 	EditorNode::get_singleton()->get_editor_selection()->clear();
 }
 
-void PatchworkEditor::refresh_after_source_change() {
+bool PatchworkEditor::refresh_after_source_change() {
 	EditorFileSystem::get_singleton()->scan_changes();
 	// TODO: make this take in scripts to reload
 	ScriptEditor::get_singleton()->reload_scripts();
 
 	Main::iteration();
 
+	constexpr int64_t MAX_SCAN_TIME = 30000;
+	auto start_time = OS::get_singleton()->get_ticks_msec();
 	while (EditorFileSystem::get_singleton()->is_scanning()) {
+		// We're likely trapped in a `process` loop due to a bug with the process hack in the editor filesystem
+		if (OS::get_singleton()->get_ticks_msec() - start_time > MAX_SCAN_TIME) {
+			print_line("Scan timed out after " + itos(MAX_SCAN_TIME / 1000) + "s");
+			return false;
+		}
 		OS::get_singleton()->delay_usec(10000);
 		Main::iteration();
 	}
@@ -242,6 +249,7 @@ void PatchworkEditor::refresh_after_source_change() {
 		} while (is_changing_scene());
 		EditorInterface::get_singleton()->reload_scene_from_path(current_scene->get_scene_file_path());
 	}
+	return true;
 }
 
 Callable PatchworkEditor::steal_close_current_script_tab_file_callback() {
