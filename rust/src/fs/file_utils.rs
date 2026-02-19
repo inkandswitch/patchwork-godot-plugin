@@ -125,7 +125,10 @@ impl FileContent {
 		.map(|(value, _)| value);
 
 		if structured_content.is_some() {
-			let scene: GodotScene = GodotScene::hydrate_at(doc, path, heads).ok().unwrap();
+			let scene: GodotScene = GodotScene::hydrate_at(doc, path, heads).or_else(|e| {
+				tracing::error!("Error hydrating scene: {:?}", e);
+				Result::Err(e)
+			}).unwrap();
 			return Ok(FileContent::Scene(scene));
 		}
 

@@ -54,7 +54,7 @@ public:
 
 	static void clear_editor_selection();
 
-	static void refresh_after_source_change();
+	static bool refresh_after_source_change();
 };
 
 #endif // PATCHWORK_EDITOR_H
