@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::{
     diff::differ::{ChangeType, Differ},
     fs::file_utils::FileContent,
@@ -27,9 +29,31 @@ pub struct TextDiff {
     pub change_type: ChangeType,
 }
 
+// ignore unused, these are primarily used by the tests and not by the main code
+#[allow(unused)]
+enum AnsiColor {
+    Blue,
+    Red,
+    Green,
+    White,
+    Reset,
+}
+
+impl Display for AnsiColor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AnsiColor::Blue => write!(f, "\x1b[34m"),
+            AnsiColor::Red => write!(f, "\x1b[31m"),
+            AnsiColor::Green => write!(f, "\x1b[32m"),
+            AnsiColor::White => write!(f, "\x1b[37m"),
+            AnsiColor::Reset => write!(f, "\x1b[0m"),
+        }
+    }
+}
+
 impl TextDiff {
-    fn create(
-        path: &String,
+    pub fn create(
+        path: &str,
         old_text: &String,
         new_text: &String,
         change_type: ChangeType,
@@ -53,7 +77,7 @@ impl TextDiff {
             )
         }
         let mut diff_file = TextDiff {
-            path: path.clone(),
+            path: path.to_string(),
             diff_hunks: Vec::new(),
             change_type,
         };
@@ -92,6 +116,47 @@ impl TextDiff {
         }
         diff_file
     }
+
+    #[allow(unused)]
+    pub fn print_colorized(&self) {
+        // print the diff in a unified format with the header and coloring
+        let diff = self.to_unified();
+        for line in diff.lines() {
+            // print the line with the color of the status
+            let color: AnsiColor = if line.starts_with("---") || line.starts_with("+++") {
+                AnsiColor::Blue
+            } else if line.starts_with("-") {
+                AnsiColor::Red
+            } else if line.starts_with("+") {
+                AnsiColor::Green
+            } else {
+                AnsiColor::White
+            };
+            println!("{}{}{}", color, line, AnsiColor::Reset);
+        }
+    }
+
+    #[allow(unused)]
+    pub fn to_unified(&self) -> String {
+        let mut out = String::new();
+        out.push_str(&format!("--- {}\n", self.path));
+        out.push_str(&format!("+++ {}\n", self.path));
+        for hunk in &self.diff_hunks {
+            out.push_str(&format!(
+                "@@ -{},{} +{},{} @@\n",
+                hunk.old_start, hunk.old_lines, hunk.new_start, hunk.new_lines
+            ));
+            for line in &hunk.diff_lines {
+                out.push_str(&line.status);
+                out.push_str(&line.content);
+                if !line.content.ends_with('\n') {
+                    out.push('\n');
+                }
+            }
+        }
+        out
+    }
+             
 }
 
 impl Differ {
