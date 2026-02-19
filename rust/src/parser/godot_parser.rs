@@ -256,7 +256,7 @@ impl GodotScene {
 
             if let Some(parent_path) = &node.parent_path_fallback {
                 if parent_path == "." {
-                    return ".".to_string();
+                    return node.name.clone();
                 }
                 return format!("{}/{}", node.parent_path_fallback.clone().unwrap_or(".".to_string()), node.name);
             }
