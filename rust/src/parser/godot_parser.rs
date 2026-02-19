@@ -479,7 +479,7 @@ impl GodotScene {
         }
 
         if let Some(index) = &node.index {
-            output.push_str(&format!(" index={}", index));
+            output.push_str(&format!(" index=\"{}\"", index));
         }
 
 		output.push_str(&format!(" unique_id={}", node.id));
@@ -791,7 +791,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
 						parent_id_path,
                         owner: heading.get("owner").cloned().map(|o| unquote(&o)),
 						owner_uid_path,
-                        index: heading.get("index").and_then(|i| i.parse::<i64>().ok()),
+                        index: heading.get("index").and_then(|i| unquote(i).parse::<i64>().ok()),
                         groups: heading.get("groups").cloned(),
                         properties: properties.into_iter().collect(),
                         child_node_ids: Vec::new(),
