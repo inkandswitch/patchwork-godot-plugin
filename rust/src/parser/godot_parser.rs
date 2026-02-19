@@ -960,6 +960,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 }
             }
 
+            // iterate once to set the node ids and the node_id_by_node_path map, then iterate again to set the parent ids
 			for (mut node, parent_path) in node_arr {
 				if node.id == UNIQUE_SCENE_ID_UNASSIGNED {
 					node.id = rand::rng().random_range(0..=i32::MAX);
@@ -969,7 +970,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
 					parsed_node_ids.insert(node.id);
 				}
 				let name = node.name.clone();
-				node.parent_id = match parent_path {
+				match parent_path {
 					Some(parent_path) => {
 						if parent_path == "." {
 							node_id_by_node_path.insert(name.clone(), node.id);
@@ -977,15 +978,21 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
 							node_id_by_node_path
 								.insert(format!("{}/{}", parent_path, name), node.id);
 						}
-
-						match node_id_by_node_path.get(&parent_path) {
+                    }
+                    None => {
+						root_node_id = Some(node.id);
+						node_id_by_node_path.insert(".".to_string(), node.id);
+					}
+                }
+                nodes.insert(node.id, node);
+            }
+            let keys: Vec<i32> = nodes.keys().cloned().collect();
+			for uid in keys {
+                let (parent_id, child_id) = {
+                    let node = nodes.get_mut(&uid).unwrap();
+                    if let Some(parent_path) = &node.parent_path_fallback {
+                        node.parent_id = match node_id_by_node_path.get(parent_path) {
 							Some(parent_id) => {
-								nodes
-									.get_mut(parent_id)
-									.unwrap()
-									.child_node_ids
-									.push(node.id);
-
                                 node.parent_path_fallback = None;
 								Some(*parent_id)
 							}
@@ -993,32 +1000,28 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                                 // if we have a parent_id_path, get the first element
                                 if let Some(parent_id_path) = &node.parent_id_path && !parent_id_path.is_empty() {
                                     let parent_id = parent_id_path[0];
-                                    if let Some(parent_node) = nodes.get_mut(&parent_id) {
-                                        parent_node.child_node_ids.push(node.id);
-                                    } else {
-                                        return Err(format!(
-                                            "Can't find parent node \"{}\" for node \"{}\"",
-                                            parent_path, name
-                                        ))
-                                    }
                                     Some(parent_id)
                                 } else {
                                     return Err(format!(
-                                        "Can't find parent node \"{}\" for node \"{}\"",
-                                        parent_path, name
+                                        "Can't find parent node '{}' for node '{}'",
+                                        parent_path, node.name
                                     ))
                                 }
 							}
-						}
-					}
-					None => {
-						root_node_id = Some(node.id);
-						node_id_by_node_path.insert(".".to_string(), node.id);
-						None
-					}
+                        }
+					};
+                    (node.parent_id.clone(), node.id)
 				};
-
-				nodes.insert(node.id, node);
+                if let Some(parent_id) = parent_id {
+                    if let Some(parent_node) = nodes.get_mut(&parent_id) {
+                        parent_node.child_node_ids.push(child_id);
+                    } else {
+                        return Err(format!(
+                            "Can't find parent node '{}' for node '{}'",
+                            parent_id, child_id
+                        ))
+                    }
+                }
 			}
 			for (from_path, to_path, mut connection) in connections_arr {
 				let from_node_id = match node_id_by_node_path.get(&from_path) {
