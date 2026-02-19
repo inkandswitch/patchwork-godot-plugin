@@ -539,10 +539,10 @@ impl INode for GodotProject {
 					if refreshed {
 						EditorFilesystemAccessor::clear_inspector_item();
 					}
-					self.signals().checked_out_branch().emit();
+					self.base_mut().call_deferred("emit_signal", &["checked_out_branch".to_variant()]);
 				}
 				GodotProjectSignal::ChangesIngested => {
-					self.signals().state_changed().emit();
+					self.base_mut().call_deferred("emit_signal", &["state_changed".to_variant()]);
 				}
 			}
 		}
