@@ -119,6 +119,7 @@ pub struct GodotNode {
     pub type_or_instance: Option<TypeOrInstance>, // a node may have a type or an instance property
 	pub instance_placeholder: Option<String>,
     pub parent_id: Option<i32>,
+    pub parent_path_fallback: Option<String>,
 	pub parent_id_path: Option<Vec<i32>>,
     pub owner: Option<String>,
 	pub owner_uid_path: Option<Vec<i32>>,
@@ -265,6 +266,8 @@ impl GodotScene {
 
                     if current_id == root_node_id {
                         return path;
+                    } else if !self.nodes.contains_key(&parent_id) {
+                        return format!("{}/{}", node.parent_path_fallback.clone().unwrap_or(".".to_string()), path);
                     }
                 }
                 None => {
@@ -788,6 +791,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         type_or_instance,
                         instance_placeholder,
                         parent_id,
+                        parent_path_fallback: parent_path.clone(),
 						parent_id_path,
                         owner: heading.get("owner").cloned().map(|o| unquote(&o)),
 						owner_uid_path,
@@ -974,10 +978,15 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
 								Some(*parent_id)
 							}
 							None => {
-								return Err(format!(
-									"Can't find parent node \"{}\" for node \"{}\"",
-									parent_path, name
-								))
+                                // if we have a parent_id_path, get the last element
+                                if let Some(parent_id_path) = &node.parent_id_path && !parent_id_path.is_empty() {
+                                    Some(parent_id_path[parent_id_path.len() - 1])
+                                } else {
+                                    return Err(format!(
+                                        "Can't find parent node \"{}\" for node \"{}\"",
+                                        parent_path, name
+                                    ))
+                                }
 							}
 						}
 					}
@@ -1046,5 +1055,48 @@ fn unquote(string: &String) -> String {
         string[1..string.len() - 1].to_string()
     } else {
         string.clone()
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const INDEX_TEST: &str = r#"[gd_scene format=4 uid="uid://g64l65moc1sx"]
+[ext_resource type="PackedScene" uid="uid://iu2q66clupc6" path="res://scenes/game_elements/characters/player/player.tscn" id="8_ukjsk"]
+
+[node name="Minijuego2" type="Node2D" unique_id=1172299557]
+y_sort_enabled = true
+
+[node name="Player" parent="." unique_id=894731746 instance=ExtResource("8_ukjsk")]
+y_sort_enabled = true
+position = Vector2(435.00003, 347)
+scale = Vector2(0.75, 0.75)
+
+[node name="PlayerSprite" parent="Player" index="2" unique_id=1785485617]
+position = Vector2(-2.6667075, -73.333336)
+
+[node name="CollisionShape2D" parent="Player/PlayerInteraction/InteractZone" parent_id_path=PackedInt32Array(894731746, 888605377) index="0" unique_id=255765935]
+position = Vector2(53.333294, -73.333336)
+
+"#;
+    #[test]
+    fn test_unquote() {
+        assert_eq!(unquote(&String::from("\"foo\"")), "foo");
+        assert_eq!(unquote(&String::from("foo")), "foo");
+    }
+
+    #[test]
+    fn test_scene() {
+        // parse and re-serialize RAW_STRING
+        let source = INDEX_TEST.to_string();
+        let scene = parse_scene(&source).expect("parse should succeed");
+        let serialized = scene.serialize();
+        let round_trip = parse_scene(&serialized).expect("re-parse of serialized output should succeed");
+        println!("{}", serialized);
+        assert_eq!(scene.uid, round_trip.uid);
+        assert_eq!(scene.nodes.len(), round_trip.nodes.len());
+        assert_eq!(source, serialized);
     }
 }
