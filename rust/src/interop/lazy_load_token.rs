@@ -73,6 +73,8 @@ impl LazyLoadToken {
     }
 
     #[func]
+    /// DO NOT CALL THIS FROM RUST CODE! IT WILL CAUSE DEADLOCKS!
+    /// TODO: need to make the resource loader not have to bind to GodotProject
     pub fn get_resource(&mut self) -> Option<Gd<Resource>> {
         if self.resource.is_some() {
             return self.resource.clone();

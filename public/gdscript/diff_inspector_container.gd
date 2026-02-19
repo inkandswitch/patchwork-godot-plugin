@@ -156,10 +156,17 @@ func get_prop_editor(fake_object: MissingResource, prop_name: String, prop_value
 	changed_resources.append(fake_object)
 	return panel_container
 
+func get_real_val(prop_value: Variant) -> Variant:
+	if prop_value is LazyLoadToken:
+		# TODO: make this get called asynchronously
+		return prop_value.get_resource()
+	return prop_value
+
 func add_old_and_new(inspector_section: DiffInspectorSection, change_type: String, prop_name: String, old_prop_value: Variant, new_prop_value: Variant, label: String) -> void:
 	var has_old = change_type != "added"
 	var has_new = change_type != "removed"
-
+	old_prop_value = get_real_val(old_prop_value)
+	new_prop_value = get_real_val(new_prop_value)
 	if label == null:
 		label = snake_case_to_human_readable(prop_name)
 	if has_old:
