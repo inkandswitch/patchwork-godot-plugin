@@ -290,9 +290,6 @@ impl ToGodot for VariantValue {
             }
             VariantValue::LazyLoadData(original_path, load_path) => 
                 LazyLoadToken::new(load_path.clone(), Some(original_path.clone()))
-                // TODO (Nikita): make the GUI do this, right now we're just loading them immediately here
-                .bind_mut()
-                .get_resource()
                 .to_variant(),
         }
     }
