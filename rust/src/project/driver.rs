@@ -188,6 +188,7 @@ impl Driver {
         let inner_clone = this.as_ref().unwrap().inner.clone();
         spawn_named("Sync", async move {
             inner_clone.sync_main().await;
+            tracing::info!("Sync shutting down");
         });
         this
     }
@@ -409,11 +410,11 @@ impl DriverInner {
     async fn sync_main(&self) {
         loop {
             select! {
-                _ = self.token.cancelled() => {break;}
+                _ = self.token.cancelled() => { break; }
                 // If it lags, turn this down. Alternatively, we could use a different signal to sync.
                 // Will cap to only once per frame due to the guard.
                 _ = tokio::time::sleep(Duration::from_millis(5)) => {
-                    self.sync().await
+                    self.sync().await;
                 }
             }
         }
@@ -431,7 +432,16 @@ impl DriverInner {
         // Ensure we block the main thread inside of Rust while checking out a ref.
         // Very important to not allow Godot to explode while we're writing files!
         {
-            let _guard = self.main_thread_block.wait().await;
+            tracing::trace!("Sync guarding...");
+            let _guard;
+            // rather awkward; we don't want to get stuck on the guard if we've canceled!
+            select! {
+                _ = self.token.cancelled() => { return; }
+                _g = self.main_thread_block.wait() => {
+                    _guard = _g;
+                }
+            }
+            tracing::trace!("Passed guard.");
             if self.safe_to_update_editor.load(Ordering::Relaxed) {
                 let changes = self.sync_correct_ref().await;
                 for change in changes {
@@ -439,6 +449,7 @@ impl DriverInner {
                 }
             }
         }
+        tracing::trace!("Attepmting to sync FS to automerge...");
         // Apply any watched FS updates to Automerge.
         // It doesn't matter if we're safe to update Godot, so this can go outside of the guard.
         if self.sync_fs_to_automerge.commit().await {
@@ -453,6 +464,12 @@ impl DriverInner {
             .clone();
 
         // If we've changed branches, send the new checked out ref.
+        if let Some(ref_) = &new_checked_out_ref {
+            tracing::trace!("CHECKED OUT REF: {}", ref_.branch);
+        }
+        else {
+            tracing::trace!("NO CHECKED OUT REF");
+        }
         if new_checked_out_ref.as_ref().map(|r| &r.branch)
             != old_checked_out_ref.as_ref().map(|r| &r.branch)
         {
