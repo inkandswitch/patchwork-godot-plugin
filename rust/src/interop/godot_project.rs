@@ -441,11 +441,14 @@ impl GodotProject {
 		}
 		self.base_mut().set_process(false);
 		PatchworkEditorAccessor::close_files_if_open(&self.pending_editor_update.deleted_files.iter().map(|path| path.clone()).collect::<Vec<String>>());
+		self.pending_editor_update.deleted_files.clear();
 		if self.pending_editor_update.reload_project_settings {
 			self.reload_project_settings();
+			self.pending_editor_update.reload_project_settings = false;
 		}
-		PatchworkEditorAccessor::refresh_after_source_change();
-		self.pending_editor_update.clear();
+		if PatchworkEditorAccessor::refresh_after_source_change() {
+			self.pending_editor_update.clear();
+		}
 		self.base_mut().set_process(true);
 		return true;
 	}
