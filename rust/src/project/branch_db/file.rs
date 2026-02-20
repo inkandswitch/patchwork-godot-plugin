@@ -242,11 +242,7 @@ impl BranchDb {
         let desired_ref = desired_ref.clone();
         let (mut files, linked_doc_ids) = self
             .with_shadow_document(desired_ref.branch(), async |doc| {
-                let files_obj_id: ObjId = doc
-                    .get_at(ROOT, "files", desired_ref.heads())
-                    .unwrap()
-                    .unwrap()
-                    .1;
+                let files_obj_id: ObjId = doc.get_at(ROOT, "files", desired_ref.heads()).ok()??.1;
                 for path in doc.keys_at(&files_obj_id, desired_ref.heads()) {
                     if !filters.is_empty() && !filters.contains(&path) {
                         continue;
@@ -256,7 +252,10 @@ impl BranchDb {
                             Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => {
                                 file_entry
                             }
-                            _ => panic!("failed to get file entry for {:?}", path),
+                            _ => {
+                                tracing::error!("failed to get file entry for {:?}", path);
+                                continue;
+                            }
                         };
 
                     match FileContent::hydrate_content_at(
@@ -278,10 +277,10 @@ impl BranchDb {
                         },
                     };
                 }
-                (files, linked_doc_ids)
+                Some((files, linked_doc_ids))
             })
             .await
-            .ok()?;
+            .ok()??;
 
         for (doc_id, path) in linked_doc_ids {
             let linked_file_content: Option<FileContent> = self.get_linked_file(&doc_id).await;
