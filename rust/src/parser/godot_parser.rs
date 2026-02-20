@@ -39,7 +39,7 @@ fn hydrate_nodes<D: ReadDoc>(
             let re = Regex::new(r"(.*?)(\d+)$").unwrap();
             while found {
                 found = false;
-                let name = map.get(&id).unwrap().name.clone();
+                let found_node = map.get(&id).unwrap();
                 for child_id in &child_ids {
                     if *child_id == id {
                         continue;
@@ -47,7 +47,10 @@ fn hydrate_nodes<D: ReadDoc>(
                     let Some(child) = map.get(child_id) else {
                         continue;
                     };
-                    if child.name != name {
+                    if child.name != found_node.name {
+                        continue;
+                    }
+                    if &child.parent_path_fallback != &found_node.parent_path_fallback {
                         continue;
                     }
 
