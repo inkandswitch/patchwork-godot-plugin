@@ -11,7 +11,6 @@ mod sync_automerge_to_fs;
 pub mod branch_db;
 mod peer_watcher;
 pub mod project;
-// TODO (Lilith): Make this not pub
-pub mod driver;
-pub mod main_thread_block;
+mod driver;
+mod main_thread_block;
 mod change_ingester;
