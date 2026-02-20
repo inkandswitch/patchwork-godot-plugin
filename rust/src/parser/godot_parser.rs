@@ -763,11 +763,14 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 // NODE
                 } else if section_id == "node" {
                     // Check if node has a patchwork_id in metadata
-                    let node_id_num = match heading.get("unique_id") {
+                    let mut node_id_num = match heading.get("unique_id") {
                         Some(unique_id) => unique_id.parse::<i32>().unwrap_or(UNIQUE_SCENE_ID_UNASSIGNED),
-                        None => -1
+                        None => UNIQUE_SCENE_ID_UNASSIGNED
                     };
-					parsed_node_ids.insert(node_id_num);
+					if !parsed_node_ids.insert(node_id_num){
+                        // duplicate node id, set to 0 so we regenerate it
+                        node_id_num = UNIQUE_SCENE_ID_UNASSIGNED;
+                    }
 
                     let name = match heading.get("name") {
                         Some(name) => unquote(name),
@@ -961,13 +964,14 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
             }
 
             // iterate once to set the node ids and the node_id_by_node_path map, then iterate again to set the parent ids
+            let mut keys: Vec<i32> = Vec::new();
 			for (mut node, parent_path) in node_arr {
 				if node.id == UNIQUE_SCENE_ID_UNASSIGNED {
 					node.id = rand::rng().random_range(0..=i32::MAX);
 					while parsed_node_ids.contains(&node.id) {
 						node.id = rand::rng().random_range(0..=i32::MAX);
 					}
-					parsed_node_ids.insert(node.id);
+                    parsed_node_ids.insert(node.id);
 				}
 				let name = node.name.clone();
 				match parent_path {
@@ -984,11 +988,15 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
 						node_id_by_node_path.insert(".".to_string(), node.id);
 					}
                 }
-                nodes.insert(node.id, node);
+                let id = node.id;
+                
+                if nodes.insert(id, node).is_none() {
+                    keys.push(id);
+                }
             }
-            let keys: Vec<i32> = nodes.keys().cloned().collect();
+
 			for uid in keys {
-                let (parent_id, child_id) = {
+                let parent_id = {
                     let node = nodes.get_mut(&uid).unwrap();
                     if let Some(parent_path) = &node.parent_path_fallback {
                         node.parent_id = match node_id_by_node_path.get(parent_path) {
@@ -1010,15 +1018,15 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
 							}
                         }
 					};
-                    (node.parent_id.clone(), node.id)
+                    node.parent_id.clone()
 				};
                 if let Some(parent_id) = parent_id {
                     if let Some(parent_node) = nodes.get_mut(&parent_id) {
-                        parent_node.child_node_ids.push(child_id);
+                        parent_node.child_node_ids.push(uid);
                     } else {
                         return Err(format!(
                             "Can't find parent node '{}' for node '{}'",
-                            parent_id, child_id
+                            parent_id, uid
                         ))
                     }
                 }
