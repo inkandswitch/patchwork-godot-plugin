@@ -5,7 +5,8 @@ use tracing::instrument;
 
 use crate::{
     fs::file_utils::{FileContent, FileSystemEvent},
-    project::branch_db::{BranchDb, history_ref::HistoryRef},
+    helpers::history_ref::HistoryRef,
+    project::branch_db::BranchDb,
 };
 
 #[derive(Debug)]
@@ -76,11 +77,8 @@ impl SyncAutomergeToFileSystem {
             .into_iter()
             .filter_map(|(event, written)| written.then_some(event))
             .collect();
-        
-        tracing::info!(
-            "Wrote {:?} files!",
-            results.len()
-        );
+
+        tracing::info!("Wrote {:?} files!", results.len());
 
         *checked_out_ref = Some(goal_ref);
 

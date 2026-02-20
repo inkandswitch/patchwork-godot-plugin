@@ -8,9 +8,7 @@ use godot::{
 use tracing::instrument;
 
 use crate::{
-    diff::{resource_differ::BinaryResourceDiff, scene_differ::{SceneDiff, TextResourceDiff}, text_differ::TextDiff},
-    fs::file_utils::{FileContent, FileSystemEvent},
-    project::branch_db::{BranchDb, history_ref::{HistoryRef, HistoryRefPath}},
+    diff::{resource_differ::BinaryResourceDiff, scene_differ::{SceneDiff, TextResourceDiff}, text_differ::TextDiff}, fs::file_utils::{FileContent, FileSystemEvent}, helpers::{history_path::HistoryRefPath, history_ref::HistoryRef}, project::branch_db::BranchDb
 };
 
 /// The type of change that occurred in a diff.

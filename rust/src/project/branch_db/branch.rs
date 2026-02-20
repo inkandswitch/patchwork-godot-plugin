@@ -7,7 +7,7 @@ use tracing::instrument;
 
 use crate::{
     helpers::{
-        branch::{Branch, BranchesMetadataDoc, ForkInfo, GodotProjectDoc},
+        branch::{Branch, BranchesMetadataDoc, GodotProjectDoc},
         utils::{CommitMetadata, commit_with_metadata},
     },
     project::branch_db::{BranchDb, HistoryRef},
@@ -57,25 +57,23 @@ impl BranchDb {
         .await
         .unwrap();
 
-        *checked_out_ref = Some(HistoryRef {
-            branch: main_handle.document_id().clone(),
-            heads: new_heads,
-        });
+        *checked_out_ref = Some(HistoryRef::new(
+            main_handle.document_id().clone(),
+            new_heads,
+        ));
 
-        let main_branch_doc_id = main_handle.document_id().to_string();
-        let main_branch_doc_id_clone = main_branch_doc_id.clone();
+        let main_doc_id = main_handle.document_id().clone();
         let branches = HashMap::from([(
-            main_branch_doc_id,
+            main_doc_id.clone(),
             Branch {
                 name: String::from("main"),
-                id: main_handle.document_id().to_string(),
-                fork_info: None,
-                merge_info: None,
+                id: main_handle.document_id().clone(),
+                forked_from: None,
+                merge_into: None,
                 created_by: username.clone(),
                 reverted_to: None,
             },
         )]);
-        let branches_clone = branches.clone();
 
         // create new branches metadata doc
         let metadata_handle = self.repo.create(Automerge::new()).await.unwrap();
@@ -86,8 +84,8 @@ impl BranchDb {
                 let _ = reconcile(
                     &mut tx,
                     BranchesMetadataDoc {
-                        main_doc_id: main_branch_doc_id_clone,
-                        branches: branches_clone,
+                        main_doc_id,
+                        branches,
                     },
                 );
                 commit_with_metadata(
@@ -156,7 +154,7 @@ impl BranchDb {
             meta_handle.with_document(|d| {
                 let mut tx = d.transaction();
                 let mut branches_metadata: BranchesMetadataDoc = hydrate(&mut tx).unwrap();
-                branches_metadata.branches.remove(&branch_clone.to_string());
+                branches_metadata.branches.remove(&branch_clone);
                 let _ = reconcile(&mut tx, branches_metadata);
                 commit_with_metadata(
                     tx,
@@ -183,9 +181,9 @@ impl BranchDb {
     }
 
     async fn clone_branch(&self, branch: &DocumentId) -> Option<DocHandle> {
-        self.with_shadow_document(branch, async |d| {
-            self.repo.create(d.clone()).await.unwrap()
-        }).await.ok()
+        self.with_shadow_document(branch, async |d| self.repo.create(d.clone()).await.unwrap())
+            .await
+            .ok()
     }
 
     // TODO: This would be more versatile if we gave a HistoryRef instead of a branch.
@@ -207,16 +205,9 @@ impl BranchDb {
 
         self.add_branch_to_meta(Branch {
             name: name.clone(),
-            id: id.to_string(),
-            fork_info: Some(ForkInfo {
-                forked_from: source.to_string(),
-                forked_at: latest_ref
-                    .heads
-                    .into_iter()
-                    .map(|h| h.to_string())
-                    .collect(),
-            }),
-            merge_info: None,
+            id: id.clone(),
+            forked_from: Some(latest_ref),
+            merge_into: None,
             created_by: username,
             reverted_to: None,
         })

@@ -1,17 +1,25 @@
-use std::{collections::{HashMap, HashSet}};
+use std::collections::{HashMap, HashSet};
 
 use automerge::ChangeHash;
 use samod::DocumentId;
 
 use crate::{
-    diff::differ::ProjectDiff, fs::file_utils::FileContent, helpers::utils::{
-        BranchWrapper, CommitInfo, DiffWrapper, exact_human_readable_timestamp,
-        human_readable_timestamp,
-    }, interop::godot_accessors::PatchworkConfigAccessor, project::{
-        branch_db::history_ref::HistoryRef, project::Project, project_api::{
+    diff::differ::ProjectDiff,
+    fs::file_utils::FileContent,
+    helpers::{
+        history_ref::HistoryRef,
+        utils::{
+            BranchWrapper, CommitInfo, DiffWrapper, exact_human_readable_timestamp,
+            human_readable_timestamp,
+        },
+    },
+    interop::godot_accessors::PatchworkConfigAccessor,
+    project::{
+        project::Project,
+        project_api::{
             BranchViewModel, ChangeViewModel, DiffViewModel, ProjectViewModel, SyncStatus,
-        }
-    }
+        },
+    },
 };
 
 // TODO: Ideally this is actually a child of a new project submodule...
@@ -73,8 +81,11 @@ impl ProjectViewModel for Project {
     }
 
     fn can_create_merge_preview_branch(&self) -> bool {
+        let Some(main_branch) = self.get_main_branch() else {
+            return false;
+        };
         match self.get_checked_out_branch_state() {
-            Some(branch_state) => !branch_state.is_main,
+            Some(branch_state) => branch_state.id != main_branch.get_id(),
             _ => false,
         }
     }
@@ -83,12 +94,12 @@ impl ProjectViewModel for Project {
         let Some(checked_out_branch) = self.get_checked_out_branch_state() else {
             return;
         };
-        let Some(fork_info) = &checked_out_branch.fork_info else {
+        let Some(fork_info) = checked_out_branch.forked_from else {
             return;
         };
 
         let source = checked_out_branch.id;
-        let target = fork_info.forked_from.clone();
+        let target = fork_info.branch().clone();
         self.with_driver_blocking("Create merge preview branch", |driver| async move {
             driver
                 .as_ref()?
@@ -137,7 +148,7 @@ impl ProjectViewModel for Project {
     fn is_merge_preview_branch_active(&self) -> bool {
         let branch_state = self.get_checked_out_branch_state();
         match branch_state {
-            Some(state) => state.merge_info.is_some(),
+            Some(state) => state.merge_into.is_some(),
             _ => false,
         }
     }
@@ -146,34 +157,44 @@ impl ProjectViewModel for Project {
         let Some(current_branch) = self.get_checked_out_branch_state() else {
             return false;
         };
-        let Some(merge_info) = current_branch.merge_info.as_ref() else {
+        let Some(merge_info) = current_branch.merge_into.as_ref() else {
             return false;
         };
-        let Some(fork_info) = current_branch.fork_info.as_ref() else {
+        let Some(fork_info) = current_branch.forked_from.as_ref() else {
             return false;
         };
 
-        let forked_from = fork_info.forked_from.clone();
-        let merge_into = merge_info.merge_into.clone();
-        let Some((source_branch, dest_branch, latest_dest_heads)) = self.with_driver_blocking("Is safe to merge", |driver| async move {
-            let source_branch = driver
-                .as_ref()?
-                .get_branch_db()
-                .get_branch_state(&forked_from)
-                .await;
-            let dest_branch = driver.as_ref()?.get_branch_db().get_branch_state(&merge_into).await;
-            let latest_dest_heads = driver.as_ref()?.get_branch_db().get_latest_ref_on_branch(&merge_into).await?.heads;
-            Some((source_branch, dest_branch, latest_dest_heads))
-        }) else {
+        let forked_from = fork_info.branch().clone();
+        let merge_into = merge_info.branch().clone();
+        let Some((source_branch, dest_branch, latest_dest_heads)) =
+            self.with_driver_blocking("Is safe to merge", |driver| async move {
+                let source_branch = driver
+                    .as_ref()?
+                    .get_branch_db()
+                    .get_branch_state(&forked_from)
+                    .await;
+                let dest_branch = driver
+                    .as_ref()?
+                    .get_branch_db()
+                    .get_branch_state(&merge_into)
+                    .await;
+                let latest_dest_heads = driver
+                    .as_ref()?
+                    .get_branch_db()
+                    .get_latest_ref_on_branch(&merge_into)
+                    .await?
+                    .heads()
+                    .clone();
+                Some((source_branch, dest_branch, latest_dest_heads))
+            })
+        else {
             return false;
         };
 
         source_branch.is_some_and(|s| {
-            s.fork_info
+            s.forked_from
                 .as_ref()
-                // comparing heads across documents gets weird... forked_at and latest_dest_heads are both
-                // shadow document heads, but the order may vary!
-                .is_some_and(|i| i.forked_at == latest_dest_heads)
+                .is_some_and(|i| i.heads() == &latest_dest_heads)
         })
     }
 
@@ -181,22 +202,19 @@ impl ProjectViewModel for Project {
         let Some(branch_state) = self.get_checked_out_branch_state() else {
             return;
         };
-        let Some(fork_info) = &branch_state.fork_info else {
+        let Some(fork_info) = &branch_state.forked_from else {
             return;
         };
-        if let Some(revert_info) = &branch_state.revert_info {
+        if let Some(revert_info) = &branch_state.reverted_to {
             // TODO (Lilith): Implement
             // self.delete_branch(branch_state.doc_handle.document_id().clone());
             // self.checkout_branch(fork_info.forked_from.clone());
             // self.revert_to_heads(revert_info.reverted_to.clone());
-        } else if let Some(merge_info) = branch_state.merge_info {
+        } else if let Some(merge_info) = branch_state.merge_into {
             let source = branch_state.id.clone();
-            let target = merge_info.merge_into;
+            let target = merge_info.branch().clone();
             self.with_driver_blocking("Confirm merge preview branch", |driver| async move {
-                driver
-                    .as_ref()?
-                    .merge_branch(&source, &target)
-                    .await;
+                driver.as_ref()?.merge_branch(&source, &target).await;
                 Some(())
             });
         }
@@ -205,7 +223,7 @@ impl ProjectViewModel for Project {
         let Some(branch_state) = self.get_checked_out_branch_state() else {
             return;
         };
-        let Some(fork_info) = &branch_state.fork_info else {
+        let Some(fork_info) = &branch_state.forked_from else {
             return;
         };
         self.with_driver_blocking("Discard preview branch", |driver| async move {
@@ -224,14 +242,20 @@ impl ProjectViewModel for Project {
             return SyncStatus::UpToDate;
         }
 
-        let Some((info, ref_)) = self.with_driver_blocking("Print sync debug", |driver| async move {
-            let info = driver.as_ref()?.get_connection_info().await?;
-            let ref_ = driver.as_ref()?.get_branch_db().get_checked_out_ref().await?;
-            Some((info, ref_))
-        }) else {
+        let Some((info, ref_)) =
+            self.with_driver_blocking("Print sync debug", |driver| async move {
+                let info = driver.as_ref()?.get_connection_info().await?;
+                let ref_ = driver
+                    .as_ref()?
+                    .get_branch_db()
+                    .get_checked_out_ref()
+                    .await?;
+                Some((info, ref_))
+            })
+        else {
             return SyncStatus::Unknown;
         };
-        
+
         let Some(branch) = self.get_checked_out_branch_state() else {
             return SyncStatus::Unknown;
         };
@@ -242,7 +266,7 @@ impl ProjectViewModel for Project {
         if status
             .last_acked_heads
             .as_ref()
-            .is_some_and(|s| *s == ref_.heads)
+            .is_some_and(|s| s == ref_.heads())
         {
             if is_connected {
                 return SyncStatus::UpToDate;
@@ -292,16 +316,18 @@ impl ProjectViewModel for Project {
     fn get_branch(&self, id: &DocumentId) -> Option<impl BranchViewModel + use<>> {
         let id = id.clone();
 
-        let Some((state, mut children)) = self.with_driver_blocking("Get branch", |driver| async move {
-            tracing::trace!("Getting branch state...");
-            let branch_db = driver.as_ref()?.get_branch_db();
-            let Some(state) = branch_db.get_branch_state(&id).await else {
-                return None;
-            };
-            tracing::trace!("Getting branch children...");
-            let children = branch_db.get_branch_children(&id).await;
-            Some((state, children))
-        }) else {
+        let Some((state, mut children)) =
+            self.with_driver_blocking("Get branch", |driver| async move {
+                tracing::trace!("Getting branch state...");
+                let branch_db = driver.as_ref()?.get_branch_db();
+                let Some(state) = branch_db.get_branch_state(&id).await else {
+                    return None;
+                };
+                tracing::trace!("Getting branch children...");
+                let children = branch_db.get_branch_children(&id).await;
+                Some((state, children))
+            })
+        else {
             return None;
         };
 
@@ -337,7 +363,7 @@ impl ProjectViewModel for Project {
         let id = self.with_driver_blocking("Get checked out branch", |driver| async move {
             driver.as_ref()?.get_branch_db().get_checked_out_ref().await
         })?;
-        self.get_branch(&id.branch)
+        self.get_branch(id.branch())
     }
 
     fn create_branch(&mut self, name: String) {
@@ -345,9 +371,7 @@ impl ProjectViewModel for Project {
             return;
         };
         self.with_driver_blocking("Create branch", |driver| async move {
-            driver
-                .as_ref()?
-                .fork_branch(name, &branch_state.id).await;
+            driver.as_ref()?.fork_branch(name, &branch_state.id).await;
             Some(())
         });
     }
@@ -355,9 +379,7 @@ impl ProjectViewModel for Project {
     fn checkout_branch(&mut self, branch: &DocumentId) {
         let branch = branch.clone();
         self.with_driver_blocking("Checkout branch", |driver| async move {
-            driver
-                .as_ref()?
-                .request_checkout(&branch).await;
+            driver.as_ref()?.request_checkout(&branch).await;
             Some(())
         });
     }
@@ -369,59 +391,57 @@ impl ProjectViewModel for Project {
     fn get_default_diff(&self) -> Option<impl DiffViewModel> {
         let heads_before;
 
-        let (branch_state, heads_after) = self.with_driver_blocking("Get default diff", |driver| async move {
-            let branch_db = driver
-                .as_ref()?
-                .get_branch_db();
+        let (branch_state, heads_after) =
+            self.with_driver_blocking("Get default diff", |driver| async move {
+                let branch_db = driver.as_ref()?.get_branch_db();
 
-            let branch = branch_db.get_checked_out_ref().await?.branch;
+                let branch = branch_db.get_checked_out_ref().await?.branch().clone();
 
-            let state = branch_db.get_branch_state(&branch).await?;
-            let synced_heads = branch_db.get_latest_ref_on_branch(&branch).await?.heads;
-            Some((state, synced_heads))
-        })?;
+                let state = branch_db.get_branch_state(&branch).await?;
+                let synced_heads = branch_db
+                    .get_latest_ref_on_branch(&branch)
+                    .await?
+                    .heads()
+                    .clone();
+                Some((state, synced_heads))
+            })?;
 
         // There is no default diff for the main branch!
-        if branch_state.is_main {
+        if branch_state.id == self.get_main_branch().unwrap().get_id() {
             return None;
         }
 
         if self.is_merge_preview_branch_active() {
-            heads_before = branch_state.merge_info.as_ref()?.merge_at.clone();
+            heads_before = branch_state.merge_into.as_ref()?.heads();
         }
         // revert preview and regular branch both use forked_at
         else {
-            heads_before = branch_state.fork_info.as_ref()?.forked_at.clone();
+            heads_before = branch_state.forked_from.as_ref()?.heads();
         }
 
         // generate the summary
         let title;
         if self.is_merge_preview_branch_active() {
             let source_name = self
-                .get_branch(&branch_state.fork_info.as_ref()?.forked_from.clone())?
+                .get_branch(branch_state.forked_from.as_ref()?.branch())?
                 .get_name();
             let target_name = self
-                .get_branch(&branch_state.merge_info.as_ref()?.merge_into.clone())?
+                .get_branch(branch_state.merge_into.as_ref()?.branch())?
                 .get_name();
             title = format!("Showing changes for {} -> {}", source_name, target_name);
         } else if self.is_revert_preview_branch_active() {
             let source_name = self
-                .get_branch(&branch_state.fork_info.as_ref()?.forked_from.clone())?
+                .get_branch(&branch_state.forked_from.as_ref()?.branch())?
                 .get_name();
             // assume reverted_to is always just 1 hash
-            let short_heads = &branch_state
-                .revert_info
-                .as_ref()?
-                .reverted_to
-                .first()?
-                .to_string()[..7];
+            let short_heads = &branch_state.reverted_to?.heads().first()?.to_string()[..7];
             title = format!(
                 "Showing changes for {} reverted to {}",
                 source_name, short_heads
             );
         } else {
             let source_name = self
-                .get_branch(&branch_state.fork_info.as_ref()?.forked_from.clone())?
+                .get_branch(&branch_state.forked_from.as_ref()?.branch())?
                 .get_name();
             title = format!(
                 "Showing changes from {} -> {}",
@@ -429,15 +449,8 @@ impl ProjectViewModel for Project {
             );
         }
 
-        let before = HistoryRef {
-            branch: branch_state.id.clone(),
-            heads: heads_before,
-        };
-
-        let after = HistoryRef {
-            branch: branch_state.id.clone(),
-            heads: heads_after,
-        };
+        let before = HistoryRef::new(branch_state.id.clone(), heads_before.clone());
+        let after = HistoryRef::new(branch_state.id.clone(), heads_after.clone());
 
         Some(DiffWrapper {
             diff: self.get_cached_diff(before, after),
@@ -467,18 +480,11 @@ impl ProjectViewModel for Project {
         if let Some(prev_hash) = prev_hash {
             heads_before = vec![prev_hash];
         } else {
-            heads_before = branch_state.fork_info.as_ref()?.forked_at.clone();
+            heads_before = branch_state.forked_from.as_ref()?.heads().clone();
         }
 
-        let before = HistoryRef {
-            branch: branch_state.id.clone(),
-            heads: heads_before,
-        };
-
-        let after = HistoryRef {
-            branch: branch_state.id.clone(),
-            heads: heads_after,
-        };
+        let before = HistoryRef::new(branch_state.id.clone(), heads_before);
+        let after = HistoryRef::new(branch_state.id.clone(), heads_after);
 
         Some(DiffWrapper {
             diff: self.get_cached_diff(before, after),
@@ -500,19 +506,31 @@ impl ProjectViewModel for Project {
         let path = path.clone();
         let ref_ = ref_.clone();
         self.with_driver_blocking("Get file at ref", |driver| async move {
-            let files = driver.as_ref()?.get_branch_db().get_files_at_ref(&ref_, &HashSet::from_iter(vec![path.clone()])).await;
+            let files = driver
+                .as_ref()?
+                .get_branch_db()
+                .get_files_at_ref(&ref_, &HashSet::from_iter(vec![path.clone()]))
+                .await;
             files?.get(&path).cloned()
         })
     }
 
-    fn get_files_at_ref(&self, ref_: &HistoryRef, filters: &HashSet<String>) -> Option<HashMap<String, FileContent>> {
+    fn get_files_at_ref(
+        &self,
+        ref_: &HistoryRef,
+        filters: &HashSet<String>,
+    ) -> Option<HashMap<String, FileContent>> {
         let ref_ = ref_.clone();
         let filters = filters.clone();
         self.with_driver_blocking("Get files at ref", |driver| async move {
-            driver.as_ref()?.get_branch_db().get_files_at_ref(&ref_, &filters).await
+            driver
+                .as_ref()?
+                .get_branch_db()
+                .get_files_at_ref(&ref_, &filters)
+                .await
         })
     }
-    
+
     fn is_branch_loaded(&self, branch: &DocumentId) -> bool {
         let branch = branch.clone();
         self.with_driver_blocking("Is branch loaded", |driver| async move {
@@ -522,7 +540,7 @@ impl ProjectViewModel for Project {
             dr.get_branch_db().is_branch_loaded(&branch).await
         })
     }
-    
+
     fn dump_current_branch(&self) {
         let Some(ref_) = self.get_current_ref() else {
             return;
@@ -531,7 +549,7 @@ impl ProjectViewModel for Project {
             let Some(dr) = driver.as_ref() else {
                 return;
             };
-            dr.get_branch_db().dump_branch_doc(&ref_.branch).await;
+            dr.get_branch_db().dump_branch_doc(ref_.branch()).await;
         });
     }
 }
@@ -602,7 +620,7 @@ impl BranchViewModel for BranchWrapper {
     }
 
     fn get_parent(&self) -> Option<DocumentId> {
-        Some(self.state.fork_info.as_ref()?.forked_from.clone())
+        Some(self.state.forked_from.as_ref()?.branch().clone())
     }
 
     fn get_children(&self) -> Vec<DocumentId> {
@@ -614,18 +632,11 @@ impl BranchViewModel for BranchWrapper {
     }
 
     fn get_reverted_to(&self) -> Option<ChangeHash> {
-        Some(
-            self.state
-                .revert_info
-                .as_ref()?
-                .reverted_to
-                .first()?
-                .clone(),
-        )
+        Some(self.state.reverted_to.as_ref()?.heads().first()?.clone())
     }
 
     fn get_merge_into(&self) -> Option<DocumentId> {
-        Some(self.state.merge_info.as_ref()?.merge_into.clone())
+        Some(self.state.merge_into.as_ref()?.branch().clone())
     }
 }
 

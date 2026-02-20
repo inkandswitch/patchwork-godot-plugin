@@ -1,23 +1,17 @@
-use std::{
-    collections::{HashMap, HashSet},
-    str::FromStr,
-    sync::Arc,
-};
+use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use crate::{
     helpers::{
-        branch::{
-            BranchState, BranchStateForkInfo, BranchStateMergeInfo, BranchStateRevertInfo,
-            BranchesMetadataDoc,
-        }, doc_utils::SimpleDocReader, spawn_utils::spawn_named, utils::parse_automerge_url
+        branch::BranchesMetadataDoc, doc_utils::SimpleDocReader, spawn_utils::spawn_named,
+        utils::parse_automerge_url,
     },
     project::branch_db::BranchDb,
 };
-use automerge::{ChangeHash, ROOT, ReadDoc};
+use automerge::{ROOT, ReadDoc};
 use autosurgeon::hydrate;
 use futures::{FutureExt, StreamExt};
 use samod::{DocHandle, DocumentId, Repo};
-use tokio::select;
+use tokio::{select, sync::Mutex};
 use tokio_util::sync::CancellationToken;
 
 /// Tracks branch and metadata documents from an Automerge repo, updating BranchDB when the state changes.
@@ -30,6 +24,7 @@ pub struct DocumentWatcher {
 struct DocumentWatcherInner {
     repo: Repo,
     branch_db: BranchDb,
+    tracked_branches: Arc<Mutex<HashSet<DocumentId>>>,
     token: CancellationToken,
 }
 
@@ -45,6 +40,7 @@ impl DocumentWatcher {
         let inner = Arc::new(DocumentWatcherInner {
             branch_db,
             repo,
+            tracked_branches: Default::default(),
             token: CancellationToken::new(),
         });
 
@@ -72,7 +68,7 @@ impl DocumentWatcherInner {
             select! {
                 _ = stream.next() => {
                     // collapse the rest of the stream, in case multiple futures are ready
-                    while let Some(_) = stream.next().now_or_never().flatten() {}                    
+                    while let Some(_) = stream.next().now_or_never().flatten() {}
                     self.ingest_branch_document(handle.clone()).await;
                 },
                 _ = self.token.cancelled() => {
@@ -111,63 +107,14 @@ impl DocumentWatcherInner {
         tokio::task::spawn(async move {
             let handle = repo.find(doc_id.clone()).await;
             // this may trigger a reconciliation for a shadow doc
-            branch_db.ingest_binary_doc(doc_id, handle.ok().flatten()).await;
+            branch_db
+                .ingest_binary_doc(doc_id, handle.ok().flatten())
+                .await;
         });
     }
 
     #[tracing::instrument(skip_all)]
     async fn ingest_branch_document(&self, handle: DocHandle) {
-        let (_, meta) = self.branch_db.get_metadata_state().await.expect(
-            "Somehow, we haven't loaded a metadata doc, but we're ingesting a branch document?!?!",
-        );
-
-        let branch = meta
-            .branches
-            .get(&handle.document_id().to_string())
-            .unwrap();
-
-        // Create a default branch state, but only if we don't have an existing branch state.
-        let h = handle.clone();
-        self.branch_db
-            .insert_branch_state_if_not_exists(handle.document_id().clone(), move || BranchState {
-                id: h.document_id().clone(),
-                name: branch.name.clone(),
-                fork_info: match &branch.fork_info {
-                    Some(fork_info) => Some(BranchStateForkInfo {
-                        forked_from: DocumentId::from_str(&fork_info.forked_from).unwrap(),
-                        forked_at: fork_info
-                            .forked_at
-                            .iter()
-                            .map(|h| ChangeHash::from_str(h).unwrap())
-                            .collect(),
-                    }),
-                    None => None,
-                },
-                merge_info: match &branch.merge_info {
-                    Some(merge_info) => Some(BranchStateMergeInfo {
-                        merge_into: DocumentId::from_str(&merge_info.merge_into).unwrap(),
-                        merge_at: merge_info
-                            .merge_at
-                            .iter()
-                            .map(|h| ChangeHash::from_str(h).unwrap())
-                            .collect(),
-                    }),
-                    None => None,
-                },
-                is_main: h.document_id().to_string() == meta.main_doc_id,
-                created_by: branch.created_by.clone(),
-                revert_info: match &branch.reverted_to {
-                    Some(reverted_to) => Some(BranchStateRevertInfo {
-                        reverted_to: reverted_to
-                            .iter()
-                            .map(|h| ChangeHash::from_str(h).unwrap())
-                            .collect(),
-                    }),
-                    None => None,
-                },
-            })
-            .await;
-
         let h = handle.clone();
         let (heads, linked_docs) = tokio::task::spawn_blocking(move || {
             // Collect all linked doc IDs from this branch
@@ -180,7 +127,8 @@ impl DocumentWatcherInner {
                     }
                 };
 
-                let linked_docs = d.keys(&files)
+                let linked_docs = d
+                    .keys(&files)
                     .filter_map(|path| {
                         let file = match d.get_obj_id(&files, &path) {
                             Some(file) => file,
@@ -212,7 +160,9 @@ impl DocumentWatcherInner {
             self.track_binary_document(doc.clone()).await;
         }
 
-        self.branch_db.update_branch_sync_state(handle, heads, linked_docs.values().cloned().collect()).await;
+        self.branch_db
+            .update_branch_sync_state(handle, heads, linked_docs.values().cloned().collect())
+            .await;
     }
 
     #[tracing::instrument(skip_all)]
@@ -231,10 +181,9 @@ impl DocumentWatcherInner {
             .set_metadata_state(handle, meta.clone())
             .await;
         // check if there are new branches that haven't loaded yet
-        for (branch_id_str, _) in meta.branches.iter() {
-            let branch_id = DocumentId::from_str(branch_id_str).unwrap();
-
-            if !self.branch_db.has_branch(&branch_id).await {
+        let mut tracked_branches = self.tracked_branches.lock().await;
+        for (branch_id, _) in meta.branches.iter() {
+            if !tracked_branches.contains(branch_id) {
                 let Some(handle) = self.repo.find(branch_id.clone()).await.unwrap() else {
                     tracing::error!(
                         "Document {:?} exists in the branch metadata document, but not the repo! Skipping.",
@@ -242,6 +191,7 @@ impl DocumentWatcherInner {
                     );
                     continue;
                 };
+                tracked_branches.insert(branch_id.clone());
                 self.ingest_branch_document(handle.clone()).await;
                 // Track the document
                 let this = self.clone();

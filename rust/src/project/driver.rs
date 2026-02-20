@@ -1,10 +1,9 @@
 use crate::diff::differ::{Differ, ProjectDiff};
-use crate::fs::file_utils::{FileContent, FileSystemEvent};
-use crate::helpers::branch::BranchState;
+use crate::fs::file_utils::{FileSystemEvent};
+use crate::helpers::history_ref::HistoryRef;
 use crate::helpers::spawn_utils::spawn_named;
 use crate::helpers::utils::CommitInfo;
 use crate::project::branch_db::BranchDb;
-use crate::project::branch_db::history_ref::HistoryRef;
 use crate::project::change_ingester::ChangeIngester;
 use crate::project::connection::{RemoteConnection, RemoteConnectionEvent, RemoteConnectionStatus};
 use crate::project::document_watcher::DocumentWatcher;
@@ -16,9 +15,7 @@ use automerge::ChangeHash;
 use futures::StreamExt;
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use samod::{ConcurrencyConfig, ConnectionInfo, DocHandle, DocumentId, Repo};
-use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -301,13 +298,13 @@ impl Driver {
 
         let Some(branch_state) = self
             .get_branch_db()
-            .get_branch_state(&checked_out_ref.branch)
+            .get_branch_state(&checked_out_ref.branch())
             .await
         else {
             return;
         };
 
-        let Some(fork_info) = &branch_state.fork_info else {
+        let Some(fork_info) = &branch_state.forked_from else {
             return;
         };
         self.inner
@@ -315,7 +312,7 @@ impl Driver {
             .delete_branch(&branch_state.id)
             .await;
 
-        self.request_checkout(&fork_info.forked_from).await;
+        self.request_checkout(fork_info.branch()).await;
     }
 
     pub async fn create_merge_preview_branch(&self, source: &DocumentId, target: &DocumentId) {
@@ -369,7 +366,7 @@ impl Driver {
             .branch_db
             .get_metadata_state()
             .await
-            .map(|(_, doc)| DocumentId::from_str(&doc.main_doc_id).unwrap())
+            .map(|(_, doc)| doc.main_doc_id)
     }
 
     pub async fn get_connection_info(&self) -> Option<ConnectionInfo> {
@@ -465,13 +462,13 @@ impl DriverInner {
 
         // If we've changed branches, send the new checked out ref.
         if let Some(ref_) = &new_checked_out_ref {
-            tracing::trace!("CHECKED OUT REF: {}", ref_.branch);
+            tracing::trace!("CHECKED OUT REF: {}", ref_.branch());
         }
         else {
             tracing::trace!("NO CHECKED OUT REF");
         }
-        if new_checked_out_ref.as_ref().map(|r| &r.branch)
-            != old_checked_out_ref.as_ref().map(|r| &r.branch)
+        if new_checked_out_ref.as_ref().map(|r| r.branch())
+            != old_checked_out_ref.as_ref().map(|r| r.branch())
         {
             self.change_ingester.request_ingestion();
             self.ref_tx.send(new_checked_out_ref).unwrap();
@@ -503,7 +500,7 @@ impl DriverInner {
         if let Some(current_ref) = current_ref.clone() {
             if let Some(ref_) = self
                 .branch_db
-                .get_latest_ref_on_branch(&current_ref.branch)
+                .get_latest_ref_on_branch(current_ref.branch())
                 .await
             {
                 return Some(ref_);

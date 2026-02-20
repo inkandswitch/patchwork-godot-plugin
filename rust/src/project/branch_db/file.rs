@@ -14,9 +14,9 @@ impl BranchDb {
     // Utility to check for shared history between refs
     async fn shares_history(&self, earlier_ref: HistoryRef, later_ref: HistoryRef) -> bool {
         let Ok(res) = self
-            .with_shadow_document(&later_ref.branch, async |d| {
-                d.get_obj_id_at(ROOT, "files", &earlier_ref.heads).is_some()
-                    && d.get_obj_id_at(ROOT, "files", &later_ref.heads).is_some()
+            .with_shadow_document(later_ref.branch(), async |d| {
+                d.get_obj_id_at(ROOT, "files", earlier_ref.heads()).is_some()
+                    && d.get_obj_id_at(ROOT, "files", later_ref.heads()).is_some()
             })
             .await
         else {
@@ -134,10 +134,10 @@ impl BranchDb {
         let descendent_ref = descendent_ref.unwrap();
 
         // Get the patches from the later (descendant) ref
-        let old_heads = old_ref.heads.clone();
-        let new_heads = new_ref.heads.clone();
+        let old_heads = old_ref.heads().clone();
+        let new_heads = new_ref.heads().clone();
         let (patches, old_file_set, curr_file_set) = self
-            .with_shadow_document(&descendent_ref.branch, async |d| {
+            .with_shadow_document(descendent_ref.branch(), async |d| {
                 let old_files_id: Option<ObjId> = d.get_obj_id_at(ROOT, "files", &old_heads);
                 let curr_files_id = d.get_obj_id_at(ROOT, "files", &new_heads);
                 let old_file_set = if old_files_id.is_none() {
@@ -241,18 +241,18 @@ impl BranchDb {
         let filters = filters.clone();
         let desired_ref = desired_ref.clone();
         let (mut files, linked_doc_ids) = self
-            .with_shadow_document(&desired_ref.branch, async |doc| {
+            .with_shadow_document(desired_ref.branch(), async |doc| {
                 let files_obj_id: ObjId = doc
-                    .get_at(ROOT, "files", desired_ref.heads.as_ref())
+                    .get_at(ROOT, "files", desired_ref.heads())
                     .unwrap()
                     .unwrap()
                     .1;
-                for path in doc.keys_at(&files_obj_id, desired_ref.heads.as_ref()) {
+                for path in doc.keys_at(&files_obj_id, desired_ref.heads()) {
                     if !filters.is_empty() && !filters.contains(&path) {
                         continue;
                     }
                     let file_entry =
-                        match doc.get_at(&files_obj_id, &path, desired_ref.heads.as_ref()) {
+                        match doc.get_at(&files_obj_id, &path, desired_ref.heads()) {
                             Ok(Some((automerge::Value::Object(ObjType::Map), file_entry))) => {
                                 file_entry
                             }
@@ -263,7 +263,7 @@ impl BranchDb {
                         file_entry,
                         &doc,
                         &path,
-                        desired_ref.heads.as_ref(),
+                        desired_ref.heads(),
                     ) {
                         Ok(content) => {
                             files.insert(path, content);

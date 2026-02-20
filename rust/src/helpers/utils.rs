@@ -2,19 +2,13 @@ use std::{
     collections::HashSet, fmt, path::Path, str::FromStr, time::{SystemTime, UNIX_EPOCH}
 };
 
-use crate::{diff::differ::ProjectDiff, helpers::branch::BranchState};
+use crate::{diff::differ::ProjectDiff, helpers::branch::Branch};
 use automerge::{
-    Automerge, ChangeHash, Patch, transaction::{CommitOptions, Transaction}
+    ChangeHash, transaction::{CommitOptions, Transaction}
 };
 use samod::DocumentId;
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
-
-#[inline(always)]
-pub(crate) fn get_automerge_doc_diff(doc: &Automerge, old_heads: &[ChangeHash], new_heads: &[ChangeHash]) -> Vec<Patch> {
-		doc.diff(old_heads, new_heads)
-}
-
 
 pub(crate) fn get_changed_files(patches: &Vec<automerge::Patch>) -> HashSet<String> {
     let mut changed_files = HashSet::new();
@@ -92,7 +86,7 @@ pub struct CommitMetadata {
     pub username: Option<String>,
     pub branch_id: Option<DocumentId>,
     pub merge_metadata: Option<MergeMetadata>,
-	pub reverted_to: Option<Vec<String>>,
+	pub reverted_to: Option<Vec<ChangeHash>>,
     /// Changed files in this commit. Only valid for commits to branch documents.
     pub changed_files: Option<Vec<ChangedFile>>,
 	/// Whether this change was created to initialize the repository.
@@ -125,7 +119,7 @@ pub struct CommitInfo {
 
 #[derive(Debug)]
 pub struct BranchWrapper {
-	pub state: BranchState,
+	pub state: Branch,
 	pub children: Vec<DocumentId>
 }
 
@@ -133,57 +127,6 @@ pub struct BranchWrapper {
 pub struct DiffWrapper {
 	pub diff: ProjectDiff,
 	pub title: String
-}
-
-pub(crate) fn heads_to_vec_string(heads: Vec<ChangeHash>) -> Vec<String> {
-    heads
-        .iter()
-        .map(|h| h.to_string())
-        .collect()
-}
-
-
-pub trait ToShortForm {
-    fn to_short_form(&self) -> String;
-}
-
-impl ToShortForm for ChangeHash {
-    fn to_short_form(&self) -> String {
-        self.to_string().chars().take(7).collect::<String>()
-    }
-}
-
-impl ToShortForm for Option<&ChangeHash> {
-    fn to_short_form(&self) -> String {
-        match self {
-            Some(change_hash) => change_hash.to_short_form(),
-            None => "<NONE>".to_string(),
-        }
-    }
-}
-
-impl ToShortForm for Option<ChangeHash> {
-    fn to_short_form(&self) -> String {
-        match self {
-            Some(change_hash) => change_hash.to_short_form(),
-            None => "<NONE>".to_string(),
-        }
-    }
-}
-
-impl ToShortForm for Vec<ChangeHash> {
-    fn to_short_form(&self) -> String {
-        format!("[{}]", self.iter().map(|h| h.to_short_form()).collect::<Vec<String>>().join(", "))
-    }
-}
-
-impl ToShortForm for Option<&Vec<ChangeHash>> {
-    fn to_short_form(&self) -> String {
-        match self {
-            Some(change_hashes) => change_hashes.to_short_form(),
-            None => "<NONE>".to_string(),
-        }
-    }
 }
 
 pub fn summarize_changes(author: &str, changes: &Vec<ChangedFile>) -> String {

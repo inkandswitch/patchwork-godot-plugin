@@ -1,11 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    diff::differ::{ChangeType, Differ},
-    parser::{godot_parser::{
+    diff::differ::{ChangeType, Differ}, helpers::history_ref::HistoryRef, parser::{godot_parser::{
         ExternalResourceNode, GodotNode, GodotScene, SubResourceNode, TypeOrInstance
-    }, parser_defs::OrderedProperty},
-    project::branch_db::history_ref::HistoryRef,
+    }, parser_defs::OrderedProperty}
 };
 
 /// Represents a diff of a scene, with a scene path and a list of changed nodes.

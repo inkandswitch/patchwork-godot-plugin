@@ -1,11 +1,11 @@
-use std::{path::PathBuf, str::FromStr};
+use std::path::PathBuf;
 
 use automerge::{Automerge, ChangeMetadata};
-use samod::{DocHandle, DocumentId};
+use samod::DocumentId;
 use tracing::instrument;
 
 use crate::{
-    helpers::branch::BranchState,
+    helpers::branch::Branch,
     project::branch_db::{BranchDb, HistoryRef},
 };
 
@@ -41,10 +41,6 @@ impl BranchDb {
     }
 
     /// Get the most recent ref on a given branch (on the shadow doc).
-    // TODO (Lilith): This replaces branch_state.synced_heads. Either remove synced_heads,
-    // or figure out a way to reliably update it when the heads actually change.
-    // In the old system, synced heads was just force-updated every branch update.
-    // Maybe that's enough? Get DocumentWatcher to do it? Then we remove the with_doc call here.
     #[instrument(skip_all)]
     pub async fn get_latest_ref_on_branch(&self, branch: &DocumentId) -> Option<HistoryRef> {
         let Ok(heads) = self
@@ -54,10 +50,7 @@ impl BranchDb {
             return None;
         };
 
-        Some(HistoryRef {
-            heads,
-            branch: branch.clone(),
-        })
+        Some(HistoryRef::new(branch.clone(), heads))
     }
 
     pub async fn get_main_branch(&self) -> Option<DocumentId> {
@@ -65,9 +58,7 @@ impl BranchDb {
             tracing::error!("Couldn't get main branch; no metadata doc.");
             return None;
         };
-        // TODO (Lilith): Figure out a way to hydrate/reconcile DocumentID so we don't have to do the string parse here.
-        // Alternatively, don't store BranchesMetadataDoc, store some similar thing to BranchState
-        return DocumentId::from_str(&metadata.main_doc_id).ok();
+        return Some(metadata.main_doc_id);
     }
 
     /// Check if a path should be ignored based on the provided glob patterns
@@ -85,9 +76,11 @@ impl BranchDb {
         let is_dir = path.is_dir();
         if is_dir {
             let string_path = path.to_string_lossy();
-            let project_dir = self.project_dir.to_string_lossy();    
-            if string_path == project_dir || 
-            (string_path.len() + 1 == project_dir.len() && (project_dir.ends_with("/") || project_dir.ends_with("\\"))) {
+            let project_dir = self.project_dir.to_string_lossy();
+            if string_path == project_dir
+                || (string_path.len() + 1 == project_dir.len()
+                    && (project_dir.ends_with("/") || project_dir.ends_with("\\")))
+            {
                 return false;
             }
         };
@@ -98,23 +91,18 @@ impl BranchDb {
     }
 
     pub async fn get_branch_name(&self, id: &DocumentId) -> Option<String> {
-        let states = self.branch_states.lock().await;
-        Some(states.get(id)?.lock().await.name.clone())
+        let meta = self.metadata_state.lock().await;
+        Some(meta.as_ref()?.1.branches.get(id)?.name.clone())
     }
 
     // This is not ideal -- I'd prefer not to clone unless necessary.
     // However, we NEVER want to expose our internal BranchState mutexes.
     // That could cause deadlocks if they acquired a branch state and later tried to call any branch info method on branch_db.
     // Callers should preferentially use other getter methods.
-    pub async fn get_branch_state(&self, id: &DocumentId) -> Option<BranchState> {
-        let states = self.branch_states.lock().await;
-        Some(states.get(id)?.lock().await.clone())
+    pub async fn get_branch_state(&self, id: &DocumentId) -> Option<Branch> {
+        let meta = self.metadata_state.lock().await;
+        Some(meta.as_ref()?.1.branches.get(id)?.clone())
     }
-
-    // pub async fn get_branch_handle(&self, id: &DocumentId) -> Option<DocHandle> {
-    //     let states = self.branch_states.lock().await;
-    //     Some(states.get(id)?.lock().await.doc_handle.clone())
-    // }
 
     /// Run a closure over a mutable reference to our Automerge shadow document for a branch.
     pub(super) async fn with_shadow_document<F, R>(
@@ -141,14 +129,15 @@ impl BranchDb {
     }
 
     pub async fn get_branch_children(&self, id: &DocumentId) -> Vec<DocumentId> {
-        let states = self.branch_states.lock().await;
+        let meta = self.metadata_state.lock().await;
         let mut result = Vec::new();
+        let Some((_, m)) = meta.as_ref() else {
+            return result;
+        };
 
-        for (bid, state) in states.iter() {
-            let state: tokio::sync::MutexGuard<'_, crate::helpers::branch::BranchState> =
-                state.lock().await;
-            if let Some(fork_info) = &state.fork_info {
-                if &fork_info.forked_from == id {
+        for (bid, state) in m.branches.iter() {
+            if let Some(forked_from) = &state.forked_from {
+                if forked_from.branch() == id {
                     result.push(bid.clone());
                 }
             }
@@ -171,7 +160,10 @@ impl BranchDb {
 
     /// Dumps a branch document to disk, at ./.patchwork/DUMP_{id}.bin
     pub async fn dump_branch_doc(&self, id: &DocumentId) {
-        let path = self.get_project_dir().join("./.patchwork/").join(format!("DUMP_{id}.bin"));
+        let path = self
+            .get_project_dir()
+            .join("./.patchwork/")
+            .join(format!("DUMP_{id}.bin"));
         let handle = {
             let states = self.branch_sync_states.lock().await;
             let Some(state) = states.get(id) else {
@@ -180,11 +172,9 @@ impl BranchDb {
             let state = state.lock().await;
             state.canonical_doc.clone()
         };
-        let bytes = tokio::task::spawn_blocking(move || {
-            handle.with_document(|d| {
-                d.save()
-            })
-        }).await.unwrap();
+        let bytes = tokio::task::spawn_blocking(move || handle.with_document(|d| d.save()))
+            .await
+            .unwrap();
 
         if let Err(e) = tokio::fs::write(path.clone(), bytes).await {
             tracing::error!("Error dumping branch {id} to {:?}: {:?}", path, e);
