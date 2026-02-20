@@ -7,7 +7,7 @@ use regex::Regex;
 use std::{collections::{HashMap, HashSet}, fmt::Display};
 use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator};
 
-use crate::{helpers::doc_utils::SimpleDocReader, parser::parser_defs::OrderedProperty, project::branch_db::history_ref::{HistoryRef, HistoryRefPath}};
+use crate::{helpers::{doc_utils::SimpleDocReader, history_path::HistoryRefPath, history_ref::HistoryRef}, parser::parser_defs::OrderedProperty};
 
 const UNIQUE_SCENE_ID_UNASSIGNED: i32 = 0;
 fn hydrate_nodes<D: ReadDoc>(

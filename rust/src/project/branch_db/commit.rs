@@ -2,16 +2,13 @@ use std::collections::{HashMap, HashSet};
 
 use automerge::{Automerge, ChangeHash, ObjType, ROOT, ReadDoc};
 use autosurgeon::Doc;
-use samod::{DocHandle};
+use samod::DocHandle;
 
 use crate::{
     fs::file_utils::FileContent,
     helpers::{
         doc_utils::SimpleDocReader,
-        utils::{
-            ChangeType, ChangedFile, CommitMetadata, commit_with_metadata,
-            heads_to_vec_string,
-        },
+        utils::{ChangeType, ChangedFile, CommitMetadata, commit_with_metadata},
     },
     parser::godot_parser::GodotScene,
     project::branch_db::{BranchDb, HistoryRef},
@@ -34,7 +31,7 @@ impl BranchDb {
         let count = files.len();
         let username = self.username.lock().await.clone();
 
-        if count == 0  {
+        if count == 0 {
             tracing::info!("No actual changes found; not committing.");
             return None;
         }
@@ -63,7 +60,7 @@ impl BranchDb {
         }
 
         let sync_states = self.branch_sync_states.lock().await;
-        let Some(state_arc) = sync_states.get(&ref_.branch) else {
+        let Some(state_arc) = sync_states.get(ref_.branch()) else {
             tracing::error!("Sync state doesn't exist for branch; can't commit changes.");
             return None;
         };
@@ -127,16 +124,11 @@ impl BranchDb {
             let scene_file = tx
                 .get_obj_id(&files, &path)
                 .unwrap_or_else(|| tx.put_object(&files, &path, ObjType::Map).unwrap());
-            autosurgeon::reconcile_prop(
-                &mut tx,
-                &scene_file,
-                "structured_content",
-                godot_scene,
-            )
-            .unwrap_or_else(|e| {
-                tracing::error!("error reconciling scene: {}", e);
-                panic!("error reconciling scene: {}", e);
-            });
+            autosurgeon::reconcile_prop(&mut tx, &scene_file, "structured_content", godot_scene)
+                .unwrap_or_else(|e| {
+                    tracing::error!("error reconciling scene: {}", e);
+                    panic!("error reconciling scene: {}", e);
+                });
             changes.push(ChangedFile { path, change_type });
         }
 
@@ -170,12 +162,9 @@ impl BranchDb {
             tx,
             &CommitMetadata {
                 username: username.clone(),
-                branch_id: Some(ref_.branch.clone()),
+                branch_id: Some(ref_.branch().clone()),
                 merge_metadata: None,
-                reverted_to: match revert {
-                    Some(revert) => Some(heads_to_vec_string(revert)),
-                    None => None,
-                },
+                reverted_to: revert,
                 changed_files: Some(changes),
                 is_setup: Some(is_checking_in),
             },
@@ -193,11 +182,8 @@ impl BranchDb {
         self.try_reconcile_branch(state_arc.clone()).await;
 
         tracing::info!("Committed {} files.", count);
-        assert!(new_heads != ref_.heads);
-        return Some(HistoryRef {
-            heads: new_heads,
-            branch: ref_.branch.clone(),
-        });
+        assert!(&new_heads != ref_.heads());
+        return Some(HistoryRef::new(ref_.branch().clone(), new_heads));
     }
 
     // Filter a list of files to those changed compared to a given ref.

@@ -5,8 +5,8 @@ use samod::{DocHandle, DocumentId};
 use tokio::sync::{Mutex, RwLock};
 
 use crate::{
-    helpers::branch::{BranchState, BranchesMetadataDoc},
-    project::branch_db::{BranchDb, history_ref::HistoryRef},
+    helpers::{branch::BranchesMetadataDoc, history_ref::HistoryRef},
+    project::branch_db::BranchDb,
 };
 
 #[derive(Debug)]
@@ -53,20 +53,6 @@ impl BranchDb {
     pub async fn set_metadata_state(&self, handle: DocHandle, state: BranchesMetadataDoc) {
         let mut st = self.metadata_state.lock().await;
         *st = Some((handle, state));
-    }
-
-    pub async fn has_branch(&self, id: &DocumentId) -> bool {
-        let st = self.branch_states.lock().await;
-        return st.contains_key(id);
-    }
-
-    pub async fn insert_branch_state_if_not_exists<F>(&self, id: DocumentId, f: F)
-    where
-        F: FnOnce() -> BranchState,
-    {
-        let mut st = self.branch_states.lock().await;
-        st.entry(id.clone())
-            .or_insert_with(|| Arc::new(Mutex::new(f())));
     }
 
     pub async fn is_branch_loaded(&self, id: &DocumentId) -> bool {
@@ -177,12 +163,14 @@ impl BranchDb {
             }
 
             // did we track any new changes coming into the canonical?
-            if state.last_reconciled == state.last_tracked {
+            if Self::are_heads_equivalent(&state.last_reconciled, &state.last_tracked) {
                 // is canonical still synced up with the shadow doc?
-                if let Some(shadow_doc) = &state.shadow_doc && Self::are_heads_equivalent(&state.last_reconciled, &shadow_doc.get_heads()) {
+                if let Some(shadow_doc) = &state.shadow_doc
+                    && Self::are_heads_equivalent(&state.last_reconciled, &shadow_doc.get_heads())
+                {
                     // if both of those were true, we don't actually need to reconcile.
                     tracing::debug!("Could not reconcile because we're already up-to-date.");
-                    return;   
+                    return;
                 }
             }
 
@@ -202,7 +190,7 @@ impl BranchDb {
                 // First, fork at tracked heads.
                 // This is important so that if new heads have appeared with unsynced binary docs since
                 // we tried to reconcile, we don't include them.
-                
+
                 // TODO (Lilith): Once Alex fixes fork_at, use the other line instead
                 //let mut fork = d.fork_at(&tracked_heads).unwrap();
                 let mut fork = d.fork();

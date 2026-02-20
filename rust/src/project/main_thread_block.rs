@@ -9,7 +9,6 @@ mod test;
 /// A lock that blocks a main thread with checkpoint() until all worker threads have dropped their guards from wait().
 /// Worker threads also cannot begin execution until main has reached a checkpoint.
 /// This has the effect of blocking the main thread until all subscribed worker threads have completed.
-// TODO (Lilith): Find a concurrency expert at the lab who can help me validate/prove this implementation. I think it works, but I'm not sure.
 #[derive(Clone, Debug)]
 pub struct MainThreadBlock {
     start: Arc<Semaphore>,

@@ -4,7 +4,6 @@ use std::{
 };
 
 use futures::StreamExt;
-use num_traits::ops::checked;
 use tokio::{
     select,
     sync::{Mutex, Notify, watch},
@@ -132,8 +131,8 @@ impl ChangeIngesterInner {
         if let Some(revert_info) = &meta?.reverted_to {
             let heads = revert_info
                 .iter()
-                .map(|s| &s[..7])
-                .collect::<Vec<&str>>()
+                .map(|s| (&s.to_string()[..7]).to_string())
+                .collect::<Vec<String>>()
                 .join(", ");
             return Some(format!("↩ {author} reverted to {heads}"));
         }
@@ -160,10 +159,10 @@ impl ChangeIngesterInner {
             .peer_watcher
             .get_server_info()
             .as_ref()
-            .and_then(|info| info.docs.get(&checked_out.branch))
+            .and_then(|info| info.docs.get(checked_out.branch()))
             .and_then(|state| state.last_acked_heads.clone());
 
-        let Some(changes) = self.branch_db.get_branch_changes(&checked_out.branch).await else {
+        let Some(changes) = self.branch_db.get_branch_changes(checked_out.branch()).await else {
             tracing::error!("Can't get changes; get_branch_changes failed!");
             return Vec::new();
         };
@@ -205,7 +204,7 @@ impl ChangeIngesterInner {
             let Some(branch_id) = &metadata.branch_id else {
                 continue;
             };
-            if branch_id != &checked_out.branch {
+            if branch_id != checked_out.branch() {
                 continue;
             }
 

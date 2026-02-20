@@ -1,23 +1,21 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     path::PathBuf,
     sync::Arc,
 };
 
-use automerge::{Automerge, ChangeHash};
 use samod::{DocHandle, DocumentId, Repo};
 use tokio::sync::{Mutex, RwLock};
 
 use crate::{
-    helpers::branch::{BranchState, BranchesMetadataDoc},
-    project::branch_db::{branch_sync::BranchSyncState, history_ref::HistoryRef},
+    helpers::{branch::{BranchesMetadataDoc}, history_ref::HistoryRef},
+    project::branch_db::{branch_sync::BranchSyncState},
 };
 
 mod branch;
 mod branch_sync;
 mod commit;
 mod file;
-pub mod history_ref;
 mod merge_revert;
 mod util;
 use ignore::gitignore::Gitignore;
@@ -33,11 +31,8 @@ pub struct BranchDb {
 
     username: Arc<Mutex<Option<String>>>,
 
-    // TODO (Lilith): I think we can possibly combine binary_states and branch_sync_states' mutexes to reduce complexity
     binary_states: Arc<Mutex<HashMap<DocumentId, Option<DocHandle>>>>,
-    branch_states: Arc<Mutex<HashMap<DocumentId, Arc<Mutex<BranchState>>>>>,
     branch_sync_states: Arc<Mutex<HashMap<DocumentId, Arc<Mutex<BranchSyncState>>>>>,
-
     metadata_state: Arc<Mutex<Option<(DocHandle, BranchesMetadataDoc)>>>,
 
     // The checked out ref is the ref that the filesystem is currently synced with.
@@ -53,7 +48,6 @@ impl BranchDb {
             gitignore: Arc::new(gitignore),
             username: Default::default(),
             binary_states: Default::default(),
-            branch_states: Default::default(),
             metadata_state: Default::default(),
             checked_out_ref: Default::default(),
             branch_sync_states: Default::default(),

@@ -1,23 +1,23 @@
 use crate::diff::differ::ProjectDiff;
 use crate::fs::file_utils::FileSystemEvent;
-use crate::helpers::branch::BranchState;
+use crate::helpers::branch::Branch;
+use crate::helpers::history_ref::HistoryRef;
 use crate::helpers::spawn_utils::spawn_named_on;
 use crate::helpers::utils::CommitInfo;
 use crate::interop::godot_accessors::{
     EditorFilesystemAccessor, PatchworkConfigAccessor, PatchworkEditorAccessor,
 };
-use crate::project::branch_db::history_ref::HistoryRef;
 use crate::project::driver::Driver;
 use crate::project::main_thread_block::MainThreadBlock;
 use automerge::ChangeHash;
 use samod::DocumentId;
-use tracing::instrument;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::{collections::HashMap, str::FromStr};
 use tokio::runtime::Runtime;
 use tokio::sync::{Mutex, OwnedMutexGuard, watch};
+use tracing::instrument;
 
 /// Manages the state and operations of a Patchwork project within Godot.
 /// Its API is exposed to GDScript via the GodotProject struct.
@@ -158,7 +158,7 @@ impl Project {
             },
             None => None,
         };
-        
+
         tracing::info!(
             "Starting GodotProject with metadata doc id: {:?}",
             metadata_id
@@ -174,7 +174,15 @@ impl Project {
             .block_on(
                 // I think it's correct to spawn this on a different task explicitly, because block_on runs the future on the current thread, not a worker thread.
                 spawn_named_on("Create driver", self.runtime.handle(), async move {
-                    let driver = Driver::new(block, server_url, project_dir, username, storage_dir, metadata_id).await;
+                    let driver = Driver::new(
+                        block,
+                        server_url,
+                        project_dir,
+                        username,
+                        storage_dir,
+                        metadata_id,
+                    )
+                    .await;
                     let metadata = driver.as_ref().unwrap().get_metadata_doc().await;
                     (driver, metadata)
                 }),
@@ -186,10 +194,15 @@ impl Project {
             return;
         };
 
-        PatchworkConfigAccessor::set_project_value("project_doc_id", &metadata.expect("Driver started, but metadata null!").to_string());
+        PatchworkConfigAccessor::set_project_value(
+            "project_doc_id",
+            &metadata
+                .expect("Driver started, but metadata null!")
+                .to_string(),
+        );
         self.changes_rx = Some(driver.get_changes_rx());
         self.checked_out_ref_rx = Some(driver.get_ref_rx());
-        
+
         *self.driver.blocking_lock() = Some(driver);
     }
 
@@ -199,10 +212,18 @@ impl Project {
     }
 
     // common utility function within this class
-    pub(super) fn get_checked_out_branch_state(&self) -> Option<BranchState> {
+    pub(super) fn get_checked_out_branch_state(&self) -> Option<Branch> {
         self.with_driver_blocking("Get checked out branch state", |driver| async move {
-            let checked_out_ref = driver.as_ref()?.get_branch_db().get_checked_out_ref().await?;
-            driver.as_ref()?.get_branch_db().get_branch_state(&checked_out_ref.branch).await
+            let checked_out_ref = driver
+                .as_ref()?
+                .get_branch_db()
+                .get_checked_out_ref()
+                .await?;
+            driver
+                .as_ref()?
+                .get_branch_db()
+                .get_branch_state(checked_out_ref.branch())
+                .await
         })
     }
 
@@ -243,9 +264,13 @@ impl Project {
             let block = self.main_thread_block.clone();
             tracing::trace!("Blocking for dependents...");
             self.runtime
-                .block_on(spawn_named_on("Blocking guard", self.runtime.handle(), async move {
-                    block.checkpoint().await;
-                }))
+                .block_on(spawn_named_on(
+                    "Blocking guard",
+                    self.runtime.handle(),
+                    async move {
+                        block.checkpoint().await;
+                    },
+                ))
                 .unwrap();
             tracing::trace!("Done blocking.");
 
@@ -274,7 +299,11 @@ impl Project {
         // Check to see if we need to produce a CheckedOutBranch signal
         let rx = self.checked_out_ref_rx.as_mut().unwrap();
         if rx.has_changed().unwrap_or(false) {
-            let doc_id = rx.borrow().clone().map(|r| r.branch.to_string()).unwrap_or("".to_string());
+            let doc_id = rx
+                .borrow()
+                .as_ref()
+                .map(|r| r.branch().to_string())
+                .unwrap_or("".to_string());
             PatchworkConfigAccessor::set_project_value("checked_out_branch_doc_id", &doc_id);
             signals.push(GodotProjectSignal::CheckedOutBranch);
             rx.mark_unchanged();

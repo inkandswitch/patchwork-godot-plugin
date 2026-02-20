@@ -8,7 +8,7 @@ use automerge::ObjId;
 use md5::Digest;
 use samod::{DocumentId};
 use crate::helpers::doc_utils::SimpleDocReader;
-use crate::helpers::utils::{ToShortForm, parse_automerge_url};
+use crate::helpers::utils::{parse_automerge_url};
 
 use crate::parser::godot_parser::{GodotScene, parse_scene, recognize_scene};
 
@@ -172,19 +172,6 @@ impl FileContent {
 
 }
 
-
-impl ToShortForm for FileContent {
-	fn to_short_form(&self) -> String {
-		match self {
-			FileContent::String(_) => "String".to_string(),
-			FileContent::Binary(_) => "Binary".to_string(),
-			FileContent::Scene(_) => "Scene".to_string(),
-			FileContent::Deleted => "Deleted".to_string(),
-		}
-	}
-}
-
-//
 impl Default for FileContent {
 	fn default() -> Self {
 		FileContent::Deleted

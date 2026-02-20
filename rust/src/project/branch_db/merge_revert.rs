@@ -4,7 +4,7 @@ use tracing::instrument;
 
 use crate::{
     helpers::{
-        branch::{Branch, ForkInfo, MergeInfo},
+        branch::Branch,
         doc_utils::SimpleDocReader,
         utils::{CommitMetadata, MergeMetadata, commit_with_metadata},
     },
@@ -47,15 +47,9 @@ impl BranchDb {
         let username = self.username.lock().await.clone();
         self.add_branch_to_meta(Branch {
             name: format!("{} <- {}", target_name, source_name),
-            id: handle.document_id().to_string(),
-            fork_info: Some(ForkInfo {
-                forked_from: source.to_string(),
-                forked_at: source_ref.heads.iter().map(|h| h.to_string()).collect(),
-            }),
-            merge_info: Some(MergeInfo {
-                merge_into: target.to_string(),
-                merge_at: target_ref.heads.iter().map(|h| h.to_string()).collect(),
-            }),
+            id: handle.document_id().clone(),
+            forked_from: Some(source_ref),
+            merge_into: Some(target_ref),
             created_by: username.clone(),
             reverted_to: None,
         })
@@ -67,7 +61,7 @@ impl BranchDb {
         let Some(source_state) = self.get_branch_state(source).await else {
             return;
         };
-        
+
         if source == target {
             tracing::error!("cannot merge branch into itself!");
             return;
@@ -77,18 +71,18 @@ impl BranchDb {
             self.with_shadow_document(target, async |target_doc| {
                 let _ = target_doc.merge(source_doc);
             })
-            .await;
+            .await.unwrap();
         })
-        .await;
+        .await.unwrap();
 
-        // if the branch has some merge_info we know that it's a merge preview branch
+        // if the branch has some merge_into we know that it's a merge preview branch
         // forked_from is the original branch of the preview branch
-        let forked_from = source_state.fork_info.as_ref().unwrap().forked_from.clone();
-        let merge_metadata = if source_state.merge_info.is_some() {
+        let forked_from = source_state.forked_from.unwrap().branch().clone();
+        let merge_metadata = if source_state.merge_into.is_some() {
             match self.get_branch_state(&forked_from).await {
                 Some(original_state) => Some(MergeMetadata {
                     merged_branch_id: forked_from,
-                    forked_at_heads: original_state.fork_info.as_ref().unwrap().forked_at.clone(),
+                    forked_at_heads: original_state.forked_from.unwrap().heads().clone(),
                 }),
                 _ => None,
             }
@@ -119,7 +113,7 @@ impl BranchDb {
                     },
                 );
             })
-            .await;
+            .await.unwrap();
         }
     }
 }
