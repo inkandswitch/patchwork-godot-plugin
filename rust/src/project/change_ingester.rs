@@ -1,8 +1,10 @@
 use std::{
+    collections::HashSet,
     sync::Arc,
     time::{Duration, SystemTime},
 };
 
+use automerge::ChangeHash;
 use futures::StreamExt;
 use tokio::{
     select,
@@ -56,18 +58,24 @@ impl ChangeIngester {
 
         let inner_clone = inner.clone();
         spawn_named("Change ingester", async move {
-            let stream = inner_clone.peer_watcher.subscribe();
-            tokio::pin!(stream);
+            let peer_stream = inner_clone.peer_watcher.subscribe();
+            tokio::pin!(peer_stream);
+
+            let reconcile_stream = inner_clone.branch_db.subscribe_doc_changes();
+            tokio::pin!(reconcile_stream);
 
             loop {
                 select! {
                     _ = inner_clone.token.cancelled() => { break; }
-                    _ = stream.next() => {
+                    _ = peer_stream.next() => {
+                        inner_clone.ingestion_request.notify_one();
+                    }
+                    _ = reconcile_stream.next() => {
                         inner_clone.ingestion_request.notify_one();
                     }
                     _ = inner_clone.ingestion_request.notified() => {
                         inner_clone.ingest_changes().await;
-                    },
+                    }
                 }
             }
         });
@@ -155,6 +163,10 @@ impl ChangeIngesterInner {
             return Vec::new();
         };
 
+        tracing::debug!("ingesting on ref: {:?}", checked_out);
+
+        // This is the last heads the server has seen. Refers to the canonical
+        // document, NOT the shadow document.
         let last_acked_heads = self
             .peer_watcher
             .get_server_info()
@@ -162,10 +174,48 @@ impl ChangeIngesterInner {
             .and_then(|info| info.docs.get(checked_out.branch()))
             .and_then(|state| state.last_acked_heads.clone());
 
-        let Some(changes) = self.branch_db.get_branch_changes(checked_out.branch()).await else {
-            tracing::error!("Can't get changes; get_branch_changes failed!");
-            return Vec::new();
-        };
+        // When we have pending commits, there are several things we need to check.
+        // - Unsynced and shadow-only: The commit is present in the shadow doc but not the canonical doc.
+        // - Unsynced: The commit is present in the canonical doc but the server hasn't acked them
+        // - Canonical-only: The commit is present in the canonical doc but not the shadow doc.
+        // - Unsynced and canonical-only: ...
+        // For now, any of these trigger an unsynced status. But we need to check everything, because
+        // we want to be able to respond to both local commits and incoming commits that haven't reconciled.
+
+        let mut changes = self
+            .branch_db
+            .get_shadow_changes(checked_out.branch())
+            .await
+            .unwrap_or(Vec::new());
+        let canonical_changes = self
+            .branch_db
+            .get_canonical_changes(checked_out.branch())
+            .await
+            .unwrap_or(Vec::new());
+
+        // First step: Merge shadow and canonical.
+        let mut shadow_hashes = HashSet::new();
+        let mut canon_hashes = HashSet::new();
+        for change in &changes {
+            shadow_hashes.insert(change.hash.clone());
+        }
+        for change in &canonical_changes {
+            canon_hashes.insert(change.hash.clone());
+        }
+
+        // We need this to know whether the changes are actually synced.
+        let intersecting_hashes = shadow_hashes
+            .symmetric_difference(&canon_hashes)
+            .map(|h| h.clone())
+            .collect::<HashSet<ChangeHash>>();
+
+        // Do the merge
+        // This just puts all canonical-only changes after local-only changes... probably fine for now.
+        for change in canonical_changes {
+            if !shadow_hashes.contains(&change.hash) {
+                changes.push(change);
+            }
+        }
 
         let changes = changes
             .into_iter()
@@ -184,6 +234,7 @@ impl ChangeIngesterInner {
             .collect::<Vec<CommitInfo>>();
 
         // Check to see what the most recent synced commit is.
+        // This relies on canonical_changes being all *after* local changes in the list
         let mut synced_until_index = -1;
         for (i, change) in changes.iter().enumerate() {
             if last_acked_heads
@@ -213,7 +264,7 @@ impl ChangeIngesterInner {
                 .await
                 .unwrap_or("Invalid data".to_string());
             let commit_info = CommitInfo {
-                synced: (i as i32) <= synced_until_index,
+                synced: (i as i32) <= synced_until_index && !intersecting_hashes.contains(&change.hash),
                 summary,
                 ..change
             };
