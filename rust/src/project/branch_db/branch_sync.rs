@@ -1,8 +1,10 @@
 use std::{collections::HashSet, sync::Arc};
 
 use automerge::{Automerge, ChangeHash};
+use futures::{Stream, StreamExt};
 use samod::{DocHandle, DocumentId};
 use tokio::sync::{Mutex, RwLock};
+use tokio_stream::wrappers::BroadcastStream;
 
 use crate::{
     helpers::{branch::BranchesMetadataDoc, history_ref::HistoryRef},
@@ -42,6 +44,11 @@ impl BranchDb {
 
     pub async fn get_checked_out_ref(&self) -> Option<HistoryRef> {
         return self.checked_out_ref.read().await.clone();
+    }
+    
+    pub fn subscribe_doc_changes(&self) -> impl Stream<Item = ()> {
+        let s = self.branch_change_tx.subscribe();
+        return BroadcastStream::new(s).filter_map(async |f| f.ok());
     }
 
     pub async fn get_metadata_state(&self) -> Option<(DocHandle, BranchesMetadataDoc)> {
@@ -138,6 +145,8 @@ impl BranchDb {
             self.try_reconcile_branch(state_arc.clone()).await;
         }
 
+        let _ = self.branch_change_tx.send(());
+
         // Now that we release the lock to binary_states here, whenever someone else uses ingest_binary_doc(), it will look at our states
         // and remove stuff from waiting_binary_docs when it syncs.
     }
@@ -153,6 +162,7 @@ impl BranchDb {
     }
 
     pub(super) async fn try_reconcile_branch(&self, sync_state: Arc<Mutex<BranchSyncState>>) {
+        let doc_change_tx = self.branch_change_tx.clone();
         tokio::task::spawn_blocking(move || {
             // this is quite weird, but we want to be holding the state mutex this entire method.
             let mut state = sync_state.blocking_lock();
@@ -211,6 +221,7 @@ impl BranchDb {
             state.last_reconciled = new_heads.clone();
             state.last_tracked = new_heads;
             tracing::debug!("Reconcile completed.");
+            let _ = doc_change_tx.send(());
         })
         .await
         .unwrap();

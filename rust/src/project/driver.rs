@@ -429,6 +429,7 @@ impl DriverInner {
             .read()
             .await
             .clone();
+        
         // Ensure we block the main thread inside of Rust while checking out a ref.
         // Very important to not allow Godot to explode while we're writing files!
         {
@@ -470,9 +471,12 @@ impl DriverInner {
         else {
             tracing::trace!("NO CHECKED OUT REF");
         }
+        
         if new_checked_out_ref.as_ref().map(|r| r.branch())
             != old_checked_out_ref.as_ref().map(|r| r.branch())
         {
+            // Whenever we change branches, we must manually ingest changes.
+            // This is because we're in need of a new change list for sure!
             self.change_ingester.request_ingestion();
             self.ref_tx.send(new_checked_out_ref).unwrap();
         }

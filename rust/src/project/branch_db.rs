@@ -5,7 +5,7 @@ use std::{
 };
 
 use samod::{DocHandle, DocumentId, Repo};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, broadcast};
 
 use crate::{
     helpers::{branch::{BranchesMetadataDoc}, history_ref::HistoryRef},
@@ -38,10 +38,14 @@ pub struct BranchDb {
     // The checked out ref is the ref that the filesystem is currently synced with.
     // Has a separate lock because of its importance; it needs to be locked while we're prepping a commit or checking out stuff
     checked_out_ref: Arc<RwLock<Option<HistoryRef>>>,
+
+    // Notified whenever we make or ingest changes to a branch
+    branch_change_tx: broadcast::Sender<()>
 }
 
 impl BranchDb {
     pub fn new(repo: Repo, project_dir: PathBuf, gitignore: Gitignore) -> Self {
+        let (tx, _) = broadcast::channel(1);
         Self {
             project_dir,
             repo,
@@ -51,6 +55,7 @@ impl BranchDb {
             metadata_state: Default::default(),
             checked_out_ref: Default::default(),
             branch_sync_states: Default::default(),
+            branch_change_tx: tx
         }
     }
 

@@ -145,8 +145,8 @@ impl BranchDb {
         result
     }
 
-    /// Get ALL change metadata on the current branch document, including those changes made before the document was created.
-    pub async fn get_branch_changes(&self, id: &DocumentId) -> Option<Vec<ChangeMetadata>> {
+    /// Get ALL change metadata on the current branch shadow document, including those changes made before the document was created.
+    pub async fn get_shadow_changes(&self, id: &DocumentId) -> Option<Vec<ChangeMetadata<'_>>> {
         self.with_shadow_document(id, async |d| {
             d.get_changes_meta(&[])
                 .iter()
@@ -156,6 +156,25 @@ impl BranchDb {
         })
         .await
         .ok()
+    }
+
+    /// Get ALL change metadata on the current branch canonical document, including those changes made before the document was created.
+    pub async fn get_canonical_changes(&self, id: &DocumentId) -> Option<Vec<ChangeMetadata<'_>>> {
+        let sync_states = self.branch_sync_states.lock().await;
+        let Some(state) = sync_states.get(id).cloned() else {
+            tracing::error!("Branch not found in sync states! Unable to run get_canonical_changes.");
+            return None;
+        };
+        let handle = state.lock().await.canonical_doc.clone();
+        tokio::task::spawn_blocking(move || {
+            handle.with_document(|d| {
+                d.get_changes_meta(&[])
+                    .iter()
+                    // this may be slow? we could consider putting it in a struct with only the info we need like CommitInfo.
+                    .map(|i| i.clone().into_owned())
+                    .collect()
+            })
+        }).await.ok()
     }
 
     /// Dumps a branch document to disk, at ./.patchwork/DUMP_{id}.bin
