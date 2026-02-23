@@ -256,7 +256,7 @@ impl GodotConvert for VariantValue {
     type Via = Variant;
 }
 
-fn get_classdb_default_value(class_name: &String, prop: &String) -> String {
+fn get_classdb_default_value(class_name: &str, prop: &str) -> String {
     if ClassDb::singleton().is_instance_valid() && ClassDb::singleton().class_exists(class_name) {
         ClassDb::singleton()
         .class_get_property_default_value(

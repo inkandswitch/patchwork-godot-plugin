@@ -81,10 +81,10 @@ impl FileContent {
 	// 	FileContent::String(hash.unwrap())
 	// }
 
-	pub fn from_string(string: String) -> FileContent {
+	pub fn from_string(string: impl ToString + AsRef<str>) -> FileContent {
 		// check if the file is a scene or a tres
-		if recognize_scene(&string) {
-			let scene = parse_scene(&string);
+		if recognize_scene(string.as_ref()) {
+			let scene = parse_scene(string.as_ref());
 			if scene.is_ok() {
 				return FileContent::Scene(scene.unwrap());
 			} else if let Err(e) = scene {
@@ -92,7 +92,7 @@ impl FileContent {
 			}
 
 		}
-		FileContent::String(string)
+		FileContent::String(string.to_string())
 	}
 
 	pub fn from_buf(buf: Vec<u8>) -> FileContent {
@@ -104,7 +104,7 @@ impl FileContent {
 		if str.is_err() {
 			return FileContent::Binary(buf);
 		}
-		let string = str.unwrap().to_string();
+		let string = str.unwrap();
 		FileContent::from_string(string)
 	}
 
@@ -118,7 +118,7 @@ impl FileContent {
 	}
 
 	// NOTE: Probably not appropriate to put here, should have this in BranchState
-	pub fn hydrate_content_at(file_entry: ObjId, doc: &Automerge, path: &String, heads: &Vec<ChangeHash>) -> Result<FileContent, Result<DocumentId, io::Error>> {
+	pub fn hydrate_content_at(file_entry: ObjId, doc: &Automerge, path: &str, heads: &Vec<ChangeHash>) -> Result<FileContent, Result<DocumentId, io::Error>> {
 		let structured_content = doc
 		.get_at(&file_entry, "structured_content", heads)
 		.unwrap()

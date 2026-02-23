@@ -95,10 +95,10 @@ pub struct NodeId {
 
 impl Display for NodeId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.id);
+        write!(f, "{}", self.id)?;
         if let Some(root_instance_id) = &self.root_instance_id {
             for id in root_instance_id {
-                write!(f, "-{}", id);
+                write!(f, "-{}", id)?;
             }
         }
         Ok(())
@@ -603,7 +603,7 @@ impl GodotScene {
 }
 
 #[inline]
-fn parse_int32_array(string: &String) -> Vec<i32> {
+fn parse_int32_array(string: &str) -> Vec<i32> {
 	string.strip_prefix("PackedInt32Array(").unwrap().strip_suffix(")").unwrap().trim().split(',').map(|s| s.trim().parse::<i32>().unwrap_or(0)).collect()
 }
 
@@ -621,7 +621,7 @@ pub struct SceneMetadata {
     pub resource_type: String,
 }
 
-pub fn recognize_scene(source: &String) -> bool {
+pub fn recognize_scene(source: &str) -> bool {
     // go line by line until we find a line that does not start with a comment (i.e. ;) and is not empty
     for line in source.lines() {
         let trimmed = line.trim();
@@ -640,7 +640,7 @@ pub fn recognize_scene(source: &String) -> bool {
     }
     false
 }
-pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
+pub fn parse_scene(source: &str) -> Result<GodotScene, String> {
     let mut parser = Parser::new();
     parser
         .set_language(&tree_sitter_godot_resource::LANGUAGE.into())
@@ -739,20 +739,20 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                     };
 
                     let script_class: Option<String> = match heading.get("script_class") {
-                        Some(script_class) => Some(unquote(&script_class)),
+                        Some(script_class) => Some(unquote(script_class)),
                         None => None,
                     };
 
                     let uid: String = match heading.get("uid") {
-                        Some(uid) => unquote(&uid),
+                        Some(uid) => unquote(uid),
                         None => {
                             return Err("Missing required 'uid' attribute in gd_resource header"
                                 .to_string())
                         }
                     };
 
-                    let resource_type = match heading.get("type").cloned() {
-                        Some(resource_type) => unquote(&resource_type),
+                    let resource_type = match heading.get("type") {
+                        Some(resource_type) => unquote(resource_type),
                         None => {
                             return Err("Missing required 'type' attribute in gd_resource header"
                                 .to_string())
@@ -1213,10 +1213,10 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
     };
 }
 
-fn unquote(string: &String) -> String {
+fn unquote(string: &str) -> String {
     if string.starts_with("\"") && string.ends_with("\"") {
         string[1..string.len() - 1].to_string()
     } else {
-        string.clone()
+        string.to_string()
     }
 }

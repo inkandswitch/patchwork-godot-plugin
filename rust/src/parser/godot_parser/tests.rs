@@ -34,7 +34,7 @@ fn round_trip_scene_test(source: &str, name: &str) -> Result<GodotScene, String>
     assert_eq!(scene.nodes.len(), round_trip.nodes.len());
     let diff = if source != serialized {
         let text_diff =
-            TextDiff::create(name, &source.to_string(), &serialized, ChangeType::Modified);
+            TextDiff::create(name, source, &serialized, ChangeType::Modified);
         text_diff.print_colorized();
         text_diff.to_unified()
     } else {
