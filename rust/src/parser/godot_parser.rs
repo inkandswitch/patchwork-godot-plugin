@@ -26,7 +26,7 @@ fn hydrate_nodes<D: ReadDoc>(
         let keys: Vec<NodeId> = map.keys().cloned().collect();
         // Because Godot stores parents by path and not ID, we gotta dedupe names within children
         for id in keys {
-            let parent_id = match map.get(&id).and_then(|n| n.parent_id) {
+            let parent_id = match map.get(&id).and_then(|n| n.parent_id.clone()) {
                 Some(pid) => pid,
                 None => continue,
             };
@@ -87,19 +87,21 @@ fn reconcile_nodes<R: Reconciler>(outer: &HashMap<NodeId, GodotNode>, reconciler
 	string_map.reconcile(reconciler)
 }
 
-#[derive(Clone, Hydrate, Reconcile, PartialEq, Eq, Hash, Copy)]
+#[derive(Clone, Hydrate, Reconcile, PartialEq, Eq, Hash)]
 pub struct NodeId {
     pub id: i32,
-    pub root_instance_id: Option<i32>,
+    pub root_instance_id: Option<Vec<i32>>,
 }
 
 impl Display for NodeId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.id);
         if let Some(root_instance_id) = &self.root_instance_id {
-            write!(f, "{}-{}", self.id, root_instance_id)
-        } else {
-            write!(f, "{}", self.id)
+            for id in root_instance_id {
+                write!(f, "-{}", id);
+            }
         }
+        Ok(())
     }
 }
 
@@ -113,17 +115,17 @@ impl FromStr for NodeId {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = s.split('-').collect();
-        if parts.len() < 1 || parts.len() > 2 {
+        if parts.len() < 1 {
             return Err(format!("Invalid node id: {}", s));
         }
-        let Ok(id) = parts[0].parse::<i32>() else {
-            return Err(format!("Invalid node id: {}", s));
-        };
-        let root_instance_id = if parts.len() == 2 {
-            let Ok(root_instance_id) = parts[1].parse::<i32>() else {
-                return Err(format!("Invalid node id: {}", s));
-            };
-            Some(root_instance_id)
+        let id = parts[0].parse::<i32>().or_else(|_| return Err(format!("Invalid node id: {}", s)))?;
+        let root_instance_id = if parts.len() > 1 {
+            Some(
+                parts[1..]
+                    .iter()
+                    .map(|p| p.parse::<i32>().map_err(|_| format!("Invalid node id: {}", s)))
+                    .collect::<Result<Vec<_>, _>>()?,
+            )
         } else {
             None
         };
@@ -293,35 +295,34 @@ impl<'c> ReadDoc for AutomergeDocAtHeads<'c> {
 }
 
 impl GodotScene {
-    pub fn get_node_path(&self, node_id: NodeId) -> String {
+    pub fn get_node_path(&self, node_id: &NodeId) -> String {
         let mut path = String::new();
         let mut current_id = node_id;
-        let root_node_id = self.root_node_id.unwrap_or(UNIQUE_SCENE_ID_UNASSIGNED);
 
-        if node_id == root_node_id {
+        if node_id == self.root_node_id.as_ref().unwrap_or(&UNIQUE_SCENE_ID_UNASSIGNED) {
             return ".".to_string();
         }
 
         loop {
             let node = self.nodes.get(&current_id).unwrap();
 
-            if let Some(parent_path) = &node.parent_path_fallback {
-                if parent_path == "." {
-                    return node.name.clone();
-                }
-                return format!("{}/{}", node.parent_path_fallback.clone().unwrap_or(".".to_string()), node.name);
-            }
             path = if path.is_empty() {
                 node.name.clone()
             } else {
                 format!("{}/{}", node.name, path)
             };
+            if let Some(parent_path) = &node.parent_path_fallback {
+                if parent_path == "." {
+                    return path;
+                }
+                return format!("{}/{}", node.parent_path_fallback.clone().unwrap_or(".".to_string()), path);
+            }
 
-            match node.parent_id {
+            match &node.parent_id {
                 Some(parent_id) => {
                     current_id = parent_id;
 
-                    if current_id == root_node_id {
+                    if current_id == self.root_node_id.as_ref().unwrap_or(&UNIQUE_SCENE_ID_UNASSIGNED) {
                         return path;
                     }
                 }
@@ -452,8 +453,8 @@ impl GodotScene {
         }
 
 		let mut node_paths_visited: HashMap<NodeId, i64> = HashMap::new();
-        if !self.nodes.is_empty() && self.root_node_id.is_some() {
-            if let Some(root_node) = self.nodes.get(&self.root_node_id.unwrap()) {
+        if !self.nodes.is_empty() && let Some(root_node_id) = self.root_node_id.as_ref() {
+            if let Some(root_node) = self.nodes.get(root_node_id) {
                 self.serialize_node(&mut output, root_node, &mut node_paths_visited);
 				if self.connections.len() == 0  && self.editable_instances.len() == 0 {
 					// prevent an extra trailing new line
@@ -477,8 +478,8 @@ impl GodotScene {
 		});
 
         for (_, connection) in connections {
-            let from_path = self.get_node_path(connection.from_node_id);
-            let to_path = self.get_node_path(connection.to_node_id);
+            let from_path = self.get_node_path(&connection.from_node_id);
+            let to_path = self.get_node_path(&connection.to_node_id);
 
             output.push_str(&format!(
                 "[connection signal=\"{}\" from=\"{}\" to=\"{}\" method=\"{}\"",
@@ -521,8 +522,8 @@ impl GodotScene {
             output.push_str(&format!(" type=\"{}\"", t));
         }
 
-        if let Some(parent_id) = node.parent_id {
-            let parent_name = if self.root_node_id.is_some() && parent_id == self.root_node_id.unwrap() {
+        if let Some(parent_id) = &node.parent_id {
+            let parent_name = if self.root_node_id.is_some() && parent_id == self.root_node_id.as_ref().unwrap() {
                 ".".to_string()
             } else if let Some(parent_path) = &node.parent_path_fallback {
                 parent_path.clone()
@@ -565,7 +566,7 @@ impl GodotScene {
             output.push_str(&format!(" instance={}", i));
         }
 
-		node_paths_visited.insert(node.id, node_paths_visited.len() as i64);
+		node_paths_visited.insert(node.id.clone(), node_paths_visited.len() as i64);
 
 
 
@@ -591,8 +592,8 @@ impl GodotScene {
         }
     }
 
-	pub fn get_node(&self, node_id: NodeId) -> Option<&GodotNode> {
-		self.nodes.get(&node_id)
+	pub fn get_node(&self, node_id: &NodeId) -> Option<&GodotNode> {
+		self.nodes.get(node_id)
 	}
 
     pub fn get_ext_resource_path(&self, ext_resource_id: &String) -> Option<String> {
@@ -839,9 +840,9 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                     } else if let Some(instance_value) = heading.get("instance") {
                         Some(TypeOrInstance::Instance(unquote(instance_value)))
                     } else {
-                        None
+                        None // edited instance node, we'll set the parent_id_path later
                     };
-                    if !parsed_node_ids.insert(node_id_num) && !type_or_instance.is_none() {
+                    if !parsed_node_ids.insert(node_id_num.clone()) && !type_or_instance.is_none() {
                         // duplicate node id, set to unique scene id unassigned so we regenerate it
                         node_id_num = UNIQUE_SCENE_ID_UNASSIGNED.clone();
                     }
@@ -852,7 +853,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
 					let parent_id = None;
 
                     let node = GodotNode {
-                        id: node_id_num,
+                        id: node_id_num.clone(),
                         name,
                         type_or_instance,
                         instance_placeholder,
@@ -1023,74 +1024,132 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
 					while parsed_node_ids.contains(&node.id) {
 						node.id = NodeId { id: rand::rng().random_range(0..=i32::MAX), root_instance_id: None };
 					}
-                    parsed_node_ids.insert(node.id);
+                    parsed_node_ids.insert(node.id.clone());
 				}
 				let name = node.name.clone();
                 // edited instance node, we need to find the root instance id
                 if node.type_or_instance.is_none() {
                     let parent_path = node.parent_path_fallback.clone().unwrap_or_default();
+                    let mut parent_id = None;
                     let root_instance_id = if parent_path == "." {
-                            Some(root_node_id.unwrap_or(UNIQUE_SCENE_ID_UNASSIGNED).id)
+                            parent_id = Some(root_node_id.as_ref().unwrap_or(&UNIQUE_SCENE_ID_UNASSIGNED).clone());
+                            Some([root_node_id.as_ref().unwrap_or(&UNIQUE_SCENE_ID_UNASSIGNED).id].to_vec())
                         } else if let Some(parent_id_path) = &node.parent_id_path && !parent_id_path.is_empty() {
-                            Some(parent_id_path[0])
+                            Some(parent_id_path.to_vec())
                         } else if !parent_path.is_empty() {
-                            let parent = parent_path.split('/').next().unwrap_or_default();
-                            match node_id_by_node_path.get(parent) {
-                                Some(node_id) => Some(node_id.id),
-                                None => return Err(format!(
-                                    "Can't find parent instance node '{}' for node '{}'",
-                                    parent, node.name
-                                )),
+                            if node_id_by_node_path.contains_key(&parent_path){
+                                node.parent_path_fallback = None;
                             }
+                            let mut path = parent_path;
+                            let mut parent_id_path = Vec::new();
+                            // we have to keep popping off the last element of the path and traversing it;
+                            // if it doesn't exist, continue
+                            // if it does, AND type_or_instance is an instance, add the id to the front of the parent_id_path
+                            while !path.is_empty() {
+                                match node_id_by_node_path.get(&path) {
+                                    Some(node_id) => {
+                                        if let Some(parent) = nodes.get(node_id) {
+                                            if parent_id.is_none() {
+                                                parent_id = Some(node_id.clone());
+                                            }
+                                            if let Some(pid) = &parent.id.root_instance_id {
+                                                parent_id_path.insert(0, node_id.id);
+                                                // insert all of them at the front and then break
+                                                for id in pid.iter().rev() {
+                                                    if parent_id_path.contains(id) {
+                                                        continue;
+                                                    }
+                                                    parent_id_path.insert(0, *id);
+                                                }
+                                                break;
+                                            }
+                                            if let Some(TypeOrInstance::Instance(_)) = &parent.type_or_instance {
+                                                parent_id_path.insert(0, node_id.id);
+                                            }    
+                                        }
+                                    }
+                                    None => continue
+                                }
+                                let last_slash = path.rfind('/');
+                                path = if let Some(last_slash) = last_slash {
+                                    path[0..last_slash].to_string()
+                                } else {
+                                    "".to_string()
+                                };
+                            };
+
+                            Some(parent_id_path)
                         } else { // parent path for an instanced node can't be root
                             return Err(format!(
                                 "Invalid parent path for an instanced node: '{}'", node.name
                             ));
                         };
                     
-                    node.id = NodeId { id: node.id.id, root_instance_id };
+                    node.id = NodeId { id: node.id.clone().id, root_instance_id };
+                    node.parent_id = parent_id;
                 }
                 match parent_path {
 					Some(parent_path) => {
 						if parent_path == "." {
-							node_id_by_node_path.insert(name.clone(), node.id);
+							node_id_by_node_path.insert(name.clone(), node.id.clone());
 						} else {
 							node_id_by_node_path
-								.insert(format!("{}/{}", parent_path, name), node.id);
+								.insert(format!("{}/{}", parent_path, name), node.id.clone());
 						}
                     }
                     None => {
-						root_node_id = Some(node.id);
-						node_id_by_node_path.insert(".".to_string(), node.id);
+						root_node_id = Some(node.id.clone());
+						node_id_by_node_path.insert(".".to_string(), node.id.clone());
 					}
                 }
 
-                let id = node.id;
+                let id: NodeId = node.id.clone();
                 
-                if nodes.insert(id, node).is_none() {
+                if nodes.insert(id.clone(), node).is_none() {
                     keys.push(id);
+                } else {
+                    return Err(format!(
+                        "Node '{}' already exists?!?!?!", id
+                    ));
                 }
             }
 
 			for uid in keys {
                 let parent_id = {
                     let node = nodes.get_mut(&uid).unwrap();
-                    if let Some(parent_path) = &node.parent_path_fallback {
+                    if node.parent_id.is_none() && let Some(parent_path) = &node.parent_path_fallback {
                         node.parent_id = match node_id_by_node_path.get(parent_path) {
 							Some(parent_id) => {
                                 node.parent_path_fallback = None;
-								Some(*parent_id)
+								Some(parent_id.clone())
 							}
 							None => {
-                                // if we have a parent_id_path, get the first element
-                                if let Some(parent_id_path) = &node.parent_id_path && !parent_id_path.is_empty() {
-                                    let parent_id = parent_id_path[0];
-                                    Some(NodeId { id: parent_id, root_instance_id: None })
+                                let mut path = parent_path.clone();
+                                let mut parent_id = None;
+                                while !path.is_empty() {
+                                    match node_id_by_node_path.get(&path) {
+                                        Some(node_id) => {
+                                            parent_id = Some(node_id.clone());
+                                            break;
+                                        }
+                                        _ => {
+                                            let last_slash = path.rfind('/');
+                                            path = if let Some(last_slash) = last_slash {
+                                                path[0..last_slash].to_string()
+                                            } else {
+                                                "".to_string()
+                                            };
+                                        }
+                                    }
+                                }
+                                
+                                if let Some(parent_id) = parent_id {
+                                    Some(parent_id)
                                 } else {
                                     return Err(format!(
-                                        "Can't find parent node '{}' for node '{}'",
-                                        parent_path, node.name
-                                    ))
+                                        "Can't find any parent node in parent path '{}' for node '{}'",
+                                        path, node.name
+                                    ));
                                 }
 							}
                         }
@@ -1133,11 +1192,6 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
             let scene_metadata = match scene_metadata {
                 Some(metadata) => metadata,
                 None => return Err(String::from("missing gd_scene header")),
-            };
-
-            let root_node_id = match root_node_id {
-                Some(id) => Some(id),
-                None => None,
             };
 
             Ok(GodotScene {
