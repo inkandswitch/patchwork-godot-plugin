@@ -115,5 +115,12 @@ impl BranchDb {
             })
             .await.unwrap();
         }
+
+        // reconcile the dummy merge commit
+        let states = self.branch_sync_states.lock().await;
+        let Some(state) = states.get(target) else {
+            return;
+        };
+        self.try_reconcile_branch(state.clone()).await;
     }
 }
