@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     diff::differ::{ChangeType, Differ}, helpers::history_ref::HistoryRef, parser::{godot_parser::{
-        ExternalResourceNode, GodotNode, GodotScene, SubResourceNode, TypeOrInstance
+        ExternalResourceNode, GodotNode, GodotScene, SubResourceNode, TypeOrInstance, NodeId
     }, parser_defs::OrderedProperty}
 };
 
@@ -393,7 +393,7 @@ impl Differ {
     /// Generate a [NodeDiff] between two nodes.
     async fn get_node_diff(
         &self,
-        node_id: i32,
+        node_id: NodeId,
         old_node: Option<&impl PropertyGetter>,
         new_node: Option<&impl PropertyGetter>,
         old_scene: Option<&GodotScene>,
@@ -733,7 +733,7 @@ impl Differ {
     /// given scene.
     fn get_ids_from_scene(
         scene: &GodotScene,
-        node_ids: &mut HashSet<i32>,
+        node_ids: &mut HashSet<NodeId>,
         ext_resource_ids: &mut HashSet<String>,
         sub_resource_ids: &mut HashSet<String>,
     ) {
