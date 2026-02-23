@@ -175,7 +175,7 @@ impl std::fmt::Display for VariantStrValue {
 }
 
 trait PropertyGetter {
-    fn get_property(&self, prop: &String) -> Option<&OrderedProperty>;
+    fn get_property(&self, prop: &str) -> Option<&OrderedProperty>;
     fn get_properties(&self) -> &HashMap<String, OrderedProperty>;
     fn get_type_or_instance(&self) -> Option<TypeOrInstance>;
     fn is_subresource(&self) -> bool;
@@ -183,7 +183,7 @@ trait PropertyGetter {
 }
 
 impl PropertyGetter for GodotNode {
-    fn get_property(&self, prop: &String) -> Option<&OrderedProperty> {
+    fn get_property(&self, prop: &str) -> Option<&OrderedProperty> {
         self.properties.get(prop)
     }
     fn get_properties(&self) -> &HashMap<String, OrderedProperty> {
@@ -201,7 +201,7 @@ impl PropertyGetter for GodotNode {
 }
 
 impl PropertyGetter for SubResourceNode {
-    fn get_property(&self, prop: &String) -> Option<&OrderedProperty> {
+    fn get_property(&self, prop: &str) -> Option<&OrderedProperty> {
         self.properties.get(prop)
     }
     fn get_properties(&self) -> &HashMap<String, OrderedProperty> {
@@ -325,7 +325,7 @@ impl Differ {
 
             changed_sub_resources.push(diff);
         }
-        let changed_main_resource = self.get_sub_resource_diff(&"".to_string(), old_scene.and_then(|s| s.main_resource.as_ref()), new_scene.and_then(|s| s.main_resource.as_ref()), old_scene, new_scene, before, after).await;
+        let changed_main_resource = self.get_sub_resource_diff("", old_scene.and_then(|s| s.main_resource.as_ref()), new_scene.and_then(|s| s.main_resource.as_ref()), old_scene, new_scene, before, after).await;
 
         TextResourceDiff::new(
             path.clone(),
@@ -343,7 +343,7 @@ impl Differ {
 
     async fn get_sub_resource_diff(
         &self,
-        sub_resource_id: &String,
+        sub_resource_id: &str,
         old_node: Option<&SubResourceNode>,
         new_node: Option<&SubResourceNode>,
         old_scene: Option<&GodotScene>,
@@ -384,7 +384,7 @@ impl Differ {
                 (Some(_), None) => ChangeType::Removed,
                 (_, _) => ChangeType::Modified,
             },
-            sub_resource_id.clone(),
+            sub_resource_id.to_string(),
             old_class_name.or(new_class_name).unwrap_or_default(),
             changed_properties,
         ))
@@ -491,7 +491,7 @@ impl Differ {
     /// Returns the [VariantStrValue] of a property on a node, or the default value if the property doesn't
     /// exist on the node.
     /// If the node itself doesn't exist, returns [None].
-    fn get_varstr_or_default(prop: &String, node: Option<&impl PropertyGetter>) -> Option<VariantStrValue> {
+    fn get_varstr_or_default(prop: &str, node: Option<&impl PropertyGetter>) -> Option<VariantStrValue> {
         // If this node never existed, don't provide a value.
         let Some(node) = node else {
             return None;
@@ -500,7 +500,7 @@ impl Differ {
             Some(val) => Some(Self::get_varstr_value(val.get_value())),
             None => Some(VariantStrValue::DefaultValue(
                 node.get_type_or_instance(),
-                prop.clone(),
+                prop.to_string(),
             )),
         }
     }
@@ -509,7 +509,7 @@ impl Differ {
     /// Returns [None] if neither node is valid, or if the value has not meaningfully changed.
     async fn get_property_diff(
         &self,
-        prop: &String,
+        prop: &str,
         old_node: Option<&impl PropertyGetter>,
         new_node: Option<&impl PropertyGetter>,
         old_scene: Option<&GodotScene>,
@@ -542,7 +542,7 @@ impl Differ {
         };
 
         return Some(PropertyDiff::new(
-            prop.clone(),
+            prop.to_string(),
             // We check for node add or remove intentionally, here, because otherwise we're just diffing a Modified prop against
             // the default value retrieved earlier.
             match (old_node, new_node) {

@@ -30,7 +30,7 @@ impl BinaryResourceDiff {
 impl Differ {
     pub(super) async fn get_binary_resource_diff(
         &self,
-        path: &String,
+        path: &str,
         change_type: ChangeType,
         old_content: &FileContent,
         new_content: &FileContent,
@@ -38,7 +38,7 @@ impl Differ {
         after: &HistoryRef
     ) -> BinaryResourceDiff {
         BinaryResourceDiff::new(
-            path.clone(),
+            path.to_string(),
             change_type,
             self.get_resource(path, old_content, before).await,
             self.get_resource(path, new_content, after).await,
@@ -47,7 +47,7 @@ impl Differ {
 
     async fn get_resource(
         &self,
-        path: &String,
+        path: &str,
         _content: &FileContent,
         ref_: &HistoryRef,
     ) -> Option<VariantValue> {
@@ -56,7 +56,7 @@ impl Differ {
         }
 
         match self.start_load_ext_resource(&path, ref_).await{
-            Ok(load_path) => Some(VariantValue::LazyLoadData(path.clone(), load_path)),
+            Ok(load_path) => Some(VariantValue::LazyLoadData(path.to_string(), load_path)),
             Err(e) => Some(VariantValue::Variant(format!("\"<ExtResource {} load failed ({})>\"", path, e))),
         }
 
