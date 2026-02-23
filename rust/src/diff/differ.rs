@@ -60,7 +60,7 @@ impl Differ {
     /// Loads an ExtResource given a path.
     pub(super) async fn start_load_ext_resource(
         &self,
-        path: &String,
+        path: &str,
         ref_: &HistoryRef
     ) -> Result<String, String> {
         let history_ref_path = HistoryRefPath::make_path_string(ref_, path).map_err(|_| "Invalid history ref path".to_string())?;
@@ -155,7 +155,7 @@ impl Differ {
                 // This is a binary file, so use a resource diff
                 diffs.push(Diff::BinaryResource(
                     self.get_binary_resource_diff(
-                        &path,
+                        path,
                         change_type.clone(),
                         old_file_content,
                         new_file_content,
@@ -169,7 +169,7 @@ impl Differ {
             {
                 // This is a text file, so do a text diff.
                 diffs.push(Diff::Text(self.get_text_diff(
-                    &path,
+                    path,
                     change_type.clone(),
                     old_file_content,
                     new_file_content,

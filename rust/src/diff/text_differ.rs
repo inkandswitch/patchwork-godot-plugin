@@ -54,8 +54,8 @@ impl Display for AnsiColor {
 impl TextDiff {
     pub fn create(
         path: &str,
-        old_text: &String,
-        new_text: &String,
+        old_text: &str,
+        new_text: &str,
         change_type: ChangeType,
     ) -> TextDiff {
         let diff = similar::TextDiff::from_lines(old_text, new_text);
@@ -162,7 +162,7 @@ impl TextDiff {
 impl Differ {
     pub(super) fn get_text_diff(
         &self,
-        path: &String,
+        path: &str,
         change_type: ChangeType,
         old_content: &FileContent,
         new_content: &FileContent,
