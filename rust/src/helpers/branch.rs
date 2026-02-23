@@ -1,7 +1,8 @@
-use automerge::ChangeHash;
-use samod::{DocHandle, DocumentId};
 use autosurgeon::{Hydrate, Reconcile};
-use std::collections::{HashMap, HashSet};
+use samod::DocumentId;
+use std::collections::HashMap;
+
+use crate::helpers::history_ref::HistoryRef;
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
 pub struct FileEntry {
@@ -15,72 +16,31 @@ pub struct GodotProjectDoc {
     pub state: HashMap<String, HashMap<String, String>>,
 }
 
-// type AutoMergeSignalCallback = extern "C" fn(*mut c_void, *const std::os::raw::c_char, *const *const std::os::raw::c_char, usize) -> ();
-
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
 pub struct BranchesMetadataDoc {
-    pub main_doc_id: String,
-    pub branches: HashMap<String, Branch>,
-}
-
-#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
-pub struct ForkInfo {
-    pub forked_from: String,
-    pub forked_at: Vec<String>,
-}
-
-#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
-pub struct MergeInfo {
-    pub merge_into: String,
-    pub merge_at: Vec<String>,
+    #[autosurgeon(with = "crate::helpers::autosurgeon_utils::autosurgeon_doc_id")]
+    pub main_doc_id: DocumentId,
+    #[autosurgeon(with = "crate::helpers::autosurgeon_utils::autosurgeon_branch_map")]
+    pub branches: HashMap<DocumentId, Branch>,
 }
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
 pub struct Branch {
+    /// The name of the branch.
     pub name: String,
-    pub id: String,
-    pub fork_info: Option<ForkInfo>,
-    pub merge_info: Option<MergeInfo>,
-	pub created_by: Option<String>,
-	pub merged_into: Option<String>,
-	pub reverted_to: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct BinaryDocState {
-    pub doc_handle: Option<DocHandle>, // is null if the binary doc is being requested but not loaded yet
-}
-
-#[derive(Debug, Clone)]
-pub struct BranchStateForkInfo {
-    pub forked_from: DocumentId,
-    pub forked_at: Vec<ChangeHash>,
-}
-
-#[derive(Debug, Clone)]
-pub struct BranchStateMergeInfo {
-    pub merge_into: DocumentId,
-    pub merge_at: Vec<ChangeHash>,
-}
-
-#[derive(Debug, Clone)]
-pub struct BranchStateRevertInfo {
-    pub reverted_to: Vec<ChangeHash>,
-}
-
-#[derive(Debug, Clone)]
-pub struct BranchState {
-    pub name: String,
-    pub doc_handle: DocHandle,
-    pub linked_doc_ids: HashSet<DocumentId>,
-    pub synced_heads: Vec<ChangeHash>,
-    pub fork_info: Option<BranchStateForkInfo>,
-    pub merge_info: Option<BranchStateMergeInfo>,
-	pub revert_info: Option<BranchStateRevertInfo>,
-    pub is_main: bool,
-	// These are currently not used by anything, but we want to keep them for later use.
-	#[allow(dead_code)]
-	pub created_by: Option<String>,
-	#[allow(dead_code)]
-	pub merged_into: Option<DocumentId>,
+    /// The [DocumentId] of the branch.
+    #[autosurgeon(with = "crate::helpers::autosurgeon_utils::autosurgeon_doc_id")]
+    pub id: DocumentId,
+    /// The [HistoryRef] that we forked this branch off of.
+    /// Guaranteed to exist on every branch that isn't the main branch.
+    pub forked_from: Option<HistoryRef>,
+    /// The [HistoryRef] of the branch we're targetting to merge into.
+    /// Indicates that this is a merge preview branch.
+    pub merge_into: Option<HistoryRef>,
+    /// The [HistoryRef] of the heads we're reverting to.
+    /// Indicates that this is a revert preview branch.
+    /// Note that the branch in the ref will be the same as forked_from.
+    pub reverted_to: Option<HistoryRef>,
+    /// The name of the user that created this branch.
+    pub created_by: Option<String>,
 }

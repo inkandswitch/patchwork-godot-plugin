@@ -2,11 +2,10 @@ use godot::builtin::{Color, GString, Rect2, StringName, Variant, Vector2};
 use godot::classes::notify::ContainerNotification;
 use godot::classes::text_server::JustificationFlag;
 use godot::classes::{
-    CanvasItem, Container, Control, EditorInspector, EditorProperty, IContainer, Input, InputEvent, InputEventMouseButton, InputEventMouseMotion, Object, StyleBoxFlat, Texture2D, Timer, VBoxContainer
+    Container, Control, EditorInspector, EditorProperty, IContainer, Input, InputEvent, InputEventMouseButton, Object, StyleBoxFlat, Texture2D, Timer, VBoxContainer
 };
 use godot::global::{HorizontalAlignment, MouseButton, PropertyHint};
 use godot::prelude::*;
-use std::collections::HashSet;
 
 #[derive(GodotClass)]
 #[class(base=Container)]
@@ -672,7 +671,7 @@ impl DiffInspectorSection {
         let separation_val = separation as f32;
 
         let mut margin_start = section_indent as f32 + outer_margin as f32;
-        let mut margin_end = outer_margin as f32;
+        let margin_end = outer_margin as f32;
 
         // Draw arrow
         if let Some(arrow) = self.get_arrow() {
@@ -690,7 +689,7 @@ impl DiffInspectorSection {
             margin_start += (arrow.get_width() as f32 + separation_val) as f32;
         }
 
-        let mut available = self.base().get_size().x - (margin_start + margin_end);
+        let available = self.base().get_size().x - (margin_start + margin_end);
 
 		// TODO: Currently not able to use this due to the way that we construct the child controls.
         // Draw count (if folded)

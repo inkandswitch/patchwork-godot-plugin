@@ -1,5 +1,5 @@
 use godot::{
-    builtin::{GString, PackedStringArray, Variant},
+    builtin::{GString, PackedStringArray},
     classes::{ClassDb, EditorInterface, Object},
     meta::ToGodot,
     obj::Gd,
@@ -49,12 +49,12 @@ pub struct PatchworkEditorAccessor {}
 
 #[allow(dead_code)] // entire API might not be used yet
 impl PatchworkEditorAccessor {
-    pub fn import_and_load_resource(path: &str) -> Variant {
+    pub fn import_and_save_resource(path: &str, import_file_content: &str, import_base_path: &str) -> godot::global::Error {
         ClassDb::singleton().class_call_static(
             "PatchworkEditor",
-            "import_and_load_resource",
-            &[path.to_variant()],
-        )
+            "import_and_save_resource",
+            &[path.to_variant(), import_file_content.to_variant(), import_base_path.to_variant()],
+        ).to::<godot::global::Error>()
     }
 
     pub fn is_editor_importing() -> bool {
@@ -145,10 +145,18 @@ impl PatchworkEditorAccessor {
         );
     }
 
-    pub fn refresh_after_source_change() {
+    pub fn refresh_after_source_change() -> bool {
         ClassDb::singleton().class_call_static(
             "PatchworkEditor",
             "refresh_after_source_change",
+            &[],
+        ).to::<bool>()
+    }
+
+    pub fn save_all() {
+        ClassDb::singleton().class_call_static(
+            "PatchworkEditor",
+            "save_all_scenes_and_scripts",
             &[],
         );
     }

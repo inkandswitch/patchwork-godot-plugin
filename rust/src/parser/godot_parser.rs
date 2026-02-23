@@ -4,25 +4,29 @@ use automerge::{
 use autosurgeon::{Hydrate, HydrateError, Prop, Reconcile, ReadDoc, Reconciler};
 use rand::Rng;
 use regex::Regex;
-use std::{collections::{HashMap, HashSet}, fmt::Display};
+use std::{collections::{HashMap, HashSet}, fmt::Display, str::FromStr};
 use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator};
 
-use crate::helpers::doc_utils::SimpleDocReader;
+use crate::{helpers::{doc_utils::SimpleDocReader, history_path::HistoryRefPath, history_ref::HistoryRef}, parser::parser_defs::OrderedProperty};
 
-const UNIQUE_SCENE_ID_UNASSIGNED: i32 = 0;
+#[cfg(test)]
+mod tests;
+
+const UNIQUE_SCENE_ID_UNASSIGNED_NUMBER: i32 = 0;
+const UNIQUE_SCENE_ID_UNASSIGNED: NodeId = NodeId { id: 0, root_instance_id: None };
 fn hydrate_nodes<D: ReadDoc>(
     doc: &D,
     obj: &automerge::ObjId,
     prop: Prop<'_>,
-) -> Result<HashMap<i32, GodotNode>, HydrateError> {
+) -> Result<HashMap<NodeId, GodotNode>, HydrateError> {
 	let res = HashMap::<String, GodotNode>::hydrate(doc, obj, prop);
 	if let Ok(map) = res {
 		// convert the map to a HashMap<i32, GodotNode>
-		let mut map: HashMap<i32, GodotNode> = map.into_iter().map(|(k, v)| (k.parse::<i32>().unwrap(), v)).collect();
-        let keys: Vec<i32> = map.keys().cloned().collect();
+		let mut map: HashMap<NodeId, GodotNode> = map.into_iter().map(|(k, v)| (NodeId::from_str(&k).unwrap(), v)).collect();
+        let keys: Vec<NodeId> = map.keys().cloned().collect();
         // Because Godot stores parents by path and not ID, we gotta dedupe names within children
         for id in keys {
-            let parent_id = match map.get(&id).and_then(|n| n.parent_id) {
+            let parent_id = match map.get(&id).and_then(|n| n.parent_id.clone()) {
                 Some(pid) => pid,
                 None => continue,
             };
@@ -39,15 +43,18 @@ fn hydrate_nodes<D: ReadDoc>(
             let re = Regex::new(r"(.*?)(\d+)$").unwrap();
             while found {
                 found = false;
-                let name = map.get(&id).unwrap().name.clone();
+                let found_node = map.get(&id).unwrap();
                 for child_id in &child_ids {
-                    if *child_id == id {
+                    if child_id == &id {
                         continue;
                     }
                     let Some(child) = map.get(child_id) else {
                         continue;
                     };
-                    if child.name != name {
+                    if child.name != found_node.name {
+                        continue;
+                    }
+                    if &child.parent_path_fallback != &found_node.parent_path_fallback {
                         continue;
                     }
 
@@ -75,9 +82,55 @@ fn hydrate_nodes<D: ReadDoc>(
 	}
 }
 
-fn reconcile_nodes<R: Reconciler>(outer: &HashMap<i32, GodotNode>, reconciler: R) -> Result<(), R::Error> {
+fn reconcile_nodes<R: Reconciler>(outer: &HashMap<NodeId, GodotNode>, reconciler: R) -> Result<(), R::Error> {
     let string_map: HashMap<String, &GodotNode> = outer.iter().map(|(k, v)| (k.to_string(), v)).collect();
 	string_map.reconcile(reconciler)
+}
+
+#[derive(Clone, Hydrate, Reconcile, PartialEq, Eq, Hash)]
+pub struct NodeId {
+    pub id: i32,
+    pub root_instance_id: Option<Vec<i32>>,
+}
+
+impl Display for NodeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.id)?;
+        if let Some(root_instance_id) = &self.root_instance_id {
+            for id in root_instance_id {
+                write!(f, "-{}", id)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl std::fmt::Debug for NodeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
+}
+
+impl FromStr for NodeId {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split('-').collect();
+        if parts.len() < 1 {
+            return Err(format!("Invalid node id: {}", s));
+        }
+        let id = parts[0].parse::<i32>().or_else(|_| return Err(format!("Invalid node id: {}", s)))?;
+        let root_instance_id = if parts.len() > 1 {
+            Some(
+                parts[1..]
+                    .iter()
+                    .map(|p| p.parse::<i32>().map_err(|_| format!("Invalid node id: {}", s)))
+                    .collect::<Result<Vec<_>, _>>()?,
+            )
+        } else {
+            None
+        };
+        Ok(NodeId { id, root_instance_id })
+    }
 }
 
 #[derive(Debug, Clone, Hydrate, Reconcile, PartialEq, Eq)]
@@ -87,11 +140,11 @@ pub struct GodotScene {
     pub uid: String,
     pub script_class: Option<String>,
     pub resource_type: String,
-    pub root_node_id: Option<i32>,
+    pub root_node_id: Option<NodeId>,
     pub ext_resources: HashMap<String, ExternalResourceNode>,
     pub sub_resources: HashMap<String, SubResourceNode>,
 	#[autosurgeon(reconcile = "reconcile_nodes", hydrate = "hydrate_nodes")]
-    pub nodes: HashMap<i32, GodotNode>,
+    pub nodes: HashMap<NodeId, GodotNode>,
     pub connections: HashMap<String, GodotConnection>, // key is concatenation of all properties of the connection
     pub editable_instances: Vec<String>,
     pub main_resource: Option<SubResourceNode>
@@ -113,27 +166,13 @@ impl Display for TypeOrInstance {
 }
 
 #[derive(Debug, Clone, Hydrate, Reconcile, PartialEq, Eq)]
-pub struct OrderedProperty {
-    pub value: String,
-    pub order: i64,
-}
-
-impl OrderedProperty {
-    pub fn new(value: String, order: i64) -> Self {
-        Self { value, order }
-    }
-	pub fn get_value(&self) -> String {
-		self.value.clone()
-	}
-}
-
-#[derive(Debug, Clone, Hydrate, Reconcile, PartialEq, Eq)]
 pub struct GodotNode {
-    pub id: i32,
+    pub id: NodeId,
     pub name: String,
-    pub type_or_instance: TypeOrInstance, // a node either has a type or an instance property
+    pub type_or_instance: Option<TypeOrInstance>, // a node may have a type or an instance property
 	pub instance_placeholder: Option<String>,
-    pub parent_id: Option<i32>,
+    pub parent_id: Option<NodeId>,
+    pub parent_path_fallback: Option<String>,
 	pub parent_id_path: Option<Vec<i32>>,
     pub owner: Option<String>,
 	pub owner_uid_path: Option<Vec<i32>>,
@@ -144,14 +183,14 @@ pub struct GodotNode {
 
     // in the automerge doc the child_node_ids are stored as a map with the key being the child node id and the value being a number that should be used for sort order
     // this allows us to reconcile the children as a set and preserve the order to some extend when merging concurrent changes
-    pub child_node_ids: Vec<i32>,
+    pub child_node_ids: Vec<NodeId>,
 }
 
 #[derive(Debug, Clone, Hydrate, Reconcile, PartialEq, Eq)]
 pub struct GodotConnection {
     pub signal: String,
-    pub from_node_id: i32,
-    pub to_node_id: i32,
+    pub from_node_id: NodeId,
+    pub to_node_id: NodeId,
     pub method: String,
     pub flags: Option<i64>,
 	pub from_uid_path: Option<Vec<i32>>,
@@ -225,7 +264,6 @@ impl<'c> ReadDoc for AutomergeDocAtHeads<'c> {
 		automerge::ReadDoc::object_type(self.doc, obj).ok()
 	}
 
-	#[cfg(not(feature = "automerge_0_6"))]
 	fn map_range<'a, O, R>(&'a self, obj: O, range: R) -> automerge::iter::MapRange<'a>
 	where
 		R: core::ops::RangeBounds<String> + 'a,
@@ -234,31 +272,12 @@ impl<'c> ReadDoc for AutomergeDocAtHeads<'c> {
 	{
 		self.doc.map_range_at(obj, range, self.heads)
 	}
-	#[cfg(feature = "automerge_0_6")]
-	fn map_range<'a, O, R>(&'a self, obj: O, range: R) -> automerge::iter::MapRange<'a, R>
-	where
-		R: core::ops::RangeBounds<String> + 'a,
-		O: AsRef<automerge::ObjId>,
-		R: core::ops::RangeBounds<String>,
-	{
-		self.doc.map_range_at(obj, range, self.heads)
-	}
 
-	#[cfg(not(feature = "automerge_0_6"))]
 	fn list_range<O: AsRef<automerge::ObjId>, R: core::ops::RangeBounds<usize>>(
 		&self,
 		obj: O,
 		range: R,
 	) -> automerge::iter::ListRange<'_> {
-		self.doc.list_range_at(obj, range, self.heads)
-	}
-
-	#[cfg(feature = "automerge_0_6")]
-	fn list_range<O: AsRef<automerge::ObjId>, R: core::ops::RangeBounds<usize>>(
-		&self,
-		obj: O,
-		range: R,
-	) -> automerge::iter::ListRange<'_, R> {
 		self.doc.list_range_at(obj, range, self.heads)
 	}
 
@@ -276,12 +295,11 @@ impl<'c> ReadDoc for AutomergeDocAtHeads<'c> {
 }
 
 impl GodotScene {
-    pub fn get_node_path(&self, node_id: i32) -> String {
+    pub fn get_node_path(&self, node_id: &NodeId) -> String {
         let mut path = String::new();
         let mut current_id = node_id;
-        let root_node_id = self.root_node_id.unwrap_or(UNIQUE_SCENE_ID_UNASSIGNED);
 
-        if node_id == root_node_id {
+        if node_id == self.root_node_id.as_ref().unwrap_or(&UNIQUE_SCENE_ID_UNASSIGNED) {
             return ".".to_string();
         }
 
@@ -293,12 +311,18 @@ impl GodotScene {
             } else {
                 format!("{}/{}", node.name, path)
             };
+            if let Some(parent_path) = &node.parent_path_fallback {
+                if parent_path == "." {
+                    return path;
+                }
+                return format!("{}/{}", node.parent_path_fallback.clone().unwrap_or(".".to_string()), path);
+            }
 
-            match node.parent_id {
+            match &node.parent_id {
                 Some(parent_id) => {
                     current_id = parent_id;
 
-                    if current_id == root_node_id {
+                    if current_id == self.root_node_id.as_ref().unwrap_or(&UNIQUE_SCENE_ID_UNASSIGNED) {
                         return path;
                     }
                 }
@@ -331,6 +355,12 @@ impl GodotScene {
 	}
 
     pub fn serialize(&self) -> String {
+        self.serialize_with_ext_resource_override(None, false)
+    }
+
+    // helper for the patchwork_resource_loader to serialize the scene at a given history ref for loading
+    pub fn serialize_with_ext_resource_override(&self, history_ref: Option<&HistoryRef>, remove_uid_in_ext_resources: bool) -> String {
+
         let mut output = String::new();
 
         if self.resource_type != "PackedScene" {
@@ -361,12 +391,22 @@ impl GodotScene {
                 "[ext_resource type=\"{}\"",
                 resource.resource_type
             ));
-            if let Some(uid) = &resource.uid {
+            if !remove_uid_in_ext_resources && let Some(uid) = &resource.uid {
                 output.push_str(&format!(" uid=\"{}\"", uid));
             }
+            let path = if let Some(history_ref) = history_ref {
+                if !history_ref.is_valid() {
+                    tracing::error!("History ref is not valid, can't rename dependencies!");
+                    resource.path.clone()
+                } else {
+                    HistoryRefPath::make_path_string(history_ref, &resource.path).unwrap_or(resource.path.clone())
+                }
+            } else {
+                resource.path.clone()
+            };
             output.push_str(&format!(
                 " path=\"{}\" id=\"{}\"]\n",
-                resource.path, resource.id
+                path, resource.id
             ));
         }
 
@@ -412,9 +452,9 @@ impl GodotScene {
             tracing::error!("resource with no resource tag!!");
         }
 
-		let mut node_paths_visited: HashMap<i32, i64> = HashMap::new();
-        if !self.nodes.is_empty() && self.root_node_id.is_some() {
-            if let Some(root_node) = self.nodes.get(&self.root_node_id.unwrap()) {
+		let mut node_paths_visited: HashMap<NodeId, i64> = HashMap::new();
+        if !self.nodes.is_empty() && let Some(root_node_id) = self.root_node_id.as_ref() {
+            if let Some(root_node) = self.nodes.get(root_node_id) {
                 self.serialize_node(&mut output, root_node, &mut node_paths_visited);
 				if self.connections.len() == 0  && self.editable_instances.len() == 0 {
 					// prevent an extra trailing new line
@@ -438,8 +478,8 @@ impl GodotScene {
 		});
 
         for (_, connection) in connections {
-            let from_path = self.get_node_path(connection.from_node_id);
-            let to_path = self.get_node_path(connection.to_node_id);
+            let from_path = self.get_node_path(&connection.from_node_id);
+            let to_path = self.get_node_path(&connection.to_node_id);
 
             output.push_str(&format!(
                 "[connection signal=\"{}\" from=\"{}\" to=\"{}\" method=\"{}\"",
@@ -463,23 +503,30 @@ impl GodotScene {
             output.push_str("]\n");
         }
 
+        // ensure blank line between connections and editable instances
+        if self.connections.len() > 0 && self.editable_instances.len() > 0 {
+            output.push('\n');
+        }
+
         for path in self.editable_instances.iter() {
             output.push_str(&format!("[editable path=\"{}\"]\n", path));
         }
         output
     }
 
-    fn serialize_node(&self, output: &mut String, node: &GodotNode, node_paths_visited: &mut HashMap<i32, i64>) {
+    fn serialize_node(&self, output: &mut String, node: &GodotNode, node_paths_visited: &mut HashMap<NodeId, i64>) {
 		// name, type, parent, parent_id_path, owner, owner_uid_path, index, unique_id, node_paths, groups, instance_placeholder, instance
         output.push_str(&format!("[node name=\"{}\"", node.name));
 
-        if let TypeOrInstance::Type(t) = &node.type_or_instance {
+        if let Some(TypeOrInstance::Type(t)) = &node.type_or_instance {
             output.push_str(&format!(" type=\"{}\"", t));
         }
 
-        if let Some(parent_id) = node.parent_id {
-            let parent_name = if self.root_node_id.is_some() && parent_id == self.root_node_id.unwrap() {
+        if let Some(parent_id) = &node.parent_id {
+            let parent_name = if self.root_node_id.is_some() && parent_id == self.root_node_id.as_ref().unwrap() {
                 ".".to_string()
+            } else if let Some(parent_path) = &node.parent_path_fallback {
+                parent_path.clone()
             } else {
                 self.get_node_path(parent_id)
             };
@@ -498,10 +545,10 @@ impl GodotScene {
         }
 
         if let Some(index) = &node.index {
-            output.push_str(&format!(" index={}", index));
+            output.push_str(&format!(" index=\"{}\"", index));
         }
 
-		output.push_str(&format!(" unique_id={}", node.id));
+		output.push_str(&format!(" unique_id={}", node.id.id));
 
         if let Some(node_paths) = &node.node_paths {
             output.push_str(&format!(" node_paths={}", node_paths));
@@ -515,11 +562,11 @@ impl GodotScene {
 			output.push_str(&format!(" instance_placeholder={}", instance_placeholder));
 		}
 
-        if let TypeOrInstance::Instance(i) = &node.type_or_instance {
+        if let Some(TypeOrInstance::Instance(i)) = &node.type_or_instance {
             output.push_str(&format!(" instance={}", i));
         }
 
-		node_paths_visited.insert(node.id, node_paths_visited.len() as i64);
+		node_paths_visited.insert(node.id.clone(), node_paths_visited.len() as i64);
 
 
 
@@ -545,14 +592,18 @@ impl GodotScene {
         }
     }
 
-	pub fn get_node(&self, node_id: i32) -> Option<&GodotNode> {
-		self.nodes.get(&node_id)
+	pub fn get_node(&self, node_id: &NodeId) -> Option<&GodotNode> {
+		self.nodes.get(node_id)
 	}
+
+    pub fn get_ext_resource_path(&self, ext_resource_id: &String) -> Option<String> {
+        self.ext_resources.get(ext_resource_id).map(|ext_resource| ext_resource.path.clone())
+    }
 
 }
 
 #[inline]
-fn parse_int32_array(string: &String) -> Vec<i32> {
+fn parse_int32_array(string: &str) -> Vec<i32> {
 	string.strip_prefix("PackedInt32Array(").unwrap().strip_suffix(")").unwrap().trim().split(',').map(|s| s.trim().parse::<i32>().unwrap_or(0)).collect()
 }
 
@@ -570,7 +621,7 @@ pub struct SceneMetadata {
     pub resource_type: String,
 }
 
-pub fn recognize_scene(source: &String) -> bool {
+pub fn recognize_scene(source: &str) -> bool {
     // go line by line until we find a line that does not start with a comment (i.e. ;) and is not empty
     for line in source.lines() {
         let trimmed = line.trim();
@@ -589,7 +640,7 @@ pub fn recognize_scene(source: &String) -> bool {
     }
     false
 }
-pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
+pub fn parse_scene(source: &str) -> Result<GodotScene, String> {
     let mut parser = Parser::new();
     parser
         .set_language(&tree_sitter_godot_resource::LANGUAGE.into())
@@ -619,17 +670,17 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
 
             // Initialize with default values
             let mut scene_metadata: Option<SceneMetadata> = None;
-            let mut nodes: HashMap<i32, GodotNode> = HashMap::new();
+            let mut nodes: HashMap<NodeId, GodotNode> = HashMap::new();
 			let mut node_arr: Vec<(GodotNode, Option<String>)> = Vec::new();
             let mut ext_resources: HashMap<String, ExternalResourceNode> = HashMap::new();
             let mut sub_resources: HashMap<String, SubResourceNode> = HashMap::new();
             let mut connections: HashMap<String, GodotConnection> = HashMap::new();
 			let mut connections_arr: Vec<(String, String, GodotConnection)> = Vec::new();
-            let mut root_node_id: Option<i32> = None;
+            let mut root_node_id: Option<NodeId> = None;
             let mut main_resource: Option<SubResourceNode> = None;
             let mut editable_instances: Vec<String> = Vec::new();
             // Create an index to map node paths to node ids
-            let mut node_id_by_node_path: HashMap<String, i32> = HashMap::new();
+            let mut node_id_by_node_path: HashMap<String, NodeId> = HashMap::new();
             let mut ext_resource_idx = 0;
             let mut sub_resource_idx = 0;
             while let Some(m) = matches.next() {
@@ -671,7 +722,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                         }
                     }
                 }
-                let mut resource_type: String = "PackedScene".to_string();
+                
                 // GD_RESOURCE HEADER
                 if section_id == "gd_resource" {
                     let load_steps = heading
@@ -688,20 +739,20 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                     };
 
                     let script_class: Option<String> = match heading.get("script_class") {
-                        Some(script_class) => Some(unquote(&script_class)),
+                        Some(script_class) => Some(unquote(script_class)),
                         None => None,
                     };
 
                     let uid: String = match heading.get("uid") {
-                        Some(uid) => unquote(&uid),
+                        Some(uid) => unquote(uid),
                         None => {
                             return Err("Missing required 'uid' attribute in gd_resource header"
                                 .to_string())
                         }
                     };
 
-                    resource_type = match heading.get("type").cloned() {
-                        Some(resource_type) => unquote(&resource_type),
+                    let resource_type = match heading.get("type") {
+                        Some(resource_type) => unquote(resource_type),
                         None => {
                             return Err("Missing required 'type' attribute in gd_resource header"
                                 .to_string())
@@ -720,7 +771,7 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 } else if section_id == "resource" {
                     main_resource = Some(SubResourceNode {
                         id: "".to_string(), // Resource sections don't have IDs
-                        resource_type,
+                        resource_type: scene_metadata.as_ref().map(|s| s.resource_type.clone()).unwrap_or("".to_string()),
                         properties: properties.into_iter().collect(),
                         idx: 0,
                     });
@@ -764,11 +815,10 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 // NODE
                 } else if section_id == "node" {
                     // Check if node has a patchwork_id in metadata
-                    let node_id_num = match heading.get("unique_id") {
-                        Some(unique_id) => unique_id.parse::<i32>().unwrap_or(UNIQUE_SCENE_ID_UNASSIGNED),
-                        None => -1
+                    let mut node_id_num = match heading.get("unique_id") {
+                        Some(unique_id) => NodeId { id: unique_id.parse::<i32>().unwrap_or(UNIQUE_SCENE_ID_UNASSIGNED_NUMBER), root_instance_id: None },
+                        None => UNIQUE_SCENE_ID_UNASSIGNED
                     };
-					parsed_node_ids.insert(node_id_num);
 
                     let name = match heading.get("name") {
                         Some(name) => unquote(name),
@@ -786,30 +836,33 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
 					let owner_uid_path = heading.get("owner_uid_path").cloned().map(|p| parse_int32_array(&p));
 
                     let type_or_instance = if let Some(type_value) = heading.get("type") {
-                        TypeOrInstance::Type(unquote(&type_value))
+                        Some(TypeOrInstance::Type(unquote(&type_value)))
                     } else if let Some(instance_value) = heading.get("instance") {
-                        TypeOrInstance::Instance(unquote(instance_value))
+                        Some(TypeOrInstance::Instance(unquote(instance_value)))
                     } else {
-                        return Err(format!(
-                            "Missing required 'type' or 'instance' attribute in node section {}",
-                            name
-                        ));
+                        None // edited instance node, we'll set the parent_id_path later
                     };
+                    if !parsed_node_ids.insert(node_id_num.clone()) && !type_or_instance.is_none() {
+                        // duplicate node id, set to unique scene id unassigned so we regenerate it
+                        node_id_num = UNIQUE_SCENE_ID_UNASSIGNED.clone();
+                    }
+
 
                     let node_paths = heading.get("node_paths").cloned().map(|p| unquote(&p));
                     let parent_path = heading.get("parent").cloned().map(|p| unquote(&p));
 					let parent_id = None;
 
                     let node = GodotNode {
-                        id: node_id_num,
+                        id: node_id_num.clone(),
                         name,
                         type_or_instance,
                         instance_placeholder,
                         parent_id,
+                        parent_path_fallback: parent_path.clone(),
 						parent_id_path,
                         owner: heading.get("owner").cloned().map(|o| unquote(&o)),
 						owner_uid_path,
-                        index: heading.get("index").and_then(|i| i.parse::<i64>().ok()),
+                        index: heading.get("index").and_then(|i| unquote(i).parse::<i64>().ok()),
                         groups: heading.get("groups").cloned(),
                         properties: properties.into_iter().collect(),
                         child_node_ids: Vec::new(),
@@ -963,50 +1016,156 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 }
             }
 
+            // iterate once to set the node ids and the node_id_by_node_path map, then iterate again to set the parent ids
+            let mut keys = Vec::new();
 			for (mut node, parent_path) in node_arr {
 				if node.id == UNIQUE_SCENE_ID_UNASSIGNED {
-					node.id = rand::rng().random_range(0..=i32::MAX);
+					node.id = NodeId { id: rand::rng().random_range(0..=i32::MAX), root_instance_id: None };
 					while parsed_node_ids.contains(&node.id) {
-						node.id = rand::rng().random_range(0..=i32::MAX);
+						node.id = NodeId { id: rand::rng().random_range(0..=i32::MAX), root_instance_id: None };
 					}
-					parsed_node_ids.insert(node.id);
+                    parsed_node_ids.insert(node.id.clone());
 				}
 				let name = node.name.clone();
-				node.parent_id = match parent_path {
+                // edited instance node, we need to find the root instance id
+                if node.type_or_instance.is_none() {
+                    let parent_path = node.parent_path_fallback.clone().unwrap_or_default();
+                    let mut parent_id = None;
+                    let root_instance_id = if parent_path == "." {
+                            parent_id = Some(root_node_id.as_ref().unwrap_or(&UNIQUE_SCENE_ID_UNASSIGNED).clone());
+                            Some([root_node_id.as_ref().unwrap_or(&UNIQUE_SCENE_ID_UNASSIGNED).id].to_vec())
+                        } else if let Some(parent_id_path) = &node.parent_id_path && !parent_id_path.is_empty() {
+                            Some(parent_id_path.to_vec())
+                        } else if !parent_path.is_empty() {
+                            if node_id_by_node_path.contains_key(&parent_path){
+                                node.parent_path_fallback = None;
+                            }
+                            let mut path = parent_path;
+                            let mut parent_id_path = Vec::new();
+                            // we have to keep popping off the last element of the path and traversing it;
+                            // if it doesn't exist, continue
+                            // if it does, AND type_or_instance is an instance, add the id to the front of the parent_id_path
+                            while !path.is_empty() {
+                                match node_id_by_node_path.get(&path) {
+                                    Some(node_id) => {
+                                        if let Some(parent) = nodes.get(node_id) {
+                                            if parent_id.is_none() {
+                                                parent_id = Some(node_id.clone());
+                                            }
+                                            if let Some(pid) = &parent.id.root_instance_id {
+                                                parent_id_path.insert(0, node_id.id);
+                                                // insert all of them at the front and then break
+                                                for id in pid.iter().rev() {
+                                                    if parent_id_path.contains(id) {
+                                                        continue;
+                                                    }
+                                                    parent_id_path.insert(0, *id);
+                                                }
+                                                break;
+                                            }
+                                            if let Some(TypeOrInstance::Instance(_)) = &parent.type_or_instance {
+                                                parent_id_path.insert(0, node_id.id);
+                                            }    
+                                        }
+                                    }
+                                    None => continue
+                                }
+                                let last_slash = path.rfind('/');
+                                path = if let Some(last_slash) = last_slash {
+                                    path[0..last_slash].to_string()
+                                } else {
+                                    "".to_string()
+                                };
+                            };
+
+                            Some(parent_id_path)
+                        } else { // parent path for an instanced node can't be root
+                            return Err(format!(
+                                "Invalid parent path for an instanced node: '{}'", node.name
+                            ));
+                        };
+                    
+                    node.id = NodeId { id: node.id.clone().id, root_instance_id };
+                    node.parent_id = parent_id;
+                }
+                match parent_path {
 					Some(parent_path) => {
 						if parent_path == "." {
-							node_id_by_node_path.insert(name.clone(), node.id);
+							node_id_by_node_path.insert(name.clone(), node.id.clone());
 						} else {
 							node_id_by_node_path
-								.insert(format!("{}/{}", parent_path, name), node.id);
+								.insert(format!("{}/{}", parent_path, name), node.id.clone());
 						}
+                    }
+                    None => {
+						root_node_id = Some(node.id.clone());
+						node_id_by_node_path.insert(".".to_string(), node.id.clone());
+					}
+                }
 
-						match node_id_by_node_path.get(&parent_path) {
+                let id: NodeId = node.id.clone();
+                
+                if nodes.insert(id.clone(), node).is_none() {
+                    keys.push(id);
+                } else {
+                    return Err(format!(
+                        "Node '{}' already exists?!?!?!", id
+                    ));
+                }
+            }
+
+			for uid in keys {
+                let parent_id = {
+                    let node = nodes.get_mut(&uid).unwrap();
+                    if node.parent_id.is_none() && let Some(parent_path) = &node.parent_path_fallback {
+                        node.parent_id = match node_id_by_node_path.get(parent_path) {
 							Some(parent_id) => {
-								nodes
-									.get_mut(parent_id)
-									.unwrap()
-									.child_node_ids
-									.push(node.id);
-
-								Some(*parent_id)
+                                node.parent_path_fallback = None;
+								Some(parent_id.clone())
 							}
 							None => {
-								return Err(format!(
-									"Can't find parent node \"{}\" for node \"{}\"",
-									parent_path, name
-								))
+                                let mut path = parent_path.clone();
+                                let mut parent_id = None;
+                                while !path.is_empty() {
+                                    match node_id_by_node_path.get(&path) {
+                                        Some(node_id) => {
+                                            parent_id = Some(node_id.clone());
+                                            break;
+                                        }
+                                        _ => {
+                                            let last_slash = path.rfind('/');
+                                            path = if let Some(last_slash) = last_slash {
+                                                path[0..last_slash].to_string()
+                                            } else {
+                                                "".to_string()
+                                            };
+                                        }
+                                    }
+                                }
+                                
+                                if let Some(parent_id) = parent_id {
+                                    Some(parent_id)
+                                } else {
+                                    return Err(format!(
+                                        "Can't find any parent node in parent path '{}' for node '{}'",
+                                        path, node.name
+                                    ));
+                                }
 							}
-						}
-					}
-					None => {
-						root_node_id = Some(node.id);
-						node_id_by_node_path.insert(".".to_string(), node.id);
-						None
-					}
+                        }
+					};
+                    node.parent_id.clone()
 				};
-
-				nodes.insert(node.id, node);
+                if let Some(parent_id) = parent_id {
+                    if let Some(parent_node) = nodes.get_mut(&parent_id) {
+                        parent_node.child_node_ids.push(uid);
+                    } else {
+                        return Err(format!(
+                            "Can't find parent node '{}' for node '{}'",
+                            parent_id, uid
+                        ))
+                    }
+                }
 			}
 			for (from_path, to_path, mut connection) in connections_arr {
 				let from_node_id = match node_id_by_node_path.get(&from_path) {
@@ -1035,11 +1194,6 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
                 None => return Err(String::from("missing gd_scene header")),
             };
 
-            let root_node_id = match root_node_id {
-                Some(id) => Some(id),
-                None => None,
-            };
-
             Ok(GodotScene {
                 load_steps: scene_metadata.load_steps,
                 format: scene_metadata.format,
@@ -1059,10 +1213,10 @@ pub fn parse_scene(source: &String) -> Result<GodotScene, String> {
     };
 }
 
-fn unquote(string: &String) -> String {
+fn unquote(string: &str) -> String {
     if string.starts_with("\"") && string.ends_with("\"") {
         string[1..string.len() - 1].to_string()
     } else {
-        string.clone()
+        string.to_string()
     }
 }

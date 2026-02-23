@@ -283,7 +283,7 @@ func _on_branch_picker_item_selected(_index: int) -> void:
 	print("Patchwork: Updating UI due to branch picker selection...")
 	update_ui()
 
-	if !selected_branch.is_loaded:
+	if !GodotProject.is_branch_loaded(selected_branch.id):
 		# Show warning dialog that branch is not synced correctly
 		var dialog = AcceptDialog.new()
 		dialog.title = "Branch Not Available"
@@ -690,8 +690,7 @@ func add_branch_to_picker(branch: Dictionary, selected_branch_id: String, indent
 	var branch_index = branch_picker.get_item_count()
 	branch_picker.add_item(label, branch_index)
 
-	# this should not happen, but right now the sync is not working correctly so we need to surface this in the interface
-	if !branch.is_loaded:
+	if !GodotProject.is_branch_loaded(branch.id):
 		branch_picker.set_item_icon(branch_index, load("res://addons/patchwork/public/icons/warning.svg"))
 
 	branch_picker.set_item_metadata(branch_index, branch.id)
@@ -760,6 +759,7 @@ var context_menu_hash = null
 
 enum HistoryListPopupItem {
 	RESET_TO_COMMIT,
+	DUMP_BRANCH,
 	CREATE_BRANCH_AT_COMMIT
 }
 
@@ -773,13 +773,17 @@ func _on_history_list_popup_id_pressed(index: int) -> void:
 		create_revert_preview_branch(context_menu_hash)
 	elif item == HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT:
 		print("Create remix at change not implemented yet!")
+	elif item == HistoryListPopupItem.DUMP_BRANCH:
+		GodotProject.dump_current_branch()
 
 func setup_history_list_popup() -> void:
 	history_list_popup.clear()
 	# TODO: adjust this when more items are added
-	history_list_popup.max_size.y = 48 * EditorInterface.get_editor_scale()
+	history_list_popup.max_size.y = 60 * EditorInterface.get_editor_scale()
 	history_list_popup.id_pressed.connect(_on_history_list_popup_id_pressed)
 	history_list_popup.add_icon_item(load("res://addons/patchwork/public/icons/undo-redo.svg"), "Reset to here", HistoryListPopupItem.RESET_TO_COMMIT)
+	# TODO: This shouldn't be here. In the UI overhaul, make sure to move this to somewhere better!
+	history_list_popup.add_icon_item(load("res://addons/patchwork/public/icons/undo-redo.svg"), "Dump current branch to disk", HistoryListPopupItem.DUMP_BRANCH)
 	# history_list_popup.add_item("Create remix from here", HistoryListPopupItem.CREATE_BRANCH_AT_COMMIT)
 
 func _on_history_tree_mouse_selected(_at_position: Vector2, button_idx: int) -> void:
