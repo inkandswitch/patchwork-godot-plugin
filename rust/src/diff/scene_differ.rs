@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     diff::differ::{ChangeType, Differ}, helpers::history_ref::HistoryRef, parser::{godot_parser::{
-        ExternalResourceNode, GodotNode, GodotScene, SubResourceNode, TypeOrInstance
+        ExternalResourceNode, GodotNode, GodotScene, SubResourceNode, TypeOrInstance, NodeId
     }, parser_defs::OrderedProperty}
 };
 
@@ -255,10 +255,10 @@ impl Differ {
 
         // Diff each node
         for node_id in &node_ids {
-            let old_node = old_scene.as_ref().and_then(|s| s.get_node(*node_id));
-            let new_node = new_scene.as_ref().and_then(|s| s.get_node(*node_id));
+            let old_node = old_scene.as_ref().and_then(|s| s.get_node(node_id));
+            let new_node = new_scene.as_ref().and_then(|s| s.get_node(node_id));
 
-            let Some(diff) = self.get_node_diff(*node_id, old_node, new_node, old_scene, new_scene, before, after).await
+            let Some(diff) = self.get_node_diff(node_id, old_node, new_node, old_scene, new_scene, before, after).await
             else {
                 // If the node has no changes or is otherwise invalid, just skip this one.
                 continue;
@@ -393,7 +393,7 @@ impl Differ {
     /// Generate a [NodeDiff] between two nodes.
     async fn get_node_diff(
         &self,
-        node_id: i32,
+        node_id: &NodeId,
         old_node: Option<&impl PropertyGetter>,
         new_node: Option<&impl PropertyGetter>,
         old_scene: Option<&GodotScene>,
@@ -459,9 +459,9 @@ impl Differ {
             },
             // have to do something like this, because get_node_path panics if the node doesn't exist in the scene
             match (old_node, new_node) {
-                (None, Some(_)) => new_scene?.get_node_path(node_id),
-                (Some(_), None) => old_scene?.get_node_path(node_id),
-                (_, _) => new_scene?.get_node_path(node_id),
+                (None, Some(_)) => new_scene?.get_node_path(&node_id),
+                (Some(_), None) => old_scene?.get_node_path(&node_id),
+                (_, _) => new_scene?.get_node_path(&node_id),
             },
             new_class_name.or(old_class_name).unwrap_or_default(),
             changed_properties,
@@ -733,7 +733,7 @@ impl Differ {
     /// given scene.
     fn get_ids_from_scene(
         scene: &GodotScene,
-        node_ids: &mut HashSet<i32>,
+        node_ids: &mut HashSet<NodeId>,
         ext_resource_ids: &mut HashSet<String>,
         sub_resource_ids: &mut HashSet<String>,
     ) {

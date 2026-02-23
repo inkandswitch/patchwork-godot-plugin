@@ -1,6 +1,7 @@
 use super::*;
 
 const INDEX_TEST: &str = r#"[gd_scene format=4 uid="uid://g64l65moc1sx"]
+
 [ext_resource type="PackedScene" uid="uid://iu2q66clupc6" path="res://scenes/game_elements/characters/player/player.tscn" id="8_ukjsk"]
 
 [node name="Minijuego2" type="Node2D" unique_id=1172299557]
@@ -17,6 +18,45 @@ position = Vector2(-2.6667075, -73.333336)
 [node name="CollisionShape2D" parent="Player/PlayerInteraction/InteractZone" parent_id_path=PackedInt32Array(894731746, 888605377) index="0" unique_id=255765935]
 position = Vector2(53.333294, -73.333336)
 "#;
+
+fn round_trip_scene_test(source: &str, name: &str) -> Result<GodotScene, String> {
+    // count the number of node tags in the source
+    let node_count = source
+        .lines()
+        .filter(|line| line.trim().starts_with("[node"))
+        .count();
+    let scene = parse_scene(&source.to_string()).expect("parse should succeed");
+    let serialized = scene.serialize();
+    let round_trip =
+        parse_scene(&serialized).expect("re-parse of serialized output should succeed");
+    assert_eq!(scene.uid, round_trip.uid);
+    assert_eq!(scene.nodes.len(), node_count, "node count mismatch");
+    assert_eq!(scene.nodes.len(), round_trip.nodes.len());
+    let diff = if source != serialized {
+        let text_diff =
+            TextDiff::create(name, &source.to_string(), &serialized, ChangeType::Modified);
+        text_diff.print_colorized();
+        text_diff.to_unified()
+    } else {
+        "".to_string()
+    };
+    for (id, node) in scene.nodes.iter() {
+        // compare the node with the round_trip node
+        let Some(round_trip_node) = round_trip.nodes.get(id) else {
+            println!("Node not found in round_trip: {}", id);
+            continue;
+        };
+        if node != round_trip_node {
+            println!("Node {} is not equal to round_trip node", id);
+            println!("Node: {:?}", node);
+            println!("Round trip node: {:?}", round_trip_node);
+        }
+        assert_eq!(node, round_trip_node);
+    }
+    assert!(diff.is_empty());
+    Ok(round_trip)
+}
+
 #[test]
 fn test_unquote() {
     assert_eq!(unquote(&String::from("\"foo\"")), "foo");
@@ -26,14 +66,7 @@ fn test_unquote() {
 #[test]
 fn test_scene() {
     // parse and re-serialize RAW_STRING
-    let source = INDEX_TEST.to_string();
-    let scene = parse_scene(&source).expect("parse should succeed");
-    let serialized = scene.serialize();
-    let round_trip = parse_scene(&serialized).expect("re-parse of serialized output should succeed");
-    // println!("{}", serialized);
-    assert_eq!(scene.uid, round_trip.uid);
-    assert_eq!(scene.nodes.len(), round_trip.nodes.len());
-    assert_eq!(source, serialized);
+    let _ = round_trip_scene_test(INDEX_TEST, "index_test");
 }
 
 const COMPLEX_SCENE: &str = r#"[gd_scene format=4 uid="uid://g64l65moc1sx"]
@@ -230,26 +263,188 @@ tile_set = ExtResource("1_8drhf")
 [editable path="Player"]
 "#;
 
-use crate::diff::text_differ::TextDiff;
 use crate::diff::differ::ChangeType;
+use crate::diff::text_differ::TextDiff;
 
 #[test]
-fn test_complete_scene(){
-    let source = COMPLEX_SCENE.to_string();
-    let scene = parse_scene(&source).expect("parse should succeed");
-    let serialized = scene.serialize();
-    let round_trip = parse_scene(&serialized).expect("re-parse of serialized output should succeed");
-    // println!("{}", serialized);
-    assert_eq!(scene.uid, round_trip.uid);
-    assert_eq!(scene.nodes.len(), round_trip.nodes.len());
-    let diff = if source != serialized {
-        let text_diff = TextDiff::create("complex_scene", &source, &serialized, ChangeType::Modified);
-        text_diff.print_colorized();
-        text_diff.to_unified()
-    } else {
-        "".to_string()
+fn test_complete_scene() {
+    let _ = round_trip_scene_test(COMPLEX_SCENE, "complex_scene");
+}
+
+const DUPE_INSTANCE_NODE_SCENE: &str = r#"[gd_scene format=3 uid="uid://bv5lg3clngfui"]
+
+[ext_resource type="PackedScene" uid="uid://dvlqgg38a71ir" path="res://scene2.tscn" id="1_ig7tw"]
+
+[node name="Main" type="Node2D" unique_id=1131099219]
+
+[node name="InstancedScene" parent="." unique_id=37981063 instance=ExtResource("1_ig7tw")]
+
+[node name="EditedChild" parent="InstancedScene" index="0" unique_id=1342092634]
+rotation = 1.5707964
+
+[node name="EditedChildChild" parent="InstancedScene/EditedChild" index="0" unique_id=804969271]
+rotation = -0.33161256
+
+[node name="InstancedScene2" parent="." unique_id=1051336913 instance=ExtResource("1_ig7tw")]
+
+[node name="EditedChild" parent="InstancedScene2" index="0" unique_id=1342092634]
+rotation = -0.29670596
+
+[node name="EditedChildChild" parent="InstancedScene2/EditedChild" index="0" unique_id=804969271]
+rotation = 4.6547933
+
+[editable path="InstancedScene"]
+[editable path="InstancedScene2"]
+"#;
+
+const COMPLEX_DUPE_INSTANCE_NODE_SCENE: &str = r#"[gd_scene format=3 uid="uid://bv5lg3clngfui"]
+
+[ext_resource type="PackedScene" uid="uid://dvlqgg38a71ir" path="res://scene2.tscn" id="1_ig7tw"]
+
+[node name="Main" type="Node2D" unique_id=1131099219]
+
+[node name="InstancedScene" parent="." unique_id=37981063 instance=ExtResource("1_ig7tw")]
+
+[node name="EditedChild" parent="InstancedScene" index="0" unique_id=1342092634]
+rotation = 1.5707964
+
+[node name="EditedChildChild" parent="InstancedScene/EditedChild" index="0" unique_id=804969271]
+rotation = -0.33161256
+
+[node name="InstancedScene" parent="InstancedScene/EditedChild/EditedChildChild/Child1/InstancedScene/Child1/Child2/Child3/Child4" parent_id_path=PackedInt32Array(37981063, 315455255, 995128901) index="1" unique_id=2079124710 instance=ExtResource("1_ig7tw")]
+
+[node name="Child1" parent="InstancedScene/EditedChild/EditedChildChild/Child1/InstancedScene/Child1/Child2/Child3/Child4/InstancedScene/EditedChild/EditedChildChild/Child1/InstancedScene" parent_id_path=PackedInt32Array(2079124710, 315455255) index="0" unique_id=1342092634]
+rotation = 3.4330626
+
+[node name="DeepEditedChild" parent="InstancedScene/EditedChild/EditedChildChild/Child1/Child2" parent_id_path=PackedInt32Array(37981063, 677510469) index="0" unique_id=71346358]
+rotation = 0.6457718
+
+[node name="InstancedScene2" parent="." unique_id=1051336913 instance=ExtResource("1_ig7tw")]
+
+[node name="EditedChild" parent="InstancedScene2" index="0" unique_id=1342092634]
+rotation = -0.29670596
+
+[node name="EditedChildChild" parent="InstancedScene2/EditedChild" index="0" unique_id=804969271]
+rotation = 4.6547933
+
+[editable path="InstancedScene"]
+[editable path="InstancedScene/EditedChild/EditedChildChild/Child1/InstancedScene"]
+[editable path="InstancedScene/EditedChild/EditedChildChild/Child1/InstancedScene/Child1/Child2/Child3/Child4/InstancedScene"]
+[editable path="InstancedScene/EditedChild/EditedChildChild/Child1/InstancedScene/Child1/Child2/Child3/Child4/InstancedScene/EditedChild/EditedChildChild/Child1/InstancedScene"]
+[editable path="InstancedScene2"]
+[editable path="InstancedScene2/EditedChild/EditedChildChild/Child1/InstancedScene"]
+"#;
+#[test]
+fn test_dupe_instance_node_scene() {
+    let _ = round_trip_scene_test(DUPE_INSTANCE_NODE_SCENE, "dupe_instance_node_scene");
+}
+
+#[test]
+fn test_complex_dupe_instance_node_scene() {
+    let _ = round_trip_scene_test(
+        COMPLEX_DUPE_INSTANCE_NODE_SCENE,
+        "complex_dupe_instance_node_scene",
+    );
+}
+
+const INSTANCE_INSIDE_ANOTHER_INSTANCE_SCENE: &str = r#"[gd_scene format=3 uid="uid://d38iq8xam0254"]
+
+[ext_resource type="PackedScene" uid="uid://biqaep3sr3ll1" path="res://woop.tscn" id="1_2jas5"]
+
+[node name="Example" type="Node2D" unique_id=465063453]
+
+[node name="Node2D" parent="." unique_id=37016941 instance=ExtResource("1_2jas5")]
+
+[node name="EditedChildChild" parent="Node2D/Child1/InstancedScene/EditedChild" parent_id_path=PackedInt32Array(37016941, 37981063, 1342092634) index="0" unique_id=804969271]
+rotation = 1.3386675
+
+[node name="Child2" parent="Node2D/Child1/InstancedScene/EditedChild/EditedChildChild/Child1" parent_id_path=PackedInt32Array(37016941, 37981063, 883563860) index="0" unique_id=677510469]
+rotation = 1.1047934
+
+[node name="DeepEditedChild" parent="Node2D/Child1/InstancedScene/EditedChild/EditedChildChild/Child1/Child2" index="0" unique_id=71346358]
+rotation = 1.1641346
+
+[node name="EditedChildChild" parent="Node2D/Child1/InstancedScene2/EditedChild" parent_id_path=PackedInt32Array(37016941, 81506028, 1342092634) index="0" unique_id=804969271]
+rotation = 1.6877334
+
+[node name="Child2" parent="Node2D/Child1/InstancedScene2/EditedChild/EditedChildChild/Child1" parent_id_path=PackedInt32Array(37016941, 81506028, 883563860) index="0" unique_id=677510469]
+rotation = 1.3962634
+
+[node name="DeepEditedChild" parent="Node2D/Child1/InstancedScene2/EditedChild/EditedChildChild/Child1/Child2" index="0" unique_id=71346358]
+rotation = 2.501057
+
+[editable path="Node2D"]
+[editable path="Node2D/Child1/InstancedScene"]
+[editable path="Node2D/Child1/InstancedScene2"]
+"#;
+
+const DEPEERRRR: &str = r#"[gd_scene format=3 uid="uid://d38iq8xam0254"]
+
+[ext_resource type="PackedScene" uid="uid://biqaep3sr3ll1" path="res://woop.tscn" id="1_2jas5"]
+
+[node name="Example" type="Node2D" unique_id=465063453]
+
+[node name="Node2D" parent="." unique_id=37016941 instance=ExtResource("1_2jas5")]
+
+[node name="InstancedScene" parent="Node2D/Child1" parent_id_path=PackedInt32Array(37016941, 275995787) index="0" unique_id=37981063]
+rotation = -3.0839968
+
+[node name="EditedChild" parent="Node2D/Child1/InstancedScene" index="0" unique_id=1342092634]
+rotation = 1.3386675
+
+[node name="EditedChildChild" parent="Node2D/Child1/InstancedScene/EditedChild" index="0" unique_id=804969271]
+rotation = 2.0367992
+
+[node name="Child1" parent="Node2D/Child1/InstancedScene/EditedChild/EditedChildChild" index="0" unique_id=883563860]
+rotation = 1.5707964
+
+[node name="Child2" parent="Node2D/Child1/InstancedScene/EditedChild/EditedChildChild/Child1" index="0" unique_id=677510469]
+rotation = 1.1047934
+
+[node name="DeepEditedChild" parent="Node2D/Child1/InstancedScene/EditedChild/EditedChildChild/Child1/Child2" index="0" unique_id=71346358]
+rotation = 1.1641346
+
+[node name="InstancedScene2" parent="Node2D/Child1" parent_id_path=PackedInt32Array(37016941, 275995787) index="1" unique_id=81506028]
+rotation = 1.7453293
+
+[node name="EditedChild" parent="Node2D/Child1/InstancedScene2" index="0" unique_id=1342092634]
+rotation = 0.87266463
+
+[node name="EditedChildChild" parent="Node2D/Child1/InstancedScene2/EditedChild" index="0" unique_id=804969271]
+rotation = 2.0717058
+
+[node name="Child1" parent="Node2D/Child1/InstancedScene2/EditedChild/EditedChildChild" index="0" unique_id=883563860]
+rotation = 2.0367992
+
+[node name="Child2" parent="Node2D/Child1/InstancedScene2/EditedChild/EditedChildChild/Child1" index="0" unique_id=677510469]
+rotation = 1.3962634
+
+[node name="DeepEditedChild" parent="Node2D/Child1/InstancedScene2/EditedChild/EditedChildChild/Child1/Child2" index="0" unique_id=71346358]
+rotation = 2.501057
+
+[editable path="Node2D"]
+[editable path="Node2D/Child1/InstancedScene"]
+[editable path="Node2D/Child1/InstancedScene2"]
+"#;
+#[test]
+fn test_instance_inside_another_instance_scene() {
+    let scene = round_trip_scene_test(
+        INSTANCE_INSIDE_ANOTHER_INSTANCE_SCENE,
+        "instance_inside_another_instance_scene",
+    )
+    .unwrap();
+    // check that "DeepEditedChild" has the correct node id of 71346358, [37016941, 81506028]
+    let deep_edited_child_id = NodeId {
+        id: 71346358,
+        root_instance_id: Some(vec![37016941, 81506028, 883563860, 677510469]),
     };
-    assert!(diff.is_empty());
-    // assert_eq!(source, serialized);
-    
+    let deep_edited_child = scene
+        .get_node(&deep_edited_child_id)
+        .expect("DeepEditedChild node under InstancedScene2 should exist");
+    assert_eq!(deep_edited_child.name, "DeepEditedChild");
+}
+
+#[test]
+fn test_deeper() {
+    let _ = round_trip_scene_test(DEPEERRRR, "deeper").unwrap();
 }
