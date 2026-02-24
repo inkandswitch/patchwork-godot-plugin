@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use automerge::{Automerge, ChangeHash, ObjType, ROOT, ReadDoc};
+use automerge::{Automerge, ObjType, ROOT, ReadDoc};
 use autosurgeon::Doc;
 use samod::DocHandle;
 
@@ -22,7 +22,7 @@ impl BranchDb {
         &self,
         files: Vec<(String, FileContent)>,
         ref_: &HistoryRef,
-        revert: Option<Vec<ChangeHash>>,
+        revert: Option<&HistoryRef>,
         is_checking_in: bool,
     ) -> Option<HistoryRef> {
         tracing::info!("Attempting to commit changes...");
@@ -162,9 +162,13 @@ impl BranchDb {
             tx,
             &CommitMetadata {
                 username: username.clone(),
-                branch_id: Some(ref_.branch().clone()),
+                // if we're reverting, fake the branch so the change will show up once merged
+                branch_id: match revert {
+                    Some(revert) => Some(revert.branch().clone()),
+                    None => Some(ref_.branch().clone()),
+                },
                 merge_metadata: None,
-                reverted_to: revert,
+                reverted_to: revert.map(|r| r.heads().clone()),
                 changed_files: Some(changes),
                 is_setup: Some(is_checking_in),
             },
@@ -172,7 +176,9 @@ impl BranchDb {
 
         let new_heads = d.get_heads();
 
-        assert!(new_heads.get(0) == res.as_ref());
+        if new_heads.get(0) != res.as_ref() {
+            tracing::error!("Document heads {:?} different from commit result {:?}!", new_heads, res);
+        }
 
         // Unlock state, then attempt a reconcile.
         // The reconcile may fail if we are currently syncing binary docs.
@@ -182,7 +188,11 @@ impl BranchDb {
         self.try_reconcile_branch(state_arc.clone()).await;
 
         tracing::info!("Committed {} files.", count);
-        assert!(&new_heads != ref_.heads());
+
+        if new_heads == *ref_.heads() {
+            tracing::error!("Document heads {:?} didn't change after committing!", new_heads);
+        }
+
         return Some(HistoryRef::new(ref_.branch().clone(), new_heads));
     }
 

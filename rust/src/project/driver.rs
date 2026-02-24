@@ -1,5 +1,5 @@
 use crate::diff::differ::{Differ, ProjectDiff};
-use crate::fs::file_utils::{FileSystemEvent};
+use crate::fs::file_utils::FileSystemEvent;
 use crate::helpers::history_ref::HistoryRef;
 use crate::helpers::spawn_utils::spawn_named;
 use crate::helpers::utils::CommitInfo;
@@ -11,7 +11,6 @@ use crate::project::main_thread_block::MainThreadBlock;
 use crate::project::peer_watcher::PeerWatcher;
 use crate::project::sync_automerge_to_fs::SyncAutomergeToFileSystem;
 use crate::project::sync_fs_to_automerge::SyncFileSystemToAutomerge;
-use automerge::ChangeHash;
 use futures::StreamExt;
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use samod::{ConcurrencyConfig, ConnectionInfo, DocHandle, DocumentId, Repo};
@@ -223,8 +222,6 @@ impl Driver {
 
     /// Request the sync task to checkout the latest ref on a branch the next opportunity.
     /// This will only work once Godot is safe to update.
-    // TODO (Lilith): This is broken for immediately checked-out branches.
-    // We should instead allow request_checkout to poll for other branches that haven't loaded in yet.
     pub async fn request_checkout(&self, branch: &DocumentId) {
         let mut req = self.inner.requested_checkout.lock().await;
         *req = Some(branch.clone());
@@ -310,10 +307,7 @@ impl Driver {
         let Some(fork_info) = &branch_state.forked_from else {
             return;
         };
-        self.inner
-            .branch_db
-            .delete_branch(&branch_state.id)
-            .await;
+        self.inner.branch_db.delete_branch(&branch_state.id).await;
 
         self.request_checkout(fork_info.branch()).await;
     }
@@ -329,26 +323,29 @@ impl Driver {
         }
     }
 
-    pub fn create_revert_preview_branch(&mut self, ref_: &HistoryRef) {
-        // TODO (Lilith)
+    pub async fn create_revert_preview_branch(&self, ref_: &HistoryRef) {
+        if let Some(id) = self
+            .get_branch_db()
+            .create_revert_preview_branch(ref_.branch(), ref_)
+            .await
+        {
+            self.request_checkout(&id).await;
+        }
     }
-
-    pub fn revert_to_heads(&mut self, to_revert_to: Vec<ChangeHash>) {
-        // TODO (Lilith)
-        // let branch_state = self.get_checked_out_branch_state().unwrap();
-        // let heads = branch_state.doc_handle.with_document(|d| {
-        // 	d.get_heads()
-        // });
-        // let content = self.get_changed_file_content_between(Some(branch_state.doc_handle.document_id().clone()), branch_state.doc_handle.document_id().clone(), heads.clone(), to_revert_to.clone(), true);
-        // let files = content.into_iter().map(|event| {
-        // 	match event {
-        // 		FileSystemEvent::FileCreated(path, content) => (path, content),
-        // 		FileSystemEvent::FileModified(path, content) => (path, content),
-        // 		FileSystemEvent::FileDeleted(path) => (path, FileContent::Deleted),
-        // 	}
-        // }).collect::<Vec<(PathBuf, FileContent)>>();
-        // self.sync_files_at(branch_state.doc_handle.clone(), files, Some(heads), Some(to_revert_to), false);
-        // self.checked_out_branch_state = CheckedOutBranchState::CheckingOut(branch_state.doc_handle.document_id().clone(), None);
+    
+    pub async fn confirm_revert_preview_branch(&self) {
+        let Some(branch) = self.get_branch_db().get_checked_out_ref().await else {
+            return;
+        };
+        let Some(branch_state) = self.get_branch_db().get_branch_state(branch.branch()).await else {
+            return;
+        };
+        let Some(forked_from) = branch_state.forked_from else {
+            return;
+        };
+        self.get_branch_db().confirm_revert_preview_branch(branch.branch()).await;
+        self.inner.branch_db.delete_branch(branch.branch()).await;
+        self.request_checkout(forked_from.branch()).await;
     }
 
     pub async fn get_diff(&self, before: &HistoryRef, after: &HistoryRef) -> ProjectDiff {
@@ -429,7 +426,7 @@ impl DriverInner {
             .read()
             .await
             .clone();
-        
+
         // Ensure we block the main thread inside of Rust while checking out a ref.
         // Very important to not allow Godot to explode while we're writing files!
         {
@@ -467,11 +464,10 @@ impl DriverInner {
         // If we've changed branches, send the new checked out ref.
         if let Some(ref_) = &new_checked_out_ref {
             tracing::trace!("CHECKED OUT REF: {}", ref_.branch());
-        }
-        else {
+        } else {
             tracing::trace!("NO CHECKED OUT REF");
         }
-        
+
         if new_checked_out_ref.as_ref().map(|r| r.branch())
             != old_checked_out_ref.as_ref().map(|r| r.branch())
         {

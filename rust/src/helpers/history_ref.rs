@@ -1,8 +1,8 @@
-use std::{fmt::Display, str::FromStr};
 use automerge::ChangeHash;
 use autosurgeon::{Hydrate, Reconcile};
 use samod::DocumentId;
 use serde::{Deserialize, Serialize};
+use std::{fmt::Display, str::FromStr};
 
 /// Represents a location anywhere in Patchwork's history.
 /// Associates a branch with heads on that branch.
@@ -44,6 +44,17 @@ impl HistoryRef {
 
     pub fn to_uri_scheme_prefix(&self) -> String {
         format!("{}{}", HistoryRef::PATCHWORK_SCHEME_PREFIX, self)
+    }
+
+    pub fn short_heads(&self) -> String {
+        format!(
+            "[{}]",
+            self.heads
+                .iter()
+                .map(|h| h.to_string().chars().take(7).collect::<String>())
+                .collect::<Vec<String>>()
+                .join(", ")
+        )
     }
 }
 

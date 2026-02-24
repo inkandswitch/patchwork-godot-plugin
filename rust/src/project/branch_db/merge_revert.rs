@@ -1,11 +1,15 @@
+use std::collections::HashSet;
+
 use automerge::{Automerge, ROOT, transaction::Transactable};
 use samod::DocumentId;
 use tracing::instrument;
 
 use crate::{
+    fs::file_utils::{FileContent, FileSystemEvent},
     helpers::{
         branch::Branch,
         doc_utils::SimpleDocReader,
+        history_ref::HistoryRef,
         utils::{CommitMetadata, MergeMetadata, commit_with_metadata},
     },
     project::branch_db::BranchDb,
@@ -71,9 +75,11 @@ impl BranchDb {
             self.with_shadow_document(target, async |target_doc| {
                 let _ = target_doc.merge(source_doc);
             })
-            .await.unwrap();
+            .await
+            .unwrap();
         })
-        .await.unwrap();
+        .await
+        .unwrap();
 
         // if the branch has some merge_into we know that it's a merge preview branch
         // forked_from is the original branch of the preview branch
@@ -113,12 +119,121 @@ impl BranchDb {
                     },
                 );
             })
-            .await.unwrap();
+            .await
+            .unwrap();
         }
 
         // reconcile the dummy merge commit
         let states = self.branch_sync_states.lock().await;
         let Some(state) = states.get(target) else {
+            return;
+        };
+        self.try_reconcile_branch(state.clone()).await;
+    }
+
+    pub async fn create_revert_preview_branch(
+        &self,
+        branch: &DocumentId,
+        ref_: &HistoryRef,
+    ) -> Option<DocumentId> {
+        let Some(current_ref) = self.get_latest_ref_on_branch(branch).await else {
+            tracing::error!(
+                "Can't create revert preview branch; no ref on branch {}!",
+                branch
+            );
+            return None;
+        };
+
+        let changed_files = self
+            .get_changed_file_content_between_refs(Some(&current_ref), ref_, true)
+            .await?;
+        let handle = self.repo.create(Automerge::new()).await.ok()?;
+        let handle_clone = handle.clone();
+
+        self.with_shadow_document(branch, async |d| {
+            handle_clone.with_document(|preview_doc| {
+                let _ = preview_doc.merge(d);
+            });
+        })
+        .await
+        .ok()?;
+
+        let username = self.username.lock().await.clone();
+        self.add_branch_to_meta(Branch {
+            name: format!("{} <- {}", ref_.short_heads(), current_ref.short_heads()),
+            id: handle.document_id().clone(),
+            forked_from: Some(current_ref.clone()),
+            merge_into: None,
+            created_by: username.clone(),
+            reverted_to: Some(ref_.clone()),
+        })
+        .await;
+
+        let changed_files = changed_files
+            .into_iter()
+            .map(|event| match event {
+                FileSystemEvent::FileCreated(path, content) => (self.localize_path(&path), content),
+                FileSystemEvent::FileModified(path, content) => {
+                    (self.localize_path(&path), content)
+                }
+                FileSystemEvent::FileDeleted(path) => {
+                    (self.localize_path(&path), FileContent::Deleted)
+                }
+            })
+            .collect::<Vec<(String, FileContent)>>();
+
+        // This is a weird hack -- we need the branch sync state to exist NOW to commit our revert...
+        // ... not whenever document_watcher decides it's time.
+        // We pretend there's 0 linked docs, because we're forking off a shadow doc for the preview, which had BETTER
+        // not be waiting on any binary docs!!!!!
+        self.update_branch_sync_state(handle.clone(), current_ref.heads().clone(), HashSet::new())
+            .await;
+
+        self.commit_fs_changes(
+            changed_files,
+            &HistoryRef::new(handle.document_id().clone(), current_ref.heads().clone()),
+            Some(ref_),
+            false,
+        )
+        .await;
+
+        return Some(handle.document_id().clone());
+    }
+
+    pub async fn confirm_revert_preview_branch(&self, preview_branch: &DocumentId) {
+        let Some(preview_state) = self.get_branch_state(preview_branch).await else {
+            tracing::error!("No revert preview state!");
+            return;
+        };
+
+        if preview_state.reverted_to.is_none() {
+            tracing::error!("Branch {preview_branch} is not a revert preview branch!");
+            return;
+        }
+
+        let Some(target) = preview_state.forked_from else {
+            tracing::error!("Branch {preview_branch} doesn't have forked_from?!?!?!?");
+            return;
+        };
+
+        self.with_shadow_document(preview_branch, async |source_doc| {
+            self.with_shadow_document(target.branch(), async |target_doc| {
+                tracing::info!("HEADS BEFORE MERGE: {:?}", target_doc.get_heads());
+                tracing::info!("PREVIEW HEADS BEFORE MERGE: {:?}", source_doc.get_heads());
+                let res = target_doc.merge(source_doc).unwrap();
+                tracing::info!("NEW HEADS AFTER MERGE: {:?}", res);
+                tracing::info!("NEW HEADS AFTER MERGE2: {:?}", target_doc.get_heads());
+            })
+            .await
+            .unwrap();
+        })
+        .await
+        .unwrap();
+
+        // Unlike merging, we don't need to make a dummy commit, because the revert already had a commit of the changed files.
+        // Reconcile the merge anyways though.
+        let states = self.branch_sync_states.lock().await;
+        let Some(state) = states.get(target.branch()) else {
             return;
         };
         self.try_reconcile_branch(state.clone()).await;

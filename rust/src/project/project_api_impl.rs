@@ -22,10 +22,6 @@ use crate::{
     },
 };
 
-// TODO: Ideally this is actually a child of a new project submodule...
-// that's so that it doesn't need pub(super) to acess private fields of
-// itself.
-
 // TODO (Lilith): Figure out if there's a reasonable way to reduce blocking in this file.
 // In general I kind of hate this, but I guess a sync/async divide is never going to look pretty.
 impl ProjectViewModel for Project {
@@ -110,39 +106,34 @@ impl ProjectViewModel for Project {
     }
 
     fn can_create_revert_preview_branch(&self, head: ChangeHash) -> bool {
-        // TODO (Lilith): implement
-        return false;
-        // if self.is_revert_preview_branch_active() || self.is_merge_preview_branch_active() {
-        //     return false;
-        // }
-        // if self.get_change(head).is_some_and(|c|
-        // 	// Allow reverts for only the second setup commit
-        // 	!c.is_setup() || self.get_branch_history().iter().position(|&h| h == head) == Some(1))
-        // {
-        //     return self.get_checked_out_branch_state().is_some();
-        // }
-        // false
+        if self.is_revert_preview_branch_active() || self.is_merge_preview_branch_active() {
+            return false;
+        }
+        if self.get_change(head).is_some_and(|c|
+        	// Allow reverts for only the second setup commit
+        	!c.is_setup() || self.get_branch_history().iter().position(|&h| h == head) == Some(1))
+        {
+            return self.get_checked_out_branch_state().is_some();
+        }
+        false
     }
     fn create_revert_preview_branch(&mut self, head: ChangeHash) {
-        // TODO (Lilith): implement
-        return;
-        // let Some(checked_out_branch) = self.get_checked_out_branch_state() else {
-        //     return;
-        // };
-        // self.create_revert_preview_branch_for(
-        //     checked_out_branch.doc_handle.document_id().clone(),
-        //     vec![head],
-        // );
+        let Some(checked_out_branch) = self.get_checked_out_branch_state() else {
+            return;
+        };
+
+        self.with_driver_blocking("Create revert preview branch", move |driver| async move {
+            driver.as_ref()?.create_revert_preview_branch(&HistoryRef::new(checked_out_branch.id, vec![head])).await;
+            Some(())
+        });
     }
 
     fn is_revert_preview_branch_active(&self) -> bool {
-        // TODO (Lilith): implement
-        return false;
-        // let branch_state = self.get_checked_out_branch_state();
-        // match branch_state {
-        //     Some(state) => state.revert_info.is_some(),
-        //     _ => false,
-        // }
+        let branch_state = self.get_checked_out_branch_state();
+        match branch_state {
+            Some(state) => state.reverted_to.is_some(),
+            _ => false,
+        }
     }
 
     fn is_merge_preview_branch_active(&self) -> bool {
@@ -166,17 +157,12 @@ impl ProjectViewModel for Project {
 
         let forked_from = fork_info.branch().clone();
         let merge_into = merge_info.branch().clone();
-        let Some((source_branch, dest_branch, latest_dest_heads)) =
+        let Some((source_branch, latest_dest_heads)) =
             self.with_driver_blocking("Is safe to merge", |driver| async move {
                 let source_branch = driver
                     .as_ref()?
                     .get_branch_db()
                     .get_branch_state(&forked_from)
-                    .await;
-                let dest_branch = driver
-                    .as_ref()?
-                    .get_branch_db()
-                    .get_branch_state(&merge_into)
                     .await;
                 let latest_dest_heads = driver
                     .as_ref()?
@@ -185,7 +171,7 @@ impl ProjectViewModel for Project {
                     .await?
                     .heads()
                     .clone();
-                Some((source_branch, dest_branch, latest_dest_heads))
+                Some((source_branch, latest_dest_heads))
             })
         else {
             return false;
@@ -202,14 +188,12 @@ impl ProjectViewModel for Project {
         let Some(branch_state) = self.get_checked_out_branch_state() else {
             return;
         };
-        let Some(fork_info) = &branch_state.forked_from else {
-            return;
-        };
-        if let Some(revert_info) = &branch_state.reverted_to {
-            // TODO (Lilith): Implement
-            // self.delete_branch(branch_state.doc_handle.document_id().clone());
-            // self.checkout_branch(fork_info.forked_from.clone());
-            // self.revert_to_heads(revert_info.reverted_to.clone());
+
+        if let Some(_) = &branch_state.reverted_to {
+            self.with_driver_blocking("Confirm merge preview branch", |driver| async move {
+                driver.as_ref()?.confirm_revert_preview_branch().await;
+                Some(())
+            });
         } else if let Some(merge_info) = branch_state.merge_into {
             let source = branch_state.id.clone();
             let target = merge_info.branch().clone();
@@ -223,7 +207,8 @@ impl ProjectViewModel for Project {
         let Some(branch_state) = self.get_checked_out_branch_state() else {
             return;
         };
-        let Some(fork_info) = &branch_state.forked_from else {
+        if branch_state.reverted_to.is_none() && branch_state.merge_into.is_none() {
+            tracing::error!("Cannot discard branch; not a preview branch!");
             return;
         };
         self.with_driver_blocking("Discard preview branch", |driver| async move {
