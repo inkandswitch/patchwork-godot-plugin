@@ -144,7 +144,7 @@ impl SyncFileSystemToAutomerge {
                 files.clone(),
                 &checked_out_ref.as_ref().unwrap(),
                 None,
-                false,
+                true,
             )
             .await;
 
