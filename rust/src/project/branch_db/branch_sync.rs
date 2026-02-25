@@ -201,15 +201,14 @@ impl BranchDb {
                 // This is important so that if new heads have appeared with unsynced binary docs since
                 // we tried to reconcile, we don't include them.
 
-                // TODO (Lilith): Once Alex fixes fork_at, use the other line instead
-                //let mut fork = d.fork_at(&tracked_heads).unwrap();
-                let mut fork = d.fork();
+                // // TODO (Lilith): Once Alex fixes fork_at, use this code instead of merging directly...
+                // let mut fork = d.fork_at(&tracked_heads).unwrap();
 
-                // Next, sync our fork with the shadow doc.
-                let _ = fork.merge(shadow_doc).unwrap();
-                let _ = shadow_doc.merge(&mut fork).unwrap();
+                // // Next, sync our fork with the shadow doc.
+                // let _ = fork.merge(shadow_doc).unwrap();
+                // let _ = shadow_doc.merge(&mut fork).unwrap();
 
-                // let _ = shadow_doc.merge(d).unwrap();
+                let _ = shadow_doc.merge(d).unwrap();
 
                 // Last, sync our canonical doc with the shadow doc.
                 // We need to ignore the outputted heads, because we may already have unsynced changes in the canonical doc!
