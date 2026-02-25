@@ -228,28 +228,8 @@ bool PatchworkEditor::refresh_after_source_change() {
 		Main::iteration();
 	}
 
-	auto current_scene = EditorInterface::get_singleton()->get_edited_scene_root();
-
-	auto open_scenes = EditorInterface::get_singleton()->get_open_scenes();
-	for (auto &scene : open_scenes) {
-		if (current_scene != nullptr && scene == current_scene->get_scene_file_path()) {
-			continue;
-		}
-		while (is_changing_scene()) {
-			OS::get_singleton()->delay_usec(10000);
-			Main::iteration();
-		}
-		EditorInterface::get_singleton()->reload_scene_from_path(scene);
-	}
-	if (current_scene != nullptr) {
-		// always iterate once if we must switch back, because sometimes is_changing_scene is false but we still need to iterate (?!)
-		do {
-			OS::get_singleton()->delay_usec(10000);
-			Main::iteration();
-		} while (is_changing_scene());
-		EditorInterface::get_singleton()->reload_scene_from_path(current_scene->get_scene_file_path());
-	}
-	return true;
+        EditorInterface::get_singleton()->reload_all_scenes();
+        return true;
 }
 
 Callable PatchworkEditor::steal_close_current_script_tab_file_callback() {
