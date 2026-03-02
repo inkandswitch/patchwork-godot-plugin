@@ -95,6 +95,7 @@ impl LazyLoadToken {
             }
             self.resource = Some(res);
         } else {
+            godot_print!("Failed to load resource: {}", self.path);
             self.failed = true;
         }
         return self.resource.clone();
