@@ -536,7 +536,7 @@ impl Differ {
             Some(v) => Some(self.get_prop_value(v, old_scene, true, prop == "script", before, after).await),
             None => None,
         };
-        let new = match &old_value {
+        let new = match &new_value {
             Some(v) => Some(self.get_prop_value(v, new_scene, false, prop == "script", before, after).await),
             None => None,
         };
