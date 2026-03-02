@@ -87,7 +87,7 @@ impl LazyLoadToken {
         }
 
         let res = ResourceLoader::singleton().load_threaded_get(&self.path);
-        if let Some(mut res) = res {
+        if let Some(mut res) = res && res.is_instance_valid() {
             if let Some(original_path) = self.original_path.as_ref() {
                 if &res.get_path().to_string() != original_path {
                     res.set_path_cache(original_path);
