@@ -402,17 +402,19 @@ func create_node_diff_section(file_section: DiffInspectorSection, node_diff: Dic
 	return inspector_section
 
 
-func add_resource_diff(inspector_section: DiffInspectorSection, change_type: String, file_path: String, old_resource: Resource, new_resource: Resource) -> void:
+func add_resource_diff(inspector_section: DiffInspectorSection, change_type: String, file_path: String, old_resource: Variant, new_resource: Variant) -> void:
 	# print("adding resource diff for ", file_path)
+	var old = get_real_val(old_resource);
+	var new = get_real_val(new_resource);
 	if !is_instance_valid(old_resource) && !is_instance_valid(new_resource):
 		return
 	var prop_label = snake_case_to_human_readable(file_path)
-	var has_old = is_instance_valid(old_resource)
-	var has_new = is_instance_valid(new_resource)
+	var has_old = is_instance_valid(old)
+	var has_new = is_instance_valid(new)
 	var fake_node: MissingResource = MissingResource.new()
 	fake_node.original_class = "Resource"
 	changed_resources.append(fake_node)
-	add_old_and_new(inspector_section, change_type, "Resource", old_resource, new_resource, prop_label)
+	add_old_and_new(inspector_section, change_type, "Resource", old, new, prop_label)
 
 func add_text_diff(inspector_section: DiffInspectorSection, unified_diff: Dictionary) -> void:
 	# print("adding text diff")
