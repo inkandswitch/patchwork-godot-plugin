@@ -3,7 +3,7 @@ on:
   workflow_call:
 
 jobs:
-  release:
+  release-artifacts:
     runs-on: ubuntu-latest
     name: ✉️ Release ${{ matrix.artifact }}
     strategy:
@@ -16,6 +16,7 @@ jobs:
           - patchwork-godot-plugin
           - threadbare-with-patchwork
           - moddable-platformer-with-patchwork
+          - moddable-platformer-windows-ready
 
     steps:
       - name: Download artifact
