@@ -9,6 +9,7 @@ use crate::project::project_api::{BranchViewModel, ChangeViewModel, DiffViewMode
 use crate::helpers::utils::{ChangedFile};
 use godot::builtin::Variant;
 
+
 pub trait GodotConvertExt {
     /// The type through which `Self` is represented in Godot.
     type Via: GodotType;
@@ -134,7 +135,6 @@ pub(crate) fn branch_view_model_to_dict(branch: &impl BranchViewModel) -> VarDic
 		"parent": branch.get_parent().to_variant(),
 		"children": branch.get_children().to_godot(),
 		"is_available": branch.is_available(),
-		"is_loaded": branch.is_loaded(),
 		// todo: figure out how to make to_godot work for this
 		"reverted_to": branch.get_reverted_to().to_variant(),
 		"merge_into": var

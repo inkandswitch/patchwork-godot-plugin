@@ -1,7 +1,9 @@
+use std::collections::{HashMap, HashSet};
+
 use automerge::ChangeHash;
 use samod::DocumentId;
 
-use crate::{diff::differ::ProjectDiff};
+use crate::{diff::differ::ProjectDiff, fs::file_utils::FileContent, helpers::history_ref::HistoryRef};
 
 /// Represents synchronization status for a project.
 pub enum SyncStatus {
@@ -50,7 +52,11 @@ pub trait ProjectViewModel {
 	/// Create a new branch, forked off the current branch with the given name.
 	fn create_branch(&mut self, branch_name: String);
 	/// Check out a branch by ID.
-	fn checkout_branch(&mut self, branch: DocumentId);
+	fn checkout_branch(&mut self, branch: &DocumentId);
+	/// Returns true if the branch is loaded (i.e. has all of its binary docs synced).
+	fn is_branch_loaded(&self, branch: &DocumentId) -> bool;
+	/// Dumps a binary representation of the current branch to ./.patchwork/.
+	fn dump_current_branch(&self);
 
 	/// Whether we can begin a merge preview for the current branch into its direct ancestor.
     fn can_create_merge_preview_branch(&self) -> bool;
@@ -80,6 +86,13 @@ pub trait ProjectViewModel {
 	fn get_diff(&self, selected_hash: ChangeHash) -> Option<impl DiffViewModel>;
 	/// Get a [DiffViewModel] for the current branch against its fork, or [None] if the current branch is main.
 	fn get_default_diff(&self) -> Option<impl DiffViewModel>;
+
+	fn get_current_ref(&self) -> Option<HistoryRef>;
+	/// Get the file at a given history reference.
+	fn get_file_at_ref(&self, path: &String, ref_: &HistoryRef) -> Option<FileContent>;
+	/// Get the files at a given history reference, with optional filters.
+	fn get_files_at_ref(&self, ref_: &HistoryRef, filters: &HashSet<String>) -> Option<HashMap<String, FileContent>>;
+	
 }
 
 /// API surface for a Change exposed to the UI.
@@ -118,8 +131,6 @@ pub trait BranchViewModel {
 	fn get_children(&self) -> Vec<DocumentId>;
 	/// Whether the branch is user-exposed for checkout (i.e. isn't a merge or revert preview)
 	fn is_available(&self) -> bool;
-	/// Whether the branch is loaded.
-	fn is_loaded(&self) -> bool;
 	/// If the branch is a revert preview, get the change reversion target. Otherwise, [None]
 	fn get_reverted_to(&self) -> Option<ChangeHash>;
 	/// If the branch is a merge preview, get the target branch. Otherwise, [None]

@@ -30,11 +30,15 @@ runs:
         rustup target add ${{ inputs.arch }}
     - name: Build for Windows and Linux
       shell: sh
+      env:
+        CI: 1
       if: ${{ inputs.arch != 'x86_64-apple-darwin'}}
       run: |
         just build-patchwork release ${{ inputs.arch }}
     - name: Build for Mac
       shell: sh
+      env:
+        CI: 1
       if: ${{ inputs.arch == 'x86_64-apple-darwin'}}
       run: |
         just build-patchwork release "all-apple-darwin"
