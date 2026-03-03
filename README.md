@@ -128,6 +128,17 @@ In a small collaborative team, you could try:
 - Each major feature gets a branch, which gets merged when the feature is done
 - Make a branch for a live jamming session on a game mechanic
 
+## Configuration
+
+Plugin configuration is stored in your project as `res://patchwork.cfg/`. The following configuration options are available:
+
+| Config | Description |
+| --- | --- |
+| project_doc_id | The ID of your project. Empty if there is no Patchwork project created.
+| checked_out_branch_doc_id | Your current checked out branch inside your project. Empty for the main branch, or if there is no Patchwork project.
+| server_url | The URL for the sync server. If empty or missing, uses the default testing sync server run by Ink & Switch. If the URL or IP address is prefixed with `ws://`, uses a WebSockets server; otherwise, it uses raw TCP from a `samod` server like the one [here](https://github.com/paulsonnentag/automerge-rust-sync-server/).
+
+
 ## **Troubleshooting**
 
 The plugin is still experimental software. Occasionally errors can happen.
