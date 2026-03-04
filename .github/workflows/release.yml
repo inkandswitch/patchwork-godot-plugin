@@ -35,7 +35,7 @@ jobs:
         if: matrix.artifact == 'godot-with-patchwork-macos'
         shell: bash
         run: |
-          chmod +x **/Godot
+          chmod +x ${{ matrix.artifact }}/**/Godot
       - name: Zip artifact
         run: |
           cd ${{ matrix.artifact }}
