@@ -273,8 +273,8 @@ _configure-patchwork: _make-plugin-dir
     windows.release.x86_64 =    "bin/patchwork_rust_core.windows.x86_64-pc-windows-msvc.dll"
     windows.debug.arm64 =       "bin/patchwork_rust_core.windows.aarch64-pc-windows-msvc.dll"
     windows.release.arm64 =     "bin/patchwork_rust_core.windows.aarch64-pc-windows-msvc.dll"
-    macos.debug =               "bin/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.dylib"
-    macos.release =             "bin/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.macos.dylib"
+    macos.debug =               "bin/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.dylib"
+    macos.release =             "bin/libpatchwork_rust_core.macos.framework/libpatchwork_rust_core.dylib"
     """)
 
 # Build the plugin and output it to the plugin build dir. For MacOS multi-arch, use architecture=all-apple-darwin to build all architectures.
