@@ -64,7 +64,6 @@ jobs:
 
   prepare-composite:
     name: 🚀 Prepare Windows-Ready Projects
-    if: github.ref_type == 'tag'
     needs: [compose-projects, editor-builds]
     secrets: inherit
     uses: ./.github/workflows/prepare_composite.yml
