@@ -1,0 +1,127 @@
+name: Windows Authenticode Sign
+description: Sign a Windows binary (.exe) using GCP KMS and jsign (Authenticode).
+
+inputs:
+  BINARY_PATHS:
+    description: Paths to the Windows binaries to sign (e.g. .exe).
+    required: true
+  KMS_CREDENTIALS_JSON:
+    description: GCP service account credentials JSON.
+    required: true
+  KMS_PUBLIC_CERT:
+    description: Code-signing certificate content (.cer) in PEM format.
+    required: true
+  KMS_PROJECT:
+    description: GCP project ID for KMS.
+    required: true
+  KMS_LOCATION:
+    description: KMS location (e.g. global).
+    required: true
+  KMS_KEYRING:
+    description: KMS key ring name.
+    required: true
+  KMS_KEY:
+    description: KMS key name (alias for jsign).
+    required: true
+  TSA_URL:
+    description: RFC 3161 timestamp server URL.
+    required: false
+    default: 'http://rfc3161timestamp.globalsign.com/advanced'
+
+runs:
+  using: composite
+  steps:
+    - id: 'auth'
+      uses: 'google-github-actions/auth@v2'
+      with:
+        credentials_json: '${{ inputs.KMS_CREDENTIALS_JSON }}'
+        create_credentials_file: true
+    - name: 'Set up Cloud SDK'
+      uses: 'google-github-actions/setup-gcloud@v3'
+    # ensure that we are actually logged in; windows runner doesn't seem to automatically work with gcloud auth
+    - name: Log in to GCP
+      shell: bash
+      run: |
+        gcloud auth activate-service-account --key-file '${{ steps.auth.outputs.credentials_file_path }}'
+        active_account=$(gcloud auth list --filter=status:ACTIVE --format="value(account)" 2>/dev/null | head -1)
+        [[ -n "$active_account" ]] || { echo "ERROR: No active account found"; exit 1; }
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        java-version: 17
+        distribution: 'temurin'
+    - name: Install jsign
+      shell: bash
+      run: |
+        curl -L https://github.com/ebourg/jsign/releases/download/7.4/jsign-7.4.jar -o jsign-7.4.jar
+    - name: Sign Windows binary
+      shell: bash
+      env:
+        BINARY_PATHS: ${{ inputs.BINARY_PATHS }}
+        KMS_PUBLIC_CERT: ${{ inputs.KMS_PUBLIC_CERT }}
+        KMS_PROJECT: ${{ inputs.KMS_PROJECT }}
+        CLOUDSDK_CORE_PROJECT: ${{ inputs.KMS_PROJECT }}
+        KMS_LOCATION: ${{ inputs.KMS_LOCATION }}
+        KMS_KEYRING: ${{ inputs.KMS_KEYRING }}
+        KMS_KEY: ${{ inputs.KMS_KEY }}
+        TSA_URL: ${{ inputs.TSA_URL }}
+        OVERWRITE: ${{ inputs.OVERWRITE }}
+        JSIGN_CMD: java -jar jsign-7.4.jar
+      run: |
+        set -euo pipefail
+
+        # ---- validation ----
+        [[ -n "$BINARY_PATHS"       ]] || { echo "ERROR: BINARY_PATH is required"; exit 1; }
+        [[ -n "$KMS_PUBLIC_CERT"   ]] || { echo "ERROR: KMS_PUBLIC_CERT is required"; exit 1; }
+        [[ -n "$KMS_PROJECT"       ]] || { echo "ERROR: KMS_PROJECT is required"; exit 1; }
+        [[ -n "$KMS_LOCATION"      ]] || { echo "ERROR: KMS_LOCATION is required"; exit 1; }
+        [[ -n "$KMS_KEYRING"       ]] || { echo "ERROR: KMS_KEYRING is required"; exit 1; }
+        [[ -n "$KMS_KEY"           ]] || { echo "ERROR: KMS_KEY is required"; exit 1; }
+
+        CERT_FILE="${RUNNER_TEMP:-/tmp}/codesign.cer"
+        trap 'rm -f "$CERT_FILE"' EXIT
+
+        # ---- write cert to temp file (support PEM format) ----
+        printf '%s' "$KMS_PUBLIC_CERT" > "$CERT_FILE"
+        [[ -s "$CERT_FILE" ]] || { echo "ERROR: Certificate file is empty"; exit 1; }
+
+        active_account=$(gcloud auth list \
+          --filter=status:ACTIVE \
+          --format="value(account)" \
+          2>/dev/null | head -1)
+        [[ -n "$active_account" ]] || { echo "ERROR: No active account found"; exit 1; }
+
+        gcloud config set project "$KMS_PROJECT" --quiet
+
+        # ---- gcloud access token ----
+        echo "Fetching gcloud access token..."
+        ACCESS_TOKEN=$(gcloud auth print-access-token)
+
+        # check if the access token is valid
+        [[ -n "$ACCESS_TOKEN" ]] || { echo "ERROR: Access token is empty"; exit 1; }
+
+        KMS_KEYSTORE="projects/${KMS_PROJECT}/locations/${KMS_LOCATION}/keyRings/${KMS_KEYRING}"
+
+        echo $BINARY_PATHS
+
+        for BINARY_PATH in $BINARY_PATHS; do
+          [[ -f "$BINARY_PATH"       ]] || { echo "ERROR: Binary not found: $BINARY_PATH"; exit 1; }
+          # ---- sign ----
+          echo "Signing $(basename "$BINARY_PATH")..."
+          $JSIGN_CMD \
+            --storetype GOOGLECLOUD \
+            --storepass "$ACCESS_TOKEN" \
+            --keystore "$KMS_KEYSTORE" \
+            --alias "$KMS_KEY" \
+            --certfile "$CERT_FILE" \
+            --tsaurl "$TSA_URL" \
+            --tsmode RFC3161 \
+            --replace \
+            "$BINARY_PATH"
+          echo "Signed and verified successfully."
+        done
+
+    - name: remove jsign jar
+      shell: bash
+      run: |
+        rm jsign-7.4.jar

@@ -31,6 +31,9 @@ jobs:
     name: 🤖 Build Godot for All Platforms
     uses: ./.github/workflows/all_editor_builds.yml
     secrets: inherit
+    permissions:
+      contents: 'read'
+      id-token: 'write'
 
   macos-plugin-builds:
     name: 🍎 Build Patchwork for macOS
@@ -40,7 +43,11 @@ jobs:
   windows-plugin-builds:
     name: 🪟 Build Patchwork for Windows
     uses: ./.github/workflows/windows_builds.yml
-
+    secrets: inherit
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+  
   linux-plugin-builds:
     name: 🐧 Build Patchwork for Linux
     uses: ./.github/workflows/linux_builds.yml
@@ -58,6 +65,7 @@ jobs:
   prepare-composite:
     name: 🚀 Prepare Windows-Ready Projects
     needs: [compose-projects, editor-builds]
+    secrets: inherit
     uses: ./.github/workflows/prepare_composite.yml
 
   release:
