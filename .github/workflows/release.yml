@@ -24,7 +24,18 @@ jobs:
         with:
           pattern: ${{ matrix.artifact }}
           path: ${{ github.workspace }}
-    
+
+      # set permissions
+      - name: Set permissions for Linux
+        if: matrix.artifact == 'godot-with-patchwork-linux'
+        shell: bash
+        run: |
+          chmod +x ${{ matrix.artifact }}/*
+      - name: Set permissions for macOS
+        if: matrix.artifact == 'godot-with-patchwork-macos'
+        shell: bash
+        run: |
+          chmod +x **/Godot
       - name: Zip artifact
         run: |
           cd ${{ matrix.artifact }}

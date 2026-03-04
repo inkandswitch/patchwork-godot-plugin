@@ -35,6 +35,23 @@ jobs:
       - name: Write info
         run: |
           find . -maxdepth 3
+      - name: Checkout patchwork # for actions
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          path: patchwork-tmp
+          repository: inkandswitch/patchwork-godot-plugin
+      - name: Windows Sign
+        uses: ./patchwork-tmp/.github/actions/windows-sign
+        with:
+          BINARY_PATHS: |
+            ./patchwork-update-script/pwsh_update_patchwork.ps1
+          KMS_CREDENTIALS_JSON: ${{ secrets.GCLOUD_SERVICE_ACCOUNT_KEY }}
+          KMS_PUBLIC_CERT: ${{ secrets.CODESIGN_PUBLIC_CERT }}
+          KMS_PROJECT: ${{ secrets.KMS_PROJECT }}
+          KMS_LOCATION: ${{ secrets.KMS_LOCATION }}
+          KMS_KEYRING: ${{ secrets.KMS_KEYRING }}
+          KMS_KEY: ${{ secrets.KMS_KEY }}
       - name: Copy batch and ps1 files
         run: cp patchwork-update-script/*.{cmd,ps1} moddable-platformer
       - name: Merge .gitignore

@@ -6,6 +6,9 @@ jobs:
   build-windows:
     runs-on: "windows-latest"
     name: 📐 Build ${{ matrix.arch }}
+    permissions:
+      contents: 'read'
+      id-token: 'write'
     strategy:
       fail-fast: false
       matrix:
@@ -23,7 +26,17 @@ jobs:
         uses: ./.github/actions/build-plugin
         with:
           arch: ${{ matrix.arch }}
- 
+      - name: Windows Sign
+        uses: ./.github/actions/windows-sign
+        with:
+          BINARY_PATHS: |
+            ./build/patchwork/bin/patchwork_rust_core.windows.${{ matrix.arch }}.dll
+          KMS_CREDENTIALS_JSON: ${{ secrets.GCLOUD_SERVICE_ACCOUNT_KEY }}
+          KMS_PUBLIC_CERT: ${{ secrets.CODESIGN_PUBLIC_CERT }}
+          KMS_PROJECT: ${{ secrets.KMS_PROJECT }}
+          KMS_LOCATION: ${{ secrets.KMS_LOCATION }}
+          KMS_KEYRING: ${{ secrets.KMS_KEYRING }}
+          KMS_KEY: ${{ secrets.KMS_KEY }}
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
