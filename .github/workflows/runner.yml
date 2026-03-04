@@ -57,12 +57,12 @@ jobs:
 
   prepare-composite:
     name: 🚀 Prepare Windows-Ready Projects
-    if: github.ref_type == 'tag'
+    # if: github.ref_type == 'tag'
     needs: [compose-projects, editor-builds]
     uses: ./.github/workflows/prepare_composite.yml
 
   release:
     name: 📦 Release
-    if: github.ref_type == 'tag'
+    # if: github.ref_type == 'tag'
     needs: [editor-builds, merge-plugin-builds, compose-projects, prepare-composite]
     uses: ./.github/workflows/release.yml
