@@ -31,7 +31,7 @@ jobs:
           zip -r9  ../${{ matrix.artifact }}-${{ github.ref_name }}.zip .
 
       - name: Release artifact
-        # if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           files: |
