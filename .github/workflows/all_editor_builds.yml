@@ -66,7 +66,6 @@ jobs:
         with:
           path: ../patchwork-tmp/build.env
           keys-case: bypass
-
       - name: Checkout Godot
         uses: actions/checkout@v4
         with:
@@ -162,7 +161,19 @@ jobs:
         shell: bash
         run: |
           chmod +x bin/godot_macos_editor.app/Contents/MacOS/Godot
-
+      - name: Windows Sign
+        if: matrix.platform == 'windows' && matrix.target == 'editor'
+        uses: ./../patchwork-tmp/.github/actions/windows-sign
+        with:
+          BINARY_PATHS: |
+            ./bin/godot.windows.editor.x86_64.exe
+            ./bin/godot.windows.editor.x86_64.console.exe
+          KMS_CREDENTIALS_JSON: ${{ secrets.GCLOUD_SERVICE_ACCOUNT_KEY }}
+          KMS_PUBLIC_CERT: ${{ secrets.CODESIGN_PUBLIC_CERT }}
+          KMS_PROJECT: ${{ secrets.KMS_PROJECT }}
+          KMS_LOCATION: ${{ secrets.KMS_LOCATION }}
+          KMS_KEYRING: ${{ secrets.KMS_KEYRING }}
+          KMS_KEY: ${{ secrets.KMS_KEY }}
       - name: Mac Sign
         if: matrix.platform == 'macos' && matrix.target == 'editor'
         uses: ./../patchwork-tmp/.github/actions/macos-sign
