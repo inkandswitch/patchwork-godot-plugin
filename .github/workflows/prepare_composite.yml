@@ -26,17 +26,18 @@ jobs:
         run: |
           mkdir moddable-platformer/godot_editor
           cp godot-with-patchwork-windows/* moddable-platformer/godot_editor
-      - name: Checkout update scripts
-        uses: actions/checkout@v6
+      - uses: robinraju/release-downloader@v1
         with:
-          fetch-depth: 0
-          path: patchwork-update-script
-          repository: LilithSilver/patchwork-update-script
+          repository: 'LilithSilver/patchwork-update-script'
+          latest: true
+          fileName: '*'
+          out-file-path: 'patchwork-update-script'
+
       - name: Write info
         run: |
           find . -maxdepth 3
-      - name: Copy batch and ps1 files
-        run: cp patchwork-update-script/*.{cmd,ps1} moddable-platformer
+      - name: Copy exe files
+        run: cp patchwork-update-script/*.exe moddable-platformer
       - name: Merge .gitignore
         run: cat patchwork-update-script/.gitignore >> moddable-platformer/.gitignore
       - name: Write .patchwork_version
