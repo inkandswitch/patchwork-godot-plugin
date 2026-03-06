@@ -27,6 +27,7 @@ impl BranchDb {
     ) -> Option<HistoryRef> {
         tracing::info!("Attempting to commit changes...");
         // Only commit files that have actually changed
+        // TODO: We may be able to use notify's compare file hash system instead? Or in addition to this?
         let files = self.filter_changed_files(ref_, files).await;
         let count = files.len();
         let username = self.username.lock().await.clone();

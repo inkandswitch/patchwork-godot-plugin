@@ -8,8 +8,8 @@ use std::{
 use async_stream::stream;
 use futures::Stream;
 use md5::Digest;
-use notify::{Config, RecommendedWatcher, RecursiveMode};
-use notify_debouncer_mini::{DebouncedEvent, new_debouncer_opt};
+use notify::RecursiveMode;
+use notify_debouncer_full::{DebounceEventResult, new_debouncer};
 use tokio::{
     sync::{
         Mutex,
@@ -154,12 +154,12 @@ impl FileSystemWatcher {
         Ok(None)
     }
 
-    async fn process_notify_event(&self, event: DebouncedEvent) -> Option<FileSystemEvent> {
-        if self.branch_db.should_ignore(&event.path) {
+    async fn process_notify_path(&self, path: &PathBuf) -> Option<FileSystemEvent> {
+        if self.branch_db.should_ignore(path) {
             return None;
         }
-        tracing::debug!("handling filesystem event: {:?}", event.path);
-        let result = self.handle_file_event(event.path.clone()).await;
+        tracing::debug!("handling filesystem event: {:?}", path);
+        let result = self.handle_file_event(path.clone()).await;
         if let Ok(Some(ret)) = result {
             return Some(ret);
         }
@@ -172,29 +172,22 @@ impl FileSystemWatcher {
         branch_db: BranchDb,
     ) -> impl Stream<Item = FileSystemEvent> {
         let (notify_tx, notify_rx) = mpsc::unbounded_channel();
-        let notify_config = Config::default()
-            .with_follow_symlinks(false);
-
-        let debouncer_config = notify_debouncer_mini::Config::default()
-            .with_timeout(Duration::from_millis(100))
-            .with_batch_mode(true)
-            .with_notify_config(notify_config);
-
         let notify_tx_clone = notify_tx.clone();
-        let mut debouncer = new_debouncer_opt::<_, RecommendedWatcher>(
-            debouncer_config,
-            move |event: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
-                notify_tx_clone.send(event).unwrap();
+        let mut debouncer = new_debouncer(
+            Duration::from_millis(100),
+            None,
+            move |events: DebounceEventResult| {
+                let Ok(events) = events else {
+                    return;
+                };
+                notify_tx_clone.send(events).unwrap();
             },
         )
         .unwrap();
 
         // Begin the watch
         // I'm assuming that notify uses good RAII and stops watching when we kill the handle.... hopefully.
-        debouncer
-            .watcher()
-            .watch(&path, RecursiveMode::Recursive)
-            .unwrap();
+        debouncer.watch(&path, RecursiveMode::Recursive).unwrap();
 
         let this = FileSystemWatcher {
             watch_path: path,
@@ -205,7 +198,7 @@ impl FileSystemWatcher {
 
         this.initialize_file_hashes().await;
         for path in this.found_ignored_paths.lock().await.iter() {
-            let _ret = debouncer.watcher().unwatch(path);
+            let _ret = debouncer.unwatch(path);
         }
         let stream = UnboundedReceiverStream::new(notify_rx);
         // Process both file system events and update eventss
@@ -214,12 +207,19 @@ impl FileSystemWatcher {
             let _keep_alive = debouncer;
             // Handle file system events
             for await notify_events in stream {
-                let Ok(notify_events) = notify_events else {
-                    continue;
-                };
                 for notify_event in notify_events {
-                    if let Some(evt) = this.process_notify_event(notify_event).await {
-                        yield evt;
+                    match notify_event.kind {
+                        notify::EventKind::Any => continue,
+                        notify::EventKind::Access(_) => continue,
+                        notify::EventKind::Create(_) => (),
+                        notify::EventKind::Modify(_) => (),
+                        notify::EventKind::Remove(_) => (),
+                        notify::EventKind::Other => continue,
+                    };
+                    for path in &notify_event.paths {
+                        if let Some(evt) = this.process_notify_path(path).await {
+                            yield evt;
+                        }
                     }
                 }
             }
