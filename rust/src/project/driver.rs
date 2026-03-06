@@ -5,7 +5,7 @@ use crate::helpers::spawn_utils::spawn_named;
 use crate::helpers::utils::CommitInfo;
 use crate::project::branch_db::BranchDb;
 use crate::project::change_ingester::ChangeIngester;
-use crate::project::connection::{RemoteConnection, RemoteConnectionEvent, RemoteConnectionStatus};
+use crate::project::connection::RemoteConnection;
 use crate::project::document_watcher::DocumentWatcher;
 use crate::project::main_thread_block::MainThreadBlock;
 use crate::project::peer_watcher::PeerWatcher;
@@ -13,7 +13,7 @@ use crate::project::sync_automerge_to_fs::SyncAutomergeToFileSystem;
 use crate::project::sync_fs_to_automerge::SyncFileSystemToAutomerge;
 use futures::StreamExt;
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
-use samod::{ConcurrencyConfig, ConnectionInfo, DocHandle, DocumentId, Repo};
+use samod::{ConcurrencyConfig, ConnectionInfo, DocHandle, DocumentId, Repo, Url};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -98,7 +98,7 @@ impl Driver {
     /// If we couldn't start the driver, [None] is returned.
     pub async fn new(
         main_thread_block: MainThreadBlock,
-        server_url: String,
+        server_url: Url,
         project_path: PathBuf,
         username: String,
         storage_directory: PathBuf,
@@ -114,7 +114,10 @@ impl Driver {
             .await;
 
         // Start the connection
-        let connection = RemoteConnection::new(repo.clone(), server_url);
+        let Some(connection) = RemoteConnection::new(repo.clone(), server_url).await else {
+            tracing::error!("Could not start connection!");
+            return None;
+        };
         let git_ignore: Gitignore = Self::build_gitignore(&project_path);
         let branch_db = BranchDb::new(repo.clone(), project_path, git_ignore);
         branch_db
@@ -199,25 +202,28 @@ impl Driver {
     /// If we're connected to the server, returns true.
     /// Otherwise, retries the server connection on state change until it is either connected,
     /// or we give up, then returns true if success or false if failure.
-    async fn ensure_server_connection(connection: &RemoteConnection, retries: i32) -> bool {
+    async fn ensure_server_connection(connection: &RemoteConnection, retries: u32) -> bool {
         // We must subscribe to the events stream BEFORE checking the status.
         // This is so that between two lines of code, the status doesn't change before we've inited our stream.
-        let events = connection.events();
-        tokio::pin!(events);
-        match connection.status() {
-            RemoteConnectionStatus::Connected => true,
-            RemoteConnectionStatus::Disconnected => {
-                let mut connected = false;
-                // try 3 times
-                for _ in 0..retries {
-                    if let Some(RemoteConnectionEvent::Connected) = events.next().await {
-                        connected = true;
-                        break;
-                    }
-                }
-                connected
-            }
+        let mut events = connection.events();
+        if connection.is_connected() {
+            return true;
         }
+        loop {
+            let Some(event) = events.next().await else {
+                continue;
+            };
+            match event {
+                samod::DialerEvent::Connected { peer_info: _ } => return true,
+                samod::DialerEvent::Reconnecting { attempt } => {
+                    if attempt < retries {
+                        continue;
+                    }
+                    return false;
+                },
+                _ => return false,
+            }
+        };
     }
 
     /// Request the sync task to checkout the latest ref on a branch the next opportunity.
@@ -332,18 +338,21 @@ impl Driver {
             self.request_checkout(&id).await;
         }
     }
-    
+
     pub async fn confirm_revert_preview_branch(&self) {
         let Some(branch) = self.get_branch_db().get_checked_out_ref().await else {
             return;
         };
-        let Some(branch_state) = self.get_branch_db().get_branch_state(branch.branch()).await else {
+        let Some(branch_state) = self.get_branch_db().get_branch_state(branch.branch()).await
+        else {
             return;
         };
         let Some(forked_from) = branch_state.forked_from else {
             return;
         };
-        self.get_branch_db().confirm_revert_preview_branch(branch.branch()).await;
+        self.get_branch_db()
+            .confirm_revert_preview_branch(branch.branch())
+            .await;
         self.inner.branch_db.delete_branch(branch.branch()).await;
         self.request_checkout(forked_from.branch()).await;
     }

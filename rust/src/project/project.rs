@@ -10,7 +10,7 @@ use crate::interop::godot_accessors::{
 use crate::project::driver::Driver;
 use crate::project::main_thread_block::MainThreadBlock;
 use automerge::ChangeHash;
-use samod::DocumentId;
+use samod::{DocumentId, Url};
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -139,6 +139,14 @@ impl Project {
                 tracing::info!("Using default server url: {:?}", default);
                 default
             }
+        };
+
+        // if the URL doesn't have a scheme, add tcp://
+        let Ok(server_url) =
+            Url::parse(&server_url).or_else(|_| Url::parse(&format!("tcp://{}", server_url)))
+        else {
+            tracing::error!("Could not start project! Invalid server URL {server_url}");
+            return;
         };
 
         // If the metadata ID is not a valid document ID, give up.
