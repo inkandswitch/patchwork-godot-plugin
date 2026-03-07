@@ -4,17 +4,18 @@ on:
 
 jobs:
   linux:
-    runs-on: "ubuntu-22.04"
-    name: 📐 Build ${{ matrix.arch }}
+    runs-on: ${{ matrix.arch.runner }}
+    name: 📐 Build ${{ matrix.arch.id }}
     strategy:
       fail-fast: false
       matrix:
-        arch: [
-          "x86_64-unknown-linux-gnu",
-          "aarch64-unknown-linux-gnu",
+        arch:
+          - id: "x86_64-unknown-linux-gnu"
+            runner: "ubuntu-22.04"
+          - id: "aarch64-unknown-linux-gnu"
+            runner: "ubuntu-24.04-arm"
           #"armv7-unknown-linux-gnueabihf", # TODO: fix this, newer godot-rust is failing to build for arm32
           #"i686-unknown-linux-gnu"
-        ]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -30,24 +31,24 @@ jobs:
           sudo apt-get install libssl-dev
           sudo apt-get install zlib1g-dev
           # Multi platform build
-          sudo apt-get install gcc-multilib g++-multilib libc6-dev-i386
+          # sudo apt-get install gcc-multilib g++-multilib libc6-dev-i386
           # Arm64 and arm32
           sudo apt install gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf
 
       - name: Restore Cache
         uses: Swatinem/rust-cache@v2
         with:
-          prefix-key: patchwork_rust_plugin_linux-${{ matrix.arch }}
+          prefix-key: patchwork_rust_plugin_linux-${{ matrix.arch.id }}
 
       - name: Build
         uses: ./.github/actions/build-plugin
         with:
-          arch: ${{ matrix.arch }}
+          arch: ${{ matrix.arch.id }}
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: patchwork-build-linux-${{ matrix.arch }}
+          name: patchwork-build-linux-${{ matrix.arch.id }}
           path: ./build/patchwork/*
           if-no-files-found: error
 
