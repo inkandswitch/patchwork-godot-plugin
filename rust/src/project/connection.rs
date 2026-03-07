@@ -1,7 +1,5 @@
-use std::sync::Arc;
-
 use futures::Stream;
-use samod::{BackoffConfig, DialerHandle, Repo, Url, tokio_io::TcpDialer};
+use samod::{BackoffConfig, DialerHandle, Repo, Url};
 use tokio_util::sync::CancellationToken;
 
 use crate::helpers::spawn_utils::spawn_named;
@@ -27,14 +25,7 @@ impl RemoteConnection {
             repo.dial_websocket(server_url, BackoffConfig::default())
                 .ok()?
         } else if server_url.scheme() == "tcp" {
-            repo.dial(
-                BackoffConfig::default(),
-                Arc::new(TcpDialer::new_host_port(
-                    server_url.host_str()?,
-                    server_url.port()?,
-                )),
-            )
-            .ok()?
+            repo.dial_tcp(server_url, BackoffConfig::default()).ok()?
         } else {
             tracing::error!(
                 "Could not initialize server connection; the URL {server_url} has an invalid scheme (must be tcp://, ws://, or wss://)"
