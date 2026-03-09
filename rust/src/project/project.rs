@@ -167,6 +167,22 @@ impl Project {
             None => None,
         };
 
+        let saved_branch_id = match Some(PatchworkConfigAccessor::get_project_value(
+            "checked_out_branch_doc_id",
+            "",
+        ))
+        .filter(|s| !s.is_empty())
+        {
+            Some(s) => match DocumentId::from_str(&s) {
+                Ok(id) => Some(id),
+                Err(_) => {
+                    tracing::error!("Invalid saved branch ID! Not using.");
+                    None
+                }
+            },
+            None => None,
+        };
+
         tracing::info!(
             "Starting GodotProject with metadata doc id: {:?}",
             metadata_id
@@ -189,6 +205,7 @@ impl Project {
                         username,
                         storage_dir,
                         metadata_id,
+                        saved_branch_id
                     )
                     .await;
                     let metadata = driver.as_ref().unwrap().get_metadata_doc().await;

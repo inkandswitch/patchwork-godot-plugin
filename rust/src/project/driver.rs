@@ -103,6 +103,7 @@ impl Driver {
         username: String,
         storage_directory: PathBuf,
         metadata_id: Option<DocumentId>,
+        saved_branch_id: Option<DocumentId>,
     ) -> Option<Self> {
         let storage = samod::storage::TokioFilesystemStorage::new(storage_directory);
         let repo = Repo::build_tokio()
@@ -172,7 +173,7 @@ impl Driver {
                 ref_tx,
                 safe_to_update_editor: AtomicBool::new(false),
                 token: token.clone(),
-                requested_checkout: Arc::new(Mutex::new(None)),
+                requested_checkout: Arc::new(Mutex::new(saved_branch_id)),
                 connection,
                 branch_db,
                 peer_watcher,
