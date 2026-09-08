@@ -3,7 +3,7 @@ use std::{str::FromStr, sync::Arc, time::Duration};
 use axum::http::Uri;
 use futures::{Stream, StreamExt};
 use subduction_core::{
-    connection::ConnectionDisallowed,
+    connection::{Connection, ConnectionDisallowed},
     handshake::{
         self,
         audience::{Audience, DiscoveryId},
@@ -271,14 +271,48 @@ impl RemoteConnectionInner {
         tracing::debug!("Starting connection...");
         let subd = self.repo.subduction();
         // todo (subd): bearer token; reintroduce auth failure pain case and try_reauthenticate
-        let (client_ws, listener_fut, sender_fut, keepalive_task) = TokioWebSocketClient::new(
+        let (client_ws, listener_fut, sender_fut, keepalive_fut) = TokioWebSocketClient::new(
             Uri::from_str(&url.to_string()).expect("URL to URI conversion broken..."),
             subd.signer().clone(),
             Audience::Discover(DiscoveryId::new("backstitch_sync_server".as_bytes())),
         )
         .await?;
 
+        let keepalive_task = spawn_named("connection keepalive", async move {
+            match keepalive_fut.await {
+                KeepAliveOutcome::ConnectionClosed => {
+                    tracing::debug!("Keepalive: connection closed")
+                }
+                KeepAliveOutcome::Timeout { missed } => {
+                    tracing::error!("Keepalive: timeout ({missed} missed)")
+                }
+                KeepAliveOutcome::StaleNoPong { unanswered } => {
+                    tracing::error!("Keepalive: no pong ({unanswered} unanswered)")
+                }
+            }
+        });
+
+        let listener_task = spawn_named("connection listener", async move {
+            match listener_fut.await {
+                Ok(()) => tracing::debug!("Listener exiting successfully..."),
+                Err(e) => tracing::error!("Listener exiting with error: {e}"),
+            }
+        });
+
+        let sender_task = spawn_named("connection sender", async move {
+            match sender_fut.await {
+                Ok(()) => tracing::debug!("Sender exiting successfully..."),
+                Err(e) => tracing::error!("Sender exiting with error: {e}"),
+            }
+        });
+
         subd.add_connection(client_ws.clone()).await?;
+
+        tracing::debug!("full syncing...");
+        let _ = subd
+            .full_sync_with_all_peers(CallTimeout::TimeoutMillis(10000))
+            .await;
+        tracing::debug!("done full syncing");
 
         {
             let mut info = self.connection_info.lock().await;
@@ -292,40 +326,23 @@ impl RemoteConnectionInner {
             .events_tx
             .send(RemoteConnectionEvent::Connected { username: None });
 
-        let shutdown = self.shutdown.clone();
-        let t = tokio::task::spawn(async move {
-            select! {
-                _ = shutdown.cancelled() => {}
-                _ = token.cancelled() => {}
-                res = listener_fut => {
-                    match res {
-                        Ok(()) => tracing::debug!("Listener exiting successfully..."),
-                        Err(e) => tracing::error!("Listener exiting with error: {e}"),
-                    }
-                }
-                res = sender_fut => {
-                    match res {
-                        Ok(()) => tracing::debug!("Sender exiting successfully..."),
-                        Err(e) => tracing::error!("Sender exiting with error: {e}"),
-                    }
-                }
-                res = keepalive_task => {
-                    match res {
-                        KeepAliveOutcome::ConnectionClosed => tracing::debug!("Keepalive: connection closed"),
-                        KeepAliveOutcome::Timeout { missed } => tracing::error!("Keepalive: timeout ({missed} missed)"),
-                        KeepAliveOutcome::StaleNoPong { unanswered } => tracing::error!("Keepalive: no pong ({unanswered} unanswered)"),
-                    }
+        select! {
+            _ = self.shutdown.cancelled() => {
+                match client_ws.disconnect().await {
+                    Ok(()) => {},
+                    Err(e) => tracing::error!("Error disconnecting: {e}"),
                 }
             }
-        });
-
-        tracing::debug!("full syncing...");
-        let _ = subd
-            .full_sync_with_all_peers(CallTimeout::TimeoutMillis(10000))
-            .await;
-        tracing::debug!("done full syncing");
-
-        t.await;
+            _ = token.cancelled() => {
+                match client_ws.disconnect().await {
+                    Ok(()) => {},
+                    Err(e) => tracing::error!("Error disconnecting: {e}"),
+                }
+            }
+            _ = listener_task => {},
+            _ = sender_task => {},
+            _ = keepalive_task => {}
+        };
 
         {
             let mut info = self.connection_info.lock().await;

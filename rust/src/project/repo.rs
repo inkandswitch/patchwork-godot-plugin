@@ -166,6 +166,7 @@ impl Repo {
     }
 
     pub fn stop(&self) {
+        tracing::debug!("SHUTTING DOWN REPO");
         self.token.cancel();
         self.subduction.shutdown();
     }
