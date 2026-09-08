@@ -247,7 +247,7 @@ impl Driver {
         // TODO (subd): Simplify this logic -- be explicit about remote/local finding and durations
         match self
             .repo
-            .find(metadata_id, Duration::from_millis(100))
+            .find(metadata_id, Duration::from_millis(10000))
             .await
         {
             Ok(_) => return Ok(metadata_id.clone()),
@@ -282,7 +282,7 @@ impl Driver {
 
         match self
             .repo
-            .find(metadata_id, Duration::from_millis(100))
+            .find(metadata_id, Duration::from_millis(10000))
             .await
         {
             Ok(_) => Ok(metadata_id.clone()),

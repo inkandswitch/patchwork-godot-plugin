@@ -60,6 +60,7 @@ impl DocumentWatcher {
         repo: Repo,
         branch_db: BranchDb,
         metadata_handle: SedimentreeId,
+        // TODO (subd): Probably remove ALL of this, but if we keep anything like this... make this dependent on whether we've connected please, wtf.
         poll_time: u64,
     ) -> Self {
         let inner = Arc::new(DocumentWatcherInner {
