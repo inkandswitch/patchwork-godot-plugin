@@ -10,6 +10,7 @@ use std::{
 use automerge::{Automerge, AutomergeError, ChangeHash, transaction::CommitOptions};
 use future_form::Sendable;
 use futures::Stream;
+use nonempty::NonEmpty;
 use rand::{Rng, RngExt};
 use sedimentree_core::{
     blob::{Blob, BlobMeta},
@@ -233,13 +234,16 @@ impl Repo {
             return Ok(());
         }
 
-        let blobs = self
+        tracing::debug!("Does not have {id}");
+        let blobs: Result<Option<NonEmpty<Blob>>, _> = self
             .subduction()
             .fetch_blobs(
                 id.clone(),
                 CallTimeout::TimeoutMillis(timeout.as_millis() as u64),
             )
             .await;
+
+        tracing::debug!("Blob result: {blobs:?}");
 
         let blobs = match blobs {
             Ok(v) => v,
@@ -339,5 +343,11 @@ impl Repo {
         }
 
         Ok(result)
+    }
+}
+
+impl Drop for Repo {
+    fn drop(&mut self) {
+        tracing::info!("DROPPING REPO");
     }
 }
