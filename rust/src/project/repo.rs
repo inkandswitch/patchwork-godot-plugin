@@ -234,7 +234,7 @@ impl Repo {
             return Ok(());
         }
 
-        tracing::debug!("Does not have {id}, searching with timeout {timeout}");
+        tracing::debug!("Does not have {id}, searching with timeout {timeout:?}");
         let blobs: Result<Option<NonEmpty<Blob>>, _> = self
             .subduction()
             .fetch_blobs(
