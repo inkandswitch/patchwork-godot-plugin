@@ -137,6 +137,7 @@ impl RemoteHeadsObserver for HeadsObserver {
         peer: subduction_core::peer::id::PeerId,
         heads: subduction_core::remote_heads::RemoteHeads,
     ) {
+        tracing::info!("REMOTE HEADS ! !! ! ! {heads:?}");
         let subd = self.subduction.lock().expect("AAA");
         if subd.is_none() {
             return;
@@ -235,6 +236,16 @@ impl Repo {
         }
 
         tracing::debug!("Does not have {id}, searching with timeout {timeout:?}");
+
+        self.subduction
+            .sync_with_all_peers(
+                *id,
+                true,
+                CallTimeout::TimeoutMillis(timeout.as_millis() as u64),
+            )
+            .await
+            .map_err(|_| RepoError::Io)?;
+
         let blobs: Result<Option<NonEmpty<Blob>>, _> = self
             .subduction()
             .fetch_blobs(
