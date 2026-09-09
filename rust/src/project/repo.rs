@@ -360,6 +360,5 @@ impl Repo {
 impl Drop for Repo {
     fn drop(&mut self) {
         let count = Arc::strong_count(&self.subduction);
-        tracing::info!("DROPPING REPO, subd strong count: {count}");
     }
 }
