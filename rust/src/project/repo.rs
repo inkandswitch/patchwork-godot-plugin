@@ -187,10 +187,10 @@ impl Repo {
         &self,
         HeadsObservation { heads, id, peer }: HeadsObservation,
     ) -> Result<(), RepoError> {
-        // self.subd()?
-        //     .sync_with_all_peers(id, true, CallTimeout::TimeoutMillis(3000))
-        //     .await
-        //     .map_err(|_| RepoError::Io)?;
+        self.subd()?
+            .sync_with_all_peers(id, true, CallTimeout::TimeoutMillis(3000))
+            .await
+            .map_err(|_| RepoError::Io)?;
 
         let blobs = match self
             .subd()?
