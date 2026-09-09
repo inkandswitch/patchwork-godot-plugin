@@ -201,17 +201,17 @@ impl Repo {
             Err(e) => tracing::error!("Error while inserting blobs of {id}: {e}"),
         };
 
-        self.notify_document_changed(
-            id,
-            Heads::from(
-                heads
-                    .heads
-                    .into_iter()
-                    .map(|h| ChangeHash(*h.as_bytes()))
-                    .collect::<Vec<ChangeHash>>(),
-            ),
-        )
-        .await;
+        // re-fetch heads because the heads observer hates me maybe??
+        // TODO (subd): Debug this with brooke
+        let heads = match self.doc_db.get_heads(id).await {
+            Ok(h) => h,
+            Err(e) => {
+                tracing::error!("error getting heads {e}");
+                return;
+            }
+        };
+
+        self.notify_document_changed(id, heads).await;
     }
 
     async fn notify_document_changed(&self, id: SedimentreeId, new_heads: Heads) {
