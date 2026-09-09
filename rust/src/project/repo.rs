@@ -187,6 +187,19 @@ impl Repo {
         &self,
         HeadsObservation { heads, id, peer }: HeadsObservation,
     ) -> Result<(), RepoError> {
+        let doc_heads = self.doc_db.get_heads(id).await.ok();
+        if doc_heads.is_some_and(|h| {
+            Heads::from(
+                heads
+                    .heads
+                    .into_iter()
+                    .map(|c| ChangeHash(*c.as_bytes()))
+                    .collect::<Vec<ChangeHash>>(),
+            ) == h
+        }) {
+            return Ok(());
+        }
+
         self.subd()?
             .sync_with_all_peers(id, true, CallTimeout::TimeoutMillis(3000))
             .await
