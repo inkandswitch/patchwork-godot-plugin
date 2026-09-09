@@ -30,7 +30,7 @@ use url::Url;
 use crate::{
     auth::server_manager::{ServerError, ServerManager},
     helpers::spawn_utils::spawn_named,
-    project::repo::Repo,
+    project::repo::{Repo, RepoError},
 };
 
 /// Connects a repo to the remote server's sync endpoint. Shuts down when dropped.
@@ -97,6 +97,8 @@ pub enum RemoteConnectionError {
     Connect(#[from] ClientConnectError),
     #[error(transparent)]
     AddConnection(#[from] AddConnectionError<!>),
+    #[error(transparent)]
+    Repo(#[from] RepoError),
 }
 
 // todo (subd): Add is_connected, reconnection stuff etc
@@ -260,6 +262,10 @@ impl RemoteConnectionInner {
             .await
             .ok_or(RemoteConnectionError::NotAuthenticated)?;
 
+        let Some(subd) = self.repo.subduction().upgrade() else {
+            Err(RepoError::Stopped)?
+        };
+
         // Set HTTP to WS
         let mut url = server_info.sync_url.clone();
         url.set_scheme(match url.scheme() {
@@ -269,7 +275,7 @@ impl RemoteConnectionInner {
         }).unwrap();
 
         tracing::debug!("Starting connection...");
-        let subd = self.repo.subduction();
+
         // todo (subd): bearer token; reintroduce auth failure pain case and try_reauthenticate
         let (client_ws, listener_fut, sender_fut, keepalive_fut) = TokioWebSocketClient::new(
             Uri::from_str(&url.to_string()).expect("URL to URI conversion broken..."),
@@ -312,8 +318,11 @@ impl RemoteConnectionInner {
         let _ = subd
             .full_sync_with_all_peers(CallTimeout::TimeoutMillis(10000))
             .await;
-        tracing::debug!("done full syncing");
 
+        // don't hold this for the connection task
+        drop(subd);
+
+        tracing::debug!("done full syncing");
         {
             let mut info = self.connection_info.lock().await;
             if let Some(info) = info.as_mut() {
@@ -351,6 +360,9 @@ impl RemoteConnectionInner {
             }
         }
 
+        let Some(subd) = self.repo.subduction().upgrade() else {
+            Err(RepoError::Stopped)?
+        };
         subd.disconnect(&client_ws).await?;
         Ok(())
     }

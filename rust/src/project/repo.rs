@@ -3,7 +3,7 @@ use std::{
     collections::{BTreeSet, HashMap},
     ops::DerefMut,
     path::PathBuf,
-    sync::{Arc, OnceLock},
+    sync::{Arc, OnceLock, Weak},
     time::Duration,
 };
 
@@ -23,8 +23,9 @@ use sedimentree_core::{
 use subduction_core::{
     connection::message::SyncMessage,
     handler::sync::SyncHandler,
+    peer::id::PeerId,
     policy::open::OpenPolicy,
-    remote_heads::RemoteHeadsObserver,
+    remote_heads::{RemoteHeads, RemoteHeadsObserver},
     storage::memory::MemoryStorage,
     subduction::{Subduction, builder::SubductionBuilder, error::WriteError},
     timeout::call::CallTimeout,
@@ -33,7 +34,10 @@ use subduction_crypto::signer::memory::MemorySigner;
 use subduction_redb_storage::{RedbStorage, RedbStorageError};
 use subduction_websocket::tokio::{TimeoutTokio, TokioSpawn, client::TokioWebSocketClient};
 use thiserror::Error;
-use tokio::{select, sync::Mutex};
+use tokio::{
+    select,
+    sync::{Mutex, mpsc},
+};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -85,7 +89,8 @@ fn empty_automerge() -> &'static Automerge {
 
 #[derive(Debug, Clone)]
 pub struct Repo {
-    subduction: Arc<Subd>,
+    subduction: Weak<Subd>,
+    subduction_strong: Arc<Mutex<Option<Arc<Subd>>>>,
     doc_db: DocumentDb,
     // todo (subd): implement
     token: CancellationToken,
@@ -125,9 +130,14 @@ impl From<DocumentDbError> for RepoError {
     }
 }
 
+struct HeadsObservation {
+    id: SedimentreeId,
+    peer: PeerId,
+    heads: RemoteHeads,
+}
+
 pub struct HeadsObserver {
-    subduction: Arc<std::sync::Mutex<Option<Arc<Subd>>>>,
-    doc_db: DocumentDb,
+    tx: mpsc::Sender<HeadsObservation>,
 }
 
 impl RemoteHeadsObserver for HeadsObserver {
@@ -138,48 +148,57 @@ impl RemoteHeadsObserver for HeadsObserver {
         heads: subduction_core::remote_heads::RemoteHeads,
     ) {
         tracing::info!("REMOTE HEADS ! !! ! ! {heads:?}");
-        let subd = self.subduction.lock().expect("AAA");
-        if subd.is_none() {
-            return;
-        }
-        let sub = subd.clone().unwrap().clone();
-        let doc_db = self.doc_db.clone();
-        tokio::task::spawn_blocking(async move || {
-            let blobs = match sub.get_blobs(id).await {
-                Ok(Some(blobs)) => blobs.into(),
-                Ok(None) => Vec::new(),
-                Err(e) => {
-                    tracing::error!("Error while fetching blobs of {id} from storage: {e}");
-                    return;
-                }
-            };
-
-            match doc_db.insert_blobs(id, blobs).await {
-                Ok(()) => {}
-                Err(e) => tracing::error!("Error while inserting blobs of {id}: {e}"),
-            };
-        });
+        self.tx.blocking_send(HeadsObservation { id, peer, heads });
     }
 }
 
 impl Repo {
-    pub fn subduction(&self) -> Arc<Subd> {
+    // todo: probably don't expose this at all
+    pub fn subduction(&self) -> Weak<Subd> {
         self.subduction.clone()
     }
 
+    fn subd(&self) -> Result<Arc<Subd>, RepoError> {
+        self.subduction.upgrade().ok_or(RepoError::Stopped)
+    }
+
+    // TODO: don't explicitly stop; just use drops and avoid cloning the handle
     pub fn stop(&self) {
         tracing::debug!("SHUTTING DOWN REPO");
         self.token.cancel();
-        self.subduction.shutdown();
+        let mut subd = self.subduction_strong.blocking_lock();
+        let Some(s) = subd.take() else {
+            return;
+        };
+        // is this necessary?
+        s.shutdown();
+    }
+
+    async fn update_from_heads(&self, HeadsObservation { heads, id, peer }: HeadsObservation) {
+        let Some(subd) = self.subduction.upgrade() else {
+            return;
+        };
+        let blobs = match subd.get_blobs(id).await {
+            Ok(Some(blobs)) => blobs.into(),
+            Ok(None) => Vec::new(),
+            Err(e) => {
+                tracing::error!("Error while fetching blobs of {id} from storage: {e}");
+                return;
+            }
+        };
+
+        match self.doc_db.insert_blobs(id, blobs).await {
+            Ok(()) => {}
+            Err(e) => tracing::error!("Error while inserting blobs of {id}: {e}"),
+        };
     }
 
     pub fn new(storage_directory: PathBuf) -> Result<Self, RepoError> {
         let doc_db = DocumentDb::new();
         let sub: Arc<std::sync::Mutex<Option<Arc<Subd>>>> = Default::default();
-        let heads_observer = HeadsObserver {
-            subduction: sub.clone(),
-            doc_db: doc_db.clone(),
-        };
+
+        let (tx, mut rx) = mpsc::channel(256);
+        let heads_observer = HeadsObserver { tx };
 
         let storage = RedbStorage::new(storage_directory)?;
         let (subduction, sync_handler, listener, connection_manager) =
@@ -197,6 +216,15 @@ impl Repo {
         drop(guard);
 
         let token = CancellationToken::new();
+
+        let sub_strong = Arc::new(Mutex::new(Some(subduction.clone())));
+        let this = Self {
+            subduction_strong: sub_strong,
+            subduction: Arc::<Subd>::downgrade(&subduction),
+            doc_db,
+            token: token.clone(),
+        };
+
         let tok = token.clone();
         spawn_named("connection manager", async move {
             select! {
@@ -213,11 +241,21 @@ impl Repo {
             }
         });
 
-        let this = Self {
-            subduction,
-            doc_db,
-            token,
-        };
+        let tok = token.clone();
+        let this_clone = this.clone();
+        spawn_named("heads observer", async move {
+            loop {
+                select! {
+                    _ = tok.cancelled() => {break;}
+                    o = rx.recv() => {
+                        let Some(o) = o else {
+                            break;
+                        };
+                        this_clone.update_from_heads(o).await;
+                    }
+                }
+            }
+        });
 
         Ok(this)
     }
@@ -237,7 +275,7 @@ impl Repo {
 
         tracing::debug!("Does not have {id}, searching with timeout {timeout:?}");
 
-        self.subduction
+        self.subd()?
             .sync_with_all_peers(
                 *id,
                 true,
@@ -247,7 +285,7 @@ impl Repo {
             .map_err(|_| RepoError::Io)?;
 
         let blobs: Result<Option<NonEmpty<Blob>>, _> = self
-            .subduction()
+            .subd()?
             .fetch_blobs(
                 id.clone(),
                 CallTimeout::TimeoutMillis(timeout.as_millis() as u64),
@@ -300,7 +338,7 @@ impl Repo {
         // maybe do something with this peer result?
         // TODO (subd): this is horrible; don't drive sync here (use store_sedimentree? or wait to put inside subduction?)
         let res = self
-            .subduction()
+            .subd()?
             .add_sedimentree(
                 id,
                 result.sedimentree,
@@ -309,7 +347,7 @@ impl Repo {
             )
             .await?;
 
-        match self.subduction().get_blobs(id).await? {
+        match self.subd()?.get_blobs(id).await? {
             Some(blobs) => {
                 doc_db.insert_blobs(id, blobs.into()).await?;
             }
@@ -338,7 +376,7 @@ impl Repo {
             }
 
             // TODO: Don't drive sync here; use store_fragment and sync elsewhere
-            self.subduction()
+            self.subd()?
                 .add_fragment(
                     *id,
                     CommitId::new(frag.head.0),
@@ -359,6 +397,7 @@ impl Repo {
 
 impl Drop for Repo {
     fn drop(&mut self) {
-        let count = Arc::strong_count(&self.subduction);
+        // just in case
+        self.stop();
     }
 }
