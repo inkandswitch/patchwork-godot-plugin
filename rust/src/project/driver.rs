@@ -924,6 +924,7 @@ impl DriverInner {
     }
 
     async fn resolve_pending_normalized_files(&self, ref_: &HistoryRef) {
+        tracing::info!("Resolving pending norms...");
         let mut pending_norms = self.pending_normalized_files.lock().await;
         let contents = match self
             .branch_db

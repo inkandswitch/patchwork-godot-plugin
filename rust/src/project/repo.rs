@@ -435,7 +435,7 @@ impl Repo {
                 .await?;
         }
 
-        self.notify_document_changed(id, heads_after);
+        self.notify_document_changed(id, heads_after).await;
 
         Ok(result)
     }
