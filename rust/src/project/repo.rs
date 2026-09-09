@@ -183,17 +183,23 @@ impl Repo {
         s.shutdown();
     }
 
-    async fn update_from_heads(&self, HeadsObservation { heads, id, peer }: HeadsObservation) {
-        let Some(subd) = self.subduction.upgrade() else {
-            return;
-        };
-        let blobs = match subd.get_blobs(id).await {
+    async fn update_from_heads(
+        &self,
+        HeadsObservation { heads, id, peer }: HeadsObservation,
+    ) -> Result<(), RepoError> {
+        self.subd()?
+            .sync_with_all_peers(id, true, CallTimeout::TimeoutMillis(3000))
+            .await
+            .map_err(|_| RepoError::Io)?;
+
+        let blobs = match self
+            .subd()?
+            .fetch_blobs(id, CallTimeout::TimeoutMillis(3000))
+            .await
+        {
             Ok(Some(blobs)) => blobs.into(),
             Ok(None) => Vec::new(),
-            Err(e) => {
-                tracing::error!("Error while fetching blobs of {id} from storage: {e}");
-                return;
-            }
+            Err(_) => return Err(RepoError::Io),
         };
 
         match self.doc_db.insert_blobs(id, blobs).await {
@@ -203,15 +209,10 @@ impl Repo {
 
         // re-fetch heads because the heads observer hates me maybe??
         // TODO (subd): Debug this with brooke
-        let heads = match self.doc_db.get_heads(id).await {
-            Ok(h) => h,
-            Err(e) => {
-                tracing::error!("error getting heads {e}");
-                return;
-            }
-        };
+        let heads = self.doc_db.get_heads(id).await?;
 
         self.notify_document_changed(id, heads).await;
+        Ok(())
     }
 
     async fn notify_document_changed(&self, id: SedimentreeId, new_heads: Heads) {
