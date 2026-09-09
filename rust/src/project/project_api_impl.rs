@@ -279,7 +279,7 @@ impl ProjectViewModel for Project {
         self.start(ProjectCreateMode::New, server_url)
     }
 
-    fn load_project(&self, id: &SedimentreeId, server_url: Option<&str>, autostart: bool) {
+    fn load_project(&self, id: SedimentreeId, server_url: Option<&str>, autostart: bool) {
         if self.has_project() {
             return;
         }
@@ -432,7 +432,7 @@ impl ProjectViewModel for Project {
         // }
         tracing::debug!("=====================================");
     }
-    fn get_branch(&self, id: &SedimentreeId) -> Option<impl BranchViewModel + use<>> {
+    fn get_branch(&self, id: SedimentreeId) -> Option<impl BranchViewModel + use<>> {
         let id = id.clone();
 
         let (state, mut children) =
@@ -440,18 +440,18 @@ impl ProjectViewModel for Project {
                 tracing::trace!("Getting branch state...");
                 let branch_db = driver.as_ref()?.get_branch_db();
                 let state = branch_db
-                    .get_branch_state(&id)
+                    .get_branch_state(id)
                     .await
                     .inspect_err(|e| tracing::error!("error getting branch: {e}"))
                     .ok()?;
                 tracing::trace!("Getting branch children...");
-                let children = branch_db.get_branch_children(&id).await;
+                let children = branch_db.get_branch_children(id).await;
                 Some((state, children))
             })?;
 
         children.sort_by(|a, b| {
-            let a_state = self.get_branch(a);
-            let b_state = self.get_branch(b);
+            let a_state = self.get_branch(*a);
+            let b_state = self.get_branch(*b);
             let Some(a_state) = a_state else {
                 return std::cmp::Ordering::Less;
             };
@@ -479,7 +479,7 @@ impl ProjectViewModel for Project {
                 .inspect_err(|e| tracing::error!("Error getting main branch: {e}"))
                 .ok()
         })?;
-        self.get_branch(&id)
+        self.get_branch(id)
     }
 
     fn get_checked_out_branch(&self) -> Option<impl BranchViewModel> {
@@ -494,26 +494,26 @@ impl ProjectViewModel for Project {
             return;
         };
         self.with_driver_blocking("Create branch", async move |driver| {
-            driver.as_ref()?.fork_branch(name, &branch_state.id).await;
+            driver.as_ref()?.fork_branch(name, branch_state.id).await;
             Some(())
         });
     }
 
-    fn checkout_branch(&self, branch: &SedimentreeId) {
+    fn checkout_branch(&self, branch: SedimentreeId) {
         let branch = branch.clone();
         self.with_driver_blocking("Checkout branch", async move |driver| {
-            driver.as_ref()?.request_checkout(&branch).await;
+            driver.as_ref()?.request_checkout(branch).await;
             Some(())
         });
     }
 
-    fn is_branch_loaded(&self, branch: &SedimentreeId) -> bool {
+    fn is_branch_loaded(&self, branch: SedimentreeId) -> bool {
         let branch = branch.clone();
         self.with_driver_blocking("Is branch loaded", async move |driver| {
             let Some(dr) = driver.as_ref() else {
                 return false;
             };
-            dr.get_branch_db().is_branch_loaded(&branch).await
+            dr.get_branch_db().is_branch_loaded(branch).await
         })
     }
 
@@ -553,7 +553,7 @@ impl ProjectViewModel for Project {
             driver
                 .as_ref()
                 .ok_or_else(|| CreateMergePreviewBranchError::NoDriver)?
-                .create_merge_preview_branch(&source, &target)
+                .create_merge_preview_branch(source, target)
                 .await
                 .map_err(|e| match e {
                     DbError::NoFilters => CreateMergePreviewBranchError::NoChangesToMerge,
@@ -631,12 +631,12 @@ impl ProjectViewModel for Project {
             self.with_driver_blocking("Is safe to merge", async move |driver| {
                 let branch_db = driver.as_ref()?.get_branch_db();
                 let source_branch = branch_db
-                    .get_branch_state(&forked_from)
+                    .get_branch_state(forked_from)
                     .await
                     .inspect_err(|e| tracing::error!("Error during is_safe_to_merge {e}"))
                     .ok()?;
                 let latest_dest_heads = branch_db
-                    .get_latest_ref_on_branch(&merge_into)
+                    .get_latest_ref_on_branch(merge_into)
                     .await
                     .inspect_err(|e| tracing::error!("Error during is_safe_to_merge {e}"))
                     .ok()?
@@ -668,7 +668,7 @@ impl ProjectViewModel for Project {
             let source = branch_state.id.clone();
             let target = merge_info.branch().clone();
             self.with_driver_blocking("Confirm merge preview branch", async move |driver| {
-                driver.as_ref()?.merge_branch(&source, &target).await;
+                driver.as_ref()?.merge_branch(source, target).await;
                 Some(())
             });
         }
@@ -756,7 +756,7 @@ impl ProjectViewModel for Project {
                 .as_ref()
                 .ok_or(RequestDiffError::NoDriver)?
                 .get_branch_db()
-                .get_latest_ref_on_branch(&doc_id)
+                .get_latest_ref_on_branch(doc_id)
                 .await
                 .map_err(|_| RequestDiffError::NoBranchCheckedOut)?
                 .heads()

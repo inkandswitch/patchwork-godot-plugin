@@ -37,7 +37,7 @@ impl BranchDb {
 
         let new_heads = self
             .repo
-            .with_document(&main_handle_clone, async |d| {
+            .with_document(main_handle_clone, async |d| {
                 let mut tx = d.transaction();
                 let _ = reconcile(
                     &mut tx,
@@ -83,7 +83,7 @@ impl BranchDb {
         tracing::info!("created...");
         let metadata_handle_clone = metadata_handle.clone();
         self.repo
-            .with_document(&metadata_handle, async |d| {
+            .with_document(metadata_handle, async |d| {
                 let mut tx = d.transaction();
                 let _ = reconcile(
                     &mut tx,
@@ -117,7 +117,7 @@ impl BranchDb {
 
         let username = self.resolve_username().await;
         self.repo
-            .with_document(&meta_handle, async |d| -> Result<_, DbError> {
+            .with_document(meta_handle, async |d| -> Result<_, DbError> {
                 let mut branches_metadata: BranchesMetadataDoc = hydrate(d)?;
                 let mut tx = d.transaction();
                 branches_metadata.branches.insert(branch.id.clone(), branch);
@@ -147,7 +147,7 @@ impl BranchDb {
         let branch_clone = branch.clone();
         let username = self.resolve_username().await;
         self.repo
-            .with_document(&meta_handle, async |d| {
+            .with_document(meta_handle, async |d| {
                 let mut tx = d.transaction();
                 let mut branches_metadata: BranchesMetadataDoc = hydrate(&tx).unwrap();
                 branches_metadata.branches.remove(&branch_clone);
@@ -171,11 +171,11 @@ impl BranchDb {
     // delete branch isn't fully implemented right now deletes are not propagated to the frontend
     // right now this is just useful to clean up merge preview branches
     #[tracing::instrument(skip_all, level = "trace")]
-    pub async fn delete_branch(&self, branch: &SedimentreeId) -> Result<(), DbError> {
+    pub async fn delete_branch(&self, branch: SedimentreeId) -> Result<(), DbError> {
         self.remove_branch_from_meta(branch.clone()).await
     }
 
-    async fn clone_branch(&self, branch: &SedimentreeId) -> Result<SedimentreeId, DbError> {
+    async fn clone_branch(&self, branch: SedimentreeId) -> Result<SedimentreeId, DbError> {
         Ok(self
             .with_shadow_document(branch, async |d| self.repo.create(&d.clone()).await)
             .await??)
@@ -186,7 +186,7 @@ impl BranchDb {
     pub async fn fork_branch(
         &self,
         name: String,
-        source: &SedimentreeId,
+        source: SedimentreeId,
     ) -> Result<SedimentreeId, DbError> {
         tracing::info!("Forking new branch {:?} from source {:?}", name, source);
 

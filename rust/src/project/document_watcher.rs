@@ -95,11 +95,11 @@ impl DocumentWatcher {
     /// Branches aren't allowed to be broken at all.
     pub async fn wait_for_branch_ingest(
         &self,
-        branch: &SedimentreeId,
+        branch: SedimentreeId,
     ) -> Result<(), IngestWaitError> {
         let mut rx: watch::Receiver<BranchIngestState> = {
             let branches = self.inner.tracked_branches.lock().await;
-            let tx = branches.get(branch).ok_or(IngestWaitError::NotTracked)?;
+            let tx = branches.get(&branch).ok_or(IngestWaitError::NotTracked)?;
 
             tx.subscribe()
         };
@@ -120,7 +120,7 @@ impl DocumentWatcher {
 impl DocumentWatcherInner {
     async fn poll_document(
         repo: &Repo,
-        id: &SedimentreeId,
+        id: SedimentreeId,
         timeout: u64,
         find_limit: Arc<Semaphore>,
     ) -> Option<SedimentreeId> {
@@ -147,7 +147,7 @@ impl DocumentWatcherInner {
     async fn track_branch_document(&self, id: SedimentreeId) {
         let handle = select! {
             _ = self.token.cancelled() => return,
-            handle = Self::poll_document(&self.repo, &id, self.poll_time, self.find_limit.clone()) => handle
+            handle = Self::poll_document(&self.repo, id, self.poll_time, self.find_limit.clone()) => handle
         };
 
         let Some(handle) = handle else {
@@ -171,7 +171,7 @@ impl DocumentWatcherInner {
         tx.send_replace(BranchIngestState::Ingested);
         drop(branches);
 
-        let mut stream = match self.repo.changes(&handle).await {
+        let mut stream = match self.repo.changes(handle).await {
             Ok(stream) => stream,
             Err(e) => {
                 tracing::error!("Error getting changes stream: {e}");
@@ -194,7 +194,7 @@ impl DocumentWatcherInner {
 
     // The metadata document is the root document containing IDs of all branch docs.
     async fn track_metadata_document(&self, handle: SedimentreeId) {
-        let mut stream = match self.repo.changes(&handle).await {
+        let mut stream = match self.repo.changes(handle).await {
             Ok(stream) => stream,
             Err(e) => {
                 tracing::error!("Error getting changes stream: {e}");
@@ -225,7 +225,7 @@ impl DocumentWatcherInner {
         let branch_db = self.branch_db.clone();
         let semaphore = self.find_limit.clone();
         // easy early exit
-        if branch_db.has_binary_doc(&doc_id).await {
+        if branch_db.has_binary_doc(doc_id).await {
             return;
         }
         tracing::trace!("Tracking binary doc {doc_id}");
@@ -234,7 +234,7 @@ impl DocumentWatcherInner {
         tokio::task::spawn(async move {
             select! {
                 _ = token.cancelled() => {}
-                handle = Self::poll_document(&repo, &doc_id, poll_time, semaphore) => {
+                handle = Self::poll_document(&repo, doc_id, poll_time, semaphore) => {
                     // this may trigger a reconciliation for a shadow doc
                     branch_db.ingest_binary_doc(doc_id, true).await
                         .inspect_err(|e| tracing::error!("Error during track_binary_document {e}")).ok();
@@ -248,7 +248,7 @@ impl DocumentWatcherInner {
         let h = handle.clone();
         let (heads, linked_docs) = 
             // Collect all linked doc IDs from this branch
-            match self.repo.with_document(&h, async |d| {
+            match self.repo.with_document(h, async |d| {
                 let files = match d.get_obj_id(ROOT, "files") {
                     Some(files) => files,
                     None => {
@@ -304,7 +304,7 @@ impl DocumentWatcherInner {
         // Find added branches, and begin tracking them
         let h = handle.clone();
         // TODO: correct error handling on hydration failure; currently panics!
-        let meta: BranchesMetadataDoc = self.repo.with_document(&h, async |d| {
+        let meta: BranchesMetadataDoc = self.repo.with_document(h, async |d| {
             hydrate(d).expect("there was an issue with document hydration!")
         }).await?;
 

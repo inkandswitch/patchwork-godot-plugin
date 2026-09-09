@@ -34,8 +34,8 @@ impl HistoryRef {
         &self.heads
     }
 
-    pub fn branch(&self) -> &SedimentreeId {
-        &self.branch
+    pub fn branch(&self) -> SedimentreeId {
+        self.branch
     }
 
     pub fn is_valid(&self) -> bool {

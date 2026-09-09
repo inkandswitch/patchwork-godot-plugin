@@ -188,7 +188,7 @@ impl BranchDb {
         }
 
         let sync_states = self.branch_sync_states.lock().await;
-        let Some(state_arc) = sync_states.get(ref_.branch()) else {
+        let Some(state_arc) = sync_states.get(&ref_.branch()) else {
             tracing::error!("Sync state doesn't exist for branch; can't commit changes.");
             return None;
         };
@@ -305,7 +305,7 @@ impl BranchDb {
         let repo_clone = self.repo.clone();
         tokio::task::spawn(async move {
             let res = repo_clone
-                .with_document(&handle, async |d: &mut Automerge| {
+                .with_document(handle, async |d: &mut Automerge| {
                     let mut tx = d.transaction();
                     let _ = tx.put(ROOT, "content", content);
                     commit_with_metadata(

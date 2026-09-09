@@ -341,7 +341,7 @@ impl GodotProject {
         };
 
         self.project().load_project(
-            &id,
+            id,
             if server.is_empty() {
                 None
             } else {
@@ -388,7 +388,7 @@ impl GodotProject {
         let Ok(id) = SedimentreeId::from_str(&id) else {
             return Variant::nil();
         };
-        self.branch_to_variant(self.project().get_branch(&id))
+        self.branch_to_variant(self.project().get_branch(id))
     }
 
     #[func]
@@ -411,7 +411,7 @@ impl GodotProject {
         let Ok(id) = SedimentreeId::from_str(&id) else {
             return false;
         };
-        self.project().is_branch_loaded(&id)
+        self.project().is_branch_loaded(id)
     }
 
     #[func]
@@ -422,7 +422,7 @@ impl GodotProject {
     #[func]
     fn checkout_branch(&self, id: String) {
         if let Ok(id) = SedimentreeId::from_str(&id) {
-            self.project().checkout_branch(&id);
+            self.project().checkout_branch(id);
         };
     }
 
@@ -764,11 +764,8 @@ impl INode for GodotProject {
             if self.deferred_start == 0
                 && let Some(id) = self.project().get_project_doc_id()
             {
-                self.project().load_project(
-                    &id,
-                    self.project().get_saved_server().as_deref(),
-                    true,
-                );
+                self.project()
+                    .load_project(id, self.project().get_saved_server().as_deref(), true);
             }
             return;
         }

@@ -36,8 +36,9 @@ use subduction_websocket::tokio::{TimeoutTokio, TokioSpawn, client::TokioWebSock
 use thiserror::Error;
 use tokio::{
     select,
-    sync::{Mutex, mpsc},
+    sync::{Mutex, broadcast, mpsc},
 };
+use tokio_stream::{StreamExt, wrappers::BroadcastStream};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -45,6 +46,7 @@ use crate::{
     project::repo::{
         automerge_subduction_ingest::ingest_automerge,
         doc_db::{DocumentDb, DocumentDbError},
+        heads::Heads,
     },
 };
 
@@ -73,6 +75,7 @@ type Subd = Subduction<
 
 mod automerge_subduction_ingest;
 mod doc_db;
+pub mod heads;
 
 static EMPTY_AUTOMERGE: OnceLock<Automerge> = OnceLock::new();
 
@@ -94,10 +97,13 @@ pub struct Repo {
     doc_db: DocumentDb,
     // todo (subd): implement
     token: CancellationToken,
+    changes_tx: broadcast::Sender<DocumentChanged>,
 }
 
+#[derive(Clone)]
 pub struct DocumentChanged {
-    pub new_heads: Vec<ChangeHash>,
+    pub id: SedimentreeId,
+    pub new_heads: Heads,
 }
 
 #[derive(Error, Debug)]
@@ -148,7 +154,10 @@ impl RemoteHeadsObserver for HeadsObserver {
         heads: subduction_core::remote_heads::RemoteHeads,
     ) {
         tracing::info!("REMOTE HEADS ! !! ! ! {heads:?}");
-        self.tx.blocking_send(HeadsObservation { id, peer, heads });
+        let tx = self.tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let _ = tx.blocking_send(HeadsObservation { id, peer, heads });
+        });
     }
 }
 
@@ -191,14 +200,32 @@ impl Repo {
             Ok(()) => {}
             Err(e) => tracing::error!("Error while inserting blobs of {id}: {e}"),
         };
+
+        self.notify_document_changed(
+            id,
+            Heads::from(
+                heads
+                    .heads
+                    .into_iter()
+                    .map(|h| ChangeHash(*h.as_bytes()))
+                    .collect::<Vec<ChangeHash>>(),
+            ),
+        )
+        .await;
+    }
+
+    async fn notify_document_changed(&self, id: SedimentreeId, new_heads: Heads) {
+        let _ = self.changes_tx.send(DocumentChanged { id, new_heads });
     }
 
     pub fn new(storage_directory: PathBuf) -> Result<Self, RepoError> {
         let doc_db = DocumentDb::new();
         let sub: Arc<std::sync::Mutex<Option<Arc<Subd>>>> = Default::default();
 
-        let (tx, mut rx) = mpsc::channel(256);
-        let heads_observer = HeadsObserver { tx };
+        let (heads_tx, mut heads_rx) = mpsc::channel(256);
+        let heads_observer = HeadsObserver { tx: heads_tx };
+
+        let (changes_tx, _) = broadcast::channel(256);
 
         let storage = RedbStorage::new(storage_directory)?;
         let (subduction, sync_handler, listener, connection_manager) =
@@ -223,6 +250,7 @@ impl Repo {
             subduction: Arc::<Subd>::downgrade(&subduction),
             doc_db,
             token: token.clone(),
+            changes_tx,
         };
 
         let tok = token.clone();
@@ -247,7 +275,7 @@ impl Repo {
             loop {
                 select! {
                     _ = tok.cancelled() => {break;}
-                    o = rx.recv() => {
+                    o = heads_rx.recv() => {
                         let Some(o) = o else {
                             break;
                         };
@@ -267,7 +295,7 @@ impl Repo {
         Ok(())
     }
 
-    pub async fn find(&self, id: &SedimentreeId, timeout: Duration) -> Result<(), RepoError> {
+    pub async fn find(&self, id: SedimentreeId, timeout: Duration) -> Result<(), RepoError> {
         self.ensure_running()?;
         if self.doc_db.has(id).await {
             return Ok(());
@@ -277,7 +305,7 @@ impl Repo {
 
         self.subd()?
             .sync_with_all_peers(
-                *id,
+                id,
                 true,
                 CallTimeout::TimeoutMillis(timeout.as_millis() as u64),
             )
@@ -301,7 +329,11 @@ impl Repo {
 
         let blobs = blobs.ok_or(RepoError::NoSuchDocument(id.clone()))?;
 
-        self.doc_db.insert_blobs(id.clone(), blobs.into()).await?;
+        self.doc_db.insert_blobs(id, blobs.into()).await?;
+
+        // todo: should I do this?
+        self.notify_document_changed(id, self.doc_db.get_heads(id).await?)
+            .await;
 
         Ok(())
     }
@@ -309,10 +341,13 @@ impl Repo {
     // TODO (subd): implement
     pub async fn changes(
         &self,
-        id: &SedimentreeId,
+        id: SedimentreeId,
     ) -> Result<impl Stream<Item = DocumentChanged> + 'static, RepoError> {
         self.ensure_running()?;
-        Ok(futures::stream::pending())
+        let rx = self.changes_tx.subscribe();
+        let stream =
+            BroadcastStream::new(rx).filter_map(move |item| item.ok().filter(|item| item.id == id));
+        Ok(stream)
     }
 
     pub async fn create(&self, initial: &Automerge) -> Result<SedimentreeId, RepoError> {
@@ -357,16 +392,25 @@ impl Repo {
             }
         }
 
+        self.notify_document_changed(id, self.doc_db.get_heads(id).await?)
+            .await;
+
         Ok(id)
     }
 
-    pub async fn with_document<F, R>(&self, id: &SedimentreeId, f: F) -> Result<R, RepoError>
+    pub async fn with_document<F, R>(&self, id: SedimentreeId, f: F) -> Result<R, RepoError>
     where
         F: AsyncFnOnce(&mut Automerge) -> R,
     {
         self.ensure_running()?;
+        let heads_before = self.doc_db.get_heads(id).await?;
         let result = self.doc_db.with_document(id, f).await?;
-        // TODO: actually check if document changed
+        let heads_after = self.doc_db.get_heads(id).await?;
+
+        if heads_before == heads_after {
+            return Ok(result);
+        }
+
         let frags = self.doc_db.get_fragments(id).await?;
 
         for (frag, blob) in frags {
@@ -378,7 +422,7 @@ impl Repo {
             // TODO: Don't drive sync here; use store_fragment and sync elsewhere
             self.subd()?
                 .add_fragment(
-                    *id,
+                    id,
                     CommitId::new(frag.head.0),
                     boundary,
                     frag.checkpoints
@@ -391,13 +435,12 @@ impl Repo {
                 .await?;
         }
 
+        self.notify_document_changed(id, heads_after);
+
         Ok(result)
     }
 }
 
 impl Drop for Repo {
-    fn drop(&mut self) {
-        // just in case
-        self.stop();
-    }
+    fn drop(&mut self) {}
 }

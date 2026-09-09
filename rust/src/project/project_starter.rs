@@ -149,12 +149,12 @@ impl Project {
             let success = Self::try_and_retry_load(
                 &mut driver,
                 server_url.as_ref(),
-                &metadata_id.unwrap(), // we know this is valid, from earlier
-                saved_branch_id.clone().as_ref(),
+                metadata_id.unwrap(), // we know this is valid, from earlier
+                saved_branch_id.clone(),
             )
             .await?;
 
-            let local_changes = driver.get_local_changes(saved_branch_id.as_ref()).await?;
+            let local_changes = driver.get_local_changes(saved_branch_id).await?;
             (local_changes, success)
         };
 
@@ -176,7 +176,7 @@ impl Project {
             // the one exception: if we found the project locally AND it was automatically loaded, we can automatically checkin the changes.
             if mode == ProjectCreateMode::AutoLoaded && load_success.found_locally {
                 tracing::debug!("Local changes detected; automatically committing.");
-                driver.commit_local_changes(initial_branch.as_ref()).await?
+                driver.commit_local_changes(initial_branch).await?
             } else {
                 tracing::debug!("Local changes detected; you must confirm or discard them!");
                 start_status_tx
@@ -189,7 +189,7 @@ impl Project {
                 };
                 match rx.await? {
                     LocalChangesResult::CheckIn => {
-                        driver.commit_local_changes(initial_branch.as_ref()).await?
+                        driver.commit_local_changes(initial_branch).await?
                     }
                     LocalChangesResult::Discard => {}
                 }
@@ -209,9 +209,9 @@ impl Project {
         let metadata = driver.get_metadata_doc().await?;
 
         tracing::debug!("Starting sync...");
-        driver.start_sync(initial_branch.as_ref()).await;
+        driver.start_sync(initial_branch).await;
 
-        config.set_project_doc_id(Some(&metadata)).await;
+        config.set_project_doc_id(Some(metadata)).await;
         Ok(driver)
     }
 
@@ -219,8 +219,8 @@ impl Project {
     async fn try_and_retry_load(
         driver: &mut Driver,
         server_url: Option<&Url>,
-        metadata_id: &SedimentreeId,
-        branch_id: Option<&SedimentreeId>,
+        metadata_id: SedimentreeId,
+        branch_id: Option<SedimentreeId>,
     ) -> Result<LoadSuccess, ProjectStartError> {
         // I am going to become the joker because of this method, but I think it's all necessary/as simple as possible. Maybe I'm wrong...
         // Either way, here's the logic:

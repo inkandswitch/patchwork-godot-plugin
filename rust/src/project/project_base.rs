@@ -323,11 +323,11 @@ impl Project {
         // Check to see if we need to produce a CheckedOutBranch signal
         let rx = self.checked_out_ref_rx.as_mut().unwrap();
         if rx.has_changed().unwrap_or(false) {
-            let doc_id = rx.borrow().as_ref().map(|r| r.branch()).cloned();
+            let doc_id = rx.borrow().as_ref().map(|r| r.branch());
             // TODO: do we need to block on this? Maybe just spawn this off
             let config = self.config.clone();
             self.runtime.block_on(async move {
-                config.set_checked_out_branch_doc_id(doc_id.as_ref()).await;
+                config.set_checked_out_branch_doc_id(doc_id).await;
             });
             rx.mark_unchanged();
             signals.push(GodotProjectSignal::BranchCheckedOut);

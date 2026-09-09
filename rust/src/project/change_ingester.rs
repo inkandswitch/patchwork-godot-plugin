@@ -137,7 +137,7 @@ impl ChangeIngesterInner {
         if let Some(merge_info) = &meta?.merge_metadata {
             let merged_branch = self
                 .branch_db
-                .get_branch_name(&merge_info.merged_branch_id.clone())
+                .get_branch_name(merge_info.merged_branch_id.clone())
                 .await
                 .unwrap_or(merge_info.merged_branch_id.to_string());
             return Some(format!("↪ {author} merged {merged_branch}"));
@@ -262,7 +262,7 @@ impl ChangeIngesterInner {
             let Some(metadata) = &change.metadata else {
                 continue;
             };
-            let Some(branch_id) = &metadata.branch_id else {
+            let Some(branch_id) = metadata.branch_id else {
                 continue;
             };
             if branch_id != checked_out.branch() {

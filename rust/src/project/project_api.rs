@@ -109,7 +109,7 @@ pub trait ProjectViewModel {
     /// Starts the load of a project, in the background, given a [SedimentreeId].
     /// If `autostart` is true, this is treated as automatically restarting a loaded project.
     /// Otherwise, it behaves as if the user is loading into a project.
-    fn load_project(&self, id: &SedimentreeId, server_url: Option<&str>, autostart: bool);
+    fn load_project(&self, id: SedimentreeId, server_url: Option<&str>, autostart: bool);
 
     /// Get the current unresolved local changes from the project.
     /// We'll need to ask the user if they want to check these in.
@@ -126,7 +126,7 @@ pub trait ProjectViewModel {
 
     /// Gets the [BranchViewModel] for the provided branch [SedimentreeId],
     /// or [None] if the document ID isn't a branch in the project.
-    fn get_branch(&self, id: &SedimentreeId) -> Option<impl BranchViewModel + use<Self>>;
+    fn get_branch(&self, id: SedimentreeId) -> Option<impl BranchViewModel + use<Self>>;
     /// Gets the [BranchViewModel] for the main root branch, or [None] if we have no project.
     fn get_main_branch(&self) -> Option<impl BranchViewModel>;
     /// Gets the [BranchViewModel] for the current checked out branch, or [None] if we have no project.
@@ -134,9 +134,9 @@ pub trait ProjectViewModel {
     /// Create a new branch, forked off the current branch with the given name.
     fn create_branch(&self, branch_name: String);
     /// Check out a branch by ID.
-    fn checkout_branch(&self, branch: &SedimentreeId);
+    fn checkout_branch(&self, branch: SedimentreeId);
     /// Returns true if the branch is loaded (i.e. has all of its binary docs synced).
-    fn is_branch_loaded(&self, branch: &SedimentreeId) -> bool;
+    fn is_branch_loaded(&self, branch: SedimentreeId) -> bool;
     /// Dumps a binary representation of the current branch to ./.backstitch/.
     fn dump_current_branch(&self);
 

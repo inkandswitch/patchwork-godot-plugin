@@ -18,8 +18,8 @@ impl BranchDb {
     #[tracing::instrument(skip_all, level = "trace")]
     pub async fn create_merge_preview_branch(
         &self,
-        source: &SedimentreeId,
-        target: &SedimentreeId,
+        source: SedimentreeId,
+        target: SedimentreeId,
     ) -> Result<SedimentreeId, DbError> {
         // Not getting the branch state so we don't gotta clone, honestly that was probably simpler though
         let source_name = self.get_branch_name(source).await?;
@@ -34,7 +34,7 @@ impl BranchDb {
         self.with_shadow_document(source, async |d| {
             let _ = self
                 .repo
-                .with_document(&handle_clone, async |preview_doc| {
+                .with_document(handle_clone, async |preview_doc| {
                     let _ = preview_doc.merge(d);
                 })
                 .await
@@ -45,7 +45,7 @@ impl BranchDb {
         self.with_shadow_document(target, async |d| {
             let _ = self
                 .repo
-                .with_document(&handle_clone, async |preview_doc| {
+                .with_document(handle_clone, async |preview_doc| {
                     let _ = preview_doc.merge(d);
                 })
                 .await
@@ -68,8 +68,8 @@ impl BranchDb {
 
     pub async fn merge_branch(
         &self,
-        source: &SedimentreeId,
-        target: &SedimentreeId,
+        source: SedimentreeId,
+        target: SedimentreeId,
     ) -> Result<(), DbError> {
         let source_state = self.get_branch_state(source).await?;
 
@@ -90,7 +90,7 @@ impl BranchDb {
         // forked_from is the original branch of the preview branch
         let forked_from = source_state.forked_from.unwrap().branch().clone();
         let merge_metadata = if source_state.merge_into.is_some() {
-            match self.get_branch_state(&forked_from).await {
+            match self.get_branch_state(forked_from).await {
                 Ok(original_state) => Some(MergeMetadata {
                     merged_branch_id: forked_from,
                     forked_at_heads: original_state.forked_from.unwrap().heads().clone(),
@@ -105,7 +105,7 @@ impl BranchDb {
         let username = self.resolve_username().await;
         if let Some(merge_metadata) = merge_metadata {
             let target = target.clone();
-            self.with_shadow_document(&target, async |d| {
+            self.with_shadow_document(target, async |d| {
                 let mut tx = d.transaction();
 
                 // do a dummy change that we can attach some metadata to
@@ -130,7 +130,7 @@ impl BranchDb {
         // reconcile the dummy merge commit
         let states = self.branch_sync_states.lock().await;
         let state = states
-            .get(target)
+            .get(&target)
             .ok_or_else(|| DbError::NoBranch(Box::new(target.clone())))?;
         self.try_reconcile_branch(state.clone()).await?;
         Ok(())
@@ -138,7 +138,7 @@ impl BranchDb {
 
     pub async fn create_revert_preview_branch(
         &self,
-        branch: &SedimentreeId,
+        branch: SedimentreeId,
         ref_: &HistoryRef,
     ) -> Result<SedimentreeId, DbError> {
         let current_ref = self.get_latest_ref_on_branch(branch).await?;
@@ -149,7 +149,7 @@ impl BranchDb {
         self.with_shadow_document(branch, async |d| {
             let _ = self
                 .repo
-                .with_document(&handle_clone, async |preview_doc| {
+                .with_document(handle_clone, async |preview_doc| {
                     let _ = preview_doc.merge(d);
                 })
                 .await
@@ -214,7 +214,7 @@ impl BranchDb {
 
     pub async fn confirm_revert_preview_branch(
         &self,
-        preview_branch: &SedimentreeId,
+        preview_branch: SedimentreeId,
     ) -> Result<(), DbError> {
         let preview_state = self.get_branch_state(preview_branch).await?;
 
@@ -250,7 +250,7 @@ impl BranchDb {
         // Reconcile the merge anyways though.
         let states = self.branch_sync_states.lock().await;
         let state = states
-            .get(target.branch())
+            .get(&target.branch())
             .ok_or_else(|| DbError::NoBranch(Box::new(target.branch().clone())))?;
         self.try_reconcile_branch(state.clone()).await?;
         Ok(())

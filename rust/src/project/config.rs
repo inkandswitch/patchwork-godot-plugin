@@ -36,7 +36,7 @@ impl Config {
             .ok()
     }
 
-    pub async fn set_project_doc_id(&self, value: Option<&SedimentreeId>) {
+    pub async fn set_project_doc_id(&self, value: Option<SedimentreeId>) {
         Self::set_string(
             &self.project,
             "project_doc_id",
@@ -112,7 +112,7 @@ impl Config {
         .ok()
     }
 
-    pub async fn set_checked_out_branch_doc_id(&self, value: Option<&SedimentreeId>) {
+    pub async fn set_checked_out_branch_doc_id(&self, value: Option<SedimentreeId>) {
         Self::set_string(
             &self.project,
             "checked_out_branch_doc_id",

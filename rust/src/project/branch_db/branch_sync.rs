@@ -81,10 +81,10 @@ impl BranchDb {
         *st = Some((handle, state));
     }
 
-    pub async fn is_branch_loaded(&self, id: &SedimentreeId) -> bool {
+    pub async fn is_branch_loaded(&self, id: SedimentreeId) -> bool {
         let states = self.branch_sync_states.lock().await;
         // branch isn't loaded if we haven't tracked its sync state yet!
-        let Some(state) = states.get(id) else {
+        let Some(state) = states.get(&id) else {
             return false;
         };
         let state = state.lock().await;
@@ -104,10 +104,10 @@ impl BranchDb {
         binary_states.clear();
     }
 
-    pub async fn canonical_branch_status(&self, id: &SedimentreeId) -> CanonicalBranchStatus {
+    pub async fn canonical_branch_status(&self, id: SedimentreeId) -> CanonicalBranchStatus {
         let states = self.branch_sync_states.lock().await;
         // branch isn't loaded if we haven't tracked its sync state yet!
-        let Some(state) = states.get(id) else {
+        let Some(state) = states.get(&id) else {
             return CanonicalBranchStatus::BranchNotIngested;
         };
         let state = state.lock().await;
@@ -133,12 +133,12 @@ impl BranchDb {
 
     pub async fn wait_for_shadow_doc(
         &self,
-        branch: &SedimentreeId,
+        branch: SedimentreeId,
     ) -> Result<(), ShadowDocWaitError> {
         let mut rx = {
             let states = self.branch_sync_states.lock().await;
             let state = states
-                .get(branch)
+                .get(&branch)
                 .ok_or(ShadowDocWaitError::BranchNotIngested)?;
             let state = state.lock().await;
             state.shadow_doc_init_tx.subscribe()
@@ -156,9 +156,9 @@ impl BranchDb {
     /// Returns true if a binary doc is fully loaded onto the BranchDb.
     /// This will return true even if the binary doc failed to load... That's so we don't hang forever waiting for nonexistent docs.
     /// But that introduces problems, like server disconnections causing a file checkout! We need to figure out expected failure behavior.
-    pub async fn has_binary_doc(&self, id: &SedimentreeId) -> bool {
+    pub async fn has_binary_doc(&self, id: SedimentreeId) -> bool {
         let states = self.binary_states.lock().await;
-        states.contains_key(id)
+        states.contains_key(&id)
     }
 
     // todo (subd): When was found false??
@@ -241,7 +241,7 @@ impl BranchDb {
 
     // we may need to do an unordered comparison for heads across docs
     // todo: we may want to factor this out to a better Heads struct to handle correct comparison always
-    fn are_heads_equivalent(a: &[ChangeHash], b: &[ChangeHash]) -> bool {
+    pub fn are_heads_equivalent(a: &[ChangeHash], b: &[ChangeHash]) -> bool {
         let mut asorted = a.to_vec();
         let mut bsorted = b.to_vec();
         asorted.sort();
@@ -289,7 +289,7 @@ impl BranchDb {
 
         let (mut state, new_heads) = self
             .repo
-            .with_document(&handle, async move |d| -> Result<_, AutomergeError> {
+            .with_document(handle, async move |d| -> Result<_, AutomergeError> {
                 // First, create a fork from our heads if we don't have one
                 let shadow_doc = state
                     .shadow_doc

@@ -140,7 +140,7 @@ impl BranchDb {
                 PendingHash::Linked(document_id) => {
                     tracing::info!("Hashing linked file {document_id}");
                     // It may be wise to do this in parallel too... but this shouldn't be a frequent case.
-                    let Some(content) = self.get_linked_file(&document_id).await else {
+                    let Some(content) = self.get_linked_file(document_id).await else {
                         tracing::error!("Could not get linked file for hashing {path}");
                         continue;
                     };
@@ -240,7 +240,7 @@ impl BranchDb {
         ))
     }
 
-    async fn get_linked_file(&self, doc_id: &SedimentreeId) -> Option<FileContent> {
+    async fn get_linked_file(&self, doc_id: SedimentreeId) -> Option<FileContent> {
         // todo (subd): Do we need to check if it's added? We were doing that before
         self.repo
             .with_document(doc_id, async |d| match d.get(ROOT, "content") {
@@ -321,7 +321,7 @@ impl BranchDb {
             .await??;
 
         for (doc_id, path) in linked_doc_ids {
-            let linked_file_content: Option<FileContent> = self.get_linked_file(&doc_id).await;
+            let linked_file_content: Option<FileContent> = self.get_linked_file(doc_id).await;
             if let Some(file_content) = linked_file_content {
                 files.insert(path, file_content);
             } else {

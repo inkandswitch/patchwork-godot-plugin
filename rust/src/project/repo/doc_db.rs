@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use automerge::{Automerge, AutomergeError};
+use automerge::{Automerge, AutomergeError, ChangeHash};
 use nonempty::NonEmpty;
 use sedimentree_core::{
     blob::Blob, fragment::Fragment, id::SedimentreeId, loose_commit::LooseCommit,
@@ -8,7 +8,7 @@ use sedimentree_core::{
 use thiserror::Error;
 use tokio::sync::Mutex;
 
-use crate::project::repo::RepoError;
+use crate::project::repo::{RepoError, heads::Heads};
 
 #[derive(Debug, Clone)]
 pub struct DocumentDb {
@@ -51,18 +51,18 @@ impl DocumentDb {
         Ok(())
     }
 
-    pub async fn has(&self, id: &SedimentreeId) -> bool {
+    pub async fn has(&self, id: SedimentreeId) -> bool {
         let docs = self.docs.lock().await;
-        docs.contains_key(id)
+        docs.contains_key(&id)
     }
 
-    pub async fn with_document<F, R>(&self, id: &SedimentreeId, f: F) -> Result<R, DocumentDbError>
+    pub async fn with_document<F, R>(&self, id: SedimentreeId, f: F) -> Result<R, DocumentDbError>
     where
         F: AsyncFnOnce(&mut Automerge) -> R,
     {
         let mut docs = self.docs.lock().await;
         let doc = docs
-            .get_mut(id)
+            .get_mut(&id)
             .ok_or_else(|| DocumentDbError::NoSuchDocument(id.clone()))?;
 
         let result = f(doc).await;
@@ -70,13 +70,24 @@ impl DocumentDb {
         Ok(result)
     }
 
+    // todo: some metadata thing?
+    pub async fn get_heads(&self, id: SedimentreeId) -> Result<Heads, DocumentDbError> {
+        let docs: tokio::sync::MutexGuard<'_, HashMap<SedimentreeId, Automerge>> =
+            self.docs.lock().await;
+        let doc = docs
+            .get(&id)
+            .ok_or_else(|| DocumentDbError::NoSuchDocument(id.clone()))?;
+
+        Ok(doc.get_heads().into())
+    }
+
     pub async fn get_fragments(
         &self,
-        id: &SedimentreeId,
+        id: SedimentreeId,
     ) -> Result<Vec<(automerge::Fragment, Vec<u8>)>, DocumentDbError> {
         let docs = self.docs.lock().await;
         let doc = docs
-            .get(id)
+            .get(&id)
             .ok_or_else(|| DocumentDbError::NoSuchDocument(id.clone()))?;
 
         let frags = doc.fragments(..);

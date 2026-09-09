@@ -1,5 +1,4 @@
-/// Module to hydrate/reconcile a SedimentreeId from samod.
-/// This can be removed once https://github.com/alexjg/samod/issues/58 is addressed.
+/// Module to hydrate/reconcile a SedimentreeId from Subduction.
 pub mod autosurgeon_doc_id {
     use autosurgeon::{Hydrate, HydrateError, Prop, ReadDoc, Reconciler};
     use sedimentree_core::id::SedimentreeId;

@@ -235,7 +235,7 @@ impl Driver {
 
     async fn get_metadata_handle(
         &self,
-        metadata_id: &SedimentreeId,
+        metadata_id: SedimentreeId,
     ) -> Result<SedimentreeId, ProjectLoadError> {
         // Before we continue, we must acquire a handle to the metadata document.
         // There are three cases to handle:
@@ -296,7 +296,7 @@ impl Driver {
         }
     }
 
-    async fn create_document_watcher(&self, metadata_handle: &SedimentreeId, poll_time: u64) {
+    async fn create_document_watcher(&self, metadata_handle: SedimentreeId, poll_time: u64) {
         let mut doc_watcher = self.inner.document_watcher.lock().await;
 
         // If there's an existing doc watcher, this'll drop it and cancel.
@@ -314,8 +314,8 @@ impl Driver {
     /// Load the project. If we've run [start_connection], ensures we have a server connection before failing.
     pub async fn load_project(
         &self,
-        metadata_id: &SedimentreeId,
-        branch_id: Option<&SedimentreeId>,
+        metadata_id: SedimentreeId,
+        branch_id: Option<SedimentreeId>,
     ) -> Result<(), ProjectLoadError> {
         let metadata_handle = self.get_metadata_handle(metadata_id).await?;
 
@@ -333,10 +333,10 @@ impl Driver {
 
         // The document watcher will auto-ingest the provided metadata handle.
         if server_status == ProjectLoadServerStatus::Connected {
-            self.create_document_watcher(&metadata_handle, 15000).await;
+            self.create_document_watcher(metadata_handle, 15000).await;
         } else {
             // Poll time 0 means zero polling -- good for local documents.
-            self.create_document_watcher(&metadata_handle, 0).await;
+            self.create_document_watcher(metadata_handle, 0).await;
         }
 
         let doc_watcher = self.inner.document_watcher.lock().await;
@@ -353,7 +353,7 @@ impl Driver {
         // Wait until we've completely finished polling the branch
         tracing::debug!("Waiting for branch to ingest...");
         watcher
-            .wait_for_branch_ingest(&branch_id)
+            .wait_for_branch_ingest(branch_id)
             .await
             .map_err(|e| match e {
                 IngestWaitError::NotTracked => {
@@ -373,7 +373,7 @@ impl Driver {
         // The binary docs might still be screwed... so we wait for the shadow doc ingest and check the status
         tracing::debug!("Waiting for shadow to finish...");
         self.get_branch_db()
-            .wait_for_shadow_doc(&branch_id)
+            .wait_for_shadow_doc(branch_id)
             .await
             .map_err(|e| {
                 tracing::error!("shadow doc error {e}");
@@ -384,7 +384,7 @@ impl Driver {
 
         let status = self
             .get_branch_db()
-            .canonical_branch_status(&branch_id)
+            .canonical_branch_status(branch_id)
             .await;
 
         tracing::debug!("Done loading project.");
@@ -408,7 +408,7 @@ impl Driver {
 
     pub async fn create_project(&self) -> Result<(), ProjectLoadError> {
         let metadata_handle = self.inner.branch_db.create_metadata_doc().await?;
-        self.create_document_watcher(&metadata_handle, 30000).await;
+        self.create_document_watcher(metadata_handle, 30000).await;
         // Since this is a new project (i.e. we earlier made a metadata doc), check in the files.
         // This has to go after the document watcher ingests the metadata doc, of course.
         self.inner.sync_fs_to_automerge.checkin().await;
@@ -417,7 +417,7 @@ impl Driver {
 
     async fn get_latest_ref_on_branch_or_main(
         &self,
-        branch: Option<&SedimentreeId>,
+        branch: Option<SedimentreeId>,
     ) -> Result<HistoryRef, ProjectLoadError> {
         let branch = match branch {
             Some(branch) => branch.clone(),
@@ -427,13 +427,13 @@ impl Driver {
         // Using canonical here means we're allowed to do this work before the shadow doc is ready (i.e. all binary docs have checked in)
         Ok(self
             .get_branch_db()
-            .get_latest_canonical_ref_on_branch(&branch)
+            .get_latest_canonical_ref_on_branch(branch)
             .await?)
     }
 
     pub async fn get_local_changes(
         &self,
-        branch: Option<&SedimentreeId>,
+        branch: Option<SedimentreeId>,
     ) -> Result<Vec<(String, ChangeType)>, ProjectLoadError> {
         tracing::info!("Getting local changes...");
         let ref_ = self.get_latest_ref_on_branch_or_main(branch).await?;
@@ -469,7 +469,7 @@ impl Driver {
 
     pub async fn commit_local_changes(
         &self,
-        branch: Option<&SedimentreeId>,
+        branch: Option<SedimentreeId>,
     ) -> Result<(), ProjectLoadError> {
         tracing::debug!("Getting ref for local changes commit...");
         let ref_ = self.get_latest_ref_on_branch_or_main(branch).await?;
@@ -481,7 +481,7 @@ impl Driver {
     /// Begin the sync task. This will automatically check out the latest relevant ref, check in stuff from the FS,
     /// and constantly try to check out the next correct ref. Make sure any local changes are resolved, since this
     /// will reset all files to canonical.
-    pub async fn start_sync(&self, branch: Option<&SedimentreeId>) {
+    pub async fn start_sync(&self, branch: Option<SedimentreeId>) {
         // TODO: protect this so it can't be started twice
         // Spawn off the sync task
         let inner_clone = self.inner.clone();
@@ -627,21 +627,21 @@ impl Driver {
 
     /// Request the sync task to checkout the latest ref on a branch the next opportunity.
     /// This will only work once Godot is safe to update.
-    pub async fn request_checkout(&self, branch: &SedimentreeId) {
+    pub async fn request_checkout(&self, branch: SedimentreeId) {
         let mut req = self.inner.requested_checkout.lock().await;
         *req = Some(branch.clone());
     }
 
-    pub async fn fork_branch(&self, name: String, branch: &SedimentreeId) {
+    pub async fn fork_branch(&self, name: String, branch: SedimentreeId) {
         match self.inner.branch_db.fork_branch(name, branch).await {
             Ok(id) => {
-                self.request_checkout(&id).await;
+                self.request_checkout(id).await;
             }
             Err(e) => tracing::error!("Could not fork branch: {e}"),
         }
     }
 
-    pub async fn merge_branch(&self, source: &SedimentreeId, target: &SedimentreeId) {
+    pub async fn merge_branch(&self, source: SedimentreeId, target: SedimentreeId) {
         match self.inner.branch_db.merge_branch(source, target).await {
             Ok(_) => {}
             Err(e) => tracing::error!("Could not merge branch {source} to {target}: {e}"),
@@ -676,7 +676,7 @@ impl Driver {
         let Some(fork_info) = &branch_state.forked_from else {
             return;
         };
-        match self.inner.branch_db.delete_branch(&branch_state.id).await {
+        match self.inner.branch_db.delete_branch(branch_state.id).await {
             Ok(_) => {}
             Err(e) => tracing::error!("Error discarding current branch {e}"),
         };
@@ -686,8 +686,8 @@ impl Driver {
 
     pub async fn create_merge_preview_branch(
         &self,
-        source: &SedimentreeId,
-        target: &SedimentreeId,
+        source: SedimentreeId,
+        target: SedimentreeId,
     ) -> Result<(), DbError> {
         match self
             .inner
@@ -696,7 +696,7 @@ impl Driver {
             .await
         {
             Ok(id) => {
-                self.request_checkout(&id).await;
+                self.request_checkout(id).await;
                 Ok(())
             }
             Err(e) => {
@@ -715,7 +715,7 @@ impl Driver {
             .await
         {
             Ok(id) => {
-                self.request_checkout(&id).await;
+                self.request_checkout(id).await;
                 Ok(())
             }
             Err(e) => {
@@ -1091,7 +1091,7 @@ impl DriverInner {
         if let Some(requested_branch) = req_branch
             && let Ok(latest) = self
                 .branch_db
-                .get_latest_ref_on_branch(&requested_branch)
+                .get_latest_ref_on_branch(requested_branch)
                 .await
         {
             requested_checkout.take(); // clear it
@@ -1109,7 +1109,7 @@ impl DriverInner {
             return Some(ref_);
         }
         if let Ok(main_branch) = self.branch_db.get_main_branch().await {
-            if let Ok(ref_) = self.branch_db.get_latest_ref_on_branch(&main_branch).await {
+            if let Ok(ref_) = self.branch_db.get_latest_ref_on_branch(main_branch).await {
                 return Some(ref_);
             }
             tracing::error!(
