@@ -153,7 +153,7 @@ impl RemoteHeadsObserver for HeadsObserver {
         peer: subduction_core::peer::id::PeerId,
         heads: subduction_core::remote_heads::RemoteHeads,
     ) {
-        tracing::info!("REMOTE HEADS ! !! ! ! {heads:?}");
+        tracing::info!("REMOTE HEADS ! !! ! ! {id} {heads:?}");
         let tx = self.tx.clone();
         tokio::task::spawn_blocking(move || {
             let _ = tx.blocking_send(HeadsObservation { id, peer, heads });
@@ -280,7 +280,7 @@ impl Repo {
                         let Some(o) = o else {
                             break;
                         };
-                        this_clone.update_from_heads(o).await;
+                        let _ = this_clone.update_from_heads(o).await.inspect_err(|e| tracing::error!("error updating from heads{e}"));
                     }
                 }
             }
@@ -357,6 +357,7 @@ impl Repo {
         } else {
             initial
         };
+        tracing::debug!("CREATED");
 
         self.ensure_running()?;
         let doc_db = self.doc_db.clone();
@@ -411,6 +412,8 @@ impl Repo {
         if heads_before == heads_after {
             return Ok(result);
         }
+
+        tracing::debug!("MADE CHANGE");
 
         let frags = self.doc_db.get_fragments(id).await?;
 
